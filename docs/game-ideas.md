@@ -97,7 +97,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [ ] Arrow Maze — every tile has an arrow; pick a start that reaches the goal
 - [ ] Count the Dots — quickly count dots flashed on screen
 - [ ] Odd One Out — spot the one sprite that differs in a grid, faster each round
-- [ ] Path Memory — watch a path light up, then walk it from memory
+- [x] Path Memory — watch a path light up, then walk it from memory
 - [ ] Balance Scale — place weights so the beam balances
 
 ## Casual action 📱
@@ -181,19 +181,19 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 
 ## Quick-reflex micro games 📱
 
-- [ ] Tap When Green — tap the moment the light turns green (reaction time)
-- [ ] Stop the Clock — stop a stopwatch at exactly 3.00 seconds
+- [x] Tap on Green — tap the moment the light turns green (reaction time)
+- [x] Stop the Clock — stop a stopwatch at exactly 3.00 seconds
 - [ ] Bigger Number — two numbers flash, tap the bigger one, faster each round
-- [ ] Colour Word Trap — tap the ink colour, not the word
-- [ ] Swipe the Arrow — swipe the way the arrow points (or the opposite when it's red)
+- [x] Colour Word Trap — tap the ink colour, not the word
+- [x] Swipe the Arrow — swipe the way the arrow points (or the opposite when it's red)
 - [ ] Catch the Coin — tap the coin before it falls off screen
 - [ ] Count Taps — tap exactly N times in two seconds
 - [ ] Sharp Eye — find the letter hiding in a grid of similar letters
 - [ ] Memory Flash — remember positions of lit tiles
-- [ ] Fast Maths — answer quick sums, true or false
+- [x] Fast Maths — answer quick sums, true or false
 - [ ] Line Trace — trace a shape within the margin
-- [ ] Fly Swatter — swat flies, not butterflies
-- [ ] Balloon Inflate — hold to inflate, release before it pops, bigger = more points
+- [x] Fly Swatter — swat flies, not bees
+- [x] Balloon Pump — hold to inflate, release before it pops, bigger = more points
 - [ ] Rhythm Copy — tap back a rhythm you just heard
 - [ ] Ghost Click — tap shapes as they fade in, before they fade out
 
