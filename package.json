@@ -1,0 +1,25 @@
+{
+  "name": "game-scroll",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "smoke": "vite build && node scripts/smoke.cjs",
+    "ios": "vite build && cap sync ios && cap open ios",
+    "android": "vite build && cap sync android && cap open android"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
+    "vite": "^8.3.4"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
+    "@fontsource/press-start-2p": "^5.2.5",
+    "@fontsource/rubik": "^5.2.5"
+  }
+}

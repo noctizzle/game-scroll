@@ -1,0 +1,6 @@
+{
+  "appId": "com.gamescroll.app",
+  "appName": "Game Scroll",
+  "webDir": "dist",
+  "backgroundColor": "#0c0e12"
+}
