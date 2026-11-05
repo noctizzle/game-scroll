@@ -66,5 +66,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Some games build their level from where you are. Your location never leaves your phone.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Some games react to your voice, like shouting to launch a rocket. Audio is never recorded or sent.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Some games are played by tilting or shaking your phone.</string>
 </dict>
 </plist>
