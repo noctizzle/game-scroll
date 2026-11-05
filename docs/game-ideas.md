@@ -79,10 +79,10 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 
 ## Pocket puzzle 🕹
 
-- [ ] Ice Slide — slide on ice until you hit a rock; reach the exit in few moves
-- [ ] Crate Pusher — push crates onto targets (small rooms, 1-minute boards)
-- [ ] Mirror Beam — rotate mirrors to guide a laser to the receiver
-- [ ] Colour Flood — flood-fill from a corner to make the board one colour in N moves
+- [x] Ice Slide — slide on ice until you hit a rock; reach the exit in few moves
+- [x] Crate Pusher — push crates onto targets (small rooms, 1-minute boards)
+- [x] Mirror Beam — rotate mirrors to guide a laser to the receiver
+- [x] Colour Flood — flood-fill from a corner to make the board one colour in N moves
 - [ ] Gear Train — place gears so the motor turns the final wheel the right way
 - [ ] Bridge Builder Lite — place planks so a cart crosses (fixed budget)
 - [ ] Sliding Picture — 3x3 sliding tile picture
@@ -102,12 +102,12 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 
 ## Casual action 📱
 
-- [ ] Dart Wheel — throw darts into a spinning target without hitting other darts
+- [x] Dart Wheel — throw darts into a spinning target without hitting other darts
 - [ ] Ball Bounce Helix — tap to drop a ball through gaps in rotating rings
 - [ ] Paper Plane — tilt or drag to glide a paper plane through a windy city
-- [ ] Bowling Swipe — swipe and curve a ball into ten pins
-- [ ] Mini Golf One Hole — drag back to putt on a random one-hole course
-- [ ] Bottle Flip — flick to flip a bottle so it lands upright
+- [x] Bowling Swipe — swipe and curve a ball into ten pins
+- [x] Mini Golf One Hole — drag back to putt on a random one-hole course
+- [x] Bottle Flip — flick to flip a bottle so it lands upright
 - [ ] Skateboard Ollie — tap to ollie, hold to grind rails
 - [ ] Archery Wind — aim with wind drift at distant targets
 - [ ] Penalty Keeper — swipe to dive and save penalty kicks
