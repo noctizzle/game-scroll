@@ -41,17 +41,19 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 
 ## Research-led additions
 
+- [x] Merge Ten 📱 — tap groups of touching equal numbers to fuse them one higher; reach 10
+
 - [x] Merge Drop 📱 — drop fruit into a jar; two of the same touching merge into a bigger one, don't overflow
 - [x] Territory Claim 🕹 — draw lines to fence off 75% of the field while a bouncing spark hunts your line
 - [x] Germ Buster 🕹 — falling two-colour capsules; line up four of a colour to clear the germs
-- [ ] Moto Hills 🕹 — side-view dirt bike over hills; lean to land flat
-- [ ] Bomb Maze 🕹 — drop timed bombs to blast blocks and trap wandering critters on one screen
+- [x] Moto Hills 🕹 — side-view dirt bike over hills; lean to land flat
+- [x] Bomb Maze 🕹 — drop timed bombs to blast blocks and trap wandering critters on one screen
 
 ## Pocket arcade 🕹
 
-- [ ] Mole Mallet — tap critters popping from a 3x3 grid; skip the ones wearing helmets
+- [x] Mole Mallet — tap critters popping from a 3x3 grid; skip the ones wearing helmets
 - [ ] Lift Operator — run a lift: stop at floors so people get on and off before they lose patience
-- [ ] Pipe Plumber — rotate pipe tiles to route water before it starts flowing
+- [x] Pipe Plumber — rotate pipe tiles to route water before it starts flowing
 - [ ] Sheep Herder — drag a dog around to push sheep into a pen
 - [ ] Bomb Sweeper Mini — tap cells to reveal numbers, long-press to flag (6x6 board)
 - [ ] Ladder Climber — tap left/right rungs in rhythm; missing a rung drops you
@@ -130,11 +132,11 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 
 - [x] Block Fit Grid — place given blocks on a 8x8 grid, clear full rows and columns
 - [x] Ball Sort Tubes — pour coloured balls so each tube is one colour
-- [ ] Untangle — drag points until no lines cross
+- [x] Untangle — drag points until no lines cross
 - [ ] Word Swipe — swipe letters to form words from a wheel
 - [ ] Hexa Merge — drop numbered hexes, merge three of a kind
 - [ ] Pin Pull — pull pins in the right order so balls reach the cup
-- [ ] Parking Out — slide cars so the red car can leave the lot
+- [x] Parking Out — slide cars so the red car can leave the lot
 - [ ] Match Three Swap — swap gems to match three (10 moves)
 - [ ] Draw to Save — draw a line that shields a character from falling rocks
 - [ ] Candy Swing — cut ropes so the candy swings into the basket
@@ -145,7 +147,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Bubble Shooter (built as Bubble Pop) — aim coloured bubbles to pop groups of three
 - [ ] Jigsaw Six — six-piece jigsaw against the clock
 - [ ] Spot the Difference — two pictures, five differences
-- [ ] Link Pairs — connect matching icons with a path of max two turns
+- [x] Link Pairs — connect matching icons with a path of max two turns
 - [ ] Rotate Maze — rotate the whole maze to roll the ball out
 - [ ] Stack Sort Cards — sort a shuffled hand by dragging into order
 
