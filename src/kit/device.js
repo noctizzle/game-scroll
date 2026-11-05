@@ -103,3 +103,17 @@ export async function startMic() {
   } catch { return null; }
 }
 export function stopMic() { mic?.stop(); }
+
+/* ---------- camera ---------- */
+let cam = null;
+/** Start the back camera. Resolves to { video, stop() } (video is a playing <video>) or null if refused. */
+export async function startCamera() {
+  if (cam) return cam;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+    const video = document.createElement('video'); video.playsInline = true; video.muted = true; video.srcObject = stream; await video.play();
+    cam = { video, stop() { stream.getTracks().forEach(t => t.stop()); cam = null; } };
+    return cam;
+  } catch { return null; }
+}
+export function stopCamera() { cam?.stop(); }

@@ -68,6 +68,8 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Some games build their level from where you are. Your location never leaves your phone.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Some games use the camera, like finding real-world colours. Nothing is saved or sent.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Some games react to your voice, like shouting to launch a rocket. Audio is never recorded or sent.</string>
 	<key>NSMotionUsageDescription</key>

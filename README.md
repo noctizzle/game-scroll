@@ -39,6 +39,10 @@ export default {
 
 `fx(dt)` is optional and keeps effects animating on the game-over screen.
 
+## Phone features
+
+`src/kit/device.js` gives games haptics, tilt, shake, compass heading, GPS location, the microphone and the camera. On web and desktop, or when the player refuses a permission, these calls do nothing or return `null`. That means every game needs a touch fallback (for example, drag instead of tilt). Call `want('motion')` in `make()` for tilt, shake or compass games: iOS asks for motion permission on the player's next tap. The usage strings for iOS and the permissions for Android are already set.
+
 ## Foldables
 
 The app supports folding and unfolding mid-game (tested at Galaxy Z Fold 8 and iPhone Duo screen sizes). On wide screens, like the unfolded iPhone Duo or a tablet, the caption and buttons move to a side column. Android is configured not to restart on fold (`configChanges` and `resizeableActivity` in `AndroidManifest.xml`), and iOS allows every orientation. `npm run fold` simulates folding and unfolding during a game.
