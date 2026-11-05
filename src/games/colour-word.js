@@ -1,0 +1,49 @@
+import { clamp } from '../util.js';
+import { sfx } from '../sfx.js';
+import { haptic } from '../kit/device.js';
+
+// A colour word in a different colour of ink. The rule at the top says whether to tap the INK
+// or the WORD, and it can flip at any time. The timer shrinks with every right answer.
+const W = 360, H = 640;
+const C = [['RED', '#ff4d4d'], ['BLUE', '#3d8bff'], ['GREEN', '#3dd17a'], ['YELLOW', '#ffd34a']];
+
+function make(api) {
+  let word, ink, rule, time, limit, score, t, flip, shake, btnOrder;
+  function next() {
+    word = Math.random() * 4 | 0; do ink = Math.random() * 4 | 0; while (ink === word && Math.random() < .8);
+    if (score >= 4 && Math.random() < .3) { rule = rule === 'ink' ? 'word' : 'ink'; flip = 1; haptic('warning'); }
+    limit = Math.max(1.1, 3 - score * .07); time = limit;
+    if (score >= 10) btnOrder = btnOrder.sort(() => Math.random() - .5);
+  }
+  const self = {
+    reset() { rule = 'ink'; score = 0; t = 0; flip = 0; shake = 0; btnOrder = [0, 1, 2, 3]; next(); },
+    update(dt) { t += dt; flip = Math.max(0, flip - dt * 2); shake = Math.max(0, shake - dt * 3); time -= dt; if (time <= 0) { haptic('error'); sfx(140, .3, 'square', .05, -40); return api.over(); } },
+    draw(c) {
+      c.fillStyle = '#16131f'; c.fillRect(0, 0, W, H);
+      c.fillStyle = flip ? `rgba(255,255,255,${flip * .25})` : '#ffffff10'; c.beginPath(); c.roundRect(40, 80, 280, 60, 14); c.fill();
+      c.fillStyle = '#fff'; c.font = '400 13px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(rule === 'ink' ? 'TAP THE INK' : 'TAP THE WORD', W / 2, 117);
+      c.fillStyle = '#ffffff20'; c.fillRect(40, 160, 280, 8); c.fillStyle = time / limit < .3 ? '#ff4d4d' : '#ffffffcc'; c.fillRect(40, 160, 280 * clamp(time / limit, 0, 1), 8);
+      c.save(); c.translate(W / 2 + (shake ? Math.sin(t * 80) * 6 * shake : 0), 290);
+      c.fillStyle = C[ink][1]; c.font = '800 54px Rubik, sans-serif'; c.fillText(C[word][0], 0, 0); c.restore();
+      btnOrder.forEach((k, i) => {
+        const x = 30 + (i % 2) * 155, y = 380 + (i / 2 | 0) * 110;
+        c.fillStyle = C[k][1]; c.beginPath(); c.roundRect(x, y, 145, 95, 18); c.fill();
+        c.fillStyle = '#00000050'; c.font = '700 16px Rubik, sans-serif'; c.fillText(C[k][0], x + 72, y + 54);
+      });
+    },
+    down(x, y) {
+      if (y < 380 || y > 600) return; const i = (x > W / 2 ? 1 : 0) + (y > 485 ? 2 : 0), k = btnOrder[i];
+      const want = rule === 'ink' ? ink : word;
+      if (k === want) { score++; api.score(score); haptic('light'); sfx(600 + score * 10, .05, 'square', .04, 150); next(); }
+      else { shake = 1; haptic('error'); sfx(140, .3, 'square', .05, -40); api.over(); }
+    },
+    key(k, d) { if (!d) return; const i = { 1: 0, 2: 1, 3: 2, 4: 3 }[k]; if (i != null) { const idx = btnOrder.indexOf(i); self.down(idx % 2 ? 300 : 60, idx > 1 ? 540 : 420); } },
+  };
+  return self;
+}
+
+export default {
+  id: 'colour-word', title: 'Colour Word Trap', tag: 'Casual · Brain', retro: false, w: W, h: H, goal: 25,
+  hint: 'Read the rule: tap the colour of the INK, or the colour the WORD says. The rule flips without warning. One wrong tap ends it.',
+  make,
+};

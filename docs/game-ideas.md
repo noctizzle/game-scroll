@@ -52,13 +52,13 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 ## Pocket arcade 🕹
 
 - [x] Mole Mallet — tap critters popping from a 3x3 grid; skip the ones wearing helmets
-- [ ] Lift Operator — run a lift: stop at floors so people get on and off before they lose patience
+- [x] Lift Operator — run a lift: stop at floors so people get on and off before they lose patience
 - [x] Pipe Plumber — rotate pipe tiles to route water before it starts flowing
-- [ ] Sheep Herder — drag a dog around to push sheep into a pen
-- [ ] Bomb Sweeper Mini — tap cells to reveal numbers, long-press to flag (6x6 board)
+- [x] Sheep Herder — drag a dog around to push sheep into a pen
+- [x] Bomb Sweeper — tap cells to reveal numbers, hold to flag (8x8 board)
 - [ ] Ladder Climber — tap left/right rungs in rhythm; missing a rung drops you
 - [ ] Ghost Lantern — light a dark maze with a short-lived lantern pulse to find the exit
-- [ ] Mine Cart — tap to switch the rail junction ahead of your cart
+- [x] Mine Cart — tap to switch the rail junction ahead of your cart
 - [ ] Balloon Pop Archer — aim and release an arrow at drifting balloons, limited arrows
 - [x] Egg Catcher — move a basket between four chutes to catch rolling eggs
 - [ ] Penguin Slide — hold to dive down slopes, release to fly over gaps
@@ -137,16 +137,16 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [ ] Hexa Merge — drop numbered hexes, merge three of a kind
 - [ ] Pin Pull — pull pins in the right order so balls reach the cup
 - [x] Parking Out — slide cars so the red car can leave the lot
-- [ ] Match Three Swap — swap gems to match three (10 moves)
+- [x] Gem Slide — match-three where you slide whole rows and columns round like a loop instead of swapping (20 slides)
 - [ ] Draw to Save — draw a line that shields a character from falling rocks
-- [ ] Candy Swing — cut ropes so the candy swings into the basket
+- [x] Candy Swing — cut ropes so the candy swings into the basket
 - [ ] Tangram Snap — rotate pieces to fill a silhouette
-- [ ] Liquid Mixer — mix colours to match a target shade
+- [x] Liquid Mixer — mix colours to match a target shade
 - [x] Nonogram 5x5 (built as Picture Logic) — fill cells from row and column hints
 - [ ] Sudoku 4x4 Speed — quick 4x4 sudokus against the clock
 - [x] Bubble Shooter (built as Bubble Pop) — aim coloured bubbles to pop groups of three
 - [ ] Jigsaw Six — six-piece jigsaw against the clock
-- [ ] Spot the Difference — two pictures, five differences
+- [x] Spot the Difference — two pictures, five differences
 - [x] Link Pairs — connect matching icons with a path of max two turns
 - [ ] Rotate Maze — rotate the whole maze to roll the ball out
 - [ ] Stack Sort Cards — sort a shuffled hand by dragging into order
