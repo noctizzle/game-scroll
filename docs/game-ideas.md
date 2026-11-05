@@ -28,6 +28,25 @@ Tags: 🕹 pocket/retro · 📱 casual · 🎯 needs a phone feature (with a tou
 - [x] Colour Hunt 📱🎯 — find real-world objects matching a colour card (camera)
 - [x] Safe Cracker 📱🎯 — feel the haptic thump on the right number (haptics)
 
+## Research notes (Nov 2026)
+
+What makes the best phone and handheld games fun, and how this list uses it:
+- **Sort and merge puzzles** are the fastest-growing casual genres in 2026 (sort-puzzle revenue up 229% and Merge-2 up 74% in H1 2026, [Cinevva](https://app.cinevva.com/guides/casual-games-trends-2026)). The goal is clear at a glance and the combining feels good.
+- **Block and colour puzzles** with a one-screen loop were the only casual segment still growing in 2025 and 2026. A meta layer gives players a reason to come back, and our credits and trophies already provide it.
+- **One-touch hypercasual** games still lead downloads, because they're snackable and learned in seconds ([Udonis](https://blog.udonis.co/mobile-marketing/mobile-games/casual-games)).
+- **Match-3 is saturated**, so match games here need a twist rather than another plain swap-three.
+- **Classic handhelds** shone at quick-to-learn rules, score chasing, and huge amounts of bite-sized content ([Nintendo Life top 50](https://www.nintendolife.com/guides/50-best-game-boy-games-of-all-time)). The genres include falling-block and colour-matching puzzles, picture-logic puzzles, block-breaking, pinball, territory capture, motocross, platformers, bomb mazes and run-and-gun.
+
+We use genres and mechanics only: every game has its own name, art, rules and levels.
+
+## Research-led additions
+
+- [x] Merge Drop 📱 — drop fruit into a jar; two of the same touching merge into a bigger one, don't overflow
+- [x] Territory Claim 🕹 — draw lines to fence off 75% of the field while a bouncing spark hunts your line
+- [x] Germ Buster 🕹 — falling two-colour capsules; line up four of a colour to clear the germs
+- [ ] Moto Hills 🕹 — side-view dirt bike over hills; lean to land flat
+- [ ] Bomb Maze 🕹 — drop timed bombs to blast blocks and trap wandering critters on one screen
+
 ## Pocket arcade 🕹
 
 - [ ] Mole Mallet — tap critters popping from a 3x3 grid; skip the ones wearing helmets
@@ -46,7 +65,7 @@ Tags: 🕹 pocket/retro · 📱 casual · 🎯 needs a phone feature (with a tou
 - [ ] Bat Cave Echo — tap to send an echo that briefly reveals walls in the dark
 - [ ] Snowball Roll — roll a growing snowball; bigger is slower but smashes obstacles
 - [ ] Gold Digger — tunnel down through dirt, collect gems, don't get crushed by boulders
-- [ ] Pinball Pocket — two flippers, one table, three balls
+- [x] Pinball Pocket — two flippers, one table, three balls
 - [ ] Traffic Light — control a crossing's lights so cars and walkers never collide
 - [ ] Number Merge Grid — slide tiles on a 4x4 grid to merge equal numbers (sum target per run)
 - [ ] Frog Tongue — aim a sticky tongue at passing flies, chain combos
@@ -109,8 +128,8 @@ Tags: 🕹 pocket/retro · 📱 casual · 🎯 needs a phone feature (with a tou
 
 ## Casual puzzle 📱
 
-- [ ] Block Fit Grid — place given blocks on a 8x8 grid, clear full rows and columns
-- [ ] Ball Sort Tubes — pour coloured balls so each tube is one colour
+- [x] Block Fit Grid — place given blocks on a 8x8 grid, clear full rows and columns
+- [x] Ball Sort Tubes — pour coloured balls so each tube is one colour
 - [ ] Untangle — drag points until no lines cross
 - [ ] Word Swipe — swipe letters to form words from a wheel
 - [ ] Hexa Merge — drop numbered hexes, merge three of a kind
@@ -121,9 +140,9 @@ Tags: 🕹 pocket/retro · 📱 casual · 🎯 needs a phone feature (with a tou
 - [ ] Candy Swing — cut ropes so the candy swings into the basket
 - [ ] Tangram Snap — rotate pieces to fill a silhouette
 - [ ] Liquid Mixer — mix colours to match a target shade
-- [ ] Nonogram 5x5 — fill cells from row and column hints
+- [x] Nonogram 5x5 (built as Picture Logic) — fill cells from row and column hints
 - [ ] Sudoku 4x4 Speed — quick 4x4 sudokus against the clock
-- [ ] Bubble Shooter — aim coloured bubbles to pop groups of three
+- [x] Bubble Shooter (built as Bubble Pop) — aim coloured bubbles to pop groups of three
 - [ ] Jigsaw Six — six-piece jigsaw against the clock
 - [ ] Spot the Difference — two pictures, five differences
 - [ ] Link Pairs — connect matching icons with a path of max two turns
