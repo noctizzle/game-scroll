@@ -131,7 +131,8 @@ function rebuild(){
   slides.forEach(s=>io.unobserve(s.el));feed.innerHTML='';slides=[];active=null;lastId=null;queue=[];feed.scrollTop=0;addBatch();setActive(slides[0]);
 }
 
-io=new IntersectionObserver(es=>{for(const e of es)if(e.isIntersecting&&e.intersectionRatio>=.6)setActive(e.target._s)},{root:feed,threshold:[.6]});
+let resizeAt=0;
+io=new IntersectionObserver(es=>{if(performance.now()-resizeAt<500)return;for(const e of es)if(e.isIntersecting&&e.intersectionRatio>=.6)setActive(e.target._s)},{root:feed,threshold:[.6]});
 
 let lastT=performance.now();
 function frame(now){
@@ -153,7 +154,16 @@ addEventListener('keydown',e=>{
 });
 addEventListener('keyup',e=>{const s=active;if(s&&s.state==='playing'&&s.game.key)s.game.key(e.key,false)});
 
-let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>slides.forEach(fit),120)});
+// Folding/unfolding a phone, rotating, or split-screen all arrive as a resize. Refit every
+// canvas and keep the current game snapped in place so a running game is not lost.
+let rt;
+function onResize(){
+  slides.forEach(fit);
+  if(active){const i=slides.indexOf(active);feed.style.scrollSnapType='none';feed.scrollTop=i*feed.clientHeight;resizeAt=performance.now();requestAnimationFrame(()=>{feed.style.scrollSnapType='';})}
+}
+addEventListener('resize',()=>{resizeAt=performance.now();clearTimeout(rt);rt=setTimeout(onResize,80)});
+if(window.visualViewport)visualViewport.addEventListener('resize',()=>{resizeAt=performance.now();clearTimeout(rt);rt=setTimeout(onResize,80)});
+screen.orientation?.addEventListener?.('change',()=>setTimeout(onResize,150));
 
 /* top bar */
 const muteBtn=document.getElementById('mute');

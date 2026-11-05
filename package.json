@@ -9,7 +9,8 @@
     "preview": "vite preview --host",
     "smoke": "vite build && node scripts/smoke.cjs",
     "ios": "vite build && cap sync ios && cap open ios",
-    "android": "vite build && cap sync android && cap open android"
+    "android": "vite build && cap sync android && cap open android",
+    "fold": "vite build && node scripts/fold.cjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.3",

@@ -39,6 +39,10 @@ export default {
 
 `fx(dt)` is optional and keeps effects animating on the game-over screen.
 
+## Foldables
+
+The app supports folding and unfolding mid-game (tested at Galaxy Z Fold 8 and iPhone Duo screen sizes). On wide screens, like the unfolded iPhone Duo or a tablet, the caption and buttons move to a side column. Android is configured not to restart on fold (`configChanges` and `resizeableActivity` in `AndroidManifest.xml`), and iOS allows every orientation. `npm run fold` simulates folding and unfolding during a game.
+
 ## Testing
 
 `npm run smoke` builds the app and plays every game with random input on a phone-sized screen, failing if any game throws. Pass ids to test only some: `node scripts/smoke.cjs lane-racer worm`. Needs Playwright (`npm i -D playwright && npx playwright install chromium`).
