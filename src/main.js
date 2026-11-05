@@ -1,9 +1,9 @@
 import './style.css';
-import '@fontsource/press-start-2p/400.css';
-import '@fontsource/rubik/400.css';
-import '@fontsource/rubik/500.css';
-import '@fontsource/rubik/700.css';
-import '@fontsource/rubik/800.css';
+import '@fontsource/press-start-2p/latin-400.css';
+import '@fontsource/rubik/latin-400.css';
+import '@fontsource/rubik/latin-500.css';
+import '@fontsource/rubik/latin-700.css';
+import '@fontsource/rubik/latin-800.css';
 import { store, hash, fmt } from './util.js';
 import { sfx, sound } from './sfx.js';
 import { PAL, SHELL } from './palettes.js';
