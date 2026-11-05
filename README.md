@@ -24,6 +24,10 @@ npm run android        # build, sync and open Android Studio
 
 Every push to `main` builds a debug APK (`.github/workflows/android-apk.yml`) and publishes it as the "Latest Android build" release. On the phone, signed in to GitHub in the browser, open https://github.com/robthewizzuk/game-scroll/releases/latest and tap `game-scroll.apk`. Builds share one debug key (`android/app/debug.keystore`), so each new APK installs over the old one and keeps progress. To build without pushing, run the workflow by hand from the Actions tab.
 
+### iPhone .ipa from GitHub
+
+There is no paid Apple Developer account yet, so the `iOS IPA (unsigned)` workflow (`.github/workflows/ios-ipa.yml`) builds an unsigned `.ipa` that testers sideload with Sideloadly and a free Apple ID (reinstall every 7 days). Run it by hand from the Actions tab; it publishes to the "Latest iOS build" release. Install steps: [docs/ios-sideload.md](docs/ios-sideload.md).
+
 ## Adding a game
 
 Every file in `src/games/` is one game and is picked up by the feed automatically. A game exports:
