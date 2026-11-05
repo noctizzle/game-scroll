@@ -3,7 +3,7 @@ import { sfx } from '../sfx.js';
 
 function Stack(api){
   const W=360,H=640,BH=30,D=12,BASE=H-150;let tower,cur,debris,pops,cam,camT,combo,hue0,t;
-  const col=(L,l)=>`hsl(${(hue0+L*9)%360} 72% ${l}%)`;
+  const col=(L,l)=>gold?`hsl(${44+(L%3)*4} 88% ${l}%)`:`hsl(${(hue0+L*9)%360} 72% ${l}%)`;let gold=false;
   function spawn(){const top=tower[tower.length-1],L=tower.length,left=L%2===0;cur={w:top.w,x:left?-top.w*.5:W-top.w*.5,dir:left?1:-1,sp:Math.min(440,170+L*7)}}
   function block(c,x,yTop,w,h,L,alpha=1){
     c.globalAlpha=alpha;
@@ -30,7 +30,7 @@ function Stack(api){
     for(const p of pops){p.life-=dt;p.wy+=30*dt}pops=pops.filter(p=>p.life>0);
   }
   return{
-    reset(){hue0=rnd(0,360);tower=[{x:70,w:220}];debris=[];pops=[];cam=camT=0;combo=0;t=0;spawn()},
+    reset(){hue0=rnd(0,360);gold=api.has('gold');tower=[api.has('wide')?{x:30,w:300}:{x:70,w:220}];debris=[];pops=[];cam=camT=0;combo=0;t=0;spawn()},
     update(dt){t+=dt;if(cur){const top=tower[tower.length-1];cur.x+=cur.dir*cur.sp*dt;
       const lo=-top.w*.5,hi=W-top.w*.5;if(cur.x<lo){cur.x=lo;cur.dir=1}if(cur.x>hi){cur.x=hi;cur.dir=-1}}phys(dt)},
     fx(dt){phys(dt)},
@@ -55,5 +55,11 @@ function Stack(api){
 export default {
   id: 'stack', title: 'Stack Up', tag: 'Casual · Timing', retro: false, w: 360, h: 640,
   hint: 'Tap to drop each block. Three perfect drops grow it back.',
+  goal: 20,
+  board: true,
+  shop: [
+    { id: 'wide', name: 'Wide Base', price: 20, kind: 'boost', desc: 'Start with a wider first block.' },
+    { id: 'gold', name: 'Gold Blocks', price: 150, kind: 'unlock', desc: 'Every block is gold. Forever.' },
+  ],
   make: Stack,
 };

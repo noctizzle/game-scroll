@@ -6,7 +6,7 @@ import { sfx } from '../sfx.js';
 function make(api, p) {
   const R = PAL[p.pal], W = 160, H = 160, CW = 4, PX = 34;
   const SHIP = ['.00....', '0110...', '0111100', '0110...', '.00....'];
-  let cols, obs, off, speed, y, vy, hold, dist, center, drift, gap, trail, since, dead;
+  let cols, obs, off, speed, y, vy, hold, dist, center, drift, gap, trail, since, dead, shields, safe;
   function col() {
     drift = clamp(drift + rnd(-p.wobble, p.wobble), -1.6, 1.6); center += drift;
     const lo = gap / 2 + 4, hi = H - gap / 2 - 4;
@@ -16,7 +16,7 @@ function make(api, p) {
     return { top: Math.round(center - gap / 2), bot: Math.round(center + gap / 2) };
   }
   return {
-    reset() { off = 0; speed = p.speed; y = H / 2; vy = 0; hold = false; dist = 0; center = H / 2; drift = 0; gap = p.gap; obs = []; trail = []; since = 0; dead = 0; cols = []; for (let i = 0; i <= W / CW + 2; i++) cols.push(col()); },
+    reset() { off = 0; speed = p.speed; y = H / 2; vy = 0; hold = false; dist = 0; center = H / 2; drift = 0; gap = p.gap; obs = []; trail = []; since = 0; dead = 0; shields = api.has('shield') ? 1 : 0; safe = 0; cols = []; for (let i = 0; i <= W / CW + 2; i++) cols.push(col()); },
     update(dt) {
       gap = Math.max(p.gapMin, p.gap - dist / 28); speed = Math.min(p.speedMax, p.speed + dist / 40);
       const dx = speed * dt; off += dx; dist += dx;
@@ -27,8 +27,13 @@ function make(api, p) {
       for (const q of trail) { q.x -= dx; q.life -= dt; } trail = trail.filter(q => q.life > 0);
       api.score(Math.floor(dist / 8));
       const i = Math.floor((PX + off) / CW), hit = c => c && (y - 2 < c.top || y + 2 > c.bot);
-      if (hit(cols[i]) || hit(cols[i + 1]) || y < 0 || y > H) return api.over();
-      for (const o of obs) if (PX + 3 > o.x && PX - 3 < o.x + o.w && y + 2 > o.y && y - 2 < o.y + o.h) return api.over();
+      if (safe > 0) { safe -= dt; return; }
+      let crash = hit(cols[i]) || hit(cols[i + 1]) || y < 0 || y > H;
+      for (const o of obs) if (PX + 3 > o.x && PX - 3 < o.x + o.w && y + 2 > o.y && y - 2 < o.y + o.h) crash = true;
+      if (!crash) return;
+      // A shield from the shop soaks one crash: pop back to the middle of the cave and blink.
+      if (shields > 0) { shields--; safe = 1.5; const k = cols[i] || cols[i + 1]; y = k ? (k.top + k.bot) / 2 : H / 2; vy = 0; obs = obs.filter(o => o.x > PX + 30); sfx(700, .25, 'square', .05, -400); return; }
+      return api.over();
     },
     fx(dt) { dead += dt; },
     draw(c) {
@@ -37,7 +42,8 @@ function make(api, p) {
       for (let i = 0; i < cols.length; i++) { const x = Math.round(i * CW - off), k = cols[i]; c.fillStyle = R[1]; c.fillRect(x, 0, CW, k.top); c.fillRect(x, k.bot, CW, H - k.bot); c.fillStyle = R[0]; c.fillRect(x, k.top - 2, CW, 2); c.fillRect(x, k.bot, CW, 2); }
       for (const o of obs) { c.fillStyle = R[0]; c.fillRect(Math.round(o.x), Math.round(o.y), o.w, o.h); c.fillStyle = R[1]; c.fillRect(Math.round(o.x) + 2, Math.round(o.y) + 2, o.w - 4, o.h - 4); }
       c.fillStyle = R[2]; for (const q of trail) c.fillRect(Math.round(q.x), Math.round(q.y), 2, 1);
-      if (!dead || (dead * 10 | 0) % 2) pix(c, SHIP, PX - 3, Math.round(y) - 2, { 0: R[0], 1: R[1] });
+      if (shields > 0) { c.fillStyle = R[1]; c.fillRect(PX - 6, Math.round(y) - 5, 1, 11); }
+      if ((!dead || (dead * 10 | 0) % 2) && !(safe > 0 && (safe * 12 | 0) % 2)) pix(c, SHIP, PX - 3, Math.round(y) - 2, { 0: R[0], 1: R[1] });
     },
     down() { hold = true; sfx(200, .05, 'square', .02); },
     up() { hold = false; },
@@ -51,5 +57,8 @@ export default {
   id: 'cave', title: 'Cave Flyer', tag: 'Pocket · Arcade', retro: true, w: 160, h: 160,
   hint: 'Hold to climb, let go to dive. Stay off the walls.',
   pal: base.pal,
+  goal: 100,
+  board: true,
+  shop: [{ id: 'shield', name: 'Shield', price: 25, kind: 'boost', desc: 'Survive one crash.' }],
   make: api => make(api, base),
 };

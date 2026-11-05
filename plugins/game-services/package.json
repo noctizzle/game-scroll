@@ -1,0 +1,13 @@
+{
+  "name": "game-services",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Game Scroll's bridge to Apple Game Center and Google Play Games Services: sign-in, achievements, leaderboards and cloud saves.",
+  "main": "index.js",
+  "files": ["index.js", "Package.swift", "ios/Sources", "android/src/main", "android/build.gradle"],
+  "capacitor": {
+    "ios": { "src": "ios" },
+    "android": { "src": "android" }
+  },
+  "peerDependencies": { "@capacitor/core": "^8.0.0" }
+}

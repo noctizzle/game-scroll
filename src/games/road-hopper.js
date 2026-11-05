@@ -68,5 +68,6 @@ function make(api) {
 export default {
   id: 'road-hopper', title: 'Road Hopper', tag: 'Pocket · Arcade', retro: true, w: W, h: H, pal: 'mint',
   hint: 'Tap to hop forward, swipe sideways to dodge. Keep moving or the screen leaves you behind.',
+  goal: 30,
   make,
 };

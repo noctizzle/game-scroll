@@ -26,7 +26,7 @@ function Bricks(api){
             if(ox<oy)b.vx=-b.vx;else b.vy=-b.vy;
             bricks.splice(i,1);score+=(5-k.r)*10;api.score(score);sfx(600+(5-k.r)*90,.05);
             sp=Math.min(175,sp+1.2);const m=Math.hypot(b.vx,b.vy);b.vx*=sp/m;b.vy*=sp/m;break}}
-        if(!bricks.length){wave++;sp=Math.min(175,95+wave*10);build();serve();sfx(990,.2,'square',.04,400);return}
+        if(!bricks.length){api.win();wave++;sp=Math.min(175,95+wave*10);build();serve();sfx(990,.2,'square',.04,400);return}
         if(b.y>H+4)return api.over();
       }
     },
@@ -47,5 +47,6 @@ export default {
   id: 'bricks', title: 'Brick Bounce', tag: 'Pocket · Arcade', retro: true, w: 160, h: 160,
   hint: 'Drag to slide the paddle. Clear the wall.',
   pal: 'amber',
+  goal: 1200,
   make: Bricks,
 };

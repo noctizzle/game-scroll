@@ -7,6 +7,12 @@ import '@fontsource/rubik/800.css';
 import { store, hash, fmt } from './util.js';
 import { sfx, sound } from './sfx.js';
 import { PAL, SHELL } from './palettes.js';
+import { progress } from './kit/progress.js';
+import { checkTrophies } from './kit/trophies.js';
+import { services } from './kit/services.js';
+import { initWallet, toast, shopHTML, bindShop } from './kit/wallet-ui.js';
+
+import { haptic } from './kit/device.js';
 
 /* ---------- catalogue: every file in src/games/ is one game ---------- */
 const modules = import.meta.glob('./games/*.js', { eager: true });
@@ -32,13 +38,19 @@ function makeSlide(def){
       <div class="rail">
         <button class="rbtn like" aria-pressed="false"><span class="ic">♥</span><span class="n"></span></button>
         <div class="rbtn bestchip"><span class="ic best">0</span><span>Best</span></div>
+        <button class="rbtn walletbtn" aria-label="Credits and trophies"><span class="ic">◆</span><span class="n">${fmt(progress.credits)}</span></button>
         <button class="rbtn nextbtn" aria-label="Next game"><span class="ic">↓</span><span>Next</span></button>
       </div>
     </div>`;
   const s={def,el,canvas:el.querySelector('canvas'),screen:el.querySelector('.screen'),overlay:el.querySelector('.overlay'),scoreEl:el.querySelector('.score'),
     state:'ready',score:0,overAt:0,dirty:true};
   s.ctx=s.canvas.getContext('2d');
-  s.game=def.make({score:n=>{s.score=n;s.scoreEl.textContent=n},over:()=>gameOver(s)});
+  s.game=def.make(s.api={
+    score:n=>{s.score=n;s.scoreEl.textContent=n;if(def.goal&&n>=def.goal)win(s)},
+    over:()=>gameOver(s),
+    win:()=>win(s),                                     // for games with a natural win (cleared the board, etc.)
+    has:id=>!!(s.run&&s.run.items.has(id)),             // is this shop item active for the current run?
+  });
   s.game.reset();
   // like
   const likeBtn=el.querySelector('.like'),liked=store.get('gs_like_'+def.id,false);
@@ -60,34 +72,63 @@ function makeSlide(def){
   return s;
 }
 
-function best(id){return store.get('gs_best_'+id,0)}
+function best(id){return progress.best(id)}
 function updateBest(s){s.el.querySelector('.best').textContent=fmt(best(s.def.id))}
 
 function renderOverlay(s){
   const d=s.def,cue='<div class="swipe-cue">Swipe up for the next game</div>';
   if(s.state==='ready'){
-    s.overlay.innerHTML=`<div class="ov-k">${d.retro?'Insert coin':'Tap to start'}</div><div class="ov-title">${d.title}</div><div class="ov-hint">${d.hint}</div><button class="play">${d.retro?'PRESS START':'Play'}</button>${cue}`;
+    s.overlay.innerHTML=`<div class="ov-k">${d.retro?'Insert coin':'Tap to start'}</div><div class="ov-title">${d.title}</div><div class="ov-hint">${d.hint}</div>${goalHTML(d)}<button class="play">${d.retro?'PRESS START':'Play'}</button>${shopHTML(d)}${cue}`;
+    bindShop(s.overlay,d,()=>renderOverlay(s));
   }else if(s.state==='over'){
     const b=best(d.id),isNew=s.score>0&&s.score>=b&&s.newBest;
-    s.overlay.innerHTML=`<div class="ov-k">Game over</div><div class="ov-score">${s.score}</div>${isNew?'<div class="ov-new">NEW BEST</div>':`<div class="ov-best">Best ${b}</div>`}<button class="play">${d.retro?'RETRY':'Play again'}</button>${cue}`;
+    const res=s.paid?`<div class="ov-win">${s.won==='first'?'FIRST WIN ':'WIN '}+${s.paid} CREDITS</div>`:d.goal?`<div class="ov-goal">Score ${d.goal} to win credits</div>`:'';
+    s.el.querySelectorAll('.toast').forEach(t=>t.remove());   // the game-over screen repeats what they said
+    const tro=(s.trophies||[]).map(t=>`<div class="ov-trophy">🏆 ${t.name}</div>`).join('');
+    s.overlay.innerHTML=`<div class="ov-k">${s.paid?'You won':'Game over'}</div><div class="ov-score">${s.score}</div>${isNew?'<div class="ov-new">NEW BEST</div>':`<div class="ov-best">Best ${b}</div>`}${res}${tro}<button class="play">${d.retro?'RETRY':'Play again'}</button>${shopHTML(d)}${cue}`;
+    bindShop(s.overlay,d,()=>renderOverlay(s));
   }
   s.overlay.hidden=s.state==='playing';
 }
 
+function goalHTML(d){
+  if(!d.goal)return'';
+  const w=progress.wins(d.id),r=d.reward||10;
+  return d.retro?`<div class="ov-goal">Win at ${d.goal} · <b>+${w?r:r*2}</b> credits</div>`
+    :`<div class="ov-goal">Score ${d.goal} to win <b>◆${w?r:r*2}</b>${w?'':' (first win pays double)'}</div>`;
+}
+
 function startGame(s){
   if(active!==s)return;
+  // Boosts the player owns for this game are used up on this run; unlocks stay on.
+  s.run={items:new Set()};
+  for(const it of s.def.shop||[])if(it.kind==='unlock'?progress.owned(s.def.id,it)>0:progress.use(s.def.id,it))s.run.items.add(it.id);
+  s.won=false;s.paid=0;s.trophies=[];progress.played(s.def.id);
   s.game.reset();s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;
   s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');renderOverlay(s);
   sfx(660,.08,'square',.04,300);
 }
+// A run counts as a win the first time its score reaches the game's goal (or the game calls
+// api.win()). It pays credits once per run and the game carries on.
+function win(s){
+  if(s.won||s.state!=='playing')return;
+  const r=progress.win(s.def.id,s.def.reward||10);
+  s.won=r.first?'first':'yes';s.paid=r.paid;
+  toast(s.el,`WIN +${r.paid} CREDITS`,'win');haptic('success');sfx(880,.12,'triangle',.06,440);
+  awardTrophies(s);
+}
+function awardTrophies(s){
+  for(const t of checkTrophies()){toast(s.el,`🏆 ${t.name}`,'trophy');services.unlock(t.id);(s.trophies||=[]).push(t)}
+}
 function gameOver(s){
   if(s.state!=='playing')return;
   s.state='over';s.overAt=Date.now();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
-  if(s.score>best(s.def.id)){store.set('gs_best_'+s.def.id,s.score);s.newBest=true}
-  updateBest(s);sfx(220,.35,'square',.05,-150);
+  if(progress.score(s.def.id,s.score))s.newBest=true;
+  awardTrophies(s);services.reportRun(s.def);
+  updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){s.state='ready';s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function resetSlide(s){s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
 function goNext(s){
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
   const i=slides.indexOf(s);if(i>=slides.length-2)addBatch();
@@ -172,8 +213,8 @@ muteBtn.onclick=()=>{sound.muted=!sound.muted;store.set('gs_muted',sound.muted);
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{if(filter===b.dataset.f)return;filter=b.dataset.f;
   document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));rebuild()});
 
-function boot(){rebuild();requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
+function boot(){initWallet(GAMES);services.init(GAMES);rebuild();requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
 boot();
 
 // Test hook used by scripts/smoke.cjs
-window.__gs={GAMES,get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};
+window.__gs={GAMES,progress,api:s=>s.api,get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};

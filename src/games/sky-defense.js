@@ -48,5 +48,6 @@ function make(api) {
 export default {
   id: 'sky-defense', title: 'Sky Defense', tag: 'Pocket · Shooter', retro: true, w: W, h: H, pal: 'amber',
   hint: 'Drag to move. Your cannon fires on its own. Dodge the falling sparks.',
+  goal: 300,
   make,
 };
