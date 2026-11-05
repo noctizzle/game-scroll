@@ -60,10 +60,10 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [ ] Ghost Lantern — light a dark maze with a short-lived lantern pulse to find the exit
 - [ ] Mine Cart — tap to switch the rail junction ahead of your cart
 - [ ] Balloon Pop Archer — aim and release an arrow at drifting balloons, limited arrows
-- [ ] Egg Catcher — move a basket between four chutes to catch rolling eggs
+- [x] Egg Catcher — move a basket between four chutes to catch rolling eggs
 - [ ] Penguin Slide — hold to dive down slopes, release to fly over gaps
-- [ ] Tank Duel — angle and power artillery shots against a CPU tank on hilly ground
-- [ ] Fishing Line — drop a hook, reel up through layers, avoid snagging jellyfish
+- [x] Tank Duel — angle and power artillery shots against a CPU tank on hilly ground
+- [x] Fishing Line — drop a hook, reel up through layers, avoid snagging jellyfish
 - [ ] Bat Cave Echo — tap to send an echo that briefly reveals walls in the dark
 - [ ] Snowball Roll — roll a growing snowball; bigger is slower but smashes obstacles
 - [ ] Gold Digger — tunnel down through dirt, collect gems, don't get crushed by boulders
@@ -74,7 +74,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [ ] Kite Flyer — keep a kite in the wind band by tugging the string
 - [ ] Domino Run — place dominoes on a grid so one push topples them all
 - [ ] Space Docking — thrust to match speed and angle with a station port
-- [ ] Ninja Wall Jump — tap to jump between two walls, dodge spikes
+- [x] Ninja Wall — tap to jump between two walls, dodge spikes
 - [ ] Chess Knight Path — visit every lit square with knight moves before time runs out
 
 ## Pocket puzzle 🕹
@@ -110,11 +110,11 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Bottle Flip — flick to flip a bottle so it lands upright
 - [ ] Skateboard Ollie — tap to ollie, hold to grind rails
 - [ ] Archery Wind — aim with wind drift at distant targets
-- [ ] Penalty Keeper — swipe to dive and save penalty kicks
+- [x] Penalty Keeper — swipe to dive and save penalty kicks
 - [ ] Penalty Striker — swipe a curved shot past a moving keeper
-- [ ] Rhythm Drums — tap four pads in time with falling notes
-- [ ] Juggle Kick — keep a ball up by tapping under it
-- [ ] Ski Slalom — steer between gates on a downhill run
+- [x] Rhythm Drums — tap three pads in time with falling notes
+- [x] Juggle Kick — keep a ball up by tapping under it
+- [x] Ski Slalom — steer between gates on a downhill run
 - [ ] Surf Wave — ride a wave's face, pump for speed, avoid wipeout
 - [ ] Boxing Dodge — swipe to dodge punches, tap to counter
 - [ ] Laser Dodge — drag a dot through sweeping laser beams
