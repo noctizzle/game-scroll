@@ -64,6 +64,19 @@ jobs:
           (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/game-scroll.ipa" Payload)
           ls -l game-scroll.ipa
 
+      - name: Check the app is complete
+        run: |
+          APP="$RUNNER_TEMP/ipa/Payload/App.app"
+          du -sh "$APP"; du -sh "$APP"/* | sort -h | tail -8
+          test -f "$APP/public/index.html" || { echo "::error::Web app missing from the bundle"; exit 1; }
+          # Every @rpath framework the app links must be inside the bundle, or it crashes on launch.
+          for fw in $(otool -L "$APP/App" | awk '/@rpath\//{print $1}'); do
+            name="${fw#@rpath/}"
+            test -e "$APP/Frameworks/$name" || { echo "::error::$name is linked but not bundled"; exit 1; }
+            echo "bundled: $name"
+          done
+          otool -L "$APP/App"
+
       - uses: actions/upload-artifact@v7
         with:
           name: game-scroll-ipa
