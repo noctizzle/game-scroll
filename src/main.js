@@ -8,6 +8,7 @@ import { store, hash, fmt } from './util.js';
 import { sfx, sound } from './sfx.js';
 import { PAL, SHELL } from './palettes.js';
 import { isHidden, setRating, rating, logRound, toast, openPanel } from './qa.js';
+import { rankQueue } from './recommend.js';
 
 /* ---------- catalogue: every file in src/games/ is one game ---------- */
 const modules = import.meta.glob('./games/*.js', { eager: true });
@@ -45,10 +46,10 @@ function makeSlide(def){
   // like
   const likeBtn=el.querySelector('.like'),liked=store.get('gs_like_'+def.id,false);
   const setLike=v=>{likeBtn.setAttribute('aria-pressed',v);likeBtn.querySelector('.n').textContent=fmt(def.likes+(v?1:0))};setLike(liked);
-  likeBtn.onclick=()=>{const v=likeBtn.getAttribute('aria-pressed')!=='true';store.set('gs_like_'+def.id,v);setRating(def.id,v?1:0);document.querySelectorAll('.slide').forEach(x=>{if(x._s&&x._s.def.id===def.id)x._s.setLike(v)})};
+  likeBtn.onclick=()=>{const v=likeBtn.getAttribute('aria-pressed')!=='true';store.set('gs_like_'+def.id,v);setRating(def.id,v?1:0);rerank();document.querySelectorAll('.slide').forEach(x=>{if(x._s&&x._s.def.id===def.id)x._s.setLike(v)})};
   s.setLike=setLike;
   el.querySelector('.meh').onclick=()=>{const was=rating(def.id);setRating(def.id,-1);if(likeBtn.getAttribute('aria-pressed')==='true'){store.set('gs_like_'+def.id,false);setLike(false)}
-    toast(`Hidden: ${def.title}`,()=>setRating(def.id,was));goNext(s)};
+    rerank();toast(`Hidden: ${def.title}`,()=>{setRating(def.id,was);rerank()});goNext(s)};
   el.querySelector('.nextbtn').onclick=()=>goNext(s);
   s.overlay.onclick=e=>{if(Date.now()-s.overAt<550)return;startGame(s)};
   // pointer input
@@ -117,12 +118,14 @@ function pickDefs(n=6){
   if(!pool.length)pool=GAMES;
   const out=[];
   while(out.length<n&&pool.length){
-    if(!queue.length){queue=[...pool].sort(()=>Math.random()-.5);if(queue.length>1&&queue[0].id===lastId)queue.push(queue.shift())}
+    if(!queue.length){queue=rankQueue(pool,GAMES);if(queue.length>1&&queue[0].id===lastId)queue.push(queue.shift())}
     const d=queue.shift();out.push(d);lastId=d.id;
     if(pool.length<n&&out.length>=pool.length)break;
   }
   return out;
 }
+// After a heart or Meh, re-rank the games still waiting in this cycle so similar ones come sooner.
+function rerank(){if(queue.length>1)queue=rankQueue(queue.filter(g=>!isHidden(g.id)),GAMES)}
 function addBatch(){for(const d of pickDefs()){const s=makeSlide(d);feed.appendChild(s.el);slides.push(s);fit(s);s.game.draw(s.ctx);io.observe(s.el)}}
 
 function setActive(s){

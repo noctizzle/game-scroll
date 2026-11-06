@@ -13,12 +13,28 @@ import { store } from './util.js';
 export const BENCHED = new Set([]);
 
 const K = 'gs_qa';
-let db = store.get(K, {});            // { [id]: { r: 1|-1|0, plays, secs } }
+let db = store.get(K, {});            // { [id]: { r: 1|-1|0, t: when r last changed, plays, secs } }
 const save = () => store.set(K, db);
-const row = id => (db[id] ||= { r: 0, plays: 0, secs: 0 });
+const row = id => (db[id] ||= { r: 0, t: 0, plays: 0, secs: 0 });
 
 export const rating = id => db[id]?.r || 0;
-export function setRating(id, r) { row(id).r = r; save(); }
+export const stats = id => db[id] || { r: 0, t: 0, plays: 0, secs: 0 };
+export function setRating(id, r) { const x = row(id); x.r = r; x.t = Date.now(); save(); }
+
+/* ---------- sync without a server ----------
+   ratingsSnapshot() is a small JSON-able object to put inside the player's cloud save
+   (Game Center / Play Games saved games). mergeRatings() folds in a snapshot from another
+   device: the newer rating per game wins, play counts take the max. Safe to call repeatedly. */
+export const ratingsSnapshot = () => JSON.parse(JSON.stringify(db));
+export function mergeRatings(other) {
+  if (!other || typeof other !== 'object') return;
+  for (const [id, o] of Object.entries(other)) {
+    const x = row(id);
+    if ((o.t || 0) > (x.t || 0)) { x.r = o.r || 0; x.t = o.t; }
+    x.plays = Math.max(x.plays, o.plays || 0); x.secs = Math.max(x.secs, o.secs || 0);
+  }
+  save();
+}
 export const isHidden = id => BENCHED.has(id) || rating(id) === -1;
 export function logRound(id, ms) { const x = row(id); x.plays++; x.secs = Math.round(x.secs + ms / 1000); save(); }
 
