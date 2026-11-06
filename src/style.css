@@ -91,21 +91,25 @@ canvas{display:block;width:100%;height:100%;touch-action:pan-y}
 
 /* caption + rail */
 .meta{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px}
-.caption{min-width:0}
+.caption{min-width:0;display:block;text-align:left;background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.caption .tag,.caption h2{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.caption .more{display:block;font:500 12px/1.3 var(--f-body);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.caption .more b{color:var(--text);font-weight:600}
+.caption .best{color:var(--accent);font-weight:600}
+.caption:active h2{opacity:.7}
 .tag{display:inline-block;font:700 10px/1 var(--f-body);letter-spacing:.14em;text-transform:uppercase;padding:5px 8px;border-radius:4px;margin-bottom:7px}
 .retro .tag{background:var(--lcd2);color:var(--lcd0)}
 .modern .tag{background:#7a6cff;color:#fff}
 .caption h2{margin:0 0 3px;font:800 20px/1.15 var(--f-body)}
 /* portrait phones: the hint is already on the start screen, so keep the caption to one line and give the game the room */
-.caption p{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
-.caption .tag{margin-bottom:5px}
+.caption p{display:none}
+.caption .tag{margin-bottom:4px}
 .caption p{margin:0;color:var(--muted);font-size:13px;line-height:1.4}
-.rail{display:flex;gap:10px;align-items:center}
-.rbtn{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;color:var(--text);cursor:pointer;font:600 11px/1 var(--f-body);padding:0;min-width:40px}
-.rbtn .ic{width:40px;height:40px;border-radius:50%;background:var(--panel);display:grid;place-items:center;font-size:17px;transition:transform .15s}
+.rail{display:flex;gap:6px;align-items:center}
+.rbtn{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;color:var(--text);cursor:pointer;font:600 11px/1 var(--f-body);padding:0;min-width:48px}
+.rbtn .ic{width:48px;height:48px;border-radius:50%;background:var(--panel);display:grid;place-items:center;font-size:21px;transition:transform .15s}
 .rbtn:active .ic{transform:scale(.88)}
 .like[aria-pressed="true"] .ic{color:var(--heart)}
-.bestchip .ic{font:400 8px/1 var(--f-pixel);color:var(--accent)}
 .swipe-cue{position:absolute;left:0;right:0;bottom:4px;text-align:center;font:500 11px/1 var(--f-body);color:var(--muted);pointer-events:none;animation:cue 1.8s ease-in-out infinite}
 @keyframes cue{50%{transform:translateY(-4px);opacity:.6}}
 @media (prefers-reduced-motion:reduce){.play,.swipe-cue,.ov-new{animation:none}}
@@ -119,7 +123,8 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   .meta{grid-template-columns:1fr;align-content:end;gap:18px}
   .rail{justify-content:flex-start}
   .caption h2{font-size:24px}
-  .caption p{font-size:14px;-webkit-line-clamp:6}
+  .caption p{display:block;font-size:14px;margin-top:4px;white-space:normal}
+  .caption h2{white-space:normal}
 }
 /* Very short landscape (phone on its side): tighten the top bar spacing */
 @media (max-height: 480px){
@@ -128,7 +133,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 }
 
 /* QA: meh button, toast, panel (src/qa.js) */
-.meh .ic{font-size:15px;filter:grayscale(.3)}
+.meh .ic{font-size:19px;filter:grayscale(.3)}
 .logo{cursor:pointer}
 .qa-toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;pointer-events:none;z-index:50;
   display:flex;gap:14px;align-items:center;background:var(--text);color:var(--ink);font:500 13px/1.3 var(--f-body);padding:10px 14px;border-radius:12px;box-shadow:0 8px 30px #0008;transition:.2s;max-width:calc(100vw - 32px)}
@@ -204,3 +209,19 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 .retro .chip{padding:3px 8px;min-height:30px}
 .ov-trophy{font:600 12px/1 var(--f-body);color:var(--text);background:#ffffff14;border-radius:999px;padding:6px 10px}
 .retro .ov-trophy{font:400 8px/1 var(--f-pixel);color:var(--lcd0);background:none;padding:0}
+
+/* how-to-play sheet (tap the caption) */
+dialog.info{border:0;padding:0;background:none;color:var(--text);width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 48px)}
+dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
+.info-card{position:relative;background:var(--panel);border-radius:18px;padding:22px 20px 20px;display:flex;flex-direction:column;align-items:flex-start;gap:8px;max-height:calc(100dvh - 48px);overflow:auto}
+.info-card .tag{background:#7a6cff;color:#fff;margin:0}
+.info-card h2{margin:2px 0 0;font:800 26px/1.1 var(--f-body)}
+.info-k{font-size:12px;color:var(--muted)}
+.info-card h3{margin:10px 0 0;font:700 11px/1 var(--f-body);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.info-card p{margin:0;font-size:16px;line-height:1.5}
+.info-stats{display:flex;gap:8px;width:100%;margin-top:6px}
+.info-stats div{flex:1;background:#ffffff0a;border-radius:10px;padding:10px;font-size:11px;color:var(--muted);text-align:center}
+.info-stats b{display:block;font:400 16px/1.4 var(--f-pixel);color:var(--accent)}
+.info-x{position:absolute;top:10px;right:10px;width:36px;height:36px;border-radius:50%;border:0;background:#ffffff12;color:var(--text);cursor:pointer}
+.info-play{align-self:stretch;margin-top:8px;animation:none}
+@media (max-width:370px){.caption h2{font-size:17px}.caption .tag{font-size:9px}}

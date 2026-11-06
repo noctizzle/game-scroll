@@ -36,11 +36,10 @@ function makeSlide(def){
       ${def.retro?'<div class="bezel-bottom"><span class="dpad"></span><span class="ab"><i></i><i></i></span></div>':''}
     </div></div>
     <div class="meta">
-      <div class="caption"><span class="tag">${def.tag}</span><h2>${def.title}</h2><p>${def.hint}</p></div>
+      <button class="caption" aria-label="How to play ${def.title}"><span class="tag">${def.tag}</span><h2>${def.title}</h2><p>${def.hint}</p><span class="more"><b>ⓘ How to play</b> · Best <span class="best">0</span></span></button>
       <div class="rail">
         <button class="rbtn like" aria-pressed="false"><span class="ic">♥</span><span class="n"></span></button>
         <button class="rbtn meh" aria-label="Meh: hide this game"><span class="ic">👎</span><span>Meh</span></button>
-        <div class="rbtn bestchip"><span class="ic best">0</span><span>Best</span></div>
         <button class="rbtn walletbtn" aria-label="Credits and trophies"><span class="ic">◆</span><span class="n">${fmt(progress.credits)}</span></button>
         <button class="rbtn nextbtn" aria-label="Next game"><span class="ic">↓</span><span>Next</span></button>
       </div>
@@ -73,10 +72,29 @@ function makeSlide(def){
   s.canvas.addEventListener('pointerup',up);s.canvas.addEventListener('pointercancel',up);
   s.canvas.addEventListener('contextmenu',e=>e.preventDefault());
   el._s=s;
+  el.querySelector('.caption').onclick=()=>openInfo(s);
   renderOverlay(s);updateBest(s);
   return s;
 }
 
+/* ---------- how-to-play sheet: tapping the caption opens the full description ---------- */
+let infoDlg=null;
+function openInfo(s){
+  const d=s.def;
+  if(!infoDlg){infoDlg=document.createElement('dialog');infoDlg.className='info';document.body.appendChild(infoDlg);
+    infoDlg.addEventListener('click',e=>{if(e.target===infoDlg)infoDlg.close()});
+    infoDlg.addEventListener('close',()=>{const t=infoDlg._s;if(t){t.paused=false;lastT=performance.now()}})}
+  infoDlg._s=s;if(s.state==='playing')s.paused=true;
+  const kind=d.era==='advance'?'Advance-style pocket game':d.era==='color'?'Colour pocket game':d.retro?'Dot-matrix pocket game':'Phone game';
+  infoDlg.innerHTML=`<div class="info-card"><button class="info-x" aria-label="Close">✕</button>
+    <span class="tag">${d.tag}</span><h2>${d.title}</h2><div class="info-k">${kind}</div>
+    <h3>How to play</h3><p>${d.hint}</p>
+    <div class="info-stats"><div><b>${fmt(best(d.id))}</b>Your best</div>${d.goal?`<div><b>${d.goal}</b>Score to win</div>`:''}</div>
+    <button class="play info-play">${s.state==='playing'?'Keep playing':'Play'}</button></div>`;
+  infoDlg.querySelector('.info-x').onclick=()=>infoDlg.close();
+  infoDlg.querySelector('.info-play').onclick=()=>{const was=s.state;infoDlg.close();if(was!=='playing'&&active===s&&Date.now()-s.overAt>550)startGame(s)};
+  infoDlg.showModal();
+}
 function best(id){return progress.best(id)}
 function updateBest(s){s.el.querySelector('.best').textContent=fmt(best(s.def.id))}
 
@@ -195,7 +213,7 @@ function frame(now){
   const dt=Math.min(.033,(now-lastT)/1000);lastT=now;
   const s=active;
   if(s){
-    if(s.state==='playing')s.game.update(dt);else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
+    if(s.state==='playing'&&!s.paused)s.game.update(dt);else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
     if(s.state!=='ready'||s.dirty){s.game.draw(s.ctx);s.dirty=false}
   }
   requestAnimationFrame(frame);
