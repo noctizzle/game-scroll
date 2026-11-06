@@ -29,7 +29,7 @@ function makeSlide(def){
   if(def.retro){const p=PAL[def.pal||'moss'];p.forEach((c,i)=>el.style.setProperty('--lcd'+i,c));el.style.setProperty('--shell',SHELL[def.pal||'moss']);}el.setAttribute('aria-label',def.title);
   el.innerHTML=`
     <div class="stage"><div class="device">
-      ${def.retro?'<div class="bezel-top"><span class="led"></span>DOT MATRIX · POCKET</div>':''}
+      ${def.retro?`<div class="bezel-top${def.era?' dark':''}"><span class="led"></span>${def.era==='advance'?'<b class="era">ADVANCE</b> · POCKET':def.era==='color'?'<b class="era rainbow">COLOR</b> · POCKET':'DOT MATRIX · POCKET'}</div>`:''}
       <div class="screen"><canvas></canvas><div class="hud"><span class="score">0</span></div><div class="overlay"></div></div>
       ${def.retro?'<div class="bezel-bottom"><span class="dpad"></span><span class="ab"><i></i><i></i></span></div>':''}
     </div></div>
@@ -43,7 +43,7 @@ function makeSlide(def){
       </div>
     </div>`;
   const s={def,el,canvas:el.querySelector('canvas'),screen:el.querySelector('.screen'),overlay:el.querySelector('.overlay'),scoreEl:el.querySelector('.score'),
-    state:'ready',score:0,overAt:0,dirty:true};
+    state:'ready',score:0,overAt:0,dirty:true,w:def.w,h:def.h};
   s.ctx=s.canvas.getContext('2d');
   s.game=def.make(s.api={
     score:n=>{s.score=n;s.scoreEl.textContent=n;if(def.goal&&n>=def.goal)win(s)},
@@ -60,7 +60,7 @@ function makeSlide(def){
   el.querySelector('.nextbtn').onclick=()=>goNext(s);
   s.overlay.onclick=e=>{if(Date.now()-s.overAt<550)return;startGame(s)};
   // pointer input
-  const pt=e=>{const r=s.canvas.getBoundingClientRect();return[(e.clientX-r.left)/r.width*def.w,(e.clientY-r.top)/r.height*def.h]};
+  const pt=e=>{const r=s.canvas.getBoundingClientRect();return[(e.clientX-r.left)/r.width*s.w,(e.clientY-r.top)/r.height*s.h]};
   let pressed=false;
   s.canvas.addEventListener('pointerdown',e=>{if(s.state!=='playing')return;pressed=true;try{s.canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();s.game.down&&s.game.down(...pt(e))});
   s.canvas.addEventListener('pointermove',e=>{if(s.state!=='playing')return;s.game.move&&s.game.move(...pt(e),pressed)});
@@ -135,15 +135,22 @@ function goNext(s){
   slides[i+1].el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
 }
 
+// Each game has a base size (def.w x def.h). Games that set maxW / maxH are "fluid": after the base
+// size is scaled to fit, the leftover space is handed to the game as extra width or height (up to
+// the max, in multiples of def.step if set) through game.resize(w, h), so tall phones and unfolded foldables are filled, not letterboxed.
+const CHROME={retro:[28,88],modern:[0,0]};
 function fit(s){
-  const st=s.el.querySelector('.stage'),aw=st.clientWidth,ah=st.clientHeight,d=s.def;
-  if(!aw||!ah)return;
-  let sc;
-  if(d.retro){sc=Math.min((aw-48)/d.w,(ah-110)/d.h);if(sc>=2)sc=Math.floor(sc*2)/2;sc=Math.max(1,sc)}
-  else sc=Math.max(.3,Math.min(aw/d.w,ah/d.h));
-  s.screen.style.width=Math.round(d.w*sc)+'px';s.screen.style.height=Math.round(d.h*sc)+'px';
-  if(d.retro){s.canvas.width=d.w;s.canvas.height=d.h;s.ctx.setTransform(1,0,0,1,0,0)}
-  else{const k=sc*Math.min(2.5,window.devicePixelRatio||1);s.canvas.width=Math.round(d.w*k);s.canvas.height=Math.round(d.h*k);s.ctx.setTransform(k,0,0,k,0,0)}
+  const st=s.el.querySelector('.stage'),d=s.def,[cw,ch]=CHROME[d.retro?'retro':'modern'];
+  const aw=st.clientWidth-cw,ah=st.clientHeight-ch;
+  if(aw<=0||ah<=0)return;
+  let sc=Math.min(aw/d.w,ah/d.h);
+  if(d.retro){if(sc>=2)sc=Math.floor(sc*4)/4;sc=Math.max(1,sc)}else sc=Math.max(.3,sc);
+  const st2=d.step||1,grow=(b,m,a)=>b+Math.floor(Math.max(0,Math.min(m||b,Math.floor(a/sc))-b)/st2)*st2;
+  const w=grow(d.w,d.maxW,aw),h=grow(d.h,d.maxH,ah);
+  if(w!==s.w||h!==s.h){s.w=w;s.h=h;s.game.resize&&s.game.resize(w,h)}
+  s.screen.style.width=Math.round(w*sc)+'px';s.screen.style.height=Math.round(h*sc)+'px';
+  if(d.retro){s.canvas.width=w;s.canvas.height=h;s.ctx.setTransform(1,0,0,1,0,0)}
+  else{const k=sc*Math.min(2.5,window.devicePixelRatio||1);s.canvas.width=Math.round(w*k);s.canvas.height=Math.round(h*k);s.ctx.setTransform(k,0,0,k,0,0)}
   s.ctx.imageSmoothingEnabled=!d.retro;s.dirty=true;
 }
 
@@ -217,4 +224,4 @@ function boot(){initWallet(GAMES);services.init(GAMES);rebuild();requestAnimatio
 boot();
 
 // Test hook used by scripts/smoke.cjs
-window.__gs={GAMES,progress,api:s=>s.api,get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};
+window.__gs={GAMES,progress,api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};

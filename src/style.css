@@ -34,23 +34,26 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #feed{height:100%;overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain;scrollbar-width:none}
 #feed::-webkit-scrollbar{display:none}
 #feed.locked{overflow:hidden}
-.slide{position:relative;height:100%;scroll-snap-align:start;scroll-snap-stop:always;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:10px;
-  padding-block:64px 18px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.slide{position:relative;height:100%;scroll-snap-align:start;scroll-snap-stop:always;display:grid;grid-template-rows:minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);gap:10px;
+  padding-block:60px 12px;padding-left:max(10px,env(safe-area-inset-left,0px));padding-right:max(10px,env(safe-area-inset-right,0px))}
 .slide.retro{background:radial-gradient(120% 70% at 50% 35%,#1d2a1c 0%,var(--ink) 70%)}
 .slide.modern{background:radial-gradient(120% 70% at 50% 35%,#1b1830 0%,var(--ink) 70%)}
 .stage{position:relative;min-height:0;display:flex;align-items:center;justify-content:center}
 
 /* pocket handheld shell */
 .device{position:relative;display:flex;flex-direction:column;align-items:center}
-.retro .device{background:var(--shell);border-radius:14px 14px 40px 14px;padding:12px 14px 14px;box-shadow:inset 0 -4px 0 var(--shell-dark),0 18px 40px #0008}
-.bezel-top{align-self:stretch;display:flex;align-items:center;gap:6px;font:italic 700 9px/1 var(--f-body);color:#5a5f6c;letter-spacing:.14em;margin-bottom:6px}
+.retro .device{background:var(--shell);border-radius:12px 12px 34px 12px;padding:8px 8px 8px;box-shadow:inset 0 -4px 0 var(--shell-dark),0 18px 40px #0008}
+.bezel-top{align-self:stretch;display:flex;align-items:center;gap:6px;font:italic 700 9px/1 var(--f-body);color:#5a5f6c;letter-spacing:.14em;margin-bottom:5px;padding-left:4px}
+.bezel-top.dark{color:#fff9}
+.bezel-top .era{font-weight:800;color:#fff8}
+.bezel-top .rainbow{background:linear-gradient(90deg,#ff5a5a,#ffc23a,#5ad86a,#4ab0ff,#b06aff);-webkit-background-clip:text;background-clip:text;color:transparent}
 .led{width:6px;height:6px;border-radius:50%;background:#55606a}
 .slide.playing .led{background:#ff4b4b;box-shadow:0 0 6px #ff4b4b}
-.bezel-bottom{align-self:stretch;display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:0 6px}
+.bezel-bottom{align-self:stretch;display:flex;justify-content:space-between;align-items:center;margin-top:6px;padding:0 6px}
 .dpad{width:34px;height:34px;background:linear-gradient(#2c2f36,#2c2f36) center/12px 34px no-repeat,linear-gradient(#2c2f36,#2c2f36) center/34px 12px no-repeat}
 .ab{display:flex;gap:8px;transform:rotate(-22deg)}
 .ab i{width:18px;height:18px;border-radius:50%;background:#8a2347;box-shadow:inset 0 -2px 0 #0004}
-.retro .screen{border:10px solid var(--bezel);border-radius:6px 6px 18px 6px}
+.retro .screen{border:6px solid var(--bezel);border-radius:4px 4px 14px 4px}
 
 .screen{position:relative;overflow:hidden}
 .modern .screen{border-radius:22px;box-shadow:0 0 0 1px #ffffff14,0 18px 50px #0009}
@@ -69,7 +72,7 @@ canvas{display:block;width:100%;height:100%;touch-action:pan-y}
 .overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:16px;cursor:pointer;transition:opacity .25s}
 .overlay[hidden]{display:none!important}
 .modern .overlay{background:#0b0a1acc;backdrop-filter:blur(3px)}
-.retro .overlay{background:#c6d98cd9;color:var(--lcd0);gap:12px}
+.retro .overlay{background:color-mix(in srgb,var(--lcd3) 85%,transparent);color:var(--lcd0);gap:12px}
 .ov-k{font:700 11px/1 var(--f-body);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
 .retro .ov-k{font-family:var(--f-pixel);font-size:9px;color:var(--lcd1);letter-spacing:.08em}
 .ov-title{font:800 30px/1.05 var(--f-body);text-wrap:balance}
@@ -93,6 +96,9 @@ canvas{display:block;width:100%;height:100%;touch-action:pan-y}
 .retro .tag{background:var(--lcd2);color:var(--lcd0)}
 .modern .tag{background:#7a6cff;color:#fff}
 .caption h2{margin:0 0 3px;font:800 20px/1.15 var(--f-body)}
+/* portrait phones: the hint is already on the start screen, so keep the caption to one line and give the game the room */
+.caption p{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.caption .tag{margin-bottom:5px}
 .caption p{margin:0;color:var(--muted);font-size:13px;line-height:1.4}
 .rail{display:flex;gap:10px;align-items:center}
 .rbtn{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;color:var(--text);cursor:pointer;font:600 11px/1 var(--f-body);padding:0;min-width:40px}
@@ -113,7 +119,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   .meta{grid-template-columns:1fr;align-content:end;gap:18px}
   .rail{justify-content:flex-start}
   .caption h2{font-size:24px}
-  .caption p{font-size:14px}
+  .caption p{font-size:14px;-webkit-line-clamp:6}
 }
 /* Very short landscape (phone on its side): tighten the top bar spacing */
 @media (max-height: 480px){

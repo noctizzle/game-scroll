@@ -2,7 +2,7 @@ import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 
 function Stack(api){
-  const W=360,H=640,BH=30,D=12,BASE=H-150;let tower,cur,debris,pops,cam,camT,combo,hue0,t;
+  const W=360,BH=30,D=12;let H=640,VW=360,BASE=H-150,tower,cur,debris,pops,cam,camT,combo,hue0,t;
   const col=(L,l)=>gold?`hsl(${44+(L%3)*4} 88% ${l}%)`:`hsl(${(hue0+L*9)%360} 72% ${l}%)`;let gold=false;
   function spawn(){const top=tower[tower.length-1],L=tower.length,left=L%2===0;cur={w:top.w,x:left?-top.w*.5:W-top.w*.5,dir:left?1:-1,sp:Math.min(440,170+L*7)}}
   function block(c,x,yTop,w,h,L,alpha=1){
@@ -37,8 +37,9 @@ function Stack(api){
     draw(c){
       const L=tower.length,g=c.createLinearGradient(0,0,0,H);
       g.addColorStop(0,`hsl(${(hue0+L*9+200)%360} 55% 28%)`);g.addColorStop(1,`hsl(${(hue0+L*9+240)%360} 50% 8%)`);
-      c.fillStyle=g;c.fillRect(0,0,W,H);
-      c.fillStyle='#ffffff10';for(let i=0;i<14;i++){const yy=((i*97+cam*.3)%(H+40))-20;c.fillRect((i*53)%W,yy,2,2)}
+      c.fillStyle=g;c.fillRect(0,0,VW,H);
+      c.fillStyle='#ffffff10';for(let i=0;i<14+VW/40;i++){const yy=((i*97+cam*.3)%(H+40))-20;c.fillRect((i*53)%VW,yy,2,2)}
+      c.save();c.translate((VW-W)/2,0);
       // pedestal
       const b0=tower[0];block(c,b0.x,sy(0),b0.w,H,0);
       for(let i=1;i<tower.length;i++){const k=tower[i];block(c,k.x,sy(i*BH),k.w,BH,i)}
@@ -46,14 +47,16 @@ function Stack(api){
       for(const d of debris){c.save();c.translate(d.x+d.w/2,sy(d.wy)+BH/2);c.rotate(d.rot);block(c,-d.w/2,-BH/2,d.w,BH,d.L,.9);c.restore()}
       c.textAlign='center';c.font='400 14px "Press Start 2P", monospace';
       for(const p of pops){c.globalAlpha=clamp(p.life*1.5,0,1);c.fillStyle='#fff';c.fillText(p.txt,W/2,sy(p.wy));c.globalAlpha=1}
+      c.restore();
     },
+    resize(w,h){VW=w;H=h;BASE=H-150},
     down(){if(cur)drop()},
     key(k,d){if(d&&(k===' '||k==='Enter'))this.down()}
   };
 }
 
 export default {
-  id: 'stack', title: 'Stack Up', tag: 'Casual · Timing', retro: false, w: 360, h: 640,
+  id: 'stack', title: 'Stack Up', tag: 'Casual · Timing', retro: false, w: 360, h: 640, maxW: 600, maxH: 860,
   hint: 'Tap to drop each block. Three perfect drops grow it back.',
   goal: 20,
   board: true,

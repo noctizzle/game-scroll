@@ -4,7 +4,8 @@ import { haptic } from '../kit/device.js';
 
 // Dig down through the dirt for gold. Tap left, right or below the miner to dig that way. Boulders
 // fall when you dig out what holds them up, so don't stand under one. Your lamp oil runs low as you go.
-const P = PAL.amber, W = 160, H = 160, CS = 10, COLS = 16, VIEW = 15;
+const P = PAL.amber, W = 160, CS = 10, COLS = 16;
+let H = 160, VIEW = 15;
 
 function make(api) {
   let map, mx, my, cam, oil, gold, t, rocks, deepest, flash;
@@ -39,7 +40,7 @@ function make(api) {
         if (at(r.x, ny + 1) !== 0 || (r.x === mx && ny + 1 === my && false)) { r.done = true; set(r.x, ny, 3); sfx(90, .15, 'square', .04); haptic('medium'); }
       }
       rocks = rocks.filter(r => !r.done);
-      cam += (Math.max(0, my - 6) - cam) * Math.min(1, dt * 6);
+      cam += (Math.max(0, my - Math.floor(VIEW * .4)) - cam) * Math.min(1, dt * 6);
     },
     draw(c) {
       c.fillStyle = flash ? P[3] : P[2]; c.fillRect(0, 0, W, H);
@@ -58,8 +59,9 @@ function make(api) {
       const g = c.createRadialGradient(px + 5, py + 5, 10, px + 5, py + 5, 30 + oil * 70); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, P[0]); c.fillStyle = g; c.fillRect(0, 0, W, H);
       c.fillStyle = P[0]; c.fillRect(0, 0, W, 10); c.font = '6px "Press Start 2P", monospace'; c.fillStyle = P[3]; c.textAlign = 'left'; c.fillText(`${my}m`, 3, 8);
       c.fillStyle = P[1]; c.fillRect(110, 3, 46, 4); c.fillStyle = oil < .25 ? P[2] : P[3]; c.fillRect(110, 3, 46 * Math.max(0, oil), 4);
-      if (t < 4) { c.fillStyle = P[3]; c.textAlign = 'center'; c.fillText('TAP A SIDE TO DIG', 80, 154); }
+      if (t < 4) { c.fillStyle = P[3]; c.textAlign = 'center'; c.fillText('TAP A SIDE TO DIG', 80, H - 6); }
     },
+    resize(w, h) { H = h; VIEW = Math.ceil(h / CS); },
     down(x, y) {
       const px = mx * CS + 5, py = (my - cam) * CS + 15, dx = x - px, dy = y - py;
       if (Math.abs(dx) > Math.abs(dy)) dig(dx > 0 ? 1 : -1, 0); else if (dy > 0) dig(0, 1); else { haptic('tick'); }
@@ -69,7 +71,7 @@ function make(api) {
 }
 
 export default {
-  id: 'gold-digger', title: 'Gold Digger', tag: 'Pocket · Puzzle', retro: true, w: W, h: H, pal: 'amber', goal: 20,
+  id: 'gold-digger', title: 'Gold Digger', tag: 'Pocket · Puzzle', retro: true, w: 160, h: 160, maxH: 240, pal: 'amber', goal: 20,
   hint: 'Tap left, right or below the miner to dig. Grab gold and oil cans for your lamp. Boulders fall when you dig out what is under them, so step aside.',
   make,
 };
