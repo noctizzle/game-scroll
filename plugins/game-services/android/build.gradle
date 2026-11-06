@@ -2,6 +2,7 @@
 ext {
     // Check https://developers.google.com/games/services/android/release-notes for the newest version.
     playGamesVersion = project.hasProperty('playGamesVersion') ? rootProject.ext.playGamesVersion : '20.1.2'
+    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
 }
 
 buildscript {
@@ -35,5 +36,7 @@ repositories {
 
 dependencies {
     implementation project(':capacitor-android')
+    // getActivity() returns an AppCompatActivity, so javac needs it on the classpath
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "com.google.android.gms:play-services-games-v2:$playGamesVersion"
 }
