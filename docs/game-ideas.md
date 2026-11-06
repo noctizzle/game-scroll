@@ -68,7 +68,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [ ] Snowball Roll — roll a growing snowball; bigger is slower but smashes obstacles
 - [ ] Gold Digger — tunnel down through dirt, collect gems, don't get crushed by boulders
 - [x] Pinball Pocket — two flippers, one table, three balls
-- [ ] Traffic Light — control a crossing's lights so cars and walkers never collide
+- [x] Traffic Light — control a crossing's lights so cars and walkers never collide
 - [ ] Number Merge Grid — slide tiles on a 4x4 grid to merge equal numbers (sum target per run)
 - [ ] Frog Tongue — aim a sticky tongue at passing flies, chain combos
 - [ ] Kite Flyer — keep a kite in the wind band by tugging the string
@@ -199,20 +199,20 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 
 ## Strategy and sim micro games 📱
 
-- [ ] Tiny Tower Defense — place three towers, survive one wave
-- [ ] Lemonade Stand Day — set price and stock against the weather forecast, one day
+- [x] Tiny Tower Defense — build dart, frost and boom towers on pads beside a path; survive five waves
+- [x] Lemonade Stand — set cups and price against the forecast, five days
 - [ ] Ant Colony Path — draw a path for ants from nest to food
 - [ ] Garden Grow — water the right plants in time, avoid overwatering
-- [ ] Dungeon Door — pick doors with risk/reward to get as deep as possible
-- [ ] Rock Paper Duel — best of five against a CPU with patterns to read
-- [ ] Card Higher Lower — guess higher or lower, cash out any time
+- [x] Dungeon Door — pick doors with risk/reward to get as deep as possible
+- [x] Rock Paper Duel — beat CPU opponents whose habits you read from their history
+- [x] Higher or Lower — guess the next card, long shots pay more, cash out any time
 - [ ] Auction Snipe — bid against bots in a 10-second auction
 - [ ] Traffic Grid — set light timings on a 2x2 grid to clear rush hour
 - [ ] Fire Brigade — route fire trucks to fires on a small town map
 - [ ] Shepherd's Fence — place fence pieces to enclose the most sheep
 - [ ] Pirate Cannons — angle cannon broadsides against a moving ship
-- [ ] Kingdom Choices — swipe left or right on decisions, keep four meters balanced
-- [ ] Chef Orders — assemble burgers matching orders before customers leave
+- [x] Town Mayor — swipe left or right on townsfolk requests, keep Food, Gold, Mood and Safety balanced
+- [x] Chef Orders — assemble burgers matching orders before customers leave
 - [ ] Space Mining — send drones to asteroids, balance fuel and cargo
 
 ## Physics toys 📱
