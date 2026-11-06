@@ -72,5 +72,6 @@ function make(api) {
 export default {
   id: 'orbit-jump', title: 'Orbit Jump', tag: 'Casual · Timing', retro: false, w: W, h: H,
   hint: 'Tap to launch from your orbit. Fly close to a planet and its pull catches you.',
+  goal: 15,
   make,
 };

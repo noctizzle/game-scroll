@@ -42,5 +42,6 @@ function make(api) {
 export default {
   id: 'lane-racer', title: 'Lane Racer', tag: 'Pocket · Racing', retro: true, w: W, h: H, pal: 'mono',
   hint: 'Tap left or right to switch lanes. Pass as many cars as you can.',
+  goal: 30,
   make,
 };

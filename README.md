@@ -39,6 +39,7 @@ export default {
   pal: 'moss',           // retro only: a key from src/palettes.js
   w: 360, h: 640,        // logical canvas size (pocket games use 160x160)
   hint: 'One sentence on how to play.',
+  goal: 30,              // score that counts as a win and pays credits (required)
   make(api) {            // api.score(n), api.over()
     return { reset() {}, update(dt) {}, draw(ctx) {}, down(x, y) {}, move(x, y, pressed) {}, up(x, y) {}, key(k, isDown) {}, fx(dt) {} };
   },
@@ -50,6 +51,10 @@ export default {
 ## Phone features
 
 `src/kit/device.js` gives games haptics (including short/long `buzz()` patterns), tilt, shake, face-down detection (`faceDown()`), compass heading, GPS location, the microphone and the camera. On web and desktop, or when the player refuses a permission, these calls do nothing or return `null`. That means every game needs a touch fallback (for example, drag instead of tilt). Call `want('motion')` in `make()` for tilt, shake or compass games: iOS asks for motion permission on the player's next tap. The usage strings for iOS and the permissions for Android are already set.
+
+## Credits, trophies and cloud saves
+
+Winning any game pays credits, which some games let you spend on items. Trophies, leaderboards and cloud saves go through Game Center on iOS and Play Games on Android. See [docs/game-services.md](docs/game-services.md) for the game fields (`goal`, `reward`, `shop`, `board`), the `api.win()` / `api.has()` hooks, and the store setup steps.
 
 ## Foldables
 
@@ -71,4 +76,4 @@ The app supports folding and unfolding mid-game (tested at Galaxy Z Fold 8 and i
 
 ## Roadmap
 
-Launch target is **1000 unique games** (distinct mechanics, not reskins), built in batches of about eight. There are 101 so far. The idea list lives in `docs/game-ideas.md`, with built games ticked.
+Launch target is **1000 unique games** (distinct mechanics, not reskins), built in batches of about eight. There are 109 so far. Games can be fluid: set `maxW`/`maxH` (and optional `step`) and implement `resize(w, h)` to receive the extra space on tall or unfolded screens. The idea list lives in `docs/game-ideas.md`, with built games ticked.

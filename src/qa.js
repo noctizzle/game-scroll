@@ -8,6 +8,7 @@
 //   unhide buttons, and "Copy report" to paste into chat.
 // - BENCHED games are hidden for everyone (still in the code, waiting for a fix or a delete).
 import { store } from './util.js';
+import { progress } from './kit/progress.js';
 
 /** Hidden from the feed for everyone. Add an id here to pull a game without deleting its file. */
 export const BENCHED = new Set([]);
@@ -86,3 +87,6 @@ export function openPanel(games, best, onChange) {
   el.querySelectorAll('.qa-un').forEach(b => b.onclick = () => { const id = b.closest('li').dataset.id; setRating(id, 0); b.closest('li').querySelector('.qa-r').textContent = '·'; b.remove(); onChange?.(); });
   el.showModal();
 }
+
+// Ride along in the Game Center / Play Games cloud save so hearts and Meh follow you between devices.
+progress.section('ratings', { snapshot: ratingsSnapshot, merge: mergeRatings });

@@ -63,5 +63,6 @@ function Slice(api){
 export default {
   id: 'slice', title: 'Slice Rush', tag: 'Casual · Swipe', retro: false, w: 360, h: 640,
   hint: 'Swipe through fruit. Miss three or hit a bomb and it ends.',
+  goal: 40,
   make: Slice,
 };

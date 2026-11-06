@@ -13,7 +13,8 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.5.3"),
         .package(name: "CapacitorGeolocation", path: "../../../node_modules/@capacitor/geolocation"),
-        .package(name: "CapacitorHaptics", path: "../../../node_modules/@capacitor/haptics")
+        .package(name: "CapacitorHaptics", path: "../../../node_modules/@capacitor/haptics"),
+        .package(name: "GameServices", path: "../../../plugins/game-services")
     ],
     targets: [
         .target(
@@ -22,7 +23,8 @@ let package = Package(
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
                 .product(name: "CapacitorGeolocation", package: "CapacitorGeolocation"),
-                .product(name: "CapacitorHaptics", package: "CapacitorHaptics")
+                .product(name: "CapacitorHaptics", package: "CapacitorHaptics"),
+                .product(name: "GameServices", package: "GameServices")
             ]
         )
     ]

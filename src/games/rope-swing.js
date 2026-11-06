@@ -51,5 +51,6 @@ function make(api) {
 export default {
   id: 'rope-swing', title: 'Rope Swing', tag: 'Casual · Physics', retro: false, w: W, h: H,
   hint: 'Hold to grab the glowing hook and swing. Let go at the top of the arc to fly further.',
+  goal: 200,
   make,
 };
