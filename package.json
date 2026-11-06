@@ -2,6 +2,8 @@
   "name": "game-scroll",
   "private": true,
   "version": "0.1.0",
+  "license": "UNLICENSED",
+  "author": "Rob (https://github.com/robthewizzuk)",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
