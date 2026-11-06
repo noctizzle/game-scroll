@@ -2,29 +2,31 @@ import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
 
-// You're in goal. Read the striker's run-up and tap where the ball is going to dive there.
+// You're in goal. The striker runs in from one side and shoots across to the other. Tap where the
+// ball is going: the keeper takes a moment to get there, so reading the run-up early is what saves it.
 // Shots get faster, and later strikers sometimes fake their angle. Three goals against and you're out.
-const W = 360, H = 640, GX = 30, GY = 400, GW = 300, GH = 150, REACH = 46;
+const W = 360, H = 640, GX = 30, GY = 400, GW = 300, GH = 150, REACH = 46, KEEPER_SPEED = 480;
 
 function make(api) {
   let saves, conceded, shot, keeper, phase, wait, msg, t, striker, net;
   function nextShot() {
     const side = Math.random() < .5 ? -1 : 1, fake = saves >= 5 && Math.random() < .25;
-    const tx = W / 2 + side * rnd(40, GW / 2 - 18) * (Math.random() < .15 ? 0 : 1), ty = rnd(GY + 20, GY + GH - 20);
+    const tx = W / 2 + side * rnd(62, GW / 2 - 18), ty = rnd(GY + 20, GY + GH - 20);
     // The striker approaches from the opposite side to where they'll shoot (unless it's a fake).
-    striker = { x: W / 2 - side * (fake ? -1 : 1) * 60, y: 140, run: 0 };
-    shot = { tx, ty, k: 0, dur: Math.max(.42, .95 - saves * .035), curve: rnd(-30, 30) };
+    striker = { x: W / 2 - side * (fake ? -1 : 1) * 110, y: 120, run: 0 }; striker.x0 = striker.x;
+    shot = { tx, ty, k: 0, dur: Math.max(.5, 1 - saves * .03), curve: rnd(-20, 20) * side };
     keeper = { x: W / 2, y: GY + GH - 50, tx: W / 2, ty: GY + GH - 50, dive: 0 };
-    phase = 'runup'; wait = rnd(.9, 1.4);
+    phase = 'runup'; wait = rnd(1.1, 1.5);
   }
   return {
+    _st: () => ({ phase, k: shot.k, tx: shot.tx, ty: shot.ty, dived: keeper.dive, strikerStartX: striker.x0 }),
     reset() { saves = 0; conceded = 0; msg = null; t = 0; net = 0; nextShot(); },
     update(dt) {
       t += dt; if (msg) msg.life -= dt; net = Math.max(0, net - dt * 2);
-      const k = keeper; const dx = k.tx - k.x, dy = k.ty - k.y, d = Math.hypot(dx, dy), step = 900 * dt;
+      const k = keeper; const dx = k.tx - k.x, dy = k.ty - k.y, d = Math.hypot(dx, dy), step = KEEPER_SPEED * dt;
       if (d > step) { k.x += dx / d * step; k.y += dy / d * step; } else { k.x = k.tx; k.y = k.ty; }
       if (phase === 'runup') {
-        wait -= dt; striker.run += dt; striker.x += (W / 2 - striker.x) * dt * 1.6; striker.y += (205 - striker.y) * dt * 1.6;
+        wait -= dt; striker.run += dt; striker.x += (W / 2 - striker.x) * dt * 1.15; striker.y += (205 - striker.y) * dt * 1.15;
         if (wait <= 0) { phase = 'shot'; sfx(90, .1, 'triangle', .07); haptic('light'); }
       } else if (phase === 'shot') {
         shot.k += dt / shot.dur;
@@ -59,17 +61,17 @@ function make(api) {
       const drawBall = () => { c.fillStyle = '#fff'; c.beginPath(); c.arc(bx, by, br, 0, 7); c.fill(); c.fillStyle = '#222'; c.beginPath(); c.arc(bx + br * .2, by - br * .1, br * .35, 0, 7); c.fill(); };
       if (ballBehind) drawBall();
       // keeper (from behind, big)
-      const k = keeper, lean = clamp((k.x - W / 2) / 120, -1, 1);
-      c.save(); c.translate(k.x, k.y); c.rotate(lean * .7);
+      const k = keeper, lean = clamp((k.x - W / 2) / 110, -1, 1);
+      c.save(); c.translate(k.x, k.y); c.rotate(lean * 1.1);
       c.fillStyle = '#ffd34a'; c.fillRect(-18, -30, 36, 46); c.fillStyle = '#202040'; c.fillRect(-16, 16, 32, 18);
       c.fillStyle = '#5a3a22'; c.beginPath(); c.arc(0, -42, 13, 0, 7); c.fill();
       c.strokeStyle = '#ffd34a'; c.lineWidth = 9; c.lineCap = 'round'; c.beginPath(); c.moveTo(-16, -24); c.lineTo(-36, -52); c.moveTo(16, -24); c.lineTo(36, -52); c.stroke();
       c.fillStyle = '#4ad3ff'; c.beginPath(); c.arc(-38, -56, 9, 0, 7); c.arc(38, -56, 9, 0, 7); c.fill(); c.lineCap = 'butt';
       c.restore();
       if (!ballBehind) drawBall();
-      c.font = '400 10px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = '#ffffffcc'; c.fillText('GOALS', 12, 22);
+      c.font = '400 10px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = '#ffffffcc'; c.fillText('LET IN', 12, 22);
       for (let i = 0; i < 3; i++) { c.fillStyle = i < conceded ? '#ff5050' : '#ffffff40'; c.beginPath(); c.arc(20 + i * 18, 38, 6, 0, 7); c.fill(); }
-      if (t < 4 && saves === 0) { c.fillStyle = '#ffffffcc'; c.font = '600 14px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('tap where the ball is going to dive', W / 2, H - 40); }
+      if (t < 4 && saves === 0) { c.fillStyle = '#ffffffcc'; c.font = '600 14px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('striker runs in from one side, shoots to the other', W / 2, H - 40); }
       if (msg && msg.life > 0) { c.globalAlpha = clamp(msg.life * 2, 0, 1); c.fillStyle = msg.good ? '#ffd34a' : '#ff6060'; c.font = '400 22px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(msg.txt, W / 2, 330); c.globalAlpha = 1; }
     },
     down(x, y) {
@@ -77,12 +79,12 @@ function make(api) {
       keeper.dive = 1; keeper.tx = clamp(x, GX + 10, GX + GW - 10); keeper.ty = clamp(y + 40, GY + 50, GY + GH + 10);
       haptic('medium'); sfx(200, .08, 'triangle', .05, -60);
     },
-    key(k, d) { if (!d || keeper.dive) return; const dir = k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0; if (k === 'ArrowLeft' || k === 'ArrowRight' || k === ' ') { keeper.dive = 1; keeper.tx = W / 2 + dir * 110; } },
+    key(k, d) { if (!d || keeper.dive) return; const dir = k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0; if (k === 'ArrowLeft' || k === 'ArrowRight' || k === ' ') { keeper.dive = 1; keeper.tx = W / 2 + dir * 110; keeper.ty = GY + GH - 40; } },
   };
 }
 
 export default {
   id: 'penalty-keeper', title: 'Penalty Keeper', tag: 'Casual · Sports', retro: false, w: W, h: H, goal: 8,
-  hint: 'You are the keeper. Watch which way the striker runs in, then tap where the ball will go to dive. You only get one dive per shot.',
+  hint: 'You are the keeper. The striker runs in from one side and shoots to the other. Tap where the ball is going to dive. One dive per shot; three goals and you are out.',
   make,
 };
