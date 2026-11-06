@@ -227,3 +227,15 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Magnet Pull — your finger is a magnet; pull a steel ball past spikes into a ring
 - [x] Spring Jumper — pogo across rooftops; hold to squeeze the spring for bigger jumps
 - [x] Water Rocket — pump and launch a water rocket to a target height
+
+## Colour and Advance era 🌈
+Full-colour pocket games in the spirit of the late-90s / early-2000s colour handhelds. They are fluid: the screen grows taller on tall phones and wider on unfolded foldables.
+- [x] Sling Smash: slingshot stones at blobs hiding in wood, glass and stone forts
+- [x] Critter Quest: walk the grass, battle and catch original critters (three-type triangle)
+- [x] Pocket Kart: flat-plane scaling kart racer, overtake rivals, beat the lap clock
+- [x] Panel Rise: rising-stack panel swap puzzle with chains
+- [x] Sword Rooms: top-down dungeon rooms, sword swings, door opens when cleared
+- [x] Hop Quest: side-scrolling platformer with stomps, coins, one-way ledges and a flag
+- [x] Star Bloom: vertical shooter with power levels and flagship bosses
+- [x] Pocket Tactics: turn-based grid war with infantry, tanks and artillery
+- Brick Bounce was rebuilt as a colour game with power-up capsules, silver/gold bricks and lives

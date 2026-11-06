@@ -96,7 +96,7 @@ function goNext(s){
 
 // Each game has a base size (def.w x def.h). Games that set maxW / maxH are "fluid": after the base
 // size is scaled to fit, the leftover space is handed to the game as extra width or height (up to
-// the max) through game.resize(w, h), so tall phones and unfolded foldables are filled, not letterboxed.
+// the max, in multiples of def.step if set) through game.resize(w, h), so tall phones and unfolded foldables are filled, not letterboxed.
 const CHROME={retro:[28,88],modern:[0,0]};
 function fit(s){
   const st=s.el.querySelector('.stage'),d=s.def,[cw,ch]=CHROME[d.retro?'retro':'modern'];
@@ -104,7 +104,8 @@ function fit(s){
   if(aw<=0||ah<=0)return;
   let sc=Math.min(aw/d.w,ah/d.h);
   if(d.retro){if(sc>=2)sc=Math.floor(sc*4)/4;sc=Math.max(1,sc)}else sc=Math.max(.3,sc);
-  const w=Math.max(d.w,Math.min(d.maxW||d.w,Math.floor(aw/sc))),h=Math.max(d.h,Math.min(d.maxH||d.h,Math.floor(ah/sc)));
+  const st2=d.step||1,grow=(b,m,a)=>b+Math.floor(Math.max(0,Math.min(m||b,Math.floor(a/sc))-b)/st2)*st2;
+  const w=grow(d.w,d.maxW,aw),h=grow(d.h,d.maxH,ah);
   if(w!==s.w||h!==s.h){s.w=w;s.h=h;s.game.resize&&s.game.resize(w,h)}
   s.screen.style.width=Math.round(w*sc)+'px';s.screen.style.height=Math.round(h*sc)+'px';
   if(d.retro){s.canvas.width=w;s.canvas.height=h;s.ctx.setTransform(1,0,0,1,0,0)}

@@ -184,7 +184,7 @@ function make(api) {
 }
 
 export default {
-  id: 'critter-quest', title: 'Critter Quest', tag: 'Color · RPG', retro: true, era: 'color', pal: 'berry', w: 160, h: 160, maxW: 240, maxH: 300, goal: 15,
+  id: 'critter-quest', title: 'Critter Quest', tag: 'Color · RPG', retro: true, era: 'color', pal: 'berry', w: 160, h: 160, maxW: 240, maxH: 300, goal: 15, step: 16,
   hint: 'Pick a partner, then tap a side to walk. Wild critters hide in tall grass: fight them for XP, or weaken them and throw a jar to catch them. Ember beats Sprout, Sprout beats Ripple, Ripple beats Ember. Berries heal your team.',
   make,
 };
