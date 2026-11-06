@@ -232,7 +232,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 Full-colour pocket games in the spirit of the late-90s / early-2000s colour handhelds. They are fluid: the screen grows taller on tall phones and wider on unfolded foldables.
 - [x] Sling Smash: slingshot stones at blobs hiding in wood, glass and stone forts
 - [x] Critter Quest: walk the grass, battle and catch original critters (three-type triangle)
-- [x] Pocket Kart: flat-plane scaling kart racer, overtake rivals, beat the lap clock
+- [x] Pocket Kart: flat-plane scaling kart racer, 2-lap races on 4 themed tracks against 5 rival drivers, podium wins
 - [x] Panel Rise: rising-stack panel swap puzzle with chains
 - [x] Sword Rooms: top-down dungeon rooms, sword swings, door opens when cleared
 - [x] Hop Quest: side-scrolling platformer with stomps, coins, one-way ledges and a flag
