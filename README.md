@@ -20,6 +20,14 @@ npm run ios            # build, sync and open Xcode
 npm run android        # build, sync and open Android Studio
 ```
 
+### Android APK from GitHub
+
+Every push to `main` builds a debug APK (`.github/workflows/android-apk.yml`) and publishes it as the "Latest Android build" release. On the phone, signed in to GitHub in the browser, open https://github.com/robthewizzuk/game-scroll/releases/latest and tap `game-scroll.apk`. Builds share one debug key (`android/app/debug.keystore`), so each new APK installs over the old one and keeps progress. To build without pushing, run the workflow by hand from the Actions tab.
+
+### iPhone .ipa from GitHub
+
+There is no paid Apple Developer account yet, so the `iOS IPA (unsigned)` workflow (`.github/workflows/ios-ipa.yml`) builds an unsigned `.ipa` that testers sideload with Sideloadly and a free Apple ID (reinstall every 7 days). Run it by hand from the Actions tab; it publishes to the "Latest iOS build" release. Install steps: [docs/ios-sideload.md](docs/ios-sideload.md).
+
 ## Adding a game
 
 Every file in `src/games/` is one game and is picked up by the feed automatically. A game exports:
@@ -42,7 +50,7 @@ export default {
 
 ## Phone features
 
-`src/kit/device.js` gives games haptics, tilt, shake, compass heading, GPS location, the microphone and the camera. On web and desktop, or when the player refuses a permission, these calls do nothing or return `null`. That means every game needs a touch fallback (for example, drag instead of tilt). Call `want('motion')` in `make()` for tilt, shake or compass games: iOS asks for motion permission on the player's next tap. The usage strings for iOS and the permissions for Android are already set.
+`src/kit/device.js` gives games haptics (including short/long `buzz()` patterns), tilt, shake, face-down detection (`faceDown()`), compass heading, GPS location, the microphone and the camera. On web and desktop, or when the player refuses a permission, these calls do nothing or return `null`. That means every game needs a touch fallback (for example, drag instead of tilt). Call `want('motion')` in `make()` for tilt, shake or compass games: iOS asks for motion permission on the player's next tap. The usage strings for iOS and the permissions for Android are already set.
 
 ## Credits, trophies and cloud saves
 
@@ -58,4 +66,4 @@ The app supports folding and unfolding mid-game (tested at Galaxy Z Fold 8 and i
 
 ## Roadmap
 
-Launch target is **1000 unique games** (distinct mechanics, not reskins), built in batches. The idea list lives in `docs/game-ideas.md`.
+Launch target is **1000 unique games** (distinct mechanics, not reskins), built in batches of about eight. There are 101 so far. The idea list lives in `docs/game-ideas.md`, with built games ticked.

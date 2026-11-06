@@ -1,0 +1,101 @@
+import { clamp, rnd } from '../util.js';
+import { sfx } from '../sfx.js';
+import { PAL } from '../palettes.js';
+import { haptic } from '../kit/device.js';
+
+// Turn-based artillery on a hill. Drag back from your tank to aim and set power, then let go.
+// Mind the wind. Each enemy tank you hit brings a sharper one. Get hit once and it's over.
+const P = PAL.moss, W = 160, H = 160, G = 90, MAXP = 120;
+
+function make(api) {
+  let ground, me, foe, shell, turn, wind, score, aim, boom, wait, foeErr, t, shake;
+  function terrain() {
+    ground = new Float32Array(W); const a = rnd(0, 6), b = rnd(0, 6), hill = rnd(20, 50);
+    for (let x = 0; x < W; x++) ground[x] = 128 - Math.sin(x / W * Math.PI) * hill - Math.sin(x / 13 + a) * 4 - Math.sin(x / 29 + b) * 7;
+  }
+  function newRound() {
+    terrain(); me = { x: Math.round(rnd(12, 30)) }; foe = { x: Math.round(rnd(130, 148)) };
+    wind = Math.round(rnd(-20, 20)); turn = 'me'; shell = null; boom = null; wait = 0; foeErr = Math.max(.04, .3 - score * .05);
+  }
+  const gy = x => ground[clamp(Math.round(x), 0, W - 1)];
+  function fire(from, ang, pow, who) { shell = { x: from.x, y: gy(from.x) - 6, vx: Math.cos(ang) * pow, vy: -Math.sin(ang) * pow, who, trail: [] }; sfx(200, .12, 'square', .05, -80); haptic('medium'); }
+  // Fly a test shot and return where it lands, used by the enemy to aim.
+  function landX(from, ang, pow) {
+    let x = from.x, y = gy(from.x) - 6, vx = Math.cos(ang) * pow, vy = -Math.sin(ang) * pow;
+    for (let i = 0; i < 600; i++) { vx += wind * .02; vy += G * .02; x += vx * .02; y += vy * .02; if (x < 0 || x >= W) return x; if (y >= gy(x)) return x; }
+    return x;
+  }
+  function explode(x, y) {
+    boom = { x, y, l: .5 }; shake = .3; sfx(80, .4, 'square', .06, -30); haptic('heavy');
+    for (let i = -7; i <= 7; i++) { const xx = Math.round(x) + i; if (xx < 0 || xx >= W) continue; const d = Math.sqrt(49 - i * i); if (ground[xx] < y + d) ground[xx] = Math.min(150, Math.max(ground[xx], y + d)); }
+    const hitFoe = Math.hypot(foe.x - x, gy(foe.x) - 3 - y) < 9, hitMe = Math.hypot(me.x - x, gy(me.x) - 3 - y) < 9;
+    if (hitFoe) { score++; api.score(score); haptic('success'); wait = 1.2; turn = 'next'; return; }
+    if (hitMe) { haptic('error'); turn = 'dead'; wait = .6; return; }
+    turn = shell.who === 'me' ? 'foe' : 'me'; wait = turn === 'foe' ? .9 : 0;
+  }
+  return {
+    reset() { score = 0; t = 0; aim = null; shake = 0; newRound(); },
+    update(dt) {
+      t += dt; shake = Math.max(0, shake - dt); if (boom) { boom.l -= dt; if (boom.l <= 0) boom = null; }
+      if (shell) {
+        for (let s = 0; s < 3; s++) {
+          const h = dt / 3; shell.vx += wind * h; shell.vy += G * h; shell.x += shell.vx * h; shell.y += shell.vy * h;
+          if (shell.x < -10 || shell.x > W + 10 || shell.y > H) { const who = shell.who; shell = null; turn = who === 'me' ? 'foe' : 'me'; wait = .9; return; }
+          if (shell.x >= 0 && shell.x < W && shell.y >= gy(shell.x)) { const s2 = shell; explode(s2.x, s2.y); shell = null; return; }
+        }
+        if ((t * 30 | 0) % 2) shell.trail.push([shell.x, shell.y]);
+        return;
+      }
+      if (wait > 0) { wait -= dt; if (wait > 0) return; }
+      if (turn === 'dead') return api.over();
+      if (turn === 'next') return newRound();
+      if (turn === 'foe') {
+        // Search for the power that lands on the player, then add a shrinking error.
+        const ang = Math.PI - rnd(.6, 1.1); let best = 60, bd = 1e9;
+        for (let p = 30; p <= MAXP; p += 2) { const d = Math.abs(landX(foe, ang, p) - me.x); if (d < bd) { bd = d; best = p; } }
+        fire(foe, ang, best * (1 + rnd(-foeErr, foeErr)), 'foe'); turn = 'flying';
+      }
+    },
+    draw(c) {
+      c.save(); if (shake) c.translate(rnd(-1, 1) * shake * 6, 0);
+      c.fillStyle = P[3]; c.fillRect(-4, 0, W + 8, H);
+      c.fillStyle = P[2]; for (let x = 0; x < W; x++) c.fillRect(x, Math.round(ground[x]), 1, H - Math.round(ground[x]));
+      c.fillStyle = P[1]; for (let x = 0; x < W; x++) c.fillRect(x, Math.round(ground[x]), 1, 2);
+      const tank = (x, col, dir, ang) => {
+        const y = Math.round(gy(x)); c.fillStyle = col; c.fillRect(x - 5, y - 4, 11, 4); c.fillRect(x - 3, y - 7, 7, 3);
+        c.strokeStyle = col; c.lineWidth = 2; c.beginPath(); c.moveTo(x, y - 6); c.lineTo(x + Math.cos(ang) * 7, y - 6 - Math.sin(ang) * 7); c.stroke();
+      };
+      const myAng = aim ? Math.atan2(aim.dy, -aim.dx) : Math.PI / 4;
+      tank(me.x, P[0], 1, myAng); tank(foe.x, P[1], -1, Math.PI * .75);
+      if (aim && turn === 'me') {
+        const pow = clamp(Math.hypot(aim.dx, aim.dy) * 1.6, 20, MAXP);
+        let x = me.x, y = gy(me.x) - 6, vx = Math.cos(myAng) * pow, vy = -Math.sin(myAng) * pow;
+        c.fillStyle = P[0]; for (let i = 0; i < 14; i++) { for (let k = 0; k < 4; k++) { vy += G * .015; x += vx * .015; y += vy * .015; } c.fillRect(Math.round(x), Math.round(y), 1, 1); }
+        c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillText(`PWR ${Math.round(pow / MAXP * 100)}`, 4, 20);
+      }
+      if (shell) { c.fillStyle = P[0]; for (const [x, y] of shell.trail.slice(-12)) c.fillRect(Math.round(x), Math.round(y), 1, 1); c.fillRect(Math.round(shell.x) - 1, Math.round(shell.y) - 1, 3, 3); }
+      if (boom) { c.fillStyle = P[0]; c.globalAlpha = boom.l * 2; c.beginPath(); c.arc(boom.x, boom.y, 9 * (1 - boom.l), 0, 7); c.fill(); c.globalAlpha = 1; }
+      c.restore();
+      // wind gauge top-left, turn top-right
+      c.fillStyle = P[0]; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillText('WIND', 4, 10);
+      c.fillRect(32, 6, 1, 5); c.fillRect(32, 8, Math.round(wind / 2), 1); if (wind) c.fillRect(32 + Math.round(wind / 2) - (wind > 0 ? 1 : 0), 7, 1, 3);
+      c.textAlign = 'right'; c.fillText(turn === 'me' ? 'YOUR SHOT' : turn === 'foe' || turn === 'flying' && shell?.who === 'foe' ? 'INCOMING' : '', W - 4, 10);
+    },
+    down(x, y) { if (turn !== 'me' || shell || wait > 0) return; aim = { x, y, dx: 0, dy: 0 }; },
+    move(x, y) { if (aim) { const ox = aim.dx; aim.dx = x - aim.x; aim.dy = y - aim.y; if (Math.round(ox / 8) !== Math.round(aim.dx / 8)) haptic('tick'); } },
+    up() {
+      if (!aim) return; const a = aim; aim = null;
+      if (Math.hypot(a.dx, a.dy) < 6 || turn !== 'me') return;
+      // Slingshot: pull back and down-left to fire up-right.
+      const ang = Math.atan2(a.dy, -a.dx), pow = clamp(Math.hypot(a.dx, a.dy) * 1.6, 20, MAXP);
+      fire(me, ang, pow, 'me'); turn = 'flying';
+    },
+    key(k, d) { if (d && k === ' ' && turn === 'me' && !shell) { fire(me, Math.PI / 4, rnd(70, 100), 'me'); turn = 'flying'; } },
+  };
+}
+
+export default {
+  id: 'tank-duel', title: 'Tank Duel', tag: 'Pocket · Strategy', retro: true, w: W, h: H, pal: 'moss', goal: 3,
+  hint: 'Drag back from your tank like a slingshot to aim, then let go to fire. Watch the wind. One hit on you ends the duel.',
+  make,
+};

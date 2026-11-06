@@ -49,7 +49,7 @@
 	<string>Main</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
@@ -72,6 +72,8 @@
 	<string>Some games use the camera, like finding real-world colours. Nothing is saved or sent.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Some games react to your voice, like shouting to launch a rocket. Audio is never recorded or sent.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSMotionUsageDescription</key>
 	<string>Some games are played by tilting or shaking your phone.</string>
 </dict>

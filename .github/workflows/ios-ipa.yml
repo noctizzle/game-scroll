@@ -1,0 +1,96 @@
+# Builds an UNSIGNED .ipa of the iOS app, for sideloading with a free Apple ID (Sideloadly, AltStore).
+# The sideloading tool signs it with the tester's own Apple ID; free-account installs expire after 7 days.
+# Steps for testers: docs/ios-sideload.md
+#
+# Run it by hand: Actions tab -> "iOS IPA (unsigned)" -> Run workflow.
+# Manual on purpose: macOS runners use private-repo Actions minutes 10x faster than Linux.
+# Each run replaces the "Latest iOS build" release (tag ios-latest), so the download link never changes.
+name: iOS IPA (unsigned)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-ipa
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26  # pinned: Xcode 26, which Capacitor 8 needs
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Show the Xcode version
+        run: xcodebuild -version
+
+      - name: Install
+        run: npm ci
+
+      - name: Build the web app
+        run: npm run build
+
+      - name: Copy it into the iOS project
+        run: npx cap sync ios
+
+      - name: Build the app without signing
+        run: |
+          xcodebuild build \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+
+      - name: Package the .ipa
+        run: |
+          APP="$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/App.app"
+          test -d "$APP"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/game-scroll.ipa" Payload)
+          ls -l game-scroll.ipa
+
+      - name: Check the app is complete
+        run: |
+          APP="$RUNNER_TEMP/ipa/Payload/App.app"
+          du -sh "$APP"; du -sh "$APP"/* | sort -h | tail -8
+          test -f "$APP/public/index.html" || { echo "::error::Web app missing from the bundle"; exit 1; }
+          # Every @rpath framework the app links must be inside the bundle, or it crashes on launch.
+          for fw in $(otool -L "$APP/App" | awk '/@rpath\//{print $1}'); do
+            name="${fw#@rpath/}"
+            test -e "$APP/Frameworks/$name" || { echo "::error::$name is linked but not bundled"; exit 1; }
+            echo "bundled: $name"
+          done
+          otool -L "$APP/App"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: game-scroll-ipa
+          path: game-scroll.ipa
+          retention-days: 14
+
+      - name: Publish as the latest iOS release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ios-latest --cleanup-tag --yes || true
+          gh release create ios-latest game-scroll.ipa \
+            --target "$GITHUB_SHA" \
+            --title "Latest iOS build (#${GITHUB_RUN_NUMBER})" \
+            --notes "Unsigned iOS app built from ${GITHUB_SHA::7} on $(date -u '+%d %b %Y %H:%M') UTC. Install it with Sideloadly and a free Apple ID: see docs/ios-sideload.md." \
+            --latest=false
