@@ -107,7 +107,14 @@ function make(api) {
   let note;
   function msgWalk(txt) { note = { txt, l: 1.3 }; }
   function pickRect(i) { const s = Math.min(3, Math.floor((W - 16) / 3 / 12)), w = 12 * s; return { x: (W - 3 * w - 16) / 2 + i * (w + 8), y: H / 2 - w / 2, w, s }; }
-  const btn = i => { const bw = (W - 6) / 2 | 0, by = H - 30; return { x: 2 + (i % 2) * (bw + 2), y: by + (i >> 1) * 14, w: bw, h: 12 }; };
+  const MENU = 42;
+  const btn = i => { const bw = (W - 12) / 2 | 0, bh = 16, by = H - MENU + 5; return { x: 4 + (i % 2) * (bw + 4), y: by + (i >> 1) * (bh + 2), w: bw, h: bh }; };
+  function layout() {
+    const menu = H - MENU, k = Math.max(2, Math.min(4, Math.floor(Math.min(W / 52, (menu - 30) / 40)))), S = 12 * k, pw = Math.min(W - 8, Math.max(76, Math.floor(W * .55)));
+    const fy = 18, fx = W - S - 8, py1 = fy + 2, px1 = 4;
+    const my = menu - S - 8, mx = 8, py2 = menu - 30, px2 = W - pw - 4;
+    return { menu, k, fx, fy: Math.min(fy + Math.max(0, (my - fy - S - 10) * .15) | 0, fy + 20), mx, my, pw, px1, py1, px2, py2: Math.min(py2, my + S - 26) };
+  }
   const self = {
     reset() { mode = 'pick'; party = []; route = 1; steps = 0; jars = 3; queue = []; qT = 0; score = 0; t = 0; held = null; holdT = 0; flash = 0; shake = 0; foe = null; note = null; pickI = -1; newMap(); },
     resize(w, h) { W = w; H = h; if (map) { const keep = { px, py }; newMap(); if (mode !== 'pick') { px = Math.min(keep.px, cols() - 1); py = rows() - 1; } } },
@@ -147,27 +154,39 @@ function make(api) {
         if (t < 5 && route === 1 && steps < 3) { c.textAlign = 'center'; c.fillStyle = '#181820'; c.fillText('TAP A SIDE TO WALK', W / 2, o + 12); }
         return;
       }
-      // battle
-      const me = lead(), sx = shake > 0 ? Math.round(Math.sin(t * 80) * 2) : 0;
+      // battle: GBA-style layout with boxed name plates, clear HP numbers and a 2x2 move menu
+      const me = lead(), sx = shake > 0 ? Math.round(Math.sin(t * 80) * 2) : 0, L = layout();
       c.fillStyle = flash > 0 && (t * 20 | 0) % 2 ? '#f8f8f0' : '#f0e8c8'; c.fillRect(0, 0, W, H);
-      const top = H - 36, k = H >= 200 ? 3 : 2, fy = Math.max(12, top * .14 | 0), my = top - 12 * k - 4;
-      c.fillStyle = '#c8d8a0'; c.beginPath(); c.ellipse(W - 30, fy + 12 * k - 2, 26, 6, 0, 0, 7); c.fill(); c.beginPath(); c.ellipse(34, top - 6, 30, 6, 0, 0, 7); c.fill();
-      if (foe) sprite(c, foe.sp, W - 30 - 6 * k, fy, k, false, foe.hp > 0 ? 1 : .3);
-      if (me) sprite(c, me.sp, 34 - 6 * k + sx, my, k, true);
-      const bar = (x, y, m, label) => { c.fillStyle = '#181820'; c.textAlign = 'left'; c.fillText(label, x, y); c.fillRect(x, y + 3, 58, 5); const f = m.hp / m.max; c.fillStyle = f > .5 ? '#48c040' : f > .2 ? '#f0c030' : '#e04040'; c.fillRect(x + 1, y + 4, 56 * f, 3); };
-      if (foe) bar(4, fy + 6, foe, `${foe.sp.name.slice(0, 8)} L${foe.lvl}`);
-      if (me) bar(W - 64, my + 10, me, `${me.sp.name.slice(0, 8)} L${me.lvl}`);
-      if (me) { c.fillStyle = '#181820'; c.textAlign = 'right'; c.fillText(`${me.hp}/${me.max}`, W - 6, my + 20); }
-      c.fillStyle = '#181820'; c.fillRect(0, top, W, H - top); c.fillStyle = '#f8f8f0'; c.fillRect(2, top + 2, W - 4, H - top - 4);
-      if (queue.length && queue[0].txt) { c.fillStyle = '#181820'; c.textAlign = 'left'; const words = queue[0].txt.split(' '); let line = '', ly = top + 12; const max = Math.floor((W - 12) / 6); for (const w of words) { if ((line + w).length > max) { c.fillText(line, 6, ly); line = ''; ly += 9; } line += w + ' '; } c.fillText(line, 6, ly); }
+      c.fillStyle = '#e4dab4'; for (let y = 16; y < L.menu; y += 8) c.fillRect(0, y, W, 1);
+      const S = 12 * L.k;
+      c.fillStyle = '#b8d090'; c.beginPath(); c.ellipse(L.fx + S / 2, L.fy + S - 1, S * .75, S * .16 + 2, 0, 0, 7); c.fill(); c.beginPath(); c.ellipse(L.mx + S / 2, L.my + S - 1, S * .8, S * .16 + 2, 0, 0, 7); c.fill();
+      if (foe) sprite(c, foe.sp, L.fx, L.fy, L.k, false, foe.hp > 0 ? 1 : .3);
+      if (me) sprite(c, me.sp, L.mx + sx, L.my, L.k, true);
+      const plate = (x, y, w, m, showNums) => {
+        const h = showNums ? 26 : 18; c.fillStyle = '#181820'; c.fillRect(x, y, w, h); c.fillStyle = '#f8f8f0'; c.fillRect(x + 1, y + 1, w - 2, h - 2);
+        c.fillStyle = TCOL[m.sp.type]; c.fillRect(x + 1, y + 1, 2, h - 2);
+        const lv = `L${m.lvl}`, room = Math.floor((w - 12) / 6) - lv.length - 1, name = m.sp.name.length > room ? m.sp.name.slice(0, Math.max(3, room - 1)) + '.' : m.sp.name;
+        c.fillStyle = '#181820'; c.textAlign = 'left'; c.fillText(name, x + 5, y + 8); c.textAlign = 'right'; c.fillText(lv, x + w - 3, y + 8);
+        const bw = w - 10, f = m.hp / m.max; c.fillStyle = '#181820'; c.fillRect(x + 5, y + 11, bw, 5); c.fillStyle = '#585868'; c.fillRect(x + 6, y + 12, bw - 2, 3);
+        c.fillStyle = f > .5 ? '#48c040' : f > .2 ? '#f0c030' : '#e04040'; c.fillRect(x + 6, y + 12, Math.round((bw - 2) * f), 3);
+        if (showNums) { c.fillStyle = '#181820'; c.textAlign = 'right'; c.fillText(`${m.hp}/${m.max}`, x + w - 3, y + 24); }
+      };
+      if (foe) plate(L.px1, L.py1, L.pw, foe, false);
+      if (me) plate(L.px2, L.py2, L.pw, me, true);
+      c.fillStyle = '#181820'; c.fillRect(0, L.menu, W, H - L.menu); c.fillStyle = '#f8f8f0'; c.fillRect(2, L.menu + 2, W - 4, H - L.menu - 4);
+      if (queue.length && queue[0].txt) {
+        c.fillStyle = '#181820'; c.textAlign = 'left'; const words = queue[0].txt.split(' '); let line = '', ly = L.menu + 13; const max = Math.floor((W - 14) / 6);
+        for (const w of words) { if ((line + w).length > max) { c.fillText(line.trim(), 7, ly); line = ''; ly += 10; } line += w + ' '; } c.fillText(line.trim(), 7, ly);
+        if ((t * 3 | 0) % 2) { c.fillStyle = '#e04040'; c.fillRect(W - 10, H - 9, 4, 3); c.fillRect(W - 9, H - 6, 2, 1); }
+      }
       else if (!queue.length && me) {
         const labels = ['TACKLE', MOVE[me.sp.type], `JAR x${jars}`, 'RUN'];
-        for (let i = 0; i < 4; i++) { const b = btn(i); c.fillStyle = i === 1 ? TCOL[me.sp.type] : '#181820'; c.fillRect(b.x + 2, b.y + 4, b.w - 4, b.h); c.fillStyle = '#f8f8f0'; c.textAlign = 'center'; c.fillText(labels[i], b.x + b.w / 2, b.y + 13); }
+        for (let i = 0; i < 4; i++) { const b = btn(i); c.fillStyle = i === 1 ? TCOL[me.sp.type] : i === 2 && !jars ? '#585868' : '#282838'; c.fillRect(b.x, b.y, b.w, b.h); c.fillStyle = '#ffffff30'; c.fillRect(b.x, b.y, b.w, 1); c.fillStyle = '#f8f8f0'; c.textAlign = 'center'; c.fillText(labels[i], b.x + b.w / 2, b.y + b.h / 2 + 3); }
       }
     },
     down(x, y) {
       if (mode === 'pick') { for (let i = 0; i < 3; i++) { const r = pickRect(i); if (x >= r.x - 4 && x <= r.x + r.w + 4 && y >= r.y - 8 && y <= r.y + r.w + 16) { party = [mon(i * 2, 4)]; mode = 'walk'; haptic('success'); sfx(880, .2, 'square', .05, 200); } } return; }
-      if (mode === 'battle') { if (queue.length) { if (qT > .25) qT = queue[0].d; return; } for (let i = 0; i < 4; i++) { const b = btn(i); if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h + 4) { haptic('tick'); act(i); } } return; }
+      if (mode === 'battle') { if (queue.length) { if (qT > .25) qT = queue[0].d; return; } for (let i = 0; i < 4; i++) { const b = btn(i); if (x >= b.x - 1 && x <= b.x + b.w + 1 && y >= b.y - 1 && y <= b.y + b.h + 1) { haptic('tick'); act(i); } } return; }
       const X = px * T + 8, Y = oy() + py * T + 8, dx = x - X, dy = y - Y;
       held = Math.abs(dx) > Math.abs(dy) ? { dx: Math.sign(dx), dy: 0 } : { dx: 0, dy: Math.sign(dy) || -1 }; holdT = .22; walk(held.dx, held.dy);
     },
