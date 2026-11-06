@@ -20,6 +20,21 @@ export function haptic(kind = 'light') {
   } catch { /* no haptics here */ }
 }
 
+/** Play a pattern of short (0) and long (1) buzzes. Returns its length in ms. On iPhones a long buzz
+ *  is a quick run of taps, since iOS ignores vibration lengths. */
+export function buzz(pattern, short = 90, long = 380, gap = 220) {
+  let at = 0;
+  for (const p of pattern) {
+    const d = p ? long : short;
+    if (native) { for (let k = 0; k < d; k += 45) setTimeout(() => { try { Haptics.impact({ style: ImpactStyle.Heavy }); } catch { /* none */ } }, at + k); }
+    at += d + gap;
+  }
+  if (!native) { const seq = []; pattern.forEach((p, i) => { seq.push(p ? long : short); if (i < pattern.length - 1) seq.push(gap); }); try { navigator.vibrate?.(seq); } catch { /* none */ } }
+  return at;
+}
+/** Can this device vibrate at all? */
+export function canBuzz() { return native || typeof navigator.vibrate === 'function'; }
+
 /* ---------- permissions that need a user gesture (iOS motion) ---------- */
 // Games call want('motion') when created; the request fires on the player's next tap (the Play tap).
 const wanted = new Set(); let motionAllowed = null;
@@ -42,6 +57,7 @@ function startSensors() {
   if (sensorsOn) return; sensorsOn = true;
   addEventListener('deviceorientation', e => {
     if (e.beta == null) return;
+    tiltState.beta = e.beta;
     // Use landscape-aware axes so tilt feels right when the phone or an unfolded foldable is sideways.
     const ang = (screen.orientation?.angle ?? window.orientation ?? 0) | 0;
     let x = e.gamma, y = e.beta;
@@ -74,6 +90,8 @@ export function calibrateTilt() { tiltState.base = null; }
 export function onShake(cb) { shakeCbs.add(cb); return () => shakeCbs.delete(cb); }
 /** Compass heading in degrees (0 = north), or null. */
 export function heading() { return headingDeg; }
+/** True when the phone is lying screen-down, false when not, null with no sensor. */
+export function faceDown() { return tiltState.ok ? Math.abs(tiltState.beta) > 120 : null; }
 
 /* ---------- GPS ---------- */
 let locCache = null;

@@ -153,26 +153,26 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 
 ## Phone-feature games 🎯
 
-- [ ] Blow the Candles 🎤 — blow into the mic to put out candles but leave the marked one lit
+- [x] Blow the Candles 🎤 — blow into the mic to put out candles; striped trick candles relight unless all are out at once
 - [ ] Whistle Pitch 🎤 — hum or whistle higher or lower to steer a bird
-- [ ] Clap Beat 🎤 — clap in time with a rhythm
-- [ ] Quiet Ninja 🎤 — sneak past guards; any noise above a threshold alerts them
-- [ ] Tilt Pour 📐 — tilt to pour water into cups without spilling
+- [x] Clap Back 🎤 — listen to a beat, then clap it back (mic hears real claps)
+- [x] Quiet Ninja 🎤 — sneak past guards; any noise above a threshold alerts them
+- [x] Tilt Pour 📐 — tilt to pour water into cups without spilling
 - [ ] Marble Run Tilt 📐 — tilt a tray of three marbles into three holes at once
 - [ ] Tilt Snake 📐 — steer a worm by tilting
 - [ ] Spin Around 🧭 — spin on the spot a set number of turns as fast as you can
 - [ ] Sun Seeker 🧭📍 — point your phone at today's real sun position
-- [ ] Shake Dice 📳 — shake to roll dice, push your luck to a target
+- [x] Shake Dice 📳 — shake to roll dice, push your luck to a target
 - [ ] Maraca Rhythm 📳 — shake in time with a beat
 - [ ] Shake the Tree 📳 — shake to drop apples, stop before the bees come out
-- [ ] Phone Flip 📐 — turn the phone face down and up on cue (reaction test)
-- [ ] Steady Hand 📐 — keep the phone perfectly still while a meter fills
+- [x] Cookie Thief 📐✋ — grab cookies face up, lay the phone face down when the cook turns; haptic cues tell you when it is safe
+- [x] Steady Hand 📐 — tilt to keep a marble centred on a tray while wind gusts push it
 - [ ] Light Seeker 📷 — find the brightest and darkest spots around you
 - [ ] Shape Spotter 📷 — find a real round, square and triangular object
 - [ ] Mirror Face 📷 — copy the face shown (smile, wink, open mouth) on the front camera
 - [ ] Local Weather Run 📍 — a runner whose weather matches your real local weather
 - [ ] Step Counter Dash 🚶 — take 20 real steps faster than last time
-- [ ] Haptic Morse ✋ — read short/long buzzes and type the letter
+- [x] Buzz Code ✋ — feel a short/long buzz pattern and pick the match from four
 - [ ] Heartbeat Guess ✋ — count the haptic pulses with your eyes closed
 - [ ] Volume Keys Racer 🔊 — steer with the volume buttons (native only)
 - [ ] Dark Room 📷 — cover the camera to make the screen dark and find hidden glowing items
