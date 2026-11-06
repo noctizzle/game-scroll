@@ -239,3 +239,30 @@ Full-colour pocket games in the spirit of the late-90s / early-2000s colour hand
 - [x] Star Bloom: vertical shooter with power levels and flagship bosses
 - [x] Pocket Tactics: turn-based grid war with infantry, tanks and artillery
 - Brick Bounce was rebuilt as a colour game with power-up capsules, silver/gold bricks and lives
+
+### Batch 14: more Advance-era genres
+Picked from the genres that defined the big Advance hits: licensed space-knight action, wizard-school adventures, real-time grid battlers, farm life sims, timed-hit RPG battles, falling-pair puzzlers and copy-ability platformers. All mechanics are original and use no names, characters, spells or art from those games.
+- [x] Saber Knight: energy-sword duelist; tap a side to swing, perfect timing deflects bolts back, hold to Focus-push
+- [x] Spell School: trace runes (line, bar, V, peak, ring, zig) to cast lessons' spells at pests in the school halls
+- [x] Grid Duel: 3x3 real-time grid battle; dodge across your panels and fire chips (sword, wide, cannon, bomb, heal)
+- [x] Pocket Farm: till, plant, water and harvest through seasons; shoo crows and hit each season's cash target
+- [x] Timing Brawl: turn-based brawl where timed taps add bounces, perfect bashes and counter-dodges
+- [x] Blob Pairs: falling blob pairs, pop four of a colour, build chains, clear grey junk
+- [x] Copy Puff: auto-walking puff that flaps over gaps and swallows critters to copy SPARK, BLADE or ROCK
+
+## Dual-screen and stylus era ideas (for later batches) ✍
+Research notes on what made the dual-screen handheld era special, turned into original ideas. Foldables are a natural fit: on an unfolded Fold the two halves can act as the two screens, and on a phone the screen splits top and bottom.
+- Two screens: the map or radar on top, the action on the bottom; or a mirror world on the other half.
+- Stylus: draw paths, slash, trace shapes, rub to reveal, drag-and-fling.
+- Microphone: blow to push sails, put out candles, or spin a pinwheel.
+- Touch-only control schemes: tap where you want to walk, draw a line to guide a ball.
+- [ ] Path Doodle: draw a road for a rolling ball in real time; ink runs out
+- [ ] Brain Drills: a set of daily quick-maths and memory drills with an original "mind score"
+- [ ] Ink Ward: draw lines to bounce blobs into the goal under an ink budget
+- [ ] Twin Mine: top-screen radar, bottom-screen digging; find gems before the cave-in
+- [ ] Puzzle Detective: tap clues in a scene, then choose the culprit from the evidence
+- [ ] Blow Sail: blow into the mic to sail a boat around rocks
+- [ ] Pet Pocket: feed, wash and play with a pocket pet using rubs and taps
+- [ ] Kitchen Steps: chop by slashing, stir by circling, flip by flicking (original recipes)
+- [ ] Stylus Rally: draw racing lines for a kart that follows your ink
+- [ ] Rhythm Tap Squad: tap and slide on beat markers as a team of original cheer characters
