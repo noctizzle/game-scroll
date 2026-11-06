@@ -10,7 +10,9 @@
     "smoke": "vite build && node scripts/smoke.cjs",
     "ios": "vite build && cap sync ios && cap open ios",
     "android": "vite build && cap sync android && cap open android",
-    "fold": "vite build && node scripts/fold.cjs"
+    "fold": "vite build && node scripts/fold.cjs",
+    "wallet": "vite build && node scripts/wallet.cjs",
+    "game-services": "node scripts/game-services.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.3",
@@ -24,6 +26,7 @@
     "@capacitor/ios": "^8.5.3",
     "@capacitor/motion": "^8.0.1",
     "@fontsource/press-start-2p": "^5.2.5",
-    "@fontsource/rubik": "^5.2.5"
+    "@fontsource/rubik": "^5.2.5",
+    "game-services": "file:plugins/game-services"
   }
 }

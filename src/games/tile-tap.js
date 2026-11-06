@@ -45,5 +45,6 @@ function make(api) {
 export default {
   id: 'tile-tap', title: 'Tile Tap', tag: 'Casual · Rhythm', retro: false, w: W, h: H,
   hint: 'Tap every blue tile before it slides off. Never tap an empty space.',
+  goal: 60,
   make,
 };

@@ -58,5 +58,6 @@ export default {
   id: 'worm', title: 'Pixel Worm', tag: 'Pocket · Classic', retro: true, w: 160, h: 160,
   hint: 'Swipe or tap beside the head to turn. Eat seeds, not yourself.',
   pal: base.pal,
+  goal: 15,
   make: api => make(api, base),
 };

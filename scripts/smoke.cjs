@@ -10,6 +10,10 @@ const { chromium, devices } = require('playwright');
   await p.goto('http://localhost:4179/'); await p.waitForTimeout(400);
   const ids = process.argv.slice(2).length ? process.argv.slice(2) : await p.evaluate(() => __gs.GAMES.map(g => g.id));
   let failed = 0;
+  // Every game must pay credits for a win, so every game needs a goal score.
+  const noGoal = await p.evaluate(ids => __gs.GAMES.filter(g => ids.includes(g.id) && !(g.goal > 0)).map(g => g.id), ids);
+  for (const id of noGoal) console.log(`FAIL ${id.padEnd(14)} has no \`goal\` (the score that counts as a win)`);
+  failed += noGoal.length;
   for (const id of ids) {
     errs = [];
     await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(150);

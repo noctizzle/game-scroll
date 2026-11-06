@@ -57,5 +57,6 @@ function make(api) {
 export default {
   id: 'rock-blaster', title: 'Rock Blaster', tag: 'Pocket · Shooter', retro: true, w: W, h: H, pal: 'ice',
   hint: 'Touch and hold where you want to shoot. Big rocks split in two.',
+  goal: 40,
   make,
 };

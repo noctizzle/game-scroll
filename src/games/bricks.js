@@ -78,7 +78,7 @@ function make(api) {
       }
       balls = balls.filter(b => !b.out);
       if (!balls.length) { lives--; haptic('error'); sfx(160, .4, 'square', .05, -80); eff = { W: 0, S: 0, L: 0 }; caps = []; if (lives <= 0) return api.over(); msg = { txt: `${lives} LEFT`, l: 1 }; serve(); return; }
-      if (!bricks.some(k => !k.gold)) { level++; score += 5; api.score(score); msg = { txt: `WALL ${level}`, l: 1.4 }; haptic('success'); sfx(990, .3, 'square', .05, 500); caps = []; lasers = []; build(); serve(); }
+      if (!bricks.some(k => !k.gold)) { api.win(); level++; score += 5; api.score(score); msg = { txt: `WALL ${level}`, l: 1.4 }; haptic('success'); sfx(990, .3, 'square', .05, 500); caps = []; lasers = []; build(); serve(); }
     },
     draw(c) {
       const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#182048'); g.addColorStop(1, '#301838'); c.fillStyle = g; c.fillRect(0, 0, W, H);

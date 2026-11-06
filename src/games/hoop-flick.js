@@ -72,5 +72,6 @@ function make(api) {
 export default {
   id: 'hoop-flick', title: 'Hoop Flick', tag: 'Casual · Sports', retro: false, w: W, h: H,
   hint: 'Flick the ball up into the hoop. A clean swish scores double. One miss ends it.',
+  goal: 15,
   make,
 };
