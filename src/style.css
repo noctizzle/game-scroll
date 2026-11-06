@@ -227,3 +227,16 @@ dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
 .info-x{position:absolute;top:10px;right:10px;width:36px;height:36px;border-radius:50%;border:0;background:#ffffff12;color:var(--text);cursor:pointer}
 .info-play{align-self:stretch;margin-top:8px;animation:none}
 @media (max-width:370px){.caption h2{font-size:17px}.caption .tag{font-size:9px}}
+
+/* My games (src/mygames.js) */
+#mine{color:var(--heart);font-size:16px}
+.mine-tabs{display:flex;gap:6px;padding:4px 16px 10px}
+.mine-tabs button{flex:1;font:600 13px/1 var(--f-body);color:var(--muted);background:#ffffff0d;border:0;border-radius:999px;padding:10px 8px;cursor:pointer}
+.mine-tabs button[aria-selected="true"]{background:var(--text);color:var(--ink)}
+.mine li{padding:4px 8px}
+.mine-play{flex:1;min-width:0;display:flex;align-items:center;gap:10px;text-align:left;background:none;border:0;color:var(--text);cursor:pointer;padding:6px 0;font:inherit}
+.mine-go{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:var(--ink);font-size:12px}
+.tabs button{white-space:nowrap}
+@media (max-width:440px){.top{gap:8px}.tabs button{padding:7px 8px}.logo{font-size:10px}}
+/* very narrow phones: drop the logo (the QA panel is also in My games) so the buttons fit */
+@media (max-width:370px){.top{gap:6px}.logo{display:none}.iconbtn{width:32px;height:32px}}

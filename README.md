@@ -66,7 +66,8 @@ The app supports folding and unfolding mid-game (tested at Galaxy Z Fold 8 and i
 
 ## QA: finding and removing weak games
 
-- **In the app**: every game has a 👎 *Meh* button next to the heart. Meh hides that game from your feed on that phone (with Undo). Tap the **GAME SCROLL** logo to open the QA panel: every game with your rating, plays and time spent, Unhide buttons, and **Copy report** to paste into chat.
+- **In the app**: every game has a 👎 *Meh* button next to the heart. Meh hides that game from your feed on that phone (with Undo). Tap the **GAME SCROLL** logo (or QA report in My games) to open the QA panel: every game with your rating, plays and time spent, Unhide buttons, and **Copy report** to paste into chat.
+- **My games** (♥ button in the top bar): your hearted and Meh'd games. Tap one to play it next, or un-heart / un-Meh it.
 - **Bench a game for everyone** without deleting it: add its id to `BENCHED` in `src/qa.js`.
 - **Bot play test**: `npm run qa` plays every game with an idle bot and a random-tap bot and writes `docs/qa/auto-report.md` (errors, how fast rounds end, games that score with no input).
 - **Scored review**: `docs/qa/review.md` scores every game on fun, clarity, controls, length and uniqueness, weakest first.

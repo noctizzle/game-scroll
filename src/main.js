@@ -9,6 +9,7 @@ import { sfx, sound } from './sfx.js';
 import { PAL, SHELL } from './palettes.js';
 import { isHidden, setRating, rating, logRound, toast as qaToast, openPanel } from './qa.js';
 import { rankQueue } from './recommend.js';
+import { openMyGames } from './mygames.js';
 import { progress } from './kit/progress.js';
 import { checkTrophies } from './kit/trophies.js';
 import { services } from './kit/services.js';
@@ -222,6 +223,13 @@ function pickDefs(n=6){
 function rerank(){if(queue.length>1)queue=rankQueue(queue.filter(g=>!isHidden(g.id)),GAMES)}
 function addBatch(){for(const d of pickDefs()){const s=makeSlide(d);feed.appendChild(s.el);slides.push(s);fit(s);s.game.draw(s.ctx);io.observe(s.el)}}
 
+// Play a chosen game now: slot it in right after the current game and scroll to it.
+function playNow(id){
+  const def=GAMES.find(g=>g.id===id);if(!def)return;
+  const i=active?slides.indexOf(active):-1;if(active&&active.state==='playing')resetSlide(active);feed.classList.remove('locked');
+  const s=makeSlide(def),next=slides[i+1];feed.insertBefore(s.el,next?next.el:null);slides.splice(i+1,0,s);fit(s);s.game.draw(s.ctx);io.observe(s.el);
+  requestAnimationFrame(()=>s.el.scrollIntoView({behavior:'auto'}));
+}
 function setActive(s){
   if(active===s)return;
   if(active&&active.state!=='ready')resetSlide(active);
@@ -270,7 +278,9 @@ screen.orientation?.addEventListener?.('change',()=>setTimeout(onResize,150));
 /* top bar */
 const logo=document.querySelector('.logo');logo.setAttribute('role','button');logo.tabIndex=0;logo.title='QA panel';
 logo.onclick=()=>openPanel(GAMES,best);
-const muteBtn=document.getElementById('mute');
+const mineBtn=document.createElement('button');mineBtn.className='iconbtn';mineBtn.id='mine';mineBtn.setAttribute('aria-label','My games: hearted and Meh');mineBtn.textContent='♥';
+const muteBtn=document.getElementById('mute');muteBtn.before(mineBtn);
+mineBtn.onclick=()=>openMyGames({games:GAMES,best,play:playNow,changed:(id,r)=>{slides.forEach(x=>{if(x.def.id===id)x.setLike(r>0)});rerank()},qa:()=>openPanel(GAMES,best)});
 const paintMute=()=>{muteBtn.textContent=sound.muted?'🔇':'🔊';muteBtn.setAttribute('aria-pressed',String(sound.muted))};paintMute();
 muteBtn.onclick=()=>{sound.muted=!sound.muted;store.set('gs_muted',sound.muted);paintMute()};
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{if(filter===b.dataset.f)return;filter=b.dataset.f;
