@@ -122,7 +122,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [ ] Ping Pong Rally — swipe to return the ball, angle by swipe direction
 - [ ] Trampoline Tricks — tap in the air to flip, land upright
 - [ ] Spike Runner — endless runner, tap to jump spikes and duck swooping birds
-- [ ] Balloon Rise — protect a rising balloon by pushing obstacles away
+- [x] Balloon Rise — protect a rising balloon by pushing obstacles away
 - [ ] Hammer Strength — time the power meter for the carnival bell
 - [ ] Fruit Stacker — stack wobbling fruit as high as possible
 - [ ] Cup Shuffle — follow the cup hiding the ball
@@ -218,12 +218,12 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 ## Physics toys 📱
 
 - [ ] Ragdoll Drop — drop a ragdoll down stairs for points
-- [ ] Jelly Bounce — squash and stretch a jelly to bounce higher
-- [ ] Domino Chain — place dominoes, then tip the first
-- [ ] Rubber Band Shot — pull back a band to launch at towers
-- [ ] Wrecking Ball — swing a wrecking ball to topple a building in three swings
+- [x] Jelly Bounce — tap as a jelly squashes into a trampoline to bounce higher and grab stars
+- [x] Domino Chain — draw a domino line past every bell, round rocks, with a limited count
+- [x] Rubber Band Shot — stretch and fire a rubber band at tins sliding along shelves
+- [x] Wrecking Ball — swing a wrecking ball to topple a building in three swings
 - [ ] Sand Pour — pour sand to fill a shape exactly
 - [ ] Bubble Blower — blow bubbles that carry a seed across a pond
-- [ ] Magnet Pull — switch a magnet on and off to guide a steel ball
-- [ ] Spring Jumper — hold to compress, release to jump to the next platform
-- [ ] Water Rocket — pump and launch a water rocket to a target height
+- [x] Magnet Pull — your finger is a magnet; pull a steel ball past spikes into a ring
+- [x] Spring Jumper — pogo across rooftops; hold to squeeze the spring for bigger jumps
+- [x] Water Rocket — pump and launch a water rocket to a target height
