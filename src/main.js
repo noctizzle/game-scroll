@@ -7,6 +7,8 @@ import '@fontsource/rubik/latin-800.css';
 import { store, hash, fmt } from './util.js';
 import { sfx, sound } from './sfx.js';
 import { PAL, SHELL } from './palettes.js';
+import { isHidden, setRating, rating, logRound, toast as qaToast, openPanel } from './qa.js';
+import { rankQueue } from './recommend.js';
 import { progress } from './kit/progress.js';
 import { checkTrophies } from './kit/trophies.js';
 import { services } from './kit/services.js';
@@ -37,6 +39,7 @@ function makeSlide(def){
       <div class="caption"><span class="tag">${def.tag}</span><h2>${def.title}</h2><p>${def.hint}</p></div>
       <div class="rail">
         <button class="rbtn like" aria-pressed="false"><span class="ic">♥</span><span class="n"></span></button>
+        <button class="rbtn meh" aria-label="Meh: hide this game"><span class="ic">👎</span><span>Meh</span></button>
         <div class="rbtn bestchip"><span class="ic best">0</span><span>Best</span></div>
         <button class="rbtn walletbtn" aria-label="Credits and trophies"><span class="ic">◆</span><span class="n">${fmt(progress.credits)}</span></button>
         <button class="rbtn nextbtn" aria-label="Next game"><span class="ic">↓</span><span>Next</span></button>
@@ -53,10 +56,12 @@ function makeSlide(def){
   });
   s.game.reset();
   // like
-  const likeBtn=el.querySelector('.like'),liked=store.get('gs_like_'+def.id,false);
+  const likeBtn=el.querySelector('.like'),liked=rating(def.id)>0||(rating(def.id)===0&&store.get('gs_like_'+def.id,false));
   const setLike=v=>{likeBtn.setAttribute('aria-pressed',v);likeBtn.querySelector('.n').textContent=fmt(def.likes+(v?1:0))};setLike(liked);
-  likeBtn.onclick=()=>{const v=likeBtn.getAttribute('aria-pressed')!=='true';store.set('gs_like_'+def.id,v);document.querySelectorAll('.slide').forEach(x=>{if(x._s&&x._s.def.id===def.id)x._s.setLike(v)})};
+  likeBtn.onclick=()=>{const v=likeBtn.getAttribute('aria-pressed')!=='true';store.set('gs_like_'+def.id,v);setRating(def.id,v?1:0);rerank();document.querySelectorAll('.slide').forEach(x=>{if(x._s&&x._s.def.id===def.id)x._s.setLike(v)})};
   s.setLike=setLike;
+  el.querySelector('.meh').onclick=()=>{const was=rating(def.id);setRating(def.id,-1);if(likeBtn.getAttribute('aria-pressed')==='true'){store.set('gs_like_'+def.id,false);setLike(false)}
+    rerank();qaToast(`Hidden: ${def.title}`,()=>{setRating(def.id,was);rerank()});goNext(s)};
   el.querySelector('.nextbtn').onclick=()=>goNext(s);
   s.overlay.onclick=e=>{if(Date.now()-s.overAt<550)return;startGame(s)};
   // pointer input
@@ -104,7 +109,7 @@ function startGame(s){
   s.run={items:new Set()};
   for(const it of s.def.shop||[])if(it.kind==='unlock'?progress.owned(s.def.id,it)>0:progress.use(s.def.id,it))s.run.items.add(it.id);
   s.won=false;s.paid=0;s.trophies=[];progress.played(s.def.id);
-  s.game.reset();s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;
+  s.game.reset();s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
   s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');renderOverlay(s);
   sfx(660,.08,'square',.04,300);
 }
@@ -122,13 +127,13 @@ function awardTrophies(s){
 }
 function gameOver(s){
   if(s.state!=='playing')return;
-  s.state='over';s.overAt=Date.now();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
+  s.state='over';s.overAt=Date.now();logRound(s.def.id,s.overAt-s.startAt);s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(progress.score(s.def.id,s.score))s.newBest=true;
   awardTrophies(s);services.reportRun(s.def);
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function resetSlide(s){if(s.state==='playing')logRound(s.def.id,Date.now()-s.startAt);s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
 function goNext(s){
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
   const i=slides.indexOf(s);if(i>=slides.length-2)addBatch();
@@ -157,15 +162,18 @@ function fit(s){
 // Shuffled queue over the whole catalogue; the feed pulls a few at a time so 1000 games never means 1000 slides in the DOM.
 let queue=[];
 function pickDefs(n=6){
-  const pool=GAMES.filter(g=>filter==='all'||(filter.startsWith('id:')?g.id===filter.slice(3):filter==='pocket'?g.retro:!g.retro));
+  let pool=GAMES.filter(g=>filter.startsWith('id:')||!isHidden(g.id)).filter(g=>filter==='all'||(filter.startsWith('id:')?g.id===filter.slice(3):filter==='pocket'?g.retro:!g.retro));
+  if(!pool.length)pool=GAMES;
   const out=[];
   while(out.length<n&&pool.length){
-    if(!queue.length){queue=[...pool].sort(()=>Math.random()-.5);if(queue.length>1&&queue[0].id===lastId)queue.push(queue.shift())}
+    if(!queue.length){queue=rankQueue(pool,GAMES);if(queue.length>1&&queue[0].id===lastId)queue.push(queue.shift())}
     const d=queue.shift();out.push(d);lastId=d.id;
     if(pool.length<n&&out.length>=pool.length)break;
   }
   return out;
 }
+// After a heart or Meh, re-rank the games still waiting in this cycle so similar ones come sooner.
+function rerank(){if(queue.length>1)queue=rankQueue(queue.filter(g=>!isHidden(g.id)),GAMES)}
 function addBatch(){for(const d of pickDefs()){const s=makeSlide(d);feed.appendChild(s.el);slides.push(s);fit(s);s.game.draw(s.ctx);io.observe(s.el)}}
 
 function setActive(s){
@@ -214,6 +222,8 @@ if(window.visualViewport)visualViewport.addEventListener('resize',()=>{resizeAt=
 screen.orientation?.addEventListener?.('change',()=>setTimeout(onResize,150));
 
 /* top bar */
+const logo=document.querySelector('.logo');logo.setAttribute('role','button');logo.tabIndex=0;logo.title='QA panel';
+logo.onclick=()=>openPanel(GAMES,best);
 const muteBtn=document.getElementById('mute');
 const paintMute=()=>{muteBtn.textContent=sound.muted?'🔇':'🔊';muteBtn.setAttribute('aria-pressed',String(sound.muted))};paintMute();
 muteBtn.onclick=()=>{sound.muted=!sound.muted;store.set('gs_muted',sound.muted);paintMute()};

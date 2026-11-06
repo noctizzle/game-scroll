@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "smoke": "vite build && node scripts/smoke.cjs",
+    "qa": "vite build && node scripts/qa.cjs",
     "ios": "vite build && cap sync ios && cap open ios",
     "android": "vite build && cap sync android && cap open android",
     "fold": "vite build && node scripts/fold.cjs",

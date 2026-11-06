@@ -127,6 +127,31 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   .bezel-bottom{display:none}
 }
 
+/* QA: meh button, toast, panel (src/qa.js) */
+.meh .ic{font-size:15px;filter:grayscale(.3)}
+.logo{cursor:pointer}
+.qa-toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;pointer-events:none;z-index:50;
+  display:flex;gap:14px;align-items:center;background:var(--text);color:var(--ink);font:500 13px/1.3 var(--f-body);padding:10px 14px;border-radius:12px;box-shadow:0 8px 30px #0008;transition:.2s;max-width:calc(100vw - 32px)}
+.qa-toast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.qa-toast button{font:700 13px/1 var(--f-body);background:none;border:0;color:#5b4bff;cursor:pointer;padding:4px}
+.qa-panel{width:min(520px,calc(100vw - 32px));max-height:calc(100dvh - 48px);padding:0;border:0;border-radius:16px;background:var(--panel);color:var(--text);display:flex;flex-direction:column}
+.qa-panel:not([open]){display:none}
+.qa-panel::backdrop{background:#000a}
+.qa-head{display:flex;align-items:center;gap:10px;padding:14px 16px 6px}
+.qa-head b{font:400 12px/1 var(--f-pixel);color:var(--accent)}
+.qa-head span{color:var(--muted);font-size:13px;margin-right:auto}
+.qa-x{background:none;border:0;color:var(--text);font-size:16px;cursor:pointer;padding:6px}
+.qa-help{margin:0 16px 10px;color:var(--muted);font-size:13px;line-height:1.4}
+.qa-actions{padding:0 16px 10px}
+.qa-actions button{font:700 13px/1 var(--f-body);background:var(--accent);color:var(--ink);border:0;border-radius:999px;padding:10px 16px;cursor:pointer}
+.qa-actions textarea{width:100%;font:12px/1.4 ui-monospace,monospace}
+.qa-panel ul{list-style:none;margin:0;padding:0 8px 12px;overflow-y:auto}
+.qa-panel li{display:flex;align-items:center;gap:10px;padding:8px;border-top:1px solid #ffffff10}
+.qa-r{width:22px;text-align:center}
+.qa-t{flex:1;min-width:0;font-weight:500;font-size:14px}
+.qa-t small{display:block;color:var(--muted);font-weight:400;font-size:12px}
+.qa-un{font:600 12px/1 var(--f-body);background:none;border:1px solid var(--muted);color:var(--text);border-radius:999px;padding:6px 10px;cursor:pointer}
+
 /* credits, trophies and shop (src/kit/wallet-ui.js) */
 .walletbtn .ic{color:var(--accent);font-size:16px}
 .ov-goal{font:500 12px/1.35 var(--f-body);color:#c9cdd6;max-width:28ch}
