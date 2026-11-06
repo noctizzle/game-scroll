@@ -12,6 +12,7 @@
     "ios": "vite build && cap sync ios && cap open ios",
     "android": "vite build && cap sync android && cap open android",
     "fold": "vite build && node scripts/fold.cjs",
+    "swipe": "vite build && node scripts/swipe.cjs",
     "wallet": "vite build && node scripts/wallet.cjs",
     "game-services": "node scripts/game-services.mjs"
   },

@@ -66,8 +66,8 @@ function makeSlide(def){
   // pointer input
   const pt=e=>{const r=s.canvas.getBoundingClientRect();return[(e.clientX-r.left)/r.width*s.w,(e.clientY-r.top)/r.height*s.h]};
   let pressed=false;
-  s.canvas.addEventListener('pointerdown',e=>{if(s.state!=='playing')return;pressed=true;try{s.canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();s.game.down&&s.game.down(...pt(e))});
-  s.canvas.addEventListener('pointermove',e=>{if(s.state!=='playing')return;s.game.move&&s.game.move(...pt(e),pressed)});
+  s.canvas.addEventListener('pointerdown',e=>{if(s.state!=='playing')return;pressed=true;lastGameInput=performance.now();try{s.canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();s.game.down&&s.game.down(...pt(e))});
+  s.canvas.addEventListener('pointermove',e=>{if(s.state!=='playing')return;if(pressed)lastGameInput=performance.now();s.game.move&&s.game.move(...pt(e),pressed)});
   const up=e=>{if(!pressed)return;pressed=false;if(s.state==='playing'&&s.game.up)s.game.up(...pt(e))};
   s.canvas.addEventListener('pointerup',up);s.canvas.addEventListener('pointercancel',up);
   s.canvas.addEventListener('contextmenu',e=>e.preventDefault());
@@ -128,7 +128,7 @@ function startGame(s){
   for(const it of s.def.shop||[])if(it.kind==='unlock'?progress.owned(s.def.id,it)>0:progress.use(s.def.id,it))s.run.items.add(it.id);
   s.won=false;s.paid=0;s.trophies=[];progress.played(s.def.id);
   s.game.reset();s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
-  s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');renderOverlay(s);
+  s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');s.startPerf=performance.now();renderOverlay(s);
   sfx(660,.08,'square',.04,300);
 }
 // A run counts as a win the first time its score reaches the game's goal (or the game calls
@@ -152,6 +152,34 @@ function gameOver(s){
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
 function resetSlide(s){if(s.state==='playing')logRound(s.def.id,Date.now()-s.startAt);s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function goPrev(s){
+  const i=slides.indexOf(s);if(i<=0)return;
+  if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
+  slides[i-1].el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+}
+// While a game is running the feed is locked so in-game drags never scroll it. A swipe that starts
+// outside the game screen (caption, buttons, shell, top bar) still changes game, but only when it
+// looks deliberate and not like part of play:
+//  - it must start outside the screen; drags that start on the game always belong to the game
+//  - no game input in the last 0.8s (a thumb sliding off the screen mid-play is ignored)
+//  - a clear vertical flick: at least 70px, mostly vertical, finished within 0.7s
+//  - not during the first second of a run, when people are still settling their grip
+let lastGameInput=0;
+{
+  let sw=null;
+  addEventListener('pointerdown',e=>{
+    if(!feed.classList.contains('locked')||!active||e.target.closest('.screen,dialog'))return;
+    sw={x:e.clientX,y:e.clientY,t:performance.now(),id:e.pointerId};
+  },{passive:true});
+  addEventListener('pointerup',e=>{
+    if(!sw||e.pointerId!==sw.id)return;const dx=e.clientX-sw.x,dy=e.clientY-sw.y,now=performance.now(),dt=now-sw.t;sw=null;
+    const s=active;if(!s||s.state!=='playing')return;
+    if(Math.abs(dy)<70||Math.abs(dy)<Math.abs(dx)*1.5||dt>700)return;
+    if(now-lastGameInput<800||now-(s.startPerf||0)<1000)return;
+    if(dy<0)goNext(s);else goPrev(s);
+  });
+  addEventListener('pointercancel',()=>{sw=null});
+}
 function goNext(s){
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
   const i=slides.indexOf(s);if(i>=slides.length-2)addBatch();

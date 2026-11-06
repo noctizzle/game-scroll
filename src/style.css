@@ -60,6 +60,8 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 canvas{display:block;width:100%;height:100%;touch-action:pan-y}
 .retro canvas{image-rendering:pixelated;image-rendering:crisp-edges}
 .slide.playing canvas{touch-action:none}
+/* while playing the feed is locked; let pointer events through so a swipe outside the screen still changes game (main.js) */
+#feed.locked .slide{touch-action:none}
 
 .hud{position:absolute;inset:0 0 auto;display:flex;justify-content:center;padding-top:10px;pointer-events:none;opacity:0;transition:opacity .2s}
 .slide.playing .hud,.slide.over .hud{opacity:1}
