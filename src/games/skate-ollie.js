@@ -2,36 +2,51 @@ import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
 
-// Skate down the street. Tap to ollie over cones and benches. While in the air, swipe left or right
-// to spin a kickflip, up for a grab: each trick scores, but you must land with the board level.
-const W = 360, H = 640, GROUND = 470, SX = 100, G = 2200;
+// Skate down the street. Tap to ollie over cones, benches and gaps. While in the air, swipe left or right
+// to spin a kickflip, up for a grab: each trick scores if it finishes before you land.
+// Forgiving by design: the ollie fires on touch-down, a tap just before landing is remembered,
+// you can still ollie a moment after rolling off a gap's edge, hitboxes are smaller than the art,
+// and an unfinished trick just doesn't score instead of ending the run.
+const W = 360, H = 640, GROUND = 470, SX = 100, G = 2200, JUMP = -900, BUFFER = .18, COYOTE = .14, HIT = 7;
 
 function make(api) {
-  let y, vy, air, board, trick, tricks, obs, speed, dist, t, score, msg, combo, swipe, bail;
-  function addObs() { const r = Math.random(); obs.push(r < .5 ? { k: 'cone', x: W + 30, w: 18, h: 30 } : r < .8 ? { k: 'bench', x: W + 30, w: 60, h: 36 } : { k: 'gap', x: W + 30, w: 70, h: 0 }); }
+  let y, vy, air, board, trick, tricks, obs, speed, dist, t, score, msg, combo, swipe, bail, wantJump, offEdge;
+  function addObs() { const r = Math.random() * (dist < 1500 ? .8 : 1); obs.push(r < .5 ? { k: 'cone', x: W + 30, w: 18, h: 30 } : r < .8 ? { k: 'bench', x: W + 30, w: 60, h: 36 } : { k: 'gap', x: W + 30, w: 70, h: 0 }); }
+  function finishTrick() { tricks.push(trick.type); combo++; const pts = trick.type === 'flip' ? 3 : 2; score += pts * combo; api.score(score); msg = { txt: `${trick.type === 'flip' ? 'KICKFLIP' : 'GRAB'} x${combo}`, l: .8 }; trick = null; board = 0; haptic('light'); sfx(700 + combo * 60, .06, 'square', .03, 150); }
+  function canOllie() { return !air || (offEdge >= 0 && t - offEdge < COYOTE && vy >= 0); }
+  function ollie() { air = true; vy = JUMP; offEdge = -1; wantJump = -1; haptic('medium'); sfx(260, .08, 'square', .04, 300); }
+  function press() { if (canOllie()) ollie(); else wantJump = t; }
+  function trySwipe(dx, dy) {
+    if (!air || trick || Math.hypot(dx, dy) < 26) return;
+    if (Math.abs(dx) > Math.abs(dy)) trick = { type: 'flip', dir: Math.sign(dx), k: 0, dur: .3 };
+    else if (dy < 0) trick = { type: 'grab', k: 0, dur: .26 };
+    if (trick) swipe = null;
+  }
   return {
-    reset() { y = GROUND; vy = 0; air = false; board = 0; trick = null; tricks = []; obs = []; speed = 220; dist = 0; t = 0; score = 0; msg = null; combo = 0; swipe = null; bail = 0; addObs(); },
+    reset() { y = GROUND; vy = 0; air = false; board = 0; trick = null; tricks = []; obs = []; speed = 200; dist = 0; t = 0; score = 0; msg = null; combo = 0; swipe = null; bail = 0; wantJump = -1; offEdge = -1; addObs(); obs[0].x = W + 160; },
     update(dt) {
       t += dt; if (msg) msg.l -= dt;
-      speed = Math.min(420, 220 + dist / 40); const dx = speed * dt; dist += dx;
+      speed = Math.min(380, 200 + dist / 60); const dx = speed * dt; dist += dx;
       for (const o of obs) o.x -= dx; obs = obs.filter(o => o.x + o.w > -20);
-      const last = obs[obs.length - 1]; if (!last || last.x < W - rnd(220, 380)) addObs();
+      const last = obs[obs.length - 1]; if (!last || last.x + last.w < W - speed * rnd(.95, 1.5) - (dist < 1000 ? 80 : 0)) addObs();
       if (air) {
         vy += G * dt; y += vy * dt;
-        if (trick) { trick.k += dt / trick.dur; board = trick.type === 'flip' ? trick.dir * trick.k * Math.PI * 2 : 0; if (trick.k >= 1) { tricks.push(trick.type); combo++; const pts = trick.type === 'flip' ? 3 : 2; score += pts * combo; api.score(score); msg = { txt: `${trick.type === 'flip' ? 'KICKFLIP' : 'GRAB'} x${combo}`, l: .8 }; trick = null; board = 0; haptic('light'); sfx(700 + combo * 60, .06, 'square', .03, 150); } }
-        const gap = obs.find(o => o.k === 'gap' && SX > o.x && SX < o.x + o.w);
-        if (y >= GROUND && !gap) {
-          y = GROUND; air = false; vy = 0;
-          if (trick) { bail = 1; msg = { txt: 'BAIL!', l: 1 }; haptic('error'); sfx(120, .4, 'square', .05, -40); return api.over(); }
+        if (trick) { trick.k += dt / trick.dur; board = trick.type === 'flip' ? trick.dir * trick.k * Math.PI * 2 : 0; if (trick.k >= 1) finishTrick(); }
+        // land on a gap's edge if any part of the board is over road
+        const gap = obs.find(o => o.k === 'gap' && SX > o.x + 14 && SX < o.x + o.w - 14);
+        if (y >= GROUND && !gap && y < GROUND + 24) {
+          y = GROUND; air = false; vy = 0; offEdge = -1;
+          if (trick) { if (trick.k > .7) finishTrick(); else { msg = { txt: 'SLOPPY', l: .7 }; trick = null; board = 0; } }
           if (tricks.length) haptic('success'); else haptic('tick'); sfx(150, .05, 'square', .05);
           tricks = []; combo = 0;
+          if (t - wantJump < BUFFER) ollie();
         }
       } else {
-        const gap = obs.find(o => o.k === 'gap' && SX > o.x + 6 && SX < o.x + o.w - 6);
-        if (gap) { air = true; vy = 0; }
+        const gap = obs.find(o => o.k === 'gap' && SX > o.x + 14 && SX < o.x + o.w - 14);
+        if (gap) { air = true; vy = 0; offEdge = t; }
       }
       if (y > GROUND + 60) { msg = { txt: 'FELL IN', l: 1 }; haptic('error'); return api.over(); }
-      for (const o of obs) if (o.k !== 'gap' && SX + 16 > o.x && SX - 16 < o.x + o.w && y > GROUND - o.h) { bail = 1; msg = { txt: 'OUCH', l: 1 }; haptic('error'); sfx(100, .4, 'square', .05, -40); return api.over(); }
+      for (const o of obs) if (o.k !== 'gap' && SX + HIT > o.x + 3 && SX - HIT < o.x + o.w - 3 && y > GROUND - o.h + 6) { bail = 1; msg = { txt: 'OUCH', l: 1 }; haptic('error'); sfx(100, .4, 'square', .05, -40); return api.over(); }
       for (const o of obs) if (!o.passed && o.x + o.w < SX - 16) { o.passed = true; score += 1; api.score(score); }
     },
     fx(dt) { bail += dt; },
@@ -54,23 +69,20 @@ function make(api) {
       c.save(); c.translate(0, -4); c.scale(1, Math.cos(board)); c.fillStyle = '#d04a4a'; c.fillRect(-22, -3, 44, 5); c.restore();
       c.fillStyle = '#222'; c.beginPath(); c.arc(-14, 2, 3, 0, 7); c.arc(14, 2, 3, 0, 7); c.fill();
       c.restore();
-      if (msg && msg.l > 0) { c.globalAlpha = clamp(msg.l * 2, 0, 1); c.fillStyle = msg.txt === 'BAIL!' || msg.txt === 'OUCH' || msg.txt === 'FELL IN' ? '#d03a3a' : '#3a2a6a'; c.font = '400 14px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(msg.txt, W / 2, 160); c.globalAlpha = 1; }
+      if (msg && msg.l > 0) { c.globalAlpha = clamp(msg.l * 2, 0, 1); c.fillStyle = msg.txt === 'SLOPPY' || msg.txt === 'OUCH' || msg.txt === 'FELL IN' ? '#d03a3a' : '#3a2a6a'; c.font = '400 14px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(msg.txt, W / 2, 160); c.globalAlpha = 1; }
       if (t < 5) { c.fillStyle = '#5a3a2a'; c.font = '600 14px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('tap to ollie · swipe in the air for tricks', W / 2, 600); }
     },
-    down(x, y2) { swipe = { x, y: y2, t: t }; },
-    up(x, y2) {
-      if (!swipe) return; const dx = x - swipe.x, dy = y2 - swipe.y; swipe = null;
-      if (!air) { if (Math.hypot(dx, dy) < 30) { air = true; vy = -880; haptic('medium'); sfx(260, .08, 'square', .04, 300); } return; }
-      if (trick) return;
-      if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) trick = { type: 'flip', dir: Math.sign(dx), k: 0, dur: .32 };
-      else if (dy < -30) trick = { type: 'grab', k: 0, dur: .28 };
-    },
-    key(k, d) { if (!d) return; if ((k === ' ' || k === 'ArrowUp') && !air) { air = true; vy = -880; } else if (air && !trick && (k === 'ArrowLeft' || k === 'ArrowRight')) trick = { type: 'flip', dir: k === 'ArrowLeft' ? -1 : 1, k: 0, dur: .32 }; },
+    // Touching the screen ollies straight away (or as soon as you land / within coyote time).
+    // Dragging while airborne starts a trick the moment the swipe is long enough.
+    down(x, y2) { swipe = { x, y: y2 }; press(); },
+    move(x, y2, p) { if (p && swipe && air) trySwipe(x - swipe.x, y2 - swipe.y); },
+    up(x, y2) { if (swipe && air) trySwipe(x - swipe.x, y2 - swipe.y); swipe = null; },
+    key(k, d) { if (!d) return; if (k === ' ' || k === 'ArrowUp') press(); else if (k === 'ArrowLeft' || k === 'ArrowRight') trySwipe(k === 'ArrowLeft' ? -40 : 40, 0); },
   };
 }
 
 export default {
   id: 'skate-ollie', title: 'Skate Ollie', tag: 'Casual · Action', retro: false, w: W, h: H, goal: 40,
-  hint: 'Tap to ollie over cones, benches and gaps. In the air, swipe sideways for a kickflip or up for a grab. Tricks chain into combos, but land before a trick ends and you bail.',
+  hint: 'Tap to ollie over cones, benches and gaps. In the air, swipe sideways for a kickflip or up for a grab. Finish a trick before you land to score it; tricks in one jump chain into combos.',
   make,
 };
