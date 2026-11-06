@@ -7,6 +7,7 @@
 - **Trophies.** 19 feed-wide trophies (wins, different games won, games played, credits earned and spent) in `src/kit/trophies.js`. They are not one per game because Game Center and Play Games both cap achievements per app far below 1000.
 - **Leaderboards.** Total Wins, Games Won and Credits Earned, plus a best-score board for any game marked `board: true` (Cave Flyer and Stack Up for now). Keep those few.
 - **Saves.** Progress is saved on the device at every change, and to Game Center (iOS) or Play Games (Android) a few seconds later when signed in. Saves from two devices merge without losing credits or wins: each device keeps its own counters and the totals add up (`src/kit/progress.js`).
+- **Other data in the save.** Other modules can add their own data to the cloud save with `progress.section(key, { snapshot, merge })` (game hearts and ratings use this).
 - Until the store accounts are set up, or on the web, everything works locally and the sync is skipped.
 
 ## Adding these to a game

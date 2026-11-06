@@ -52,6 +52,14 @@ const { chromium, devices } = require('playwright');
   check('merge adds the other device credits once', merged.credits === 60, JSON.stringify(merged));
   check('merge adds wins and keeps bests and trophies', merged.wins === 4 && merged.won === 2 && merged.best === 99 && merged.t);
 
+  // Other modules (game ratings) can ride inside the save.
+  const sec = await ev(() => {
+    let got = null; __gs.progress.section('test', { snapshot: () => ({ a: 1 }), merge: o => { got = o; } });
+    const blob = JSON.parse(__gs.progress.serialize()); __gs.progress.merge({ test: { b: 2 } });
+    return { inBlob: blob.test?.a === 1, merged: got?.b === 2 };
+  });
+  check('save sections are saved and merged', sec.inBlob && sec.merged, JSON.stringify(sec));
+
   // Panel opens from the rail.
   await p.click('.slide .walletbtn'); await p.waitForTimeout(100);
   check('credits panel opens', await ev(() => document.getElementById('wallet').open));

@@ -38,6 +38,8 @@ const ME = deviceId();
 let P = load();
 const mine = () => (P.by[ME] ||= blankDev());
 const subs = new Set();
+// Other modules can ride along in the cloud save (e.g. game ratings): key -> { snapshot, merge }.
+const sections = new Map();
 function changed() { P.updated = Date.now(); store.set(KEY, P); subs.forEach(f => f(P)); }
 
 // Totals over every device.
@@ -90,9 +92,16 @@ export const progress = {
   hasTrophy: id => !!P.trophies[id],
   grant(id) { if (P.trophies[id]) return false; P.trophies[id] = Date.now(); changed(); return true; },
 
+  /**
+   * Adds another module's data to the cloud save under `key`. `snapshot()` returns a JSON-able
+   * object; `merge(obj)` folds in another device's copy and must be safe to call repeatedly.
+   */
+  section(key, { snapshot, merge }) { sections.set(key, { snapshot, merge }); },
+
   /** Folds a save from another device (or the cloud) into this one. */
   merge(other) {
     if (!other || typeof other !== 'object') return;
+    for (const [k, s] of sections) if (other[k]) { try { s.merge(other[k]); } catch (e) { console.warn('[progress] section', k, e); } }
     const max = (a, b = {}) => { for (const k in b) a[k] = Math.max(a[k] || 0, +b[k] || 0); return a; };
     max(P.bests, other.bests);
     for (const k in other.trophies || {}) if (!P.trophies[k]) P.trophies[k] = other.trophies[k];
@@ -103,7 +112,11 @@ export const progress = {
     }
     changed();
   },
-  serialize: () => JSON.stringify(P),
+  serialize() {
+    const out = { ...P };
+    for (const [k, s] of sections) { try { out[k] = s.snapshot(); } catch (e) { console.warn('[progress] section', k, e); } }
+    return JSON.stringify(out);
+  },
   /** Test hook: wipe everything. */
   _reset() { P = blank(); changed(); },
 };
