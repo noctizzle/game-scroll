@@ -49,7 +49,7 @@ export default {
 
 ## Phone features
 
-`src/kit/device.js` gives games haptics, tilt, shake, compass heading, GPS location, the microphone and the camera. On web and desktop, or when the player refuses a permission, these calls do nothing or return `null`. That means every game needs a touch fallback (for example, drag instead of tilt). Call `want('motion')` in `make()` for tilt, shake or compass games: iOS asks for motion permission on the player's next tap. The usage strings for iOS and the permissions for Android are already set.
+`src/kit/device.js` gives games haptics (including short/long `buzz()` patterns), tilt, shake, face-down detection (`faceDown()`), compass heading, GPS location, the microphone and the camera. On web and desktop, or when the player refuses a permission, these calls do nothing or return `null`. That means every game needs a touch fallback (for example, drag instead of tilt). Call `want('motion')` in `make()` for tilt, shake or compass games: iOS asks for motion permission on the player's next tap. The usage strings for iOS and the permissions for Android are already set.
 
 ## Foldables
 
@@ -61,4 +61,4 @@ The app supports folding and unfolding mid-game (tested at Galaxy Z Fold 8 and i
 
 ## Roadmap
 
-Launch target is **1000 unique games** (distinct mechanics, not reskins), built in batches. The idea list lives in `docs/game-ideas.md`.
+Launch target is **1000 unique games** (distinct mechanics, not reskins), built in batches of about eight. There are 101 so far. The idea list lives in `docs/game-ideas.md`, with built games ticked.

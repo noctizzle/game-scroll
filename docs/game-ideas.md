@@ -65,15 +65,15 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Tank Duel — angle and power artillery shots against a CPU tank on hilly ground
 - [x] Fishing Line — drop a hook, reel up through layers, avoid snagging jellyfish
 - [ ] Bat Cave Echo — tap to send an echo that briefly reveals walls in the dark
-- [ ] Snowball Roll — roll a growing snowball; bigger is slower but smashes obstacles
-- [ ] Gold Digger — tunnel down through dirt, collect gems, don't get crushed by boulders
+- [x] Snowball Roll — roll a growing snowball; bigger is slower but smashes obstacles
+- [x] Gold Digger — tunnel down through dirt, collect gems, don't get crushed by boulders
 - [x] Pinball Pocket — two flippers, one table, three balls
 - [x] Traffic Light — control a crossing's lights so cars and walkers never collide
 - [ ] Number Merge Grid — slide tiles on a 4x4 grid to merge equal numbers (sum target per run)
-- [ ] Frog Tongue — aim a sticky tongue at passing flies, chain combos
+- [x] Frog Tongue — aim a sticky tongue at passing flies, chain combos
 - [ ] Kite Flyer — keep a kite in the wind band by tugging the string
 - [ ] Domino Run — place dominoes on a grid so one push topples them all
-- [ ] Space Docking — thrust to match speed and angle with a station port
+- [x] Space Docking — thrust to match speed and angle with a station port
 - [x] Ninja Wall — tap to jump between two walls, dodge spikes
 - [ ] Chess Knight Path — visit every lit square with knight moves before time runs out
 
@@ -87,7 +87,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [ ] Bridge Builder Lite — place planks so a cart crosses (fixed budget)
 - [ ] Sliding Picture — 3x3 sliding tile picture
 - [ ] One Line — draw through every dot without lifting or reusing a line
-- [ ] Code Breaker — guess a 4-symbol code from right/close feedback
+- [x] Code Breaker — guess a 4-symbol code from right/close feedback
 - [ ] Laser Lock — rotate rings so gaps line up and the laser escapes
 - [ ] Gravity Flip — flip gravity to guide a block through a maze
 - [ ] Rail Connect — draw track segments so two stations connect
@@ -96,7 +96,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [ ] Water Pour — pour between jugs to measure an exact amount
 - [ ] Arrow Maze — every tile has an arrow; pick a start that reaches the goal
 - [ ] Count the Dots — quickly count dots flashed on screen
-- [ ] Odd One Out — spot the one sprite that differs in a grid, faster each round
+- [x] Odd One Out — spot the one critter that differs in a grid, subtler each round
 - [x] Path Memory — watch a path light up, then walk it from memory
 - [ ] Balance Scale — place weights so the beam balances
 
@@ -108,7 +108,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Bowling Swipe — swipe and curve a ball into ten pins
 - [x] Mini Golf One Hole — drag back to putt on a random one-hole course
 - [x] Bottle Flip — flick to flip a bottle so it lands upright
-- [ ] Skateboard Ollie — tap to ollie, hold to grind rails
+- [x] Skate Ollie — ollie over obstacles and chain kickflips and grabs in the air
 - [ ] Archery Wind — aim with wind drift at distant targets
 - [x] Penalty Keeper — swipe to dive and save penalty kicks
 - [ ] Penalty Striker — swipe a curved shot past a moving keeper
@@ -121,7 +121,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [ ] Popcorn Pan — shake or tap to pop kernels without burning them
 - [ ] Ping Pong Rally — swipe to return the ball, angle by swipe direction
 - [ ] Trampoline Tricks — tap in the air to flip, land upright
-- [ ] Spike Runner — endless runner, tap to jump spikes and duck swooping birds
+- [x] Gravity Runner — flip gravity between floor and ceiling to dodge spikes on both
 - [x] Balloon Rise — protect a rising balloon by pushing obstacles away
 - [ ] Hammer Strength — time the power meter for the carnival bell
 - [ ] Fruit Stacker — stack wobbling fruit as high as possible
