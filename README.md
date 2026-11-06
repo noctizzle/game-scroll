@@ -59,6 +59,14 @@ The app supports folding and unfolding mid-game (tested at Galaxy Z Fold 8 and i
 
 `npm run smoke` builds the app and plays every game with random input on a phone-sized screen, failing if any game throws. Pass ids to test only some: `node scripts/smoke.cjs lane-racer worm`. Needs Playwright (`npm i -D playwright && npx playwright install chromium`).
 
+## QA: finding and removing weak games
+
+- **In the app**: every game has a 👎 *Meh* button next to the heart. Meh hides that game from your feed on that phone (with Undo). Tap the **GAME SCROLL** logo to open the QA panel: every game with your rating, plays and time spent, Unhide buttons, and **Copy report** to paste into chat.
+- **Bench a game for everyone** without deleting it: add its id to `BENCHED` in `src/qa.js`.
+- **Bot play test**: `npm run qa` plays every game with an idle bot and a random-tap bot and writes `docs/qa/auto-report.md` (errors, how fast rounds end, games that score with no input).
+- **Scored review**: `docs/qa/review.md` scores every game on fun, clarity, controls, length and uniqueness, weakest first.
+- **Removing a game**: delete its file in `src/games/` and untick it in `docs/game-ideas.md`.
+
 ## Roadmap
 
 Launch target is **1000 unique games** (distinct mechanics, not reskins), built in batches of about eight. There are 101 so far. The idea list lives in `docs/game-ideas.md`, with built games ticked.

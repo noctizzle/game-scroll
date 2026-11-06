@@ -1,0 +1,1334 @@
+[
+ {
+  "id": "ball-sort",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 1,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 7,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "balloon-pump",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 1,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 83,
+  "tapFrames": 18,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "balloon-rise",
+  "idleEndsMs": 5173,
+  "idleScore": 7,
+  "idleFrames": 21,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 2956,
+  "tapBest": 8,
+  "tapFrames": 33,
+  "errors": [],
+  "flags": [
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "block-fit",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 1,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 5,
+  "tapFrames": 3,
+  "errors": [],
+  "flags": [
+   "static-screen"
+  ]
+ },
+ {
+  "id": "blow-candles",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 8,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 14,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "bomb-maze",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 21,
+  "tapRounds": 3,
+  "tapMedianRoundMs": 2594,
+  "tapBest": 10,
+  "tapFrames": 28,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "bomb-sweeper",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 3,
+  "tapMedianRoundMs": 1525,
+  "tapBest": 46,
+  "tapFrames": 16,
+  "errors": [],
+  "flags": [
+   "very-short-rounds"
+  ]
+ },
+ {
+  "id": "bottle-flip",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 5183,
+  "tapBest": 1,
+  "tapFrames": 16,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "bowling-swipe",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 1,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 3,
+  "tapFrames": 11,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "bricks",
+  "idleEndsMs": 3060,
+  "idleScore": 10,
+  "idleFrames": 6,
+  "tapRounds": 2,
+  "tapMedianRoundMs": 3014,
+  "tapBest": 10,
+  "tapFrames": 29,
+  "errors": [],
+  "flags": [
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "bubble-level",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 24,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 6506,
+  "tapBest": 0,
+  "tapFrames": 32,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "bubble-pop",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 170,
+  "tapFrames": 35,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "candy-swing",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 24,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 35,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "cave",
+  "idleEndsMs": 767,
+  "idleScore": 3,
+  "idleFrames": 4,
+  "tapRounds": 4,
+  "tapMedianRoundMs": 1442,
+  "tapBest": 10,
+  "tapFrames": 26,
+  "errors": [],
+  "flags": [
+   "dies-instantly-idle",
+   "very-short-rounds",
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "chef-orders",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 10,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 23,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "clap-beat",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 7,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 25,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "code-breaker",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 1,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 3,
+  "errors": [],
+  "flags": [
+   "no-score-no-end",
+   "static-screen"
+  ]
+ },
+ {
+  "id": "color-hunt",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 5,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 3,
+  "tapFrames": 35,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "colour-flood",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 1,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 3,
+  "errors": [],
+  "flags": [
+   "no-score-no-end",
+   "static-screen"
+  ]
+ },
+ {
+  "id": "colour-word",
+  "idleEndsMs": 3049,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 6,
+  "tapMedianRoundMs": 605,
+  "tapBest": 1,
+  "tapFrames": 10,
+  "errors": [],
+  "flags": [
+   "very-short-rounds"
+  ]
+ },
+ {
+  "id": "compass-hunt",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 24,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 33,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "crate-pusher",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 3,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 13,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "dart-wheel",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 24,
+  "tapRounds": 2,
+  "tapMedianRoundMs": 2286,
+  "tapBest": 39,
+  "tapFrames": 33,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "domino-chain",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 3027,
+  "tapBest": 0,
+  "tapFrames": 6,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "dungeon-door",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 27,
+  "tapFrames": 12,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "egg-catcher",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 14,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 8854,
+  "tapBest": 1,
+  "tapFrames": 29,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "fast-maths",
+  "idleEndsMs": 4064,
+  "idleScore": 0,
+  "idleFrames": 17,
+  "tapRounds": 7,
+  "tapMedianRoundMs": 363,
+  "tapBest": 2,
+  "tapFrames": 19,
+  "errors": [],
+  "flags": [
+   "very-short-rounds"
+  ]
+ },
+ {
+  "id": "fishing-line",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 24,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 37,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "fly-swatter",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 22,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 3,
+  "tapFrames": 36,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "frog-tongue",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 20,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 5,
+  "tapFrames": 34,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "gem-slide",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 3,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 12,
+  "tapFrames": 19,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "germ-buster",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 18,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 36,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "gold-digger",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 24,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 36,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "haptic-morse",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 6,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 1,
+  "tapFrames": 29,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "hide-peek",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 3,
+  "tapRounds": 2,
+  "tapMedianRoundMs": 3319,
+  "tapBest": 0,
+  "tapFrames": 4,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "higher-lower",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 11,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "hoop-flick",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 1,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 6243,
+  "tapBest": 0,
+  "tapFrames": 10,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "ice-slide",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 18,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "jelly-bounce",
+  "idleEndsMs": 2806,
+  "idleScore": 0,
+  "idleFrames": 12,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 3634,
+  "tapBest": 0,
+  "tapFrames": 34,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "juggle-kick",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 24,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 3538,
+  "tapBest": 1,
+  "tapFrames": 30,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "lane-racer",
+  "idleEndsMs": 5595,
+  "idleScore": 1,
+  "idleFrames": 21,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 3584,
+  "tapBest": 0,
+  "tapFrames": 31,
+  "errors": [],
+  "flags": [
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "lemonade-stand",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 14,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "lift-operator",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 5,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 33,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "link-pairs",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 4,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 21,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "liquid-mixer",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 3,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 2913,
+  "tapBest": 0,
+  "tapFrames": 17,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "magnet-pull",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 25,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "merge-drop",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 7582,
+  "tapBest": 46,
+  "tapFrames": 32,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "merge-ten",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 161,
+  "tapFrames": 23,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "mine-cart",
+  "idleEndsMs": null,
+  "idleScore": 18,
+  "idleFrames": 24,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 5992,
+  "tapBest": 9,
+  "tapFrames": 35,
+  "errors": [],
+  "flags": [
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "mini-golf",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 18,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "mirror-beam",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 3,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 7,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "mole-mallet",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 16,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 3,
+  "tapFrames": 21,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "moto-hills",
+  "idleEndsMs": null,
+  "idleScore": 7,
+  "idleFrames": 24,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 18,
+  "tapFrames": 36,
+  "errors": [],
+  "flags": [
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "ninja-wall",
+  "idleEndsMs": 5590,
+  "idleScore": 21,
+  "idleFrames": 23,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 4338,
+  "tapBest": 17,
+  "tapFrames": 33,
+  "errors": [],
+  "flags": [
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "odd-one-out",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 1,
+  "tapRounds": 2,
+  "tapMedianRoundMs": 3559,
+  "tapBest": 1,
+  "tapFrames": 18,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "orbit-jump",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 19,
+  "tapRounds": 6,
+  "tapMedianRoundMs": 889,
+  "tapBest": 0,
+  "tapFrames": 22,
+  "errors": [],
+  "flags": [
+   "very-short-rounds"
+  ]
+ },
+ {
+  "id": "parking-out",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 1,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 4,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "path-memory",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 5,
+  "tapRounds": 2,
+  "tapMedianRoundMs": 2818,
+  "tapBest": 0,
+  "tapFrames": 12,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "penalty-keeper",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 21,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 8996,
+  "tapBest": 0,
+  "tapFrames": 32,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "picture-logic",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 8,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 17,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "pipe-plumber",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 5,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 21,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "pocket-pinball",
+  "idleEndsMs": null,
+  "idleScore": 800,
+  "idleFrames": 22,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 800,
+  "tapFrames": 33,
+  "errors": [],
+  "flags": [
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "quiet-ninja",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 14,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 32,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "rhythm-drums",
+  "idleEndsMs": 5624,
+  "idleScore": 0,
+  "idleFrames": 23,
+  "tapRounds": 2,
+  "tapMedianRoundMs": 4391,
+  "tapBest": 1,
+  "tapFrames": 30,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "road-hopper",
+  "idleEndsMs": 5344,
+  "idleScore": 0,
+  "idleFrames": 22,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 2488,
+  "tapBest": 10,
+  "tapFrames": 34,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "rock-blaster",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 19,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 4,
+  "tapFrames": 35,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "rock-paper",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 2,
+  "tapFrames": 9,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "rope-swing",
+  "idleEndsMs": 1021,
+  "idleScore": 13,
+  "idleFrames": 5,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 338,
+  "tapFrames": 36,
+  "errors": [],
+  "flags": [
+   "dies-instantly-idle",
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "rubber-band",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 24,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 4154,
+  "tapBest": 1,
+  "tapFrames": 35,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "safe-cracker",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 1,
+  "tapRounds": 2,
+  "tapMedianRoundMs": 3716,
+  "tapBest": 0,
+  "tapFrames": 16,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "shake-dice",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 1,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 6,
+  "tapFrames": 15,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "shake-soda",
+  "idleEndsMs": 4585,
+  "idleScore": 0,
+  "idleFrames": 16,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 1,
+  "tapFrames": 36,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "sheep-herder",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 22,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 38,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "shout-rocket",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 24,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 7758,
+  "tapBest": 0,
+  "tapFrames": 34,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "skate-ollie",
+  "idleEndsMs": 1784,
+  "idleScore": 0,
+  "idleFrames": 8,
+  "tapRounds": 3,
+  "tapMedianRoundMs": 1551,
+  "tapBest": 6,
+  "tapFrames": 30,
+  "errors": [],
+  "flags": [
+   "very-short-rounds"
+  ]
+ },
+ {
+  "id": "ski-slalom",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 24,
+  "tapRounds": 2,
+  "tapMedianRoundMs": 5327,
+  "tapBest": 1,
+  "tapFrames": 30,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "sky-defense",
+  "idleEndsMs": null,
+  "idleScore": 70,
+  "idleFrames": 22,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 70,
+  "tapFrames": 34,
+  "errors": [],
+  "flags": [
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "slice",
+  "idleEndsMs": 4830,
+  "idleScore": 0,
+  "idleFrames": 18,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 4922,
+  "tapBest": 0,
+  "tapFrames": 32,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "snowball-roll",
+  "idleEndsMs": 2036,
+  "idleScore": 4,
+  "idleFrames": 9,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 23,
+  "tapFrames": 39,
+  "errors": [],
+  "flags": [
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "space-dock",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 20,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 4394,
+  "tapBest": 0,
+  "tapFrames": 26,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "spike-runner",
+  "idleEndsMs": 4064,
+  "idleScore": 12,
+  "idleFrames": 11,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 7816,
+  "tapBest": 25,
+  "tapFrames": 31,
+  "errors": [],
+  "flags": [
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "spot-difference",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 6166,
+  "tapBest": 2,
+  "tapFrames": 27,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "spring-jumper",
+  "idleEndsMs": 2033,
+  "idleScore": 1,
+  "idleFrames": 9,
+  "tapRounds": 3,
+  "tapMedianRoundMs": 2068,
+  "tapBest": 2,
+  "tapFrames": 29,
+  "errors": [],
+  "flags": [
+   "very-short-rounds",
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "stack",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 18,
+  "tapRounds": 8,
+  "tapMedianRoundMs": 569,
+  "tapBest": 1,
+  "tapFrames": 17,
+  "errors": [],
+  "flags": [
+   "very-short-rounds"
+  ]
+ },
+ {
+  "id": "steady-hand",
+  "idleEndsMs": 3815,
+  "idleScore": 34,
+  "idleFrames": 16,
+  "tapRounds": 2,
+  "tapMedianRoundMs": 3031,
+  "tapBest": 23,
+  "tapFrames": 31,
+  "errors": [],
+  "flags": [
+   "scores-without-input"
+  ]
+ },
+ {
+  "id": "stop-clock",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 5028,
+  "tapBest": 0,
+  "tapFrames": 12,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "street-lamps",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 7,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 22,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "swipe-arrow",
+  "idleEndsMs": 2032,
+  "idleScore": 0,
+  "idleFrames": 8,
+  "tapRounds": 6,
+  "tapMedianRoundMs": 925,
+  "tapBest": 1,
+  "tapFrames": 19,
+  "errors": [],
+  "flags": [
+   "very-short-rounds"
+  ]
+ },
+ {
+  "id": "tank-duel",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 4695,
+  "tapBest": 0,
+  "tapFrames": 23,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "tap-green",
+  "idleEndsMs": 4576,
+  "idleScore": 0,
+  "idleFrames": 3,
+  "tapRounds": 11,
+  "tapMedianRoundMs": 188,
+  "tapBest": 0,
+  "tapFrames": 1,
+  "errors": [],
+  "flags": [
+   "very-short-rounds"
+  ]
+ },
+ {
+  "id": "territory-claim",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 21,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 7575,
+  "tapBest": 0,
+  "tapFrames": 35,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "tile-tap",
+  "idleEndsMs": 1281,
+  "idleScore": 0,
+  "idleFrames": 6,
+  "tapRounds": 10,
+  "tapMedianRoundMs": 285,
+  "tapBest": 0,
+  "tapFrames": 11,
+  "errors": [],
+  "flags": [
+   "dies-instantly-idle",
+   "very-short-rounds"
+  ]
+ },
+ {
+  "id": "tilt-maze",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 5,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 36,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "tilt-pour",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 19,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 31,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "tiny-tower",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 16,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 31,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "town-mayor",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 1,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 6188,
+  "tapBest": 4,
+  "tapFrames": 11,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "traffic-light",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 20,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 35,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "untangle",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 2,
+  "errors": [],
+  "flags": [
+   "no-score-no-end",
+   "static-screen"
+  ]
+ },
+ {
+  "id": "water-rocket",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 2,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 0,
+  "tapFrames": 33,
+  "errors": [],
+  "flags": [
+   "no-score-no-end"
+  ]
+ },
+ {
+  "id": "worm",
+  "idleEndsMs": 2288,
+  "idleScore": 0,
+  "idleFrames": 9,
+  "tapRounds": 1,
+  "tapMedianRoundMs": 7954,
+  "tapBest": 0,
+  "tapFrames": 34,
+  "errors": [],
+  "flags": []
+ },
+ {
+  "id": "wrecking-ball",
+  "idleEndsMs": null,
+  "idleScore": 0,
+  "idleFrames": 17,
+  "tapRounds": 0,
+  "tapMedianRoundMs": null,
+  "tapBest": 23,
+  "tapFrames": 34,
+  "errors": [],
+  "flags": []
+ }
+]

@@ -7,6 +7,7 @@ import '@fontsource/rubik/latin-800.css';
 import { store, hash, fmt } from './util.js';
 import { sfx, sound } from './sfx.js';
 import { PAL, SHELL } from './palettes.js';
+import { isHidden, setRating, rating, logRound, toast, openPanel } from './qa.js';
 
 /* ---------- catalogue: every file in src/games/ is one game ---------- */
 const modules = import.meta.glob('./games/*.js', { eager: true });
@@ -31,6 +32,7 @@ function makeSlide(def){
       <div class="caption"><span class="tag">${def.tag}</span><h2>${def.title}</h2><p>${def.hint}</p></div>
       <div class="rail">
         <button class="rbtn like" aria-pressed="false"><span class="ic">♥</span><span class="n"></span></button>
+        <button class="rbtn meh" aria-label="Meh: hide this game"><span class="ic">👎</span><span>Meh</span></button>
         <div class="rbtn bestchip"><span class="ic best">0</span><span>Best</span></div>
         <button class="rbtn nextbtn" aria-label="Next game"><span class="ic">↓</span><span>Next</span></button>
       </div>
@@ -43,8 +45,10 @@ function makeSlide(def){
   // like
   const likeBtn=el.querySelector('.like'),liked=store.get('gs_like_'+def.id,false);
   const setLike=v=>{likeBtn.setAttribute('aria-pressed',v);likeBtn.querySelector('.n').textContent=fmt(def.likes+(v?1:0))};setLike(liked);
-  likeBtn.onclick=()=>{const v=likeBtn.getAttribute('aria-pressed')!=='true';store.set('gs_like_'+def.id,v);document.querySelectorAll('.slide').forEach(x=>{if(x._s&&x._s.def.id===def.id)x._s.setLike(v)})};
+  likeBtn.onclick=()=>{const v=likeBtn.getAttribute('aria-pressed')!=='true';store.set('gs_like_'+def.id,v);setRating(def.id,v?1:0);document.querySelectorAll('.slide').forEach(x=>{if(x._s&&x._s.def.id===def.id)x._s.setLike(v)})};
   s.setLike=setLike;
+  el.querySelector('.meh').onclick=()=>{const was=rating(def.id);setRating(def.id,-1);if(likeBtn.getAttribute('aria-pressed')==='true'){store.set('gs_like_'+def.id,false);setLike(false)}
+    toast(`Hidden: ${def.title}`,()=>setRating(def.id,was));goNext(s)};
   el.querySelector('.nextbtn').onclick=()=>goNext(s);
   s.overlay.onclick=e=>{if(Date.now()-s.overAt<550)return;startGame(s)};
   // pointer input
@@ -76,18 +80,18 @@ function renderOverlay(s){
 
 function startGame(s){
   if(active!==s)return;
-  s.game.reset();s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;
+  s.game.reset();s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
   s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');renderOverlay(s);
   sfx(660,.08,'square',.04,300);
 }
 function gameOver(s){
   if(s.state!=='playing')return;
-  s.state='over';s.overAt=Date.now();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
+  s.state='over';s.overAt=Date.now();logRound(s.def.id,s.overAt-s.startAt);s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(s.score>best(s.def.id)){store.set('gs_best_'+s.def.id,s.score);s.newBest=true}
   updateBest(s);sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){s.state='ready';s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function resetSlide(s){if(s.state==='playing')logRound(s.def.id,Date.now()-s.startAt);s.state='ready';s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
 function goNext(s){
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
   const i=slides.indexOf(s);if(i>=slides.length-2)addBatch();
@@ -109,7 +113,8 @@ function fit(s){
 // Shuffled queue over the whole catalogue; the feed pulls a few at a time so 1000 games never means 1000 slides in the DOM.
 let queue=[];
 function pickDefs(n=6){
-  const pool=GAMES.filter(g=>filter==='all'||(filter.startsWith('id:')?g.id===filter.slice(3):filter==='pocket'?g.retro:!g.retro));
+  let pool=GAMES.filter(g=>filter.startsWith('id:')||!isHidden(g.id)).filter(g=>filter==='all'||(filter.startsWith('id:')?g.id===filter.slice(3):filter==='pocket'?g.retro:!g.retro));
+  if(!pool.length)pool=GAMES;
   const out=[];
   while(out.length<n&&pool.length){
     if(!queue.length){queue=[...pool].sort(()=>Math.random()-.5);if(queue.length>1&&queue[0].id===lastId)queue.push(queue.shift())}
@@ -166,6 +171,8 @@ if(window.visualViewport)visualViewport.addEventListener('resize',()=>{resizeAt=
 screen.orientation?.addEventListener?.('change',()=>setTimeout(onResize,150));
 
 /* top bar */
+const logo=document.querySelector('.logo');logo.setAttribute('role','button');logo.tabIndex=0;logo.title='QA panel';
+logo.onclick=()=>openPanel(GAMES,best);
 const muteBtn=document.getElementById('mute');
 const paintMute=()=>{muteBtn.textContent=sound.muted?'🔇':'🔊';muteBtn.setAttribute('aria-pressed',String(sound.muted))};paintMute();
 muteBtn.onclick=()=>{sound.muted=!sound.muted;store.set('gs_muted',sound.muted);paintMute()};
