@@ -59,16 +59,18 @@ function make(api) {
     const spread = v.sensor ? Math.min(2.6, .35 + score * .22) : .3;
     const d = first ? 2.4 : clamp(1.6 + score * .14 + rnd(-.2, .3), 1.5, 4.2);
     binA = first ? 0 : clamp(binA + rnd(-1, 1) * spread, -spread, spread);
-    bx = -Math.sin(binA) * d; bz = -Math.cos(binA) * d;
+    const e = v.eyePos || { x: 0, z: 0 };   // from where you stand (you can walk around with native AR)
+    bx = e.x - Math.sin(binA) * d; bz = e.z - Math.cos(binA) * d;
     bin.position.set(bx, FLOOR, bz);
     wind = score < 2 ? 0 : Math.round(rnd(-1, 1) * Math.min(1.6, .3 + score * .12) * 10) / 10;
   }
   function say(s, col = '#fff') { msg = { s, col }; msgT = 1.3; }
   function throwBall(dx, dy, ms) {
+    // power mostly from how fast you flick (a lazy flick ~0.5 px/ms, a hard one ~3), a little from how far
     const len = Math.hypot(dx, dy), speed = len / Math.max(60, ms);   // px per ms
-    const power = clamp(len / (H * .55) * .7 + speed * .45, .15, 1.35);
+    const power = clamp((speed - .3) / 2.6, 0, 1) * .75 + clamp(len / (H * .6), 0, 1) * .25;
     const f = v.forward(new Vector3()), yaw = Math.atan2(-f.x, -f.z) - clamp(dx / W, -.6, .6) * .55;
-    const pitch = Math.asin(clamp(f.y, -1, 1)), elev = clamp(.62 + pitch * .5, .25, 1.1), sp = 2.1 + power * 4.2;
+    const pitch = Math.asin(clamp(f.y, -1, 1)), elev = clamp(.68 + pitch * .4, .35, 1.05), sp = 2.4 + power * 3.6;   // 2.4 to 6 m/s: about 1 to 4.5 m
     const o = held.getWorldPosition(new Vector3());
     flight = { p: o, v: new Vector3(-Math.sin(yaw) * Math.cos(elev) * sp, Math.sin(elev) * sp, -Math.cos(yaw) * Math.cos(elev) * sp), touched: false, t: 0, wr: new Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), spin: new Vector3(rnd(-9, 9), rnd(-9, 9), rnd(-9, 9)), done: 0 };
     ball.position.copy(o); ball.visible = true; held.visible = false;
@@ -92,7 +94,8 @@ function make(api) {
     },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      if (!v) return; v.live(); if (v.calibrating) return;   // floor calibration open: pause t += dt; msgT -= dt;
+      if (!v) return; v.live(); if (v.calibrating) return;   // floor calibration open: pause
+      t += dt; msgT -= dt;
       if (flight) {
         const F = flight, steps = 4, h = dt / steps;
         for (let k = 0; k < steps && !F.done; k++) {
@@ -140,7 +143,7 @@ function make(api) {
       c.save(); c.font = '700 12px Rubik, sans-serif'; c.textAlign = 'left'; c.fillStyle = '#fff';
       c.fillText('PAPER', 14, 40);
       for (let i = 0; i < MISSES; i++) { c.fillStyle = i < MISSES - misses ? '#f2f0ea' : '#ffffff30'; c.beginPath(); c.arc(20 + i * 18, 22, 6, 0, 7); c.fill(); }
-      const dist = Math.hypot(bx, bz);
+      const dist = Math.hypot(bx - v.cam.position.x, bz - v.cam.position.z);
       c.textAlign = 'right'; c.fillStyle = '#04110ecc'; c.beginPath(); c.roundRect(W - 112, 12, 98, 40, 10); c.fill();
       c.fillStyle = '#8affdc'; c.font = '600 10px Rubik, sans-serif'; c.fillText(`BIN ${dist.toFixed(1)} m`, W - 22, 28);
       c.fillStyle = '#fff'; c.font = '700 12px Rubik, sans-serif'; c.fillText(wind ? `WIND ${wind > 0 ? '→' : '←'} ${Math.abs(wind).toFixed(1)}` : 'NO WIND', W - 22, 44);

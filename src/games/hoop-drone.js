@@ -54,7 +54,8 @@ function makeMine() {
 function make(api) {
   want('motion');
   let v, drone, hoops, mines, fx, pos, vel, time, score, t, lastA, flash, msg, msgT, tap, buzzT;
-  const aim = new Vector3(), f = new Vector3(), tmp = new Vector3();
+  const aim = new Vector3(), f = new Vector3(), tmp = new Vector3(), prev = new Vector3(), nrm = new Vector3(), O = new Vector3();
+  const eye = () => v.eyePos || O;   // where the player is (older app kits keep it at the origin)
   function setup() {
     v = new ARView();
     drone = makeDrone(); v.scene.add(drone);
@@ -65,10 +66,11 @@ function make(api) {
   // the next hoop: a turn left or right from the last, at a new height and distance
   function nextSpot(out) {
     lastA += (Math.random() < .5 ? -1 : 1) * rnd(.45, Math.min(1.5, .6 + score * .06));
-    const d = rnd(2, 3), y = clamp(rnd(-.7, .8), FLOOR + .5, 1.2);
-    return out.set(-Math.sin(lastA) * d, y, -Math.cos(lastA) * d);
+    const d = rnd(2, 3), y = clamp(rnd(-.7, .8), FLOOR + .5, 1.2), e = eye();
+    return out.set(e.x - Math.sin(lastA) * d, y, e.z - Math.cos(lastA) * d);
   }
-  function placeHoop(h, p) { h.p.copy(p); h.g.position.copy(p); h.g.lookAt(0, p.y, 0); }
+  // hoops face the player, so you fly straight through them
+  function placeHoop(h, p) { const e = eye(); h.p.copy(p); h.g.position.copy(p); h.g.lookAt(e.x, p.y, e.z); }
   function advance() {
     const [a, b, c] = hoops; hoops = [b, c, a];
     placeHoop(a, nextSpot(tmp));
@@ -92,14 +94,16 @@ function make(api) {
     },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      if (!v) return; v.live(); if (v.calibrating) return;   // floor calibration open: pause t += dt; msgT -= dt; flash = Math.max(0, flash - dt * 2);
+      if (!v) return; v.live(); if (v.calibrating) return;   // floor calibration open: pause
+      t += dt; msgT -= dt; flash = Math.max(0, flash - dt * 2);
       time -= dt; if (time <= 0) { time = 0; v.off(); haptic('error'); return api.over(); }
       // target: along where the phone points, as far out as the hoop you're going for
+      // aim a little past the hoop's depth along that line, so pointing at the hoop flies the drone through it
       const cur = hoops[0]; v.forward(f);
-      aim.copy(f).multiplyScalar(Math.hypot(cur.p.x, cur.p.z) / Math.max(.25, Math.hypot(f.x, f.z)) * .98);
-      if (aim.length() > 3.4) aim.setLength(3.4);
-      if (v.eyePos) aim.add(v.eyePos);   // from where the phone is (older app kits keep it at the origin)
+      const along = tmp.copy(cur.p).sub(eye()).dot(f);
+      aim.copy(f).multiplyScalar(clamp(along + .45, .5, 3.6)).add(eye());
       aim.y = clamp(aim.y, FLOOR + .15, 1.6);
+      prev.copy(pos);
       // spring towards it with drag: weighty, but quick to respond
       tmp.copy(aim).sub(pos).multiplyScalar(14).addScaledVector(vel, -5.2);
       vel.addScaledVector(tmp, dt); if (vel.length() > 4) vel.setLength(4);
@@ -111,8 +115,11 @@ function make(api) {
       drone.rotation.x = clamp(-hv * .18, -.5, .5); drone.rotation.z = clamp(Math.sin(t * 9) * .03, -.5, .5);
       for (const p of drone.userData.props) p.rotation.y += dt * 60;
       if (Math.random() < .5) fx.emit({ x: pos.x, y: pos.y - .02, z: pos.z, vx: rnd(-.1, .1), vy: -.4, vz: rnd(-.1, .1), life: .35, size: .025, col: [.3, 2.2, 1.8], a: .5 });
-      // through the hoop?
-      if (pos.distanceTo(cur.p) < HOOP * .85) {
+      // through the hoop? crossing its plane inside the ring (or passing right by its middle)
+      nrm.set(0, 0, 1).applyQuaternion(cur.g.quaternion);
+      const s0 = tmp.copy(prev).sub(cur.p).dot(nrm), s1 = tmp.copy(pos).sub(cur.p).dot(nrm);
+      const crossed = s0 * s1 <= 0 && s0 !== s1 && tmp.copy(pos).sub(prev).multiplyScalar(s0 / (s0 - s1)).add(prev).distanceTo(cur.p) < HOOP * .95;
+      if (crossed || pos.distanceTo(cur.p) < HOOP * .6) {
         score++; api.score(score); const bonus = Math.max(1.2, 3 - score * .08); time += bonus;
         for (let i = 0; i < 46; i++) { const a = i / 46 * 6.28; tmp.set(Math.cos(a) * HOOP, Math.sin(a) * HOOP, 0).applyQuaternion(cur.g.quaternion).add(cur.p); fx.emit({ x: tmp.x, y: tmp.y, z: tmp.z, vx: (tmp.x - cur.p.x) * 3, vy: (tmp.y - cur.p.y) * 3, vz: (tmp.z - cur.p.z) * 3, life: .6, size: .04, col: [.6, 3, 2.4], drag: 3 }); }
         say(`+${bonus.toFixed(1)}s`, '#8affdc'); haptic('success'); sfx(700 + Math.min(score, 20) * 25, .12, 'triangle', .05, 300);
