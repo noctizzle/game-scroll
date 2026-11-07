@@ -349,6 +349,8 @@ if(STREAM&&GAMES.length)remote.refresh();
 start();
 // Coming back to the app: look for game updates (cheap: one small catalogue file).
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&remote.enabled)remote.refresh()});
+// And every 5 minutes while the app is open, so newly published games join the feed without a restart.
+if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refresh()},5*60*1000);
 
 // Test hook used by scripts/smoke.cjs
 window.__gs={GAMES,remote,progress,api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};

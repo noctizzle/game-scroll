@@ -59,7 +59,7 @@ fixed or added without a new app release.
 
 - `npm run games` builds every game in `src/games/` as its own file in `dist-games/` plus a `manifest.json` catalogue (title, hint, era... for each game).
 - On every push to main, `.github/workflows/games-r2.yml` uploads them to R2 (needs the `CLOUDFLARE_API_TOKEN` repo secret).
-- The app (`src/remote.js`) reads the catalogue from `VITE_GAMES_URL` (in `.env`), keeps the next 5 games in the feed
+- The app (`src/remote.js`) reads the catalogue from `VITE_GAMES_URL` (in `.env`), checks the catalogue at launch, on return to the app and every 5 minutes, keeps the next 5 games in the feed
   downloaded and ready, and saves the last 100 played in IndexedDB so they open instantly and work offline.
   Settings (⚙) shows the cache and has a Clear cache button.
 - A streamed game may only use shared exports (`src/util.js`, `src/sfx.js`, `src/kit/*.js`...) the installed app has;
