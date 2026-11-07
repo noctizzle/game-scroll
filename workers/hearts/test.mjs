@@ -151,7 +151,9 @@ async function run(vars, fn) {
   try { await fn((await w.url).toString().replace(/\/$/, '')); } finally { await w.dispose(); rmSync('.dev.vars', { force: true }); }
 }
 const A = 'test-device-aaaaaaaaaaaa', B = 'test-device-bbbbbbbbbbbb', game = 'test-game-' + Date.now();
-const post = (url, path, body, headers = {}) => fetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+// Each run uses its own fake address, since local rate-limit counters outlive one run.
+const IP = '198.51.100.' + (1 + crypto.getRandomValues(new Uint8Array(1))[0] % 250) + '.' + Date.now() % 1e6;
+const post = (url, path, body, headers = {}) => fetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': IP, ...headers }, body: JSON.stringify(body) });
 
 await run({}, async url => {
   let r = await post(url, '/heart', { device: A, game, on: true }); assert.equal(r.status, 200); assert.equal((await r.json()).n, 1);
@@ -178,7 +180,7 @@ await run({}, async url => {
   const s = await newSession(SECRET, A, 'android');
   r = await post(url, '/heart', { device: A, game, on: true }, { Authorization: 'Bearer ' + s.token }); assert.equal(r.status, 200);
   ok('a pass lifts the tight limit');
-  r = await fetch(url + '/challenge'); assert.equal(r.status, 200);
+  r = await fetch(url + '/challenge', { headers: { 'CF-Connecting-IP': IP } }); assert.equal(r.status, 200);
   const { challenge } = await r.json();
   r = await post(url, '/session', { device: A, platform: 'android', challenge, token: 'x' }); assert.equal(r.status, 403);
   assert.match((await r.json()).reason, /not set up/);
