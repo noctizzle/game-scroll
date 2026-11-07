@@ -8,6 +8,7 @@ in every style. The `npm run new` templates use all of it, so they are the quick
 | --- | --- | --- |
 | A working game to start from | `npm run new my-game --style pocket` | [Starter templates](#starter-templates) |
 | To remember things between plays | `api.save(data)`, `api.load(fallback)` | [Save slots](#save-slots) |
+| A level from where the player is, or walking to play | `api.location()`, `api.watchLocation(cb)` | [Location](#location) + `src/kit/geo.js` |
 | Particles, screen shake, smooth movement, "+10" pop-ups | `Juice`, `ease`, `Tweens` | [`src/kit/juice.js`](#juice) |
 | Explosions, jingles, music, ready-made sounds | `sounds`, `noise`, `notes`, `music` | [`src/kit/sound.js`](#sound) |
 | A thumbstick, buttons, tap / hold / swipe | `Stick`, `Button`, `Gestures`, `twoThumb` | [`src/kit/controls.js`](#controls) |
@@ -20,13 +21,14 @@ A game may import only these modules (the list lives in `src/game-modules.js`):
 
 `src/sfx.js`, `src/util.js`, `src/palettes.js`, `src/kit/device.js`, `src/kit/gfx.js`,
 `src/kit/bricks.js`, `src/kit/toon3d.js`, `src/kit/hd3d.js`, `src/kit/ar3d.js`, `src/kit/juice.js`,
-`src/kit/sound.js`, `src/kit/controls.js`, `src/kit/physics2d.js`.
+`src/kit/sound.js`, `src/kit/controls.js`, `src/kit/physics2d.js`, `src/kit/geo.js`.
 
 Everything else (credits, saved progress, settings, hearts) belongs to the app. The streamed app
 doesn't hand it to games at all, `npm run games` refuses to build a game that imports it, and the PR
 check flags it. `store` from `util.js` (raw storage) is held back too: use your save slot instead.
+So is the old `location()` from `device.js`: use `api.location()`.
 
-A game that uses a newer kit or `api.save` is only offered to app versions that have it; older apps
+A game that uses a newer kit, `api.save` or `api.location` is only offered to app versions that have it; older apps
 skip it until they update.
 
 ## Starter templates
@@ -74,6 +76,56 @@ function make(api) {
   save, so they follow the player to a new phone. If two phones saved, the newer save wins.
 - Save at moments that matter (a level cleared, game over), not every frame.
 - Best scores and credits are already saved by the app: don't keep them in your save.
+
+## Location
+
+For games built from where the player is (a daily puzzle shared with everyone nearby, things that
+live in this park) or played by walking about. Declare how precise you need it, then ask during play:
+
+```js
+import { cellId, distance, offset } from '../kit/geo.js';
+
+function make(api) {
+  let here = null, asked = false;
+  return {
+    reset() { asked = false; },
+    update(dt) {
+      if (!asked) { asked = true; api.location().then(p => { here = p; buildLevel(p.real ? cellId(p, 2000) : todaySeed()); }); }
+      // ...
+    },
+  };
+}
+export default { id: 'park-hunt', /* ... */ location: 'coarse', make };   // 'precise' for walk-around games
+```
+
+- `api.location()` resolves (never throws, at most ~8 s) to
+  `{ lat, lon, accuracy, real: true, precision }`, rounded **before your game sees it**: to 0.01°
+  (about 1 km) for `'coarse'` and 0.0001° (about 10 m) for `'precise'`. `accuracy` is in metres and
+  never smaller than the rounding.
+- When there's no real position it resolves to the stand-in `{ lat: 0, lon: 0, real: false, reason }`
+  where `reason` is `'denied'` (the player said no), `'off'` (Settings → "Let games use my location"),
+  `'unavailable'` (no fix, indoors, timed out) or `'not-playing'`. **The game must play with the
+  stand-in**: use a daily seed, or let the player walk the stand-in around with `offset(p, east, north)`.
+- `api.watchLocation(cb)` calls `cb` at once and again each time the rounded position changes. It
+  stops when the round ends, and returns `stop()` for stopping sooner. A coarse game only hears about
+  moves of about 1 km.
+- **Play time only.** Before the player presses Play, and after the round ends, both give the
+  stand-in without asking, so the phone's permission question only appears for a game the player
+  chose to play. The start screen and the How to play card tell players the game uses location.
+- `npm run games` refuses a game that calls `api.location` without declaring `location`. The PR check
+  flags `'precise'` (a maintainer checks it's needed) and any direct `navigator.geolocation` use.
+- The declaration goes into the catalogue, and the game asks for `api.location`, so app versions
+  older than this one skip location games instead of offering them.
+- Location never leaves the phone and isn't saved. Don't put coordinates in `api.save()`; save a
+  `cellId` if you need to remember a place.
+- There are no map tiles yet: draw the area yourself (paths, a grid, a compass to a target).
+
+`src/kit/geo.js` has the maths: `distance(a, b)` in metres, `bearing(a, b)` in degrees from north,
+`offset(p, east, north)`, `toLocal(origin, p)` → `{ x, y }` metres for drawing, and `cellId(p, metres)`,
+a whole number that is the same for everyone in the same square (to seed "what spawns here today").
+
+Test: `npm run location-test` checks the rounding, the play-time rule and the stand-ins in the real
+app with a fake GPS position.
 
 ## Juice
 

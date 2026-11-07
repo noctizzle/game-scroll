@@ -5,6 +5,7 @@ import { playstats } from './playstats.js';
 import { HEARTS_URL } from './hearts.js';
 import { nativeARSupported } from './kit/native-ar.js';
 import { fpsPick, setFpsPick, autoFps, phoneClass, screenHz } from './kit/speed.js';
+import { geoSettings } from './geo.js';
 
 const size = b => b < 1024 * 1024 ? `${Math.ceil(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
 
@@ -34,6 +35,11 @@ export function openSettings({ stream, cached, clear, arTest }) {
         <p class="qa-help">A cube on your floor for checking how well AR games track the room: walk around it and it should stay put.${nativeARSupported() === false ? ' This phone or version plays AR games in look-around mode.' : ''}</p>
         <div class="qa-actions"><button class="set-ar">Open AR test</button></div>
       </section>` : ''}
+      <section class="set-row">
+        <h3>Location</h3>
+        <p class="qa-help">A few games build their level from your area, and ask the first time you play one. They only get a rounded position (about 1 km, or about 10 m for walk-around games), only while you play, and it never leaves your phone. Turn this off and they use a made-up spot instead.</p>
+        <label class="set-toggle"><input type="checkbox" class="set-loc"${geoSettings.enabled ? ' checked' : ''}> Let games use my location</label>
+      </section>
       ${HEARTS_URL ? `<section class="set-row">
         <h3>Play stats and crash reports</h3>
         <p class="qa-help">Counts how often each game is played or skipped, and reports crashes, errors and stutters along with your phone model (like “SM-F966B”), added up across everyone. It helps pick which games to improve, fix and show more. Nothing identifies you.</p>
@@ -56,6 +62,7 @@ export function openSettings({ stream, cached, clear, arTest }) {
     el.querySelector('.qa-x').onclick = () => el.close();
     el.querySelector('.set-ar')?.addEventListener('click', () => { el.close(); arTest(); });
     el.querySelectorAll('.set-fps button').forEach(b => b.addEventListener('click', () => { setFpsPick(b.dataset.fps); render(); }));
+    el.querySelector('.set-loc').addEventListener('change', e => { geoSettings.enabled = e.target.checked; });
     el.querySelector('.set-stats')?.addEventListener('change', e => { playstats.enabled = e.target.checked; });
     el.querySelector('.set-clear')?.addEventListener('click', async e => {
       e.target.disabled = true; await clear(); render('Cache cleared. Games will download again as you play them.');

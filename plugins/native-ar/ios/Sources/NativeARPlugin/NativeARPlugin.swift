@@ -79,7 +79,7 @@ public class NativeARPlugin: CAPPlugin, CAPBridgedPlugin, ARSessionDelegate {
             cfg.planeDetection = [.horizontal]
             cfg.isLightEstimationEnabled = true
             cfg.worldAlignment = .gravity
-            view.session.run(cfg, options: self.running ? [] : [.resetTracking, .removeExistingAnchors])
+            view.session.run(cfg)   // keeps the room map between rounds, so the floor is found at once
             self.running = true
             self.frameNo = 0
             call.resolve(["started": true])

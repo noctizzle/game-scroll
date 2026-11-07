@@ -11,6 +11,7 @@ const { Group, Mesh, SphereGeometry, TorusGeometry, CylinderGeometry, ConeGeomet
 // give a shield back. The radar at the top and the red edge arrows show where they are.
 let W = 300, H = 460;
 const SHIELDS = 3;
+const SIDE = 1.45;   // saucers stay within this angle (radians) either side of straight ahead
 
 let MT = null;
 function looks() {
@@ -49,7 +50,8 @@ function make(api) {
   function spawn() {
     const gold = Math.random() < .1 && !saucers.some(s => s.gold);
     const mesh = pool.find(p => !p.visible && (p === pool[8]) === gold); if (!mesh) return;
-    const a = kills + saucers.length < 2 ? v.heading() + rnd(-.35, .35) : v.heading() + (Math.random() < .5 ? -1 : 1) * rnd(.5, Math.min(2.8, 1.2 + t / 20));   // the first ones come from in front
+    // only from in front and the sides, never behind you (0 = straight ahead when the round started); the first ones come from in front
+    const a = kills + saucers.length < 2 ? rnd(-.35, .35) : rnd(-1, 1) * Math.min(SIDE - .1, .7 + t / 25);
     mesh.visible = true;
     saucers.push({ mesh, gold, a, r: rnd(5.5, 7.5), y: rnd(-.5, 1.1), spin: (Math.random() < .5 ? -1 : 1) * rnd(.15, .4), in: rnd(.28, .4) + t / 160, ph: rnd(0, 6), born: 0, hp: gold ? 2 : 1 });
   }
@@ -93,7 +95,7 @@ function make(api) {
       spawnT -= dt; if (spawnT <= 0 && saucers.length < cap) { spawn(); spawnT = Math.max(.5, 1.8 - t / 40); }
       const p = new Vector3();
       for (const s of [...saucers]) {
-        s.born += dt; s.ph += dt; s.a += s.spin * dt / Math.max(1, s.r / 3); s.r -= s.in * dt;
+        s.born += dt; s.ph += dt; s.a += s.spin * dt / Math.max(1, s.r / 3); if (Math.abs(s.a) > SIDE) { s.a = Math.sign(s.a) * SIDE; s.spin = -s.spin; }   // turn back at your side s.r -= s.in * dt;
         s.mesh.rotation.y += dt * 3; s.mesh.rotation.z = Math.sin(s.ph * 1.7) * .15;
         pos(s, s.mesh.position);
         if (s.r < 1.3) {   // close enough to zap you
