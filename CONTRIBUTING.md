@@ -111,6 +111,7 @@ export default {
   w: W, h: H,                   // logical canvas size
   goal: 25,                     // required: the score that counts as a win and pays credits
   hint: 'Pop the bubbles before they float away. Miss three and it is over.',
+  creator: 'Your Name',         // shown as "Created by Your Name" in the game's info pop-up
   make,
 };
 ```
@@ -125,6 +126,7 @@ export default {
 | `hint` | yes | One or two sentences on how to play. Mention the control (tap, hold, drag, swipe, tilt...) because the recommender reads it. |
 | `goal` | yes | Score that counts as a win and pays credits. Pick something a decent player reaches in about a minute. |
 | `w`, `h` | yes | Logical canvas size. You always draw and receive input in these units; the app scales it to the screen. |
+| `creator` | yes for submitted games | Your name or handle, shown as "Created by ..." when players tap the game's name. Plain text, up to 40 characters. Games without one show "Created by Rob". |
 | `make(api)` | yes | Returns your game object (below). |
 | `retro`, `era`, `pal` | for retro styles | See [Choosing a style](#choosing-a-style). |
 | `maxW`, `maxH`, `step` | no | Makes the game fluid on tall and unfolded screens. See [Screen sizes](#screen-sizes-foldables-and-fluid-games). |

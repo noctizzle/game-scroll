@@ -97,6 +97,8 @@ function makeSlide(def){
 
 /* ---------- how-to-play sheet: tapping the caption opens the full description ---------- */
 let infoDlg=null;
+// who made the game: def.creator (plain text, set by contributors), otherwise Rob
+const creatorOf=d=>String(d.creator||'Rob').slice(0,40).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 function openInfo(s){
   const d=s.def;
   if(!infoDlg){infoDlg=document.createElement('dialog');infoDlg.className='info';document.body.appendChild(infoDlg);
@@ -105,7 +107,7 @@ function openInfo(s){
   infoDlg._s=s;if(s.state==='playing')s.paused=true;
   const kind=d.era==='console'?'Classic · Console game':d.era==='nextgen'?'Next Gen · Console game':d.era==='advance'?'Advance-style pocket game':d.era==='color'?'Colour pocket game':d.retro?'Dot-matrix pocket game':'Phone game';
   infoDlg.innerHTML=`<div class="info-card"><button class="info-x" aria-label="Close">✕</button>
-    <span class="tag">${d.tag}</span><h2>${d.title}</h2><div class="info-k">${kind}</div>
+    <span class="tag">${d.tag}</span><h2>${d.title}</h2><div class="info-by">Created by <b>${creatorOf(d)}</b></div><div class="info-k">${kind}</div>
     <h3>How to play</h3><p>${d.hint}</p>
     <div class="info-stats"><div><b>${fmt(best(d.id))}</b>Your best</div>${d.goal?`<div><b>${d.goal}</b>Score to win</div>`:''}</div>
     <button class="play info-play">${s.state==='playing'?'Keep playing':'Play'}</button></div>`;
