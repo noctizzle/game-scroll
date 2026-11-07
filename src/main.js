@@ -334,7 +334,20 @@ muteBtn.after(setBtn);setBtn.onclick=()=>openSettings({stream:STREAM,cached:()=>
 mineBtn.onclick=()=>openMyGames({games:GAMES,best,play:playNow,changed:(id,r)=>{slides.forEach(x=>{if(x.def.id===id)x.setLike(r>0)});rerank()},qa:()=>openPanel(GAMES,best)});
 const paintMute=()=>{muteBtn.textContent=sound.muted?'🔇':'🔊';muteBtn.setAttribute('aria-pressed',String(sound.muted))};paintMute();
 muteBtn.onclick=()=>{sound.muted=!sound.muted;store.set('gs_muted',sound.muted);paintMute()};
-const feedPick=document.getElementById('feed-filter');feedPick.onchange=()=>{if(filter===feedPick.value)return;filter=feedPick.value;feedPick.blur();rebuild()};
+// feed picker: a styled menu (not the system picker) under the pill in the top bar
+const feedBtn=document.getElementById('feed-btn'),feedMenu=document.getElementById('feed-menu'),feedOpts=[...feedMenu.querySelectorAll('[role=option]')];
+function feedOpen(on){feedMenu.hidden=!on;feedBtn.setAttribute('aria-expanded',String(on));
+  if(on){const b=feedBtn.getBoundingClientRect(),w=Math.min(240,innerWidth-32);feedMenu.style.width=w+'px';feedMenu.style.left=Math.max(16,Math.min(b.left,innerWidth-16-w))-b.left+'px';(feedOpts.find(o=>o.getAttribute('aria-selected')==='true')||feedOpts[0]).focus()}}
+function feedPick(o){feedOpen(false);feedBtn.focus();if(filter===o.dataset.f)return;filter=o.dataset.f;
+  feedOpts.forEach(x=>x.setAttribute('aria-selected',String(x===o)));const name=o.querySelector('b').textContent;
+  document.getElementById('feed-label').textContent=name;feedBtn.setAttribute('aria-label','Show games: '+name);haptic('light');rebuild()}
+feedBtn.onclick=e=>{e.stopPropagation();feedOpen(feedMenu.hidden)};
+feedOpts.forEach(o=>{o.onclick=e=>{e.stopPropagation();feedPick(o)}});
+feedMenu.addEventListener('keydown',e=>{const i=feedOpts.indexOf(document.activeElement);
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();feedOpts[(i+(e.key==='ArrowDown'?1:3))%4].focus()}
+  else if(e.key==='Enter'||e.key===' '){e.preventDefault();if(i>=0)feedPick(feedOpts[i])}
+  else if(e.key==='Escape'||e.key==='Tab'){feedOpen(false);feedBtn.focus()}});
+document.addEventListener('pointerdown',e=>{if(!feedMenu.hidden&&!e.target.closest('.feedpick'))feedOpen(false)},true);
 
 function boot(){initWallet(GAMES);services.init(GAMES);booted=true;rebuild();requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
 // Streaming: with a saved catalogue, start at once and check for updates in the background.

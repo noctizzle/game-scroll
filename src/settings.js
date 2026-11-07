@@ -1,5 +1,5 @@
 // Settings sheet, opened from the ⚙ button in the top bar.
-// For now: how many streamed games are saved on this device, and a button to clear them.
+// How many streamed games are saved on this device (with a button to clear them), the licence, and credits.
 import { fmt } from './util.js';
 
 const size = b => b < 1024 * 1024 ? `${Math.ceil(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
@@ -19,7 +19,21 @@ export function openSettings({ stream, cached, clear }) {
              <div class="qa-actions"><button class="set-clear"${c.games ? '' : ' disabled'}>Clear cache</button></div>`
           : `<p class="qa-help">This is a test build with every game built in, so there's nothing to cache.</p>`}
         ${note ? `<p class="set-note" role="status">${note}</p>` : ''}
-      </section>`;
+      </section>
+      <section class="set-row">
+        <h3>Licence</h3>
+        <p class="qa-help">Copyright © 2026 Rob and Game Scroll contributors. The code is under the PolyForm Shield License 1.0.0: you can use, change and share it for anything except making a product that competes with Game Scroll.</p>
+        <details class="set-lic"><summary>Open-source parts</summary>
+          <dl>
+            <dt>three.js</dt><dd>MIT</dd>
+            <dt>Capacitor</dt><dd>MIT</dd>
+            <dt>Press Start 2P font</dt><dd>SIL OFL 1.1</dd>
+            <dt>Rubik font</dt><dd>SIL OFL 1.1</dd>
+          </dl>
+        </details>
+        <p class="set-link"><a href="https://github.com/robthewizzuk/game-scroll/blob/main/LICENSE" target="_blank" rel="noopener">Read the full licence ↗</a></p>
+      </section>
+      <footer class="set-made">Made by <b>Rob</b></footer>`;
     el.querySelector('.qa-x').onclick = () => el.close();
     el.querySelector('.set-clear')?.addEventListener('click', async e => {
       e.target.disabled = true; await clear(); render('Cache cleared. Games will download again as you play them.');

@@ -14,15 +14,15 @@
 <div id="app">
   <header class="top">
     <div class="logo">GAME<br><b>SCROLL</b></div>
-    <label class="feedpick">
-      <span class="sr">Show games</span>
-      <select id="feed-filter" aria-label="Show games">
-        <option value="all" selected>For you</option>
-        <option value="pocket">Pocket</option>
-        <option value="console">Console</option>
-        <option value="phone">Casual</option>
-      </select>
-    </label>
+    <div class="feedpick">
+      <button id="feed-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="feed-menu" aria-label="Show games: For you"><span id="feed-label">For you</span></button>
+      <ul id="feed-menu" role="listbox" aria-label="Show games" hidden>
+        <li role="option" data-f="all" aria-selected="true" tabindex="-1"><b>For you</b><small>A mix of everything</small></li>
+        <li role="option" data-f="pocket" aria-selected="false" tabindex="-1"><b>Pocket</b><small>Handheld-style pixel games</small></li>
+        <li role="option" data-f="console" aria-selected="false" tabindex="-1"><b>Console</b><small>Home-console 3D games</small></li>
+        <li role="option" data-f="phone" aria-selected="false" tabindex="-1"><b>Casual</b><small>Quick modern phone games</small></li>
+      </ul>
+    </div>
     <button class="iconbtn" id="mute" aria-label="Toggle sound">🔊</button>
   </header>
   <main id="feed" aria-label="Game feed"></main>
