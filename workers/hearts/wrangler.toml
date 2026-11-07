@@ -10,6 +10,18 @@ workers_dev = true
 routes = [{ pattern = "api.game-scroll.com", custom_domain = true }]
 
 [vars]
+# "on" = hearts need a pass from App Attest / Play Integrity. Leave "off" until the app is in the
+# App Store and Play Store, or today's sideloaded test builds can't add hearts.
+ENFORCE = "off"
+# Apple Team ID + bundle id, e.g. "ABCDE12345.com.gamescroll.app" (needs the paid Apple account).
+APPLE_APP_ID = ""
+# "on" accepts App Attest from development builds (Xcode installs). Off for the store.
+APPLE_ALLOW_DEV = "off"
+# "on" accepts Play Integrity from a genuine phone even if the app wasn't installed from Play.
+ANDROID_ALLOW_SIDELOAD = "off"
+# Secrets (set with wrangler secret put, never in this file):
+#   SESSION_SECRET         signs challenges and passes; the deploy workflow creates it once
+#   GOOGLE_SERVICE_ACCOUNT JSON key for the Play Integrity decode API
 # The live catalogue, used to accept hearts only for games that exist.
 MANIFEST_URL = "https://assets.game-scroll.com/manifest.json"
 
@@ -19,8 +31,21 @@ database_name = "game-scroll-hearts"
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
 
-# Per-address write limit, so one person can't spam the counts.
+# Rate limits (per Cloudflare location; the dashboard WAF rule is the global backstop).
+# Hearts without a pass: per address.
 [[ratelimits]]
 name = "LIMIT"
 namespace_id = "7301"
-simple = { limit = 40, period = 60 }
+simple = { limit = 10, period = 60 }
+
+# Hearts with a pass: per verified device.
+[[ratelimits]]
+name = "LIMIT_VERIFIED"
+namespace_id = "7302"
+simple = { limit = 60, period = 60 }
+
+# Challenges and passes: per address (each pass costs an Apple/Google check).
+[[ratelimits]]
+name = "LIMIT_SESSION"
+namespace_id = "7303"
+simple = { limit = 10, period = 60 }

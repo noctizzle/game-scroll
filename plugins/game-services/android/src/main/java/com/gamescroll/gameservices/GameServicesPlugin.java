@@ -15,6 +15,8 @@ import com.google.android.gms.games.SnapshotsClient;
 import com.google.android.gms.games.snapshot.Snapshot;
 import com.google.android.gms.games.snapshot.SnapshotMetadataChange;
 import com.google.android.gms.tasks.Task;
+import com.google.android.play.core.integrity.IntegrityManagerFactory;
+import com.google.android.play.core.integrity.IntegrityTokenRequest;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -165,5 +167,32 @@ public class GameServicesPlugin extends Plugin {
 
     private static String read(Snapshot snap) throws java.io.IOException {
         return new String(snap.getSnapshotContents().readFully(), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Play Integrity: asks Google for a token that proves this is the real app on a genuine device.
+     * The server (workers/hearts) sends it to Google to decode. Takes { challenge } from the server,
+     * which becomes the token's nonce. Returns { platform: "android", token }.
+     * Optional: set integrity_cloud_project_number in strings.xml (needed only for apps not on Play).
+     */
+    @PluginMethod
+    public void integrity(PluginCall call) {
+        String challenge = call.getString("challenge");
+        if (challenge == null || challenge.isEmpty()) { call.reject("challenge is required"); return; }
+        IntegrityTokenRequest.Builder req = IntegrityTokenRequest.builder().setNonce(challenge);
+        Context ctx = getContext();
+        int res = ctx.getResources().getIdentifier("integrity_cloud_project_number", "string", ctx.getPackageName());
+        if (res != 0) {
+            String n = ctx.getString(res);
+            if (n.matches("\\d{6,}")) req.setCloudProjectNumber(Long.parseLong(n));
+        }
+        IntegrityManagerFactory.create(ctx).requestIntegrityToken(req.build())
+            .addOnSuccessListener(r -> {
+                JSObject out = new JSObject();
+                out.put("platform", "android");
+                out.put("token", r.token());
+                call.resolve(out);
+            })
+            .addOnFailureListener(e -> call.reject("Play Integrity failed: " + e.getMessage()));
     }
 }

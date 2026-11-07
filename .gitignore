@@ -5,3 +5,4 @@ dist-games
 
 # Cloudflare local dev state
 .wrangler
+.dev.vars

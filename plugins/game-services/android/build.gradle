@@ -2,6 +2,7 @@
 ext {
     // Check https://developers.google.com/games/services/android/release-notes for the newest version.
     playGamesVersion = project.hasProperty('playGamesVersion') ? rootProject.ext.playGamesVersion : '20.1.2'
+    playIntegrityVersion = project.hasProperty('playIntegrityVersion') ? rootProject.ext.playIntegrityVersion : '1.4.0'
     androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
 }
 
@@ -39,4 +40,6 @@ dependencies {
     // getActivity() returns an AppCompatActivity, so javac needs it on the classpath
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "com.google.android.gms:play-services-games-v2:$playGamesVersion"
+    // Play Integrity: proves to api.game-scroll.com that requests come from the real app (see integrity()).
+    implementation "com.google.android.play:integrity:$playIntegrityVersion"
 }
