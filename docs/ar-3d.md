@@ -48,7 +48,7 @@ function make(api) {
   return {
     reset() { v?.off(); v?.recenter(); /* ... */ },     // stop the camera; "ahead" = where the phone points next
     update(dt) { if (!v) return; v.live(); if (v.calibrating) return; /* ... */ if (lost) { v.off(); api.over(); } },
-    down(x, y, id) { if (v?.input('down', x, y, id)) return; /* ... */ },          // same for move (pass pressed) and up
+    down(x, y, id) { if (v?.input?.('down', x, y, id)) return; /* ... */ },          // same for move (pass pressed) and up
     draw(c) {
       if (!v) { v = new ARView(); /* build meshes, add to v.scene */ this.reset(); }
       v.look();                    // gyro (or drag) -> camera

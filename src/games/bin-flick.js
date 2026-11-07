@@ -149,10 +149,10 @@ function make(api) {
       c.restore();
       arNote(c, v, W, H);
     },
-    down(x, y, id) { if (v?.input('down', x, y, id)) return; if (flight || flick) return; flick = { x0: x, y0: y, x, y, id, t: performance.now() }; },
-    move(x, y, pressed, id) { if (v?.input('move', x, y, id, pressed)) return; if (flick && flick.id === id) { flick.x = x; flick.y = y; } },
+    down(x, y, id) { if (v?.input?.('down', x, y, id)) return; if (flight || flick) return; flick = { x0: x, y0: y, x, y, id, t: performance.now() }; },
+    move(x, y, pressed, id) { if (v?.input?.('move', x, y, id, pressed)) return; if (flick && flick.id === id) { flick.x = x; flick.y = y; } },
     up(x, y, id) {
-      if (v?.input('up', x, y, id)) return;
+      if (v?.input?.('up', x, y, id)) return;
       if (!flick || flick.id !== id) return;
       const dx = x - flick.x0, dy = y - flick.y0, ms = performance.now() - flick.t; flick = null;
       if (dy < -25 && ms < 1500 && !flight) throwBall(dx, -dy, ms);
