@@ -25,6 +25,9 @@ import { hearts } from './hearts.js';
 import { playstats } from './playstats.js';
 import { perf } from './perf.js';
 import { history } from './history.js';
+import { savesFor } from './saves.js';
+import { stopMusic } from './kit/sound.js';
+import { makeDebug } from './debug.js';
 import { shareGame, onSharedGame } from './share.js';
 import BUNDLED from 'virtual:bundled-games';
 
@@ -70,6 +73,7 @@ function makeSlide(def){
     over:()=>gameOver(s),
     win:()=>win(s),                                     // for games with a natural win (cleared the board, etc.)
     has:id=>!!(s.run&&s.run.items.has(id)),             // is this shop item active for the current run?
+    ...savesFor(def.id),                                // save(data) / load(fallback) / clearSave(): this game's own save slot
   });
   s.game.reset();
   // like
@@ -169,13 +173,13 @@ function awardTrophies(s){
 }
 function gameOver(s){
   if(s.state!=='playing')return;
-  s.state='over';s.overAt=Date.now();logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
+  s.state='over';s.overAt=Date.now();stopMusic();logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(progress.score(s.def.id,s.score))s.newBest=true;
   awardTrophies(s);services.reportRun(s.def);
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function resetSlide(s){stopMusic();if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
 function goPrev(s){
   const i=slides.indexOf(s);if(i<=0)return;
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
@@ -318,7 +322,7 @@ function openShared(id){
 }
 function setActive(s){
   if(active===s)return;
-  if(active&&active.state!=='ready')resetSlide(active);
+  stopMusic();if(active&&active.state!=='ready')resetSlide(active);
   feed.classList.remove('locked');active=s;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);
   topUp();schedulePrune();
 }
@@ -350,17 +354,22 @@ function rebuild(){
 let resizeAt=0;
 io=new IntersectionObserver(es=>{if(performance.now()-resizeAt<500)return;for(const e of es)if(e.isIntersecting&&e.intersectionRatio>=.6)setActive(e.target._s)},{root:feed,threshold:[.6]});
 
+// Debug overlay for makers (src/debug.js): dev and test builds only, never in the store apps.
+const DBG=import.meta.env.MODE==='bundled'?makeDebug():null;
 let lastT=performance.now();
 function frame(now){
-  const dt=Math.min(.033,(now-lastT)/1000);lastT=now;
+  let dt=Math.min(.033,(now-lastT)/1000);lastT=now;
   requestAnimationFrame(frame);
   const s=active;
   if(s){
     // one broken game must never stop the loop (that froze every game): end its round instead
     try{
+      let run=true;if(DBG&&DBG.on)({dt,run}=DBG.time(dt));
       const timed=s.state==='playing'&&!s.paused,t0=timed?performance.now():0;
-      if(timed)s.game.update(dt);else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
-      if(s.state!=='ready'||s.dirty){paint(s);s.dirty=false}
+      if(timed){if(run)s.game.update(dt)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
+      const t1=performance.now();
+      if(s.state!=='ready'||s.dirty||(DBG&&DBG.on)){paint(s);s.dirty=false}
+      if(DBG&&DBG.on)DBG.after(s,timed?t1-t0:0,performance.now()-t1,now);
       // frame timing for the anonymous stutter reports (src/perf.js)
       if(timed&&s.state==='playing')perf.frame(s.def.id,now,performance.now()-t0);else perf.gap();
     }catch(e){console.error(s.def.id,e);perf.error(e,s.def.id);s.dirty=false;if(s.state==='playing')try{gameOver(s)}catch(_){}}
@@ -435,4 +444,4 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refresh()},5*60*1000);
 
 // Test hook used by scripts/smoke.cjs
-window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};
+window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',only(id){filter='id:'+id;rebuild()}};

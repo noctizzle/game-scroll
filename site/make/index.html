@@ -81,7 +81,8 @@ npm run dev</code></pre>
 <p>Fork the repository, then on your fork click <b>Code → Codespaces → Create codespace</b>. You get an editor in the browser. In its terminal, run <code>npm install</code> and <code>npm run dev</code>, then open the forwarded port it offers. GitHub gives every account free Codespaces hours each month.</p>
 
 <h2 id="file">2. Write your game</h2>
-<p>Create <code>src/games/tap-bubbles.js</code> (the file name must match the game's <code>id</code>). This is a complete, working game you can start from:</p>
+<p><b>Quickest start:</b> <code>npm run new my-game --style pocket</code> writes a small game that already plays, in any style (<code>phone</code>, <code>pocket</code>, <code>color</code>, <code>advance</code>, <code>console</code>, <code>nextgen</code> or <code>ar</code>). Then make it your own.</p>
+<p>Or start from scratch: create <code>src/games/tap-bubbles.js</code> (the file name must match the game's <code>id</code>). This is a complete, working game you can start from:</p>
 <pre><code>import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
 
@@ -121,7 +122,7 @@ export default {
   hint: 'Pop the bubbles before they float away. Miss three and it is over.',
   make,
 };</code></pre>
-<p>Then jump straight to it: open the browser console and run <code>__gs.only('tap-bubbles')</code>.</p>
+<p>Then jump straight to it: open the browser console and run <code>__gs.only('tap-bubbles')</code>. Press <code>`</code> (backquote) for the debug overlay: frame rate, slow motion, frame stepping and hitboxes.</p>
 
 <h3>What your game gets and gives</h3>
 <table>
@@ -133,6 +134,7 @@ export default {
   <tr><td><code>key(k, isDown)</code></td><td>Optional keyboard support for desktop.</td></tr>
   <tr><td><code>resize(w, h)</code></td><td>Optional, for games that grow to fill big screens.</td></tr>
 </table>
+<p>Your game calls <code>api.score(n)</code>, <code>api.over()</code> and <code>api.win()</code>. To remember things between plays, like unlocked levels, use its own save slot: <code>api.save(data)</code> and <code>api.load(fallback)</code>. Saves follow the player to a new phone.</p>
 <table>
   <tr><th>The <code>api</code></th><th>What it does</th></tr>
   <tr><td><code>api.score(n)</code></td><td>Sets the score. Reaching <code>goal</code> wins credits; the game keeps going.</td></tr>
@@ -204,12 +206,17 @@ export default {
 <p>Test the fallback path with the usual checks (<code>smoke</code>, <code>fold</code>, <code>sweep</code>), then try it on a real phone, because the camera and motion sensor only work there. The full reference, including how to fake a camera in a headless browser, is in <a href="https://github.com/robthewizzuk/game-scroll/blob/main/docs/ar-3d.md">docs/ar-3d.md</a>.</p>
 
 <h2 id="phone">4. Sound, haptics and phone sensors</h2>
-<p>Import shared helpers from the app; it hands them to streamed games:</p>
+<p>Import shared helpers from the app; it hands them to streamed games. A game can't import any other app code.</p>
 <ul>
+  <li><code>src/kit/sound.js</code>: ready-made sounds like <code>sounds.coin()</code> and <code>sounds.boom()</code>, explosions, jingles and looping music.</li>
+  <li><code>src/kit/juice.js</code>: particles, screen shake, smooth movement and "+10" pop-ups.</li>
+  <li><code>src/kit/controls.js</code>: thumbsticks, buttons, two-thumb layouts, and tap, hold and swipe detection.</li>
+  <li><code>src/kit/physics2d.js</code>: balls and boxes that bounce, stack and collide.</li>
   <li><code>src/sfx.js</code>: <code>sfx(freq, duration, type, volume)</code> for short synth sounds. Respects mute.</li>
   <li><code>src/kit/device.js</code>: <code>haptic()</code>, <code>buzz()</code>, <code>tilt()</code>, <code>onShake()</code>, <code>heading()</code>, <code>faceDown()</code>, <code>location()</code>, <code>startMic()</code>, <code>startCamera()</code>.</li>
   <li><code>src/util.js</code> and <code>src/palettes.js</code>: maths helpers, pixel sprites, palettes.</li>
 </ul>
+<p>The <a href="https://github.com/robthewizzuk/game-scroll/blob/main/docs/maker-kit.md">maker kit guide</a> explains all of these with examples.</p>
 <p>Sensors return nothing in the browser or when a player says no, so <b>every sensor game needs a touch fallback</b>: drag instead of tilt, tap instead of shout. Stop the mic or camera when the round ends. Location, camera and mic data must never leave the phone.</p>
 
 <h2 id="credits">5. Credits and shop items</h2>

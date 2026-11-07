@@ -17,6 +17,7 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { GAME_MODULES, HIDDEN, API_FEATURES } from '../src/game-modules.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'src'), GAMES = join(SRC, 'games');
@@ -38,6 +39,7 @@ async function buildOne(file) {
       resolveId(src, importer) {
         if (!importer || !src.startsWith('.')) return null;
         const key = kitKey(resolve(dirname(importer), src));
+        if (key && !GAME_MODULES.includes(key)) throw new Error(`src/games/${file} imports src/${key}, which games may not use (allowed: ${GAME_MODULES.join(', ')})`);
         return key ? { id: 'gs:' + key, external: true } : null;
       },
     }],
@@ -52,8 +54,13 @@ async function buildOne(file) {
     const key = kitKey(resolve(GAMES, m[2]));
     if (!key) continue;
     const names = m[1].split(',').map(x => x.trim().split(/\s+as\s+/)[0]).filter(Boolean);
+    const hidden = names.filter(n => (HIDDEN[key] || []).includes(n));
+    if (hidden.length) throw new Error(`src/games/${file} imports ${hidden.join(', ')} from src/${key}, which games may not use (save with api.save / api.load instead)`);
     needs[key] = [...new Set([...(needs[key] || []), ...names])].sort();
   }
+  // Newer api features (api.save ...): older apps without them skip the game instead of crashing.
+  const feats = API_FEATURES.filter(f => new RegExp(`\\bapi\\s*\\.\\s*${f}\\b`).test(src));
+  if (feats.length) needs['@api'] = feats;
   return { code: chunk.code, needs };
 }
 

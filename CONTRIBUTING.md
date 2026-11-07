@@ -32,9 +32,11 @@ There is a friendlier walkthrough at **https://game-scroll.com/make/**. This gui
   seconds of play. A round should last roughly 20 seconds to 3 minutes.
 - **Self-contained.** One file in `src/games/`, everything drawn in code on a canvas. No image,
   font or sound files, no network requests, no `eval`, no tracking, no ads, no links out of the app.
-  Saving, sound, haptics and sensors all go through the shared kit: a game never touches
-  `localStorage`, `fetch`, Capacitor or other windows itself. `node scripts/game-lint.mjs my-game`
-  flags any line that does, and the app blocks network calls to anywhere but our own servers anyway.
+  Saving, sound, haptics and sensors all go through the shared kit and `api.save()`: a game never
+  touches `localStorage`, `fetch`, Capacitor or other windows itself, and imports only the shared
+  modules listed in [the maker kit guide](docs/maker-kit.md#which-shared-code-a-game-may-use).
+  `node scripts/game-lint.mjs my-game` flags any line that breaks this, and the app blocks network
+  calls to anywhere but our own servers anyway.
 - **Touch first.** Every game must be fully playable with touch alone. Phone sensors are welcome as
   long as there is a touch fallback (see [below](#sound-haptics-and-phone-sensors)).
 - **Family friendly.** Cartoon action is fine. No gore, hateful content, gambling with real money,
@@ -54,8 +56,8 @@ git clone https://github.com/<you>/game-scroll.git
 cd game-scroll
 npm install
 
-# 2. Create your game (the file name must equal the game's id)
-#    src/games/my-game.js   ->   id: 'my-game'
+# 2. Start your game from a working template (the file name is the game's id)
+npm run new my-game --style pocket      # phone, pocket, color, advance, console, nextgen or ar
 
 # 3. Run the app with your game built in
 npm run dev
@@ -63,7 +65,11 @@ npm run dev
 
 Open the printed URL in a desktop browser or on your phone (same Wi-Fi). To jump straight to your
 game, open the browser console and run `__gs.only('my-game')`. Desktop keys: Space/Enter to start,
-arrows to steer, ↓ for the next game.
+arrows to steer, ↓ for the next game. Press `` ` `` (backquote) for the debug overlay: frame rate, slow
+motion, frame stepping and hitboxes.
+
+The [maker kit](docs/maker-kit.md) has ready-made particles, screen shake, easing, sounds, music,
+thumbsticks, gestures, 2D physics and save slots. Use them: they make games feel better with less code.
 
 ## How a game file works
 
@@ -142,6 +148,9 @@ export default {
 - `api.over()` ends the round and shows the game-over screen.
 - `api.win()` wins right now, for games with a natural end (cleared the board).
 - `api.has('itemId')` is true when a shop item is active for this run. Safe to call in `reset()`.
+- `api.save(data)`, `api.load(fallback)`, `api.clearSave()`: this game's own save slot (unlocked
+  levels, settings...), up to 2 KB of JSON, synced with the player's cloud save. See
+  [Save slots](docs/maker-kit.md#save-slots).
 
 ### The game object `make()` returns
 
@@ -154,6 +163,7 @@ export default {
 | `key(k, isDown)` | Optional keyboard support for desktop (`'ArrowLeft'`, `' '`...). |
 | `fx(dt)` | Optional. Keeps effects animating behind the game-over screen. |
 | `resize(w, h)` | Optional, for fluid games. |
+| `debug(c)` | Optional. Draws hitboxes or other helpers while the debug overlay is on (dev only). |
 
 The app draws the start screen (title, hint, goal, Play button) and the game-over screen for you, so
 your game only needs to draw gameplay.
@@ -318,15 +328,23 @@ Here is the same fluid game (Brick Bounce, `160 x 160` growing to `240 x 280`) o
 
 ## Sound, haptics and phone sensors
 
-Import shared helpers only from these modules; the app provides them to streamed games:
+Import shared helpers only from these modules; the app provides them to streamed games, and a game
+can't import any other app code:
 
 - `src/sfx.js`: `sfx(freq, duration, type, volume, slide)` makes short synth sounds. Respects mute.
+- `src/kit/sound.js`: ready-made sounds (`sounds.coin()`, `sounds.boom()`...), `noise()` for hits and
+  explosions, `notes()` for jingles and `music()` for looping tunes.
+- `src/kit/juice.js`: particles, screen shake, easing and tweens, pop-up text, flashes, hit-stop.
+- `src/kit/controls.js`: thumbsticks, buttons, the two-thumb layout, tap / double-tap / hold / swipe.
+- `src/kit/physics2d.js`: balls and boxes that fall, bounce, stack and collide.
 - `src/kit/device.js`: `haptic('light' | 'tick' | 'success' | 'warning' ...)`, `buzz()` patterns,
   `tilt()`, `onShake(cb)`, `heading()` (compass), `faceDown()`, `location()` (GPS), `startMic()`,
   `startCamera()`, `orientation()` (raw gyro, used by the AR kit).
-- `src/util.js`: `clamp`, `rnd`, `pix`, `disc`, `flickTracker`, `hash`, `fmt`, `store`.
+- `src/util.js`: `clamp`, `rnd`, `pix`, `disc`, `flickTracker`, `hash`, `fmt` (not `store`: use `api.save`).
 - `src/palettes.js`: `PAL`, `SHELL`, `C16`.
 - `src/kit/gfx.js` (2D shading helpers), `src/kit/toon3d.js` (Classic Console 3D), `src/kit/hd3d.js` (Next Gen Console HD 3D), `src/kit/ar3d.js` (AR · 3D: camera + gyro), `src/kit/bricks.js` (toy bricks).
+
+All of the new kits are explained, with examples, in [`docs/maker-kit.md`](docs/maker-kit.md).
 
 Sensors return `null` or do nothing on desktop, in the browser, or when the player says no to a
 permission, so **every sensor game needs a touch fallback** (for example drag instead of tilt, tap

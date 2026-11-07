@@ -20,6 +20,7 @@
     "wallet": "vite build --mode bundled && node scripts/wallet.cjs",
     "game-services": "node scripts/game-services.mjs",
     "games": "node scripts/build-games.mjs",
+    "new": "node scripts/new-game.mjs",
     "recommend": "node scripts/recommend.mjs",
     "dev:stream": "vite --host",
     "icons": "node scripts/icons.cjs",
