@@ -88,3 +88,14 @@ jobs:
         run: |
           sleep 5
           curl -fsS "$PUBLIC_URL/manifest.json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const m=JSON.parse(s);console.log(m.games.length+' games in the live catalogue')})"
+
+      - name: Show how a game file is cached
+        run: |
+          f=$(ls dist-games/games | head -1)
+          for i in 1 2 3; do
+            echo "--- request $i: games/$f"
+            curl -sS -D - -o /dev/null "$PUBLIC_URL/games/$f" | grep -iE '^(HTTP|cache-control|cf-cache-status|age|cf-ray|content-type|etag|last-modified)' || true
+            sleep 2
+          done
+          echo "--- manifest.json"
+          curl -sS -D - -o /dev/null "$PUBLIC_URL/manifest.json" | grep -iE '^(HTTP|cache-control|cf-cache-status|age)' || true
