@@ -7,6 +7,7 @@
 //                     Android: { token }                                                     (Play Integrity)
 //   POST /heart       body { device, game, on } (+ "Authorization: Bearer <session>") -> { game, n }
 //   POST /stats, GET /stats   anonymous play stats (see stats.js)
+//   POST /perf, GET /perf, GET /perf/report   anonymous frame timing and crash reports (see perf.js)
 //   play.game-scroll.com/<id> the page a shared game link opens (see sharepage.js)
 //
 // No accounts: each install sends a random anonymous device id; (game, device) is unique, so a phone
@@ -19,6 +20,7 @@ import { verifyIntegrity } from './playintegrity.js';
 import { unb64, b64u } from './util.js';
 import { cleanBatch, saveBatch, totals, prune } from './stats.js';
 import { sharePage, idFromPath } from './sharepage.js';
+import { cleanPerf, savePerf, perfTotals, prunePerf, perfPage } from './perf.js';
 
 // Browsers may call the API only from the app itself and the test website. (Not a security
 // boundary on its own, since scripts outside a browser ignore CORS, but it stops other sites
@@ -33,8 +35,8 @@ const ORIGINS = [
 const COUNTS_TTL = 60;
 const DEVICE_RE = /^[A-Za-z0-9-]{16,64}$/;
 const GAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const MAX_BODY = { '/heart': 512, '/session': 24_000, '/stats': 8_000 };
-const STATS_TTL = 600;
+const MAX_BODY = { '/heart': 512, '/session': 24_000, '/stats': 8_000, '/perf': 12_000 };
+const STATS_TTL = 600, PERF_TTL = 300;
 
 function cors(req) {
   const o = req.headers.get('Origin');
@@ -157,6 +159,39 @@ async function getStats(env, ctx, req) {
   return new Response(res.body, { status: res.status, headers: h });
 }
 
+async function postPerf(env, req) {
+  const b = await body(req, MAX_BODY['/perf']);
+  if (!b) return json(req, { error: 'bad request' }, 400);
+  if (typeof b.device !== 'string' || !DEVICE_RE.test(b.device)) return json(req, { error: 'bad device' }, 400);
+  if (await limited(env.LIMIT_STATS, 'pf:' + ip(req)) || await limited(env.LIMIT_STATS, 'pd:' + b.device)) return json(req, { error: 'slow down' }, 429);
+  const batch = cleanPerf(b, await gameIds(env));
+  if (!batch) return json(req, { error: 'bad batch' }, 400);
+  await savePerf(env.DB, batch);
+  return json(req, { ok: true, games: batch.games.length, errors: batch.errors.length });
+}
+
+/** GET /perf (JSON) or /perf/report (a web page), cached for a few minutes. */
+async function getPerf(env, ctx, req, page) {
+  const ttl = env.STATS_TTL !== undefined ? Number(env.STATS_TTL) : PERF_TTL;   // tests set 0
+  const cache = caches.default, key = new Request(new URL(page ? '/perf/report' : '/perf', req.url).toString());
+  let res = ttl > 0 ? await cache.match(key) : null;
+  if (!res) {
+    const t = await perfTotals(env.DB);
+    res = page
+      ? new Response(perfPage(t, (await gameIds(env)) || new Map()), { headers: {
+          'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': `public, max-age=${ttl}`, 'X-Content-Type-Options': 'nosniff',
+          'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+          'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex' } })
+      : new Response(JSON.stringify(t), { headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${ttl}` } });
+    if (ttl > 0) ctx.waitUntil(cache.put(key, res.clone()));
+    if (Math.random() < 0.05) ctx.waitUntil(prunePerf(env.DB));
+  }
+  if (page) return res;
+  const h = new Headers(res.headers);
+  for (const [k, v] of Object.entries(cors(req))) h.set(k, v);
+  return new Response(res.body, { status: res.status, headers: h });
+}
+
 async function share(env, req) {
   const url = new URL(req.url);
   if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Method not allowed', { status: 405 });
@@ -218,6 +253,8 @@ export default {
       if (req.method === 'POST' && pathname === '/heart') return await heart(env, ctx, req);
       if (req.method === 'POST' && pathname === '/stats') return await postStats(env, req);
       if (req.method === 'GET' && pathname === '/stats') return await getStats(env, ctx, req);
+      if (req.method === 'POST' && pathname === '/perf') return await postPerf(env, req);
+      if (req.method === 'GET' && (pathname === '/perf' || pathname === '/perf/report')) return await getPerf(env, ctx, req, pathname === '/perf/report');
       if (req.method === 'GET' && pathname === '/') return json(req, { ok: true, service: 'game-scroll-api', enforce: env.ENFORCE === 'on' });
       return json(req, { error: 'not found' }, 404);
     } catch (e) {

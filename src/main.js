@@ -21,6 +21,7 @@ import { remote } from './remote.js';
 import { openSettings } from './settings.js';
 import { hearts } from './hearts.js';
 import { playstats } from './playstats.js';
+import { perf } from './perf.js';
 import { shareGame, onSharedGame } from './share.js';
 import BUNDLED from 'virtual:bundled-games';
 
@@ -101,7 +102,7 @@ function openInfo(s){
   const d=s.def;
   if(!infoDlg){infoDlg=document.createElement('dialog');infoDlg.className='info';document.body.appendChild(infoDlg);
     infoDlg.addEventListener('click',e=>{if(e.target===infoDlg)infoDlg.close()});
-    infoDlg.addEventListener('close',()=>{const t=infoDlg._s;if(t){t.paused=false;lastT=performance.now()}})}
+    infoDlg.addEventListener('close',()=>{const t=infoDlg._s;if(t){t.paused=false;lastT=performance.now();perf.gap()}})}
   infoDlg._s=s;if(s.state==='playing')s.paused=true;
   const kind=d.era==='console'?'Classic · Console game':d.era==='nextgen'?'Next Gen · Console game':d.era==='advance'?'Advance-style pocket game':d.era==='color'?'Colour pocket game':d.retro?'Dot-matrix pocket game':'Phone game';
   infoDlg.innerHTML=`<div class="info-card"><button class="info-x" aria-label="Close">✕</button>
@@ -144,7 +145,7 @@ function startGame(s){
   // Boosts the player owns for this game are used up on this run; unlocks stay on.
   s.run={items:new Set()};
   for(const it of s.def.shop||[])if(it.kind==='unlock'?progress.owned(s.def.id,it)>0:progress.use(s.def.id,it))s.run.items.add(it.id);
-  s.won=false;s.paid=0;s.trophies=[];progress.played(s.def.id);playstats.started(s.def.id);
+  s.won=false;s.paid=0;s.trophies=[];progress.played(s.def.id);playstats.started(s.def.id);perf.started(s.def.id);
   s.game.reset();s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
   s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');s.startPerf=performance.now();renderOverlay(s);
   sfx(660,.08,'square',.04,300);
@@ -163,13 +164,13 @@ function awardTrophies(s){
 }
 function gameOver(s){
   if(s.state!=='playing')return;
-  s.state='over';s.overAt=Date.now();logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
+  s.state='over';s.overAt=Date.now();logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(progress.score(s.def.id,s.score))s.newBest=true;
   awardTrophies(s);services.reportRun(s.def);
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt)}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function resetSlide(s){if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
 function goPrev(s){
   const i=slides.indexOf(s);if(i<=0)return;
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
@@ -311,7 +312,7 @@ function openShared(id){
 function setActive(s){
   if(active===s)return;
   if(active&&active.state!=='ready')resetSlide(active);
-  feed.classList.remove('locked');active=s;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);
+  feed.classList.remove('locked');active=s;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);
   topUp();
 }
 
@@ -331,9 +332,12 @@ function frame(now){
   if(s){
     // one broken game must never stop the loop (that froze every game): end its round instead
     try{
-      if(s.state==='playing'&&!s.paused)s.game.update(dt);else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
+      const timed=s.state==='playing'&&!s.paused,t0=timed?performance.now():0;
+      if(timed)s.game.update(dt);else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
       if(s.state!=='ready'||s.dirty){paint(s);s.dirty=false}
-    }catch(e){console.error(s.def.id,e);s.dirty=false;if(s.state==='playing')try{gameOver(s)}catch(_){}}
+      // frame timing for the anonymous stutter reports (src/perf.js)
+      if(timed&&s.state==='playing')perf.frame(s.def.id,now,performance.now()-t0);else perf.gap();
+    }catch(e){console.error(s.def.id,e);perf.error(e,s.def.id);s.dirty=false;if(s.state==='playing')try{gameOver(s)}catch(_){}}
   }
 }
 
@@ -385,7 +389,7 @@ feedMenu.addEventListener('keydown',e=>{const i=feedOpts.indexOf(document.active
   else if(e.key==='Escape'||e.key==='Tab'){feedOpen(false);feedBtn.focus()}});
 document.addEventListener('pointerdown',e=>{if(!feedMenu.hidden&&!e.target.closest('.feedpick'))feedOpen(false)},true);
 
-function boot(){initWallet(GAMES);services.init(GAMES);booted=true;playstats.load(true);
+function boot(){initWallet(GAMES);services.init(GAMES);booted=true;playstats.load(true);perf.load(true);
   hearts.reconcile(GAMES.map(g=>g.id),id=>rating(id)>0||(rating(id)===0&&store.get('gs_like_'+id,false)));hearts.load(true);rebuild();onSharedGame(openShared);requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
 // Streaming: with a saved catalogue, start at once and check for updates in the background.
 // First launch has to fetch the catalogue before there is anything to show.
@@ -405,4 +409,4 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refresh()},5*60*1000);
 
 // Test hook used by scripts/smoke.cjs
-window.__gs={GAMES,remote,progress,playstats,api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};
+window.__gs={GAMES,remote,progress,playstats,perf,api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};

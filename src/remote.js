@@ -99,7 +99,8 @@ async function sha12(code) {
 function evaluate(id, code) {
   const module = { exports: {} };
   const require = spec => { const m = spec.startsWith('gs:') && KIT[spec.slice(3)]; if (!m) throw new Error('missing shared module ' + spec); return m; };
-  new Function('require', 'module', 'exports', code)(require, module, module.exports);
+  // sourceURL names the file in error reports (src/perf.js) instead of an anonymous function.
+  new Function('require', 'module', 'exports', code + '\n//# sourceURL=games/' + String(id).replace(/[^a-z0-9-]/g, '') + '.js')(require, module, module.exports);
   const def = module.exports.default;
   if (!def || def.id !== id || typeof def.make !== 'function') throw new Error('bad game file for ' + id);
   return def;

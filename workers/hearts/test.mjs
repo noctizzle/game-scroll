@@ -15,6 +15,7 @@ import { newChallenge, checkChallenge, newSession, readSession } from './src/ses
 import { cbor, b64u, sha256, concat } from './src/util.js';
 import { cleanBatch } from './src/stats.js';
 import { sharePage, idFromPath } from './src/sharepage.js';
+import { cleanPerf, perfPage } from './src/perf.js';
 
 x509.cryptoProvider.set(crypto);
 const ok = msg => console.log('  ✓ ' + msg);
@@ -46,6 +47,27 @@ const rejects = async (p, re) => { await assert.rejects(p, e => re.test(e.messag
   assert.match(page, /https:\/\/x\.test\/\?g=mini-golf/);
   assert.match(sharePage(null), /didn’t work/);
   ok('share pages escape game text and link to the app and the browser version');
+}
+
+/* ---------- performance and crash reports ---------- */
+{
+  const known = new Map([['mini-golf', { title: 'Mini Golf' }]]);
+  const b = cleanPerf({
+    info: { platform: 'android', model: 'SM-F966B\u0000<x>', os: 'Android 16', app: '1.0.5', form: 'wide' },
+    games: { 'mini-golf': { r: 2, f: 600, ms: 12000, w: 20000, sl: 900, h: 50, x: 99999 }, nope: { f: 10, ms: 100 }, 'mini-golf-x': 1 },
+    errors: [{ kind: 'crash', game: 'mini-golf', msg: 'App closed', n: 999 }, { kind: 'weird', game: 'nope', msg: 'TypeError: x', place: 'a.js:1' }, { msg: '' }],
+  }, known);
+  assert.deepEqual(b.info, { platform: 'android', model: 'SM-F966B<x>', os: 'Android 16', app: '1.0.5', form: 'wide' });
+  assert.deepEqual(b.games, [['mini-golf', 2, 600, 12000, 12000, 600, 50, 12000]]);
+  assert.deepEqual(b.errors, [['crash', 'mini-golf', 'App closed', '', 50], ['error', '', 'TypeError: x', 'a.js:1', 1]]);
+  assert.equal(cleanPerf({ games: [] }, known), null);
+  assert.equal(cleanPerf({ info: { platform: 'pc', form: 'huge' } }, known).info.platform, 'web');
+  ok('perf batches drop unknown games, clean text and keep numbers consistent');
+  const page = perfPage({ days: 14, games: [{ game: 'mini-golf', platform: 'android', model: '<b>SM</b>', form: 'wide', rounds: 3, frames: 600, ms: 12000, work: 6000, slow: 120, hitches: 9, worst: 210, fps: 50 }],
+    errors: [{ kind: 'error', game: 'mini-golf', msg: '<script>alert(1)</script>', place: 'x.js:1', n: 4, last: '2026-11-07', models: 'SM', apps: '1' }] }, known);
+  assert.ok(!page.includes('<script>') && !page.includes('<b>SM'));
+  assert.match(page, /Mini Golf/); assert.match(page, /class="n bad">20\.0%/);
+  ok('perf report page escapes reported text and flags slow games');
 }
 
 /* ---------- sessions ---------- */
@@ -224,6 +246,19 @@ await run({}, async url => {
   for (let i = 0; i < 8 && !lim; i++) { r = await post(url, '/stats', { device: B, games: {} }); if (r.status === 429) lim = 1; }
   assert.ok(lim, 'stats batches are rate-limited');
   ok('play stats add up per game per day, and batches are rate-limited');
+
+  const perfBody = { device: A, info: { platform: 'ios', model: 'iPhone17,1', os: 'iOS 26.1', app: 'test', form: 'phone' },
+    games: { [game]: { r: 1, f: 1200, ms: 24000, w: 8000, sl: 60, h: 4, x: 180 } }, errors: [{ kind: 'error', game, msg: 'TypeError: boom', place: 'games/x.js:3', n: 2 }] };
+  r = await post(url, '/perf', perfBody); assert.equal(r.status, 200);
+  r = await post(url, '/perf', { ...perfBody, games: { [game]: { r: 1, f: 600, ms: 12000, w: 4000, sl: 0, h: 0, x: 300 } } }); assert.equal(r.status, 200);
+  r = await fetch(url + '/perf'); assert.equal(r.status, 200);
+  const pj = await r.json(), row = pj.games.find(x => x.game === game);
+  assert.deepEqual({ rounds: row.rounds, frames: row.frames, slow: row.slow, worst: row.worst, fps: row.fps }, { rounds: 2, frames: 1800, slow: 60, worst: 300, fps: 50 });
+  assert.equal(pj.errors.find(x => x.game === game && x.msg === 'TypeError: boom').n, 4);
+  r = await fetch(url + '/perf/report'); assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-type'), /text\/html/); assert.match(await r.text(), /TypeError: boom/);
+  r = await post(url, '/perf', { device: A, games: 'x' }); assert.equal(r.status, 400);
+  ok('perf reports add up per game and phone, and show on the report page');
 });
 
 await run({ ENFORCE: 'on' }, async url => {
