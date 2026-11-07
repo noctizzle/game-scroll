@@ -91,7 +91,7 @@ function make(api) {
 }
 
 export default {
-  id: 'cube-tide', title: 'Cube Tide', tag: 'Advance · Puzzle', retro: true, era: 'advance', pal: 'grape', w: 160, h: 192, maxW: 240, maxH: 320, goal: 60,
+  id: 'cube-tide', title: 'Cube Tide', tag: 'Console · Puzzle', retro: true, era: 'console', pal: 'grape', w: 160, h: 192, maxW: 240, maxH: 320, goal: 60,
   hint: 'Tap a tile to set a trap, then tap it again while a cube sits on it to sink the cube. Grey cubes must be caught: three escapes cost a row. Green cubes leave a 3x3 trap, tap anywhere to spring it. Never sink black cubes, let them roll off. The floor falls when it gets too short.',
   make,
 };

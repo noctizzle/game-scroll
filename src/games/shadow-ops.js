@@ -119,7 +119,7 @@ function make(api) {
 }
 
 export default {
-  id: 'shadow-ops', title: 'Shadow Ops', tag: 'Advance · Stealth', retro: true, era: 'advance', pal: 'grape', w: 176, h: 192, maxW: 260, maxH: 320, goal: 60,
+  id: 'shadow-ops', title: 'Shadow Ops', tag: 'Console · Stealth', retro: true, era: 'console', pal: 'grape', w: 176, h: 192, maxW: 260, maxH: 320, goal: 60,
   hint: 'Hold to sneak toward your finger and reach the green hatch. Guards see down their torch cones; walls block them. Stay in a cone and their meter fills until you\'re spotted. Tap away from you to throw a pebble and lure guards, or tap yourself to hide under a crate. Grab the yellow files for a bonus.',
   make,
 };

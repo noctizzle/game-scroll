@@ -112,7 +112,7 @@ function make(api) {
 }
 
 export default {
-  id: 'kit-racer', title: 'Kit Racer', tag: 'Bricks · Racing', retro: true, era: 'advance', pal: 'berry', w: 160, h: 192, maxW: 240, maxH: 320, goal: 300,
+  id: 'kit-racer', title: 'Kit Racer', tag: 'Bricks · Racing', retro: true, era: 'console', pal: 'berry', w: 160, h: 192, maxW: 240, maxH: 320, goal: 300,
   hint: 'Tap a car in the garage, then drag to steer. Smash brick piles your armour can handle (green number) for studs, dodge the red ones, bump past rivals and avoid oil. Reach each checkpoint before time runs out, then spend studs at the pit stop on speed, grip or armour.',
   make,
 };

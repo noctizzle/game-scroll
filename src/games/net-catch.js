@@ -105,7 +105,7 @@ function make(api) {
 }
 
 export default {
-  id: 'net-catch', title: 'Net Catch', tag: 'Advance · Action', retro: true, era: 'advance', pal: 'teal', w: 176, h: 176, maxW: 260, maxH: 300, goal: 25,
+  id: 'net-catch', title: 'Net Catch', tag: 'Console · Action', retro: true, era: 'console', pal: 'teal', w: 176, h: 176, maxW: 260, maxH: 300, goal: 25,
   hint: 'Hold to walk toward your finger, tap to swing your net that way. Imps see in front of them (the pale cone) and bolt when they notice you, but they tire fast. Sneak up from behind, hide in bushes, and catch dozing imps for an easy grab. Every catch adds time.',
   make,
 };

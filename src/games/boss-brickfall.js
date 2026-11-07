@@ -85,7 +85,7 @@ function make(api) {
 }
 
 export default {
-  id: 'boss-brickfall', title: 'Boss Brickfall', tag: 'Bricks · Boss', retro: true, era: 'advance', pal: 'grape', w: 176, h: 192, maxW: 260, maxH: 320, goal: 120,
+  id: 'boss-brickfall', title: 'Boss Brickfall', tag: 'Bricks · Boss', retro: true, era: 'console', pal: 'grape', w: 176, h: 192, maxW: 260, maxH: 320, goal: 120,
   hint: 'Drag to move and dodge the falling bricks (red marks show where). Fallen bricks make piles: stand on one to build a launcher. Tap to fire all your launchers straight up. Only hits while the robot\'s core glows yellow do damage.',
   make,
 };

@@ -126,7 +126,7 @@ function make(api) {
 }
 
 export default {
-  id: 'swipe-fighter', title: 'Swipe Fighter', tag: 'Advance · Fighting', retro: true, era: 'advance', pal: 'berry', w: 192, h: 160, maxW: 300, maxH: 240, goal: 5,
+  id: 'swipe-fighter', title: 'Swipe Fighter', tag: 'Console · Fighting', retro: true, era: 'console', pal: 'berry', w: 192, h: 160, maxW: 300, maxH: 240, goal: 5,
   hint: 'Tap to jab, swipe toward your rival for a heavy blow, swipe down to sweep, swipe up to hop, swipe away to step back, and hold still to guard. Guard stops jabs and heavies but not sweeps, so hop those. Red flash means guard, blue means hop. Hit a rival while they wind up for a double-damage counter.',
   make,
 };

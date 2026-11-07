@@ -112,7 +112,7 @@ function make(api) {
 }
 
 export default {
-  id: 'stud-smash', title: 'Stud Smash', tag: 'Bricks · Action', retro: true, era: 'advance', pal: 'lemon', w: 176, h: 192, maxW: 260, maxH: 320, goal: 800,
+  id: 'stud-smash', title: 'Stud Smash', tag: 'Bricks · Action', retro: true, era: 'console', pal: 'lemon', w: 176, h: 192, maxW: 260, maxH: 320, goal: 800,
   hint: 'Hold to walk toward your finger, tap to smash the nearest thing. Everything bursts into studs: walk close to pull them in. Gold statues drop gold studs worth 10. Whack the wind-up robots before they bump you and spill your studs. Fill the HERO bar before time runs out to reach the next square.',
   make,
 };

@@ -98,7 +98,7 @@ function make(api) {
 }
 
 export default {
-  id: 'blueprint-stack', title: 'Blueprint Stack', tag: 'Bricks · Puzzle', retro: true, era: 'advance', pal: 'teal', w: 176, h: 192, maxW: 260, maxH: 320, goal: 150,
+  id: 'blueprint-stack', title: 'Blueprint Stack', tag: 'Bricks · Puzzle', retro: true, era: 'console', pal: 'teal', w: 176, h: 192, maxW: 260, maxH: 320, goal: 150,
   hint: 'A brick slides along the top: tap to drop it. Fill the dotted blueprint. Cells inside score, bricks outside cost you, and holes under a brick can\'t be filled later. Swipe up to skip a brick that won\'t fit (it still uses one up). Score 60% or better to pass. Three rejected plans and the build is over.',
   make,
 };

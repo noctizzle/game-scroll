@@ -109,7 +109,7 @@ function make(api) {
 }
 
 export default {
-  id: 'tag-team', title: 'Tag Team', tag: 'Bricks · Runner', retro: true, era: 'advance', pal: 'grape', w: 192, h: 144, maxW: 320, maxH: 220, goal: 300,
+  id: 'tag-team', title: 'Tag Team', tag: 'Bricks · Runner', retro: true, era: 'console', pal: 'grape', w: 192, h: 144, maxW: 320, maxH: 220, goal: 300,
   hint: 'Tap to jump, swipe down to tag between heroes. The big red BRUISER smashes grey walls and silver crates. The little green SPARK double-jumps wide gaps and fits through low vents. The wrong hero gets hurt, so tag before you get there.',
   make,
 };

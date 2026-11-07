@@ -115,7 +115,7 @@ function make(api) {
 }
 
 export default {
-  id: 'mansion-night', title: 'Mansion Night', tag: 'Advance · Horror', retro: true, era: 'advance', pal: 'grape', w: 176, h: 176, maxW: 280, maxH: 300, goal: 30,
+  id: 'mansion-night', title: 'Mansion Night', tag: 'Console · Horror', retro: true, era: 'console', pal: 'grape', w: 176, h: 176, maxW: 280, maxH: 300, goal: 30,
   hint: 'Drag to sweep your torch, tap to shoot where you tap. Head shots do double damage. Six shots per clip: it reloads when empty, or swipe down to reload early. Tap shell boxes and green herbs to pick them up. Out of ammo? Tap a creature right in front of you to slash it.',
   make,
 };

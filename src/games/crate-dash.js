@@ -113,7 +113,7 @@ function make(api) {
 }
 
 export default {
-  id: 'crate-dash', title: 'Crate Dash', tag: 'Advance · Runner', retro: true, era: 'advance', pal: 'lemon', w: 176, h: 176, maxW: 260, maxH: 320, goal: 250,
+  id: 'crate-dash', title: 'Crate Dash', tag: 'Console · Runner', retro: true, era: 'console', pal: 'lemon', w: 176, h: 176, maxW: 260, maxH: 320, goal: 250,
   hint: 'Swipe left or right to change lanes, swipe up to jump, tap to spin. Spin or jump on crates and critters for gems. Jump the logs and pits. Never touch the red boom crates. Blue crates bounce you sky-high. 100 gems gives an extra life.',
   make,
 };

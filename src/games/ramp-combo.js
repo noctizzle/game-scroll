@@ -98,7 +98,7 @@ function make(api) {
 }
 
 export default {
-  id: 'ramp-combo', title: 'Ramp Combo', tag: 'Advance · Sports', retro: true, era: 'advance', pal: 'teal', w: 192, h: 160, maxW: 300, maxH: 240, goal: 12000,
+  id: 'ramp-combo', title: 'Ramp Combo', tag: 'Console · Sports', retro: true, era: 'console', pal: 'teal', w: 192, h: 160, maxW: 300, maxH: 240, goal: 12000,
   hint: 'The skater rolls on their own. Tap when they cross the green zone at the bottom to pump higher. In the air, swipe up (spin), down (kickflip), left or right (grabs). Tricks take time, so don\'t start one too late or you bail. Land clean to bank points: the more tricks in one air, the bigger the multiplier.',
   make,
 };

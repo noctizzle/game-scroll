@@ -85,7 +85,7 @@ function make(api) {
 }
 
 export default {
-  id: 'build-rush', title: 'Build Rush', tag: 'Bricks · Speed', retro: true, era: 'advance', pal: 'teal', w: 176, h: 192, maxW: 260, maxH: 320, goal: 120,
+  id: 'build-rush', title: 'Build Rush', tag: 'Bricks · Speed', retro: true, era: 'console', pal: 'teal', w: 176, h: 192, maxW: 260, maxH: 320, goal: 120,
   hint: 'The instruction booklet flashes the next brick the model needs, and the yellow box shows it close up. Tap the brick with the same colour AND length in the tray below. Wrong bricks cost two seconds. Finishing a model adds time.',
   make,
 };

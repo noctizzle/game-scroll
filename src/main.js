@@ -28,13 +28,13 @@ const feed=document.getElementById('feed');
 let slides=[],active=null,filter='all',lastId=null,io;
 
 function makeSlide(def){
-  const el=document.createElement('section');el.className='slide '+(def.retro?'retro':'modern');
+  const el=document.createElement('section');el.className='slide '+(def.retro?'retro':'modern')+(def.era==='console'?' console':'');
   if(def.retro){const p=PAL[def.pal||'moss'];p.forEach((c,i)=>el.style.setProperty('--lcd'+i,c));el.style.setProperty('--shell',SHELL[def.pal||'moss']);}el.setAttribute('aria-label',def.title);
   el.innerHTML=`
     <div class="stage"><div class="device">
-      ${def.retro?`<div class="bezel-top${def.era?' dark':''}"><span class="led"></span>${def.era==='advance'?'<b class="era">ADVANCE</b> · POCKET':def.era==='color'?'<b class="era rainbow">COLOR</b> · POCKET':'DOT MATRIX · POCKET'}</div>`:''}
+      ${def.retro?`<div class="bezel-top${def.era?' dark':''}"><span class="led"></span>${def.era==='console'?'<b class="era">CONSOLE</b>':def.era==='advance'?'<b class="era">ADVANCE</b> · POCKET':def.era==='color'?'<b class="era rainbow">COLOR</b> · POCKET':'DOT MATRIX · POCKET'}</div>`:''}
       <div class="screen"><canvas></canvas><div class="hud"><span class="score">0</span></div><div class="overlay"></div></div>
-      ${def.retro?'<div class="bezel-bottom"><span class="dpad"></span><span class="ab"><i></i><i></i></span></div>':''}
+      ${def.era==='console'?'<div class="bezel-bottom"><span class="slot"></span><span class="pads"><i></i><i></i><i></i></span></div>':def.retro?'<div class="bezel-bottom"><span class="dpad"></span><span class="ab"><i></i><i></i></span></div>':''}
     </div></div>
     <div class="meta">
       <button class="caption" aria-label="How to play ${def.title}"><span class="tag">${def.tag}</span><h2>${def.title}</h2><p>${def.hint}</p><span class="more"><b>ⓘ How to play</b> · Best <span class="best">0</span></span></button>
@@ -86,7 +86,7 @@ function openInfo(s){
     infoDlg.addEventListener('click',e=>{if(e.target===infoDlg)infoDlg.close()});
     infoDlg.addEventListener('close',()=>{const t=infoDlg._s;if(t){t.paused=false;lastT=performance.now()}})}
   infoDlg._s=s;if(s.state==='playing')s.paused=true;
-  const kind=d.era==='advance'?'Advance-style pocket game':d.era==='color'?'Colour pocket game':d.retro?'Dot-matrix pocket game':'Phone game';
+  const kind=d.era==='console'?'Console-style game':d.era==='advance'?'Advance-style pocket game':d.era==='color'?'Colour pocket game':d.retro?'Dot-matrix pocket game':'Phone game';
   infoDlg.innerHTML=`<div class="info-card"><button class="info-x" aria-label="Close">✕</button>
     <span class="tag">${d.tag}</span><h2>${d.title}</h2><div class="info-k">${kind}</div>
     <h3>How to play</h3><p>${d.hint}</p>
@@ -209,7 +209,7 @@ function fit(s){
 // Shuffled queue over the whole catalogue; the feed pulls a few at a time so 1000 games never means 1000 slides in the DOM.
 let queue=[];
 function pickDefs(n=6){
-  let pool=GAMES.filter(g=>filter.startsWith('id:')||!isHidden(g.id)).filter(g=>filter==='all'||(filter.startsWith('id:')?g.id===filter.slice(3):filter==='pocket'?g.retro:!g.retro));
+  let pool=GAMES.filter(g=>filter.startsWith('id:')||!isHidden(g.id)).filter(g=>filter==='all'||(filter.startsWith('id:')?g.id===filter.slice(3):filter==='pocket'?g.retro&&g.era!=='console':filter==='console'?g.era==='console':!g.retro));
   if(!pool.length)pool=GAMES;
   const out=[];
   while(out.length<n&&pool.length){
