@@ -1,28 +1,65 @@
-// Game Scroll hearts API (Cloudflare Worker + D1).
+// Game Scroll API (Cloudflare Worker + D1): shared heart counts, protected by app attestation.
 //
-//   GET  /counts          -> { counts: { "<game id>": n, ... }, at }   cached ~60 s at the edge
-//   POST /heart           body { device, game, on }  -> { game, n }    n is the fresh count
+//   GET  /counts      -> { counts: { "<game id>": n, ... }, at }   cached ~60 s at the edge
+//   GET  /challenge   -> { challenge }                              single-use-ish, valid 5 min
+//   POST /session     body { device, platform: "ios"|"android", challenge, ... } -> { session, expires }
+//                     iOS:     first time { keyId, attestation }, later { keyId, assertion }  (App Attest)
+//                     Android: { token }                                                     (Play Integrity)
+//   POST /heart       body { device, game, on } (+ "Authorization: Bearer <session>") -> { game, n }
 //
-// No accounts: each install sends a random anonymous device id, and (game, device) is unique,
-// so a phone counts once per game and un-hearting takes it back. Writes are rate-limited per
-// address, and only games in the live catalogue are accepted.
+// No accounts: each install sends a random anonymous device id; (game, device) is unique, so a phone
+// counts once per game. A "session" (pass) proves the app is genuine. With ENFORCE = "off" hearts
+// without a pass are still accepted, but under a much tighter per-address limit; with ENFORCE = "on"
+// they are refused. Only games in the live catalogue are accepted.
+import { newChallenge, checkChallenge, newSession, readSession } from './session.js';
+import { verifyAttestation, verifyAssertion } from './appattest.js';
+import { verifyIntegrity } from './playintegrity.js';
+import { unb64, b64u } from './util.js';
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Max-Age': '86400',
-};
+// Browsers may call the API only from the app itself and the test website. (Not a security
+// boundary on its own, since scripts outside a browser ignore CORS, but it stops other sites
+// from using the API through their visitors.)
+const ORIGINS = [
+  /^capacitor:\/\/localhost$/,            // iOS app
+  /^https?:\/\/localhost(:\d+)?$/,        // Android app, local dev
+  /^http:\/\/127\.0\.0\.1(:\d+)?$/,       // local dev
+  /^https:\/\/robthewizzuk\.github\.io$/, // test website
+  /^https:\/\/([a-z0-9-]+\.)?game-scroll\.com$/,
+];
 const COUNTS_TTL = 60;
 const DEVICE_RE = /^[A-Za-z0-9-]{16,64}$/;
 const GAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const MAX_BODY = { '/heart': 512, '/session': 24_000 };
 
-const json = (body, status = 200, extra = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS, ...extra } });
+function cors(req) {
+  const o = req.headers.get('Origin');
+  const h = { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Max-Age': '86400', Vary: 'Origin' };
+  if (o && ORIGINS.some(r => r.test(o))) h['Access-Control-Allow-Origin'] = o;
+  return h;
+}
+const json = (req, body, status = 200, extra = {}) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff', ...cors(req), ...extra } });
+const ip = req => req.headers.get('CF-Connecting-IP') || 'unknown';
+
+async function limited(binding, key) {
+  if (!binding) return false;
+  const { success } = await binding.limit({ key });
+  return !success;
+}
+
+/** Read a small JSON body; null if it's too big or not JSON. */
+async function body(req, max) {
+  const n = Number(req.headers.get('Content-Length') || 0);
+  if (n > max) return null;
+  const text = await req.text();
+  if (text.length > max) return null;
+  try { return JSON.parse(text); } catch (_) { return null; }
+}
 
 /** Game ids in the live catalogue, fetched at most every 5 minutes per Worker location. */
 let known = null, knownAt = 0;
 async function gameIds(env) {
+  if (!env.MANIFEST_URL) return null;   // tests: accept any well-formed id
   if (known && Date.now() - knownAt < 300_000) return known;
   try {
     const r = await fetch(env.MANIFEST_URL, { cf: { cacheTtl: 300, cacheEverything: true } });
@@ -33,26 +70,82 @@ async function gameIds(env) {
 
 async function counts(env, ctx, req) {
   const cache = caches.default, key = new Request(new URL('/counts', req.url).toString());
-  const hit = await cache.match(key);
-  if (hit) return hit;
-  const { results } = await env.DB.prepare('SELECT game, n FROM counts WHERE n > 0').all();
-  const out = {};
-  for (const r of results) out[r.game] = r.n;
-  const res = json({ counts: out, at: Date.now() }, 200, { 'Cache-Control': `public, max-age=${COUNTS_TTL}` });
-  ctx.waitUntil(cache.put(key, res.clone()));
-  return res;
+  let res = await cache.match(key);
+  if (!res) {
+    const { results } = await env.DB.prepare('SELECT game, n FROM counts WHERE n > 0').all();
+    const out = {};
+    for (const r of results) out[r.game] = r.n;
+    res = new Response(JSON.stringify({ counts: out, at: Date.now() }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${COUNTS_TTL}` } });
+    ctx.waitUntil(cache.put(key, res.clone()));
+  }
+  // CORS depends on the caller, so add it after the cache.
+  const h = new Headers(res.headers);
+  for (const [k, v] of Object.entries(cors(req))) h.set(k, v);
+  return new Response(res.body, { status: res.status, headers: h });
+}
+
+async function challenge(env, req) {
+  if (!env.SESSION_SECRET) return json(req, { error: 'attestation not set up' }, 503);
+  if (await limited(env.LIMIT_SESSION, 'c:' + ip(req))) return json(req, { error: 'slow down' }, 429);
+  return json(req, { challenge: await newChallenge(env.SESSION_SECRET) }, 200, { 'Cache-Control': 'no-store' });
+}
+
+async function session(env, req) {
+  if (!env.SESSION_SECRET) return json(req, { error: 'attestation not set up' }, 503);
+  if (await limited(env.LIMIT_SESSION, 's:' + ip(req))) return json(req, { error: 'slow down' }, 429);
+  const b = await body(req, MAX_BODY['/session']);
+  if (!b) return json(req, { error: 'bad request' }, 400);
+  const { device, platform, challenge: ch } = b;
+  if (typeof device !== 'string' || !DEVICE_RE.test(device)) return json(req, { error: 'bad device' }, 400);
+  if (typeof ch !== 'string' || !(await checkChallenge(env.SESSION_SECRET, ch))) return json(req, { error: 'bad or expired challenge' }, 400);
+  try {
+    if (platform === 'ios') {
+      if (typeof b.keyId !== 'string' || b.keyId.length > 100) return json(req, { error: 'bad keyId' }, 400);
+      const kid = b64u(unb64(b.keyId));
+      if (typeof b.attestation === 'string') {
+        const k = await verifyAttestation({ appId: env.APPLE_APP_ID, keyId: b.keyId, attestation: b.attestation, challenge: ch });
+        if (k.env === 'development' && env.APPLE_ALLOW_DEV !== 'on') return json(req, { error: 'development build' }, 403);
+        const r = await env.DB.prepare('INSERT OR IGNORE INTO appattest_keys (key_id, public_key, counter, device, env, created) VALUES (?1, ?2, 0, ?3, ?4, ?5)')
+          .bind(kid, k.publicKey, device, k.env, Date.now()).run();
+        if (!r.meta.changes) return json(req, { error: 'key already attested' }, 409);
+      } else if (typeof b.assertion === 'string') {
+        const row = await env.DB.prepare('SELECT public_key, counter FROM appattest_keys WHERE key_id = ?1').bind(kid).first();
+        if (!row) return json(req, { error: 'unknown key', reattest: true }, 404);
+        const counter = await verifyAssertion({ appId: env.APPLE_APP_ID, publicKey: new Uint8Array(row.public_key), lastCounter: row.counter, assertion: b.assertion, challenge: ch });
+        // Only move the counter forward, so two racing requests can't both reuse one value.
+        const u = await env.DB.prepare('UPDATE appattest_keys SET counter = ?2 WHERE key_id = ?1 AND counter < ?2').bind(kid, counter).run();
+        if (!u.meta.changes) return json(req, { error: 'replayed assertion' }, 403);
+      } else return json(req, { error: 'attestation or assertion needed' }, 400);
+    } else if (platform === 'android') {
+      await verifyIntegrity({ saJson: env.GOOGLE_SERVICE_ACCOUNT, token: b.token, challenge: ch, allowSideloaded: env.ANDROID_ALLOW_SIDELOAD === 'on' });
+    } else return json(req, { error: 'bad platform' }, 400);
+  } catch (e) {
+    if (e.attest) return json(req, { error: 'not verified', reason: e.message }, 403);
+    throw e;
+  }
+  const s = await newSession(env.SESSION_SECRET, device, platform);
+  return json(req, { session: s.token, expires: s.expires }, 200, { 'Cache-Control': 'no-store' });
 }
 
 async function heart(env, ctx, req) {
-  const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
-  if (env.LIMIT) { const { success } = await env.LIMIT.limit({ key: ip }); if (!success) return json({ error: 'slow down' }, 429); }
-  let b;
-  try { b = await req.json(); } catch (_) { return json({ error: 'bad json' }, 400); }
-  const { device, game } = b || {}, on = b && b.on === true;
-  if (typeof device !== 'string' || !DEVICE_RE.test(device)) return json({ error: 'bad device' }, 400);
-  if (typeof game !== 'string' || !GAME_RE.test(game)) return json({ error: 'bad game' }, 400);
+  const b = await body(req, MAX_BODY['/heart']);
+  if (!b) return json(req, { error: 'bad request' }, 400);
+  const { device, game } = b, on = b.on === true;
+  if (typeof device !== 'string' || !DEVICE_RE.test(device)) return json(req, { error: 'bad device' }, 400);
+  if (typeof game !== 'string' || !GAME_RE.test(game)) return json(req, { error: 'bad game' }, 400);
+
+  const auth = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  const s = auth && env.SESSION_SECRET ? await readSession(env.SESSION_SECRET, auth) : null;
+  if (s && s.d === device) {
+    if (await limited(env.LIMIT_VERIFIED, 'd:' + device)) return json(req, { error: 'slow down' }, 429);
+  } else if (env.ENFORCE === 'on') {
+    return json(req, { error: 'app not verified', session: true }, 401);
+  } else if (await limited(env.LIMIT, 'h:' + ip(req))) {
+    return json(req, { error: 'slow down' }, 429);
+  }
+
   const ids = await gameIds(env);
-  if (ids && !ids.has(game)) return json({ error: 'unknown game' }, 404);
+  if (ids && !ids.has(game)) return json(req, { error: 'unknown game' }, 404);
 
   const change = on
     ? env.DB.prepare('INSERT OR IGNORE INTO hearts (game, device, at) VALUES (?1, ?2, ?3)').bind(game, device, Date.now())
@@ -64,21 +157,23 @@ async function heart(env, ctx, req) {
   const [, res] = await env.DB.batch([change, recount]);
   // Drop this location's cached list so nearby players see the change soon (others within a minute).
   ctx.waitUntil(caches.default.delete(new Request(new URL('/counts', req.url).toString())));
-  return json({ game, n: res.results[0]?.n ?? 0 });
+  return json(req, { game, n: res.results[0]?.n ?? 0 });
 }
 
 export default {
   async fetch(req, env, ctx) {
     const { pathname } = new URL(req.url);
-    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req) });
     try {
       if (req.method === 'GET' && pathname === '/counts') return await counts(env, ctx, req);
+      if (req.method === 'GET' && pathname === '/challenge') return await challenge(env, req);
+      if (req.method === 'POST' && pathname === '/session') return await session(env, req);
       if (req.method === 'POST' && pathname === '/heart') return await heart(env, ctx, req);
-      if (req.method === 'GET' && pathname === '/') return json({ ok: true, service: 'game-scroll-hearts' });
-      return json({ error: 'not found' }, 404);
+      if (req.method === 'GET' && pathname === '/') return json(req, { ok: true, service: 'game-scroll-api', enforce: env.ENFORCE === 'on' });
+      return json(req, { error: 'not found' }, 404);
     } catch (e) {
       console.error(e);
-      return json({ error: 'server error' }, 500);
+      return json(req, { error: 'server error' }, 500);
     }
   },
 };

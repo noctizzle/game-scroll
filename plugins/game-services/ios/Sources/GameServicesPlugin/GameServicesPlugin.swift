@@ -15,7 +15,8 @@ public class GameServicesPlugin: CAPPlugin, CAPBridgedPlugin, GKGameCenterContro
         CAPPluginMethod(name: "showAchievements", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "showLeaderboards", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "saveGame", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "loadGame", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "loadGame", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "integrity", returnType: CAPPluginReturnPromise)   // App Attest, in GameServicesPlugin+Integrity.swift
     ]
 
     private var pendingSignIn: [CAPPluginCall] = []

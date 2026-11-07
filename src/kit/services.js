@@ -9,6 +9,8 @@ import { platformId } from './platform-ids.js';
 const platform = Capacitor.getPlatform();               // 'ios' | 'android' | 'web'
 const native = Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('GameServices');
 const GS = native ? registerPlugin('GameServices') : null;
+/** The native plugin (null on the web); src/hearts.js uses its integrity() call. */
+export const nativePlugin = GS;
 const SAVE_NAME = 'progress';
 
 let signedIn = false, player = null, saveTimer = 0, started = false;

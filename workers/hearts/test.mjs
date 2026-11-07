@@ -1,24 +1,202 @@
-// Runs the hearts Worker locally (wrangler dev, local D1) and checks the API end to end.
+// Tests for the Game Scroll API Worker.
 //   cd workers/hearts && npx wrangler d1 migrations apply game-scroll-hearts --local && npm test
-import { unstable_startWorker } from 'wrangler';
+//
+// 1. App Attest and Play Integrity checks, run directly in Node with a fake Apple CA / fake Google.
+// 2. The Worker end to end (wrangler dev, local D1): hearts, limits, passes, ENFORCE, CORS.
 import assert from 'node:assert/strict';
+import { writeFileSync, rmSync } from 'node:fs';
+import { webcrypto as crypto } from 'node:crypto';
+import 'reflect-metadata';
+import * as x509 from '@peculiar/x509';
+import { encode as cborEncode } from 'cbor-x';
+import { verifyAttestation, verifyAssertion } from './src/appattest.js';
+import { verifyIntegrity, _reset } from './src/playintegrity.js';
+import { newChallenge, checkChallenge, newSession, readSession } from './src/session.js';
+import { cbor, b64u, sha256, concat } from './src/util.js';
 
-const w = await unstable_startWorker({ config: 'wrangler.toml', dev: { remote: false, server: { port: 0 } } });
-const url = (await w.url).toString().replace(/\/$/, '');
-const post = body => fetch(url + '/heart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-const A = 'test-device-aaaaaaaaaaaa', B = 'test-device-bbbbbbbbbbbb', game = 'test-game-' + Date.now();
-try {
-  let r = await post({ device: A, game, on: true }); assert.equal(r.status, 200); assert.equal((await r.json()).n, 1);
-  r = await post({ device: A, game, on: true }); assert.equal((await r.json()).n, 1, 'same device twice counts once');
-  r = await post({ device: B, game, on: true }); assert.equal((await r.json()).n, 2);
-  r = await post({ device: A, game, on: false }); assert.equal((await r.json()).n, 1, 'un-heart takes it back');
-  r = await post({ device: 'short', game, on: true }); assert.equal(r.status, 400);
-  r = await post({ device: A, game: 'Bad Id!', on: true }); assert.equal(r.status, 400);
-  r = await fetch(url + '/counts'); assert.equal(r.status, 200);
-  assert.equal(r.headers.get('access-control-allow-origin'), '*');
-  const c = await r.json(); assert.equal(c.counts[game], 1);
-  r = await fetch(url + '/heart', { method: 'OPTIONS' }); assert.equal(r.status, 204);
-  console.log('hearts worker: all checks passed');
-} finally {
-  await w.dispose();
+x509.cryptoProvider.set(crypto);
+const ok = msg => console.log('  ✓ ' + msg);
+const rejects = async (p, re) => { await assert.rejects(p, e => re.test(e.message)); };
+
+/* ---------- util ---------- */
+{
+  const v = { a: 1, b: Buffer.from([1, 2]), c: 'x', d: [1, -5, 300, 70000] };
+  const d = cbor(new Uint8Array(cborEncode(v)));
+  assert.deepEqual({ ...d, b: [...d.b] }, { ...v, b: [1, 2] });
+  ok('CBOR decoder reads what cbor-x writes');
 }
+
+/* ---------- sessions ---------- */
+{
+  const secret = 'test-secret-1234567890';
+  const ch = await newChallenge(secret);
+  assert.ok(/^[A-Za-z0-9_-]{16,500}$/.test(ch), 'challenge is a valid Play Integrity nonce');
+  assert.equal(await checkChallenge(secret, ch), true);
+  assert.equal(await checkChallenge('other-secret', ch), false);
+  assert.equal(await checkChallenge(secret, ch, Date.now() + 6 * 60 * 1000), false);
+  const s = await newSession(secret, 'device-aaaaaaaaaaaaaaaa', 'ios');
+  assert.equal((await readSession(secret, s.token)).d, 'device-aaaaaaaaaaaaaaaa');
+  assert.equal(await readSession(secret, s.token.replace(/.$/, c => c === 'A' ? 'B' : 'A')), null);
+  assert.equal(await readSession(secret, s.token, Date.now() + 25 * 3600 * 1000), null);
+  ok('challenges and passes are signed and expire');
+}
+
+/* ---------- App Attest with a fake Apple CA ---------- */
+const appId = 'TEAM123456.com.gamescroll.app';
+async function fakeApple() {
+  const P384 = { name: 'ECDSA', namedCurve: 'P-384', hash: 'SHA-384' };
+  const rootKeys = await crypto.subtle.generateKey(P384, true, ['sign', 'verify']);
+  const interKeys = await crypto.subtle.generateKey(P384, true, ['sign', 'verify']);
+  const nb = new Date(Date.now() - 86400e3), na = new Date(Date.now() + 86400e3);
+  const root = await x509.X509CertificateGenerator.createSelfSigned({ serialNumber: '01', name: 'CN=Fake Root', notBefore: nb, notAfter: na, keys: rootKeys, signingAlgorithm: P384,
+    extensions: [new x509.BasicConstraintsExtension(true, undefined, true)] });
+  const inter = await x509.X509CertificateGenerator.create({ serialNumber: '02', subject: 'CN=Fake Inter', issuer: root.subject, notBefore: nb, notAfter: na,
+    publicKey: interKeys.publicKey, signingKey: rootKeys.privateKey, signingAlgorithm: P384, extensions: [new x509.BasicConstraintsExtension(true, undefined, true)] });
+  return { root, inter, interKeys, nb, na, P384 };
+}
+async function fakeAttestation(ca, challenge, { app = appId, aaguid = 'appattestdevelop', counter = 0 } = {}) {
+  const leafKeys = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const point = new Uint8Array(await crypto.subtle.exportKey('raw', leafKeys.publicKey));
+  const kid = await sha256(point);
+  const aag = new TextEncoder().encode(aaguid.padEnd(16, '\0'));
+  const cnt = new Uint8Array(4); new DataView(cnt.buffer).setUint32(0, counter);
+  const authData = concat(await sha256(app), new Uint8Array([0x40]), cnt, aag, new Uint8Array([0, 32]), kid, new Uint8Array(10));
+  const nonce = await sha256(concat(authData, await sha256(challenge)));
+  // Apple's extension: SEQUENCE { [1] { OCTET STRING nonce } }
+  const extVal = concat(new Uint8Array([0x30, 0x24, 0xa1, 0x22, 0x04, 0x20]), nonce);
+  const leaf = await x509.X509CertificateGenerator.create({ serialNumber: '03', subject: 'CN=leaf', issuer: ca.inter.subject, notBefore: ca.nb, notAfter: ca.na,
+    publicKey: leafKeys.publicKey, signingKey: ca.interKeys.privateKey, signingAlgorithm: ca.P384,
+    extensions: [new x509.Extension('1.2.840.113635.100.8.2', false, extVal)] });
+  const att = cborEncode({ fmt: 'apple-appattest', attStmt: { x5c: [Buffer.from(leaf.rawData), Buffer.from(ca.inter.rawData)], receipt: Buffer.alloc(0) }, authData: Buffer.from(authData) });
+  return { keyId: Buffer.from(kid).toString('base64'), attestation: Buffer.from(att).toString('base64'), leafKeys };
+}
+async function fakeAssertion(leafKeys, challenge, counter, app = appId) {
+  const cnt = new Uint8Array(4); new DataView(cnt.buffer).setUint32(0, counter);
+  const authenticatorData = concat(await sha256(app), new Uint8Array([0x40]), cnt);
+  const nonce = await sha256(concat(authenticatorData, await sha256(challenge)));
+  const raw = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, leafKeys.privateKey, nonce));
+  const der = int => { let v = int; while (v.length > 1 && v[0] === 0 && !(v[1] & 0x80)) v = v.subarray(1); if (v[0] & 0x80) v = concat(new Uint8Array([0]), v); return concat(new Uint8Array([2, v.length]), v); };
+  const r = der(raw.subarray(0, 32)), s = der(raw.subarray(32));
+  const sig = concat(new Uint8Array([0x30, r.length + s.length]), r, s);
+  return Buffer.from(cborEncode({ signature: Buffer.from(sig), authenticatorData: Buffer.from(authenticatorData) })).toString('base64');
+}
+{
+  const ca = await fakeApple();
+  const rootPem = ca.root.toString('pem');
+  const ch = 'challenge-abc';
+  const a = await fakeAttestation(ca, ch);
+  const k = await verifyAttestation({ appId, keyId: a.keyId, attestation: a.attestation, challenge: ch, rootPem });
+  assert.equal(k.env, 'development');
+  ok('a genuine attestation is accepted');
+  await rejects(verifyAttestation({ appId, keyId: a.keyId, attestation: a.attestation, challenge: 'other', rootPem }), /nonce/);
+  ok('…but not for a different challenge');
+  await rejects(verifyAttestation({ appId: 'OTHER.app', keyId: a.keyId, attestation: a.attestation, challenge: ch, rootPem }), /wrong app/);
+  ok('…or a different app');
+  await rejects(verifyAttestation({ appId, keyId: a.keyId, attestation: a.attestation, challenge: ch }), /not signed by Apple/);
+  ok('…or a certificate chain that isn\'t Apple\'s (real root)');
+  const b = await fakeAttestation(ca, ch);
+  await rejects(verifyAttestation({ appId, keyId: b.keyId, attestation: a.attestation, challenge: ch, rootPem }), /key id/);
+  ok('…or someone else\'s key id');
+  await rejects(verifyAttestation({ appId: '', keyId: a.keyId, attestation: a.attestation, challenge: ch, rootPem }), /not set up/);
+
+  const as1 = await fakeAssertion(a.leafKeys, 'ch2', 1);
+  assert.equal(await verifyAssertion({ appId, publicKey: k.publicKey, lastCounter: 0, assertion: as1, challenge: 'ch2' }), 1);
+  ok('an assertion from the attested key is accepted');
+  await rejects(verifyAssertion({ appId, publicKey: k.publicKey, lastCounter: 1, assertion: as1, challenge: 'ch2' }), /counter/);
+  ok('…but not replayed');
+  await rejects(verifyAssertion({ appId, publicKey: k.publicKey, lastCounter: 0, assertion: as1, challenge: 'ch3' }), /signature/);
+  const other = await fakeAssertion(b.leafKeys, 'ch2', 5);
+  await rejects(verifyAssertion({ appId, publicKey: k.publicKey, lastCounter: 0, assertion: other, challenge: 'ch2' }), /signature/);
+  ok('…or signed by another key or for another challenge');
+}
+
+/* ---------- Play Integrity with a fake Google ---------- */
+{
+  const rsa = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
+  const pk = Buffer.from(await crypto.subtle.exportKey('pkcs8', rsa.privateKey)).toString('base64');
+  const saJson = JSON.stringify({ client_email: 'x@y.iam.gserviceaccount.com', private_key: `-----BEGIN PRIVATE KEY-----\n${pk}\n-----END PRIVATE KEY-----\n` });
+  let payload;
+  const fetchFn = async (url, init) => {
+    if (new URL(url).host === 'oauth2.googleapis.com') {
+      const jwt = new URLSearchParams(init.body).get('assertion').split('.');
+      const good = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', rsa.publicKey, Buffer.from(jwt[2], 'base64url'), new TextEncoder().encode(jwt[0] + '.' + jwt[1]));
+      return new Response(JSON.stringify(good ? { access_token: 'at', expires_in: 3600 } : {}), { status: good ? 200 : 401 });
+    }
+    assert.equal(init.headers.Authorization, 'Bearer at');
+    return new Response(JSON.stringify({ tokenPayloadExternal: payload }));
+  };
+  const base = ch => ({ requestDetails: { requestPackageName: 'com.gamescroll.app', nonce: ch, timestampMillis: String(Date.now()) },
+    appIntegrity: { appRecognitionVerdict: 'PLAY_RECOGNIZED', packageName: 'com.gamescroll.app' },
+    deviceIntegrity: { deviceRecognitionVerdict: ['MEETS_DEVICE_INTEGRITY'] } });
+  _reset();
+  payload = base('n1');
+  await verifyIntegrity({ saJson, token: 't', challenge: 'n1', fetchFn });
+  ok('a Play-recognized app on a genuine device is accepted');
+  await rejects(verifyIntegrity({ saJson, token: 't', challenge: 'n2', fetchFn }), /nonce/);
+  payload = { ...base('n1'), deviceIntegrity: { deviceRecognitionVerdict: [] } };
+  await rejects(verifyIntegrity({ saJson, token: 't', challenge: 'n1', fetchFn }), /device/);
+  payload = { ...base('n1'), appIntegrity: { appRecognitionVerdict: 'UNRECOGNIZED_VERSION' } };
+  await rejects(verifyIntegrity({ saJson, token: 't', challenge: 'n1', fetchFn }), /not recognized/);
+  await verifyIntegrity({ saJson, token: 't', challenge: 'n1', fetchFn, allowSideloaded: true });
+  ok('wrong nonce, failed device and sideloaded app are refused (sideload allowed only when switched on)');
+  await rejects(verifyIntegrity({ saJson: '', token: 't', challenge: 'n1', fetchFn }), /not set up/);
+}
+
+/* ---------- the Worker end to end ---------- */
+const { unstable_startWorker } = await import('wrangler');
+const SECRET = 'local-test-secret-' + Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex');
+async function run(vars, fn) {
+  writeFileSync('.dev.vars', Object.entries({ SESSION_SECRET: SECRET, MANIFEST_URL: '', ...vars }).map(([k, v]) => `${k}=${v}`).join('\n'));
+  const w = await unstable_startWorker({ config: 'wrangler.toml', dev: { remote: false, server: { port: 0 }, logLevel: 'error' } });
+  try { await fn((await w.url).toString().replace(/\/$/, '')); } finally { await w.dispose(); rmSync('.dev.vars', { force: true }); }
+}
+const A = 'test-device-aaaaaaaaaaaa', B = 'test-device-bbbbbbbbbbbb', game = 'test-game-' + Date.now();
+// Each run uses its own fake address, since local rate-limit counters outlive one run.
+const IP = '198.51.100.' + (1 + crypto.getRandomValues(new Uint8Array(1))[0] % 250) + '.' + Date.now() % 1e6;
+const post = (url, path, body, headers = {}) => fetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': IP, ...headers }, body: JSON.stringify(body) });
+
+await run({}, async url => {
+  let r = await post(url, '/heart', { device: A, game, on: true }); assert.equal(r.status, 200); assert.equal((await r.json()).n, 1);
+  r = await post(url, '/heart', { device: A, game, on: true }); assert.equal((await r.json()).n, 1, 'same device twice counts once');
+  r = await post(url, '/heart', { device: B, game, on: true }); assert.equal((await r.json()).n, 2);
+  r = await post(url, '/heart', { device: A, game, on: false }); assert.equal((await r.json()).n, 1, 'un-heart takes it back');
+  ok('hearts count once per device and can be taken back');
+  r = await post(url, '/heart', { device: 'short', game, on: true }); assert.equal(r.status, 400);
+  r = await post(url, '/heart', { device: A, game: 'Bad Id!', on: true }); assert.equal(r.status, 400);
+  r = await post(url, '/heart', { device: A, game, on: true, pad: 'x'.repeat(2000) }); assert.equal(r.status, 400);
+  ok('bad ids and oversized bodies are refused');
+  r = await fetch(url + '/counts', { headers: { Origin: 'capacitor://localhost' } }); assert.equal(r.status, 200);
+  assert.equal(r.headers.get('access-control-allow-origin'), 'capacitor://localhost');
+  assert.equal((await r.json()).counts[game], 1);
+  r = await fetch(url + '/counts', { headers: { Origin: 'https://evil.example' } });
+  assert.equal(r.headers.get('access-control-allow-origin'), null);
+  ok('counts readable; browsers only allowed from the app and test site');
+  // Without a pass: 10 writes a minute per address.
+  let limitedAt = 0;
+  for (let i = 0; i < 12 && !limitedAt; i++) { r = await post(url, '/heart', { device: B, game, on: i % 2 === 0 }); if (r.status === 429) limitedAt = i + 1; }
+  assert.ok(limitedAt > 0, 'unverified hearts hit the per-address limit');
+  ok('hearts without a pass are rate-limited per address');
+  // With a pass the device limit applies instead.
+  const s = await newSession(SECRET, A, 'android');
+  r = await post(url, '/heart', { device: A, game, on: true }, { Authorization: 'Bearer ' + s.token }); assert.equal(r.status, 200);
+  ok('a pass lifts the tight limit');
+  r = await fetch(url + '/challenge', { headers: { 'CF-Connecting-IP': IP } }); assert.equal(r.status, 200);
+  const { challenge } = await r.json();
+  r = await post(url, '/session', { device: A, platform: 'android', challenge, token: 'x' }); assert.equal(r.status, 403);
+  assert.match((await r.json()).reason, /not set up/);
+  r = await post(url, '/session', { device: A, platform: 'ios', challenge, keyId: 'AAAA', attestation: 'AAAA' }); assert.equal(r.status, 403);
+  r = await post(url, '/session', { device: A, platform: 'android', challenge: 'forged', token: 'x' }); assert.equal(r.status, 400);
+  ok('passes need a real challenge and a verified app');
+});
+
+await run({ ENFORCE: 'on' }, async url => {
+  let r = await post(url, '/heart', { device: A, game, on: true }); assert.equal(r.status, 401);
+  const wrong = await newSession(SECRET, B, 'ios');
+  r = await post(url, '/heart', { device: A, game, on: true }, { Authorization: 'Bearer ' + wrong.token }); assert.equal(r.status, 401);
+  const s = await newSession(SECRET, A, 'ios');
+  r = await post(url, '/heart', { device: A, game, on: true }, { Authorization: 'Bearer ' + s.token }); assert.equal(r.status, 200);
+  r = await fetch(url + '/counts'); assert.equal(r.status, 200);
+  ok('with ENFORCE on, hearts need a pass for that device; counts stay public');
+});
+
+console.log('hearts worker: all checks passed');
