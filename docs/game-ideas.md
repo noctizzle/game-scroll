@@ -280,3 +280,16 @@ Picked from the most loved handheld and 32-bit console genres, choosing ones tha
 
 ## Brick-building adventure ideas (next batch) 🧱
 Original takes on the toy-brick adventure games: smash scenery into studs, rebuild piles of bricks into useful things, swap characters for abilities. No brand names, minifigures or licensed characters.
+- [x] Stud Smash: whack brick-built scenery into studs, pull them in, fill the HERO bar
+- [x] Pile Builder: hold bouncing brick piles to build bridges, steps, levers and springs for a walking builder
+- [x] Blueprint Stack: drop sliding bricks to fill a blueprint outline
+- [x] Tag Team: swap between a wall-smashing bruiser and a double-jumping sprite mid-run
+- [x] Kit Racer: pick a car body, smash brick piles your armour can handle, upgrade at pit stops
+- [x] Kit Hunt: find hidden kit pieces with a buzzing detector before your hammer swings run out
+- [x] Boss Brickfall: build launchers from the bricks a boss robot drops, fire when its core glows
+- [x] Build Rush: follow the instruction booklet and tap the right brick from the tray, fast
+
+## Next up (Rob's requests, 2026-11-07)
+- [ ] Artillery duel on destructible terrain (turn-based, drag to aim, wind, varied weapons), original critters
+- [ ] Dinosaur games in touch-friendly genres
+- [ ] Lane defence: plant original defenders in a garden grid to stop waves marching across
