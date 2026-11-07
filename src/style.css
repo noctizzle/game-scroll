@@ -203,6 +203,9 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
 .ov-win{font:400 10px/1 var(--f-pixel);color:var(--ink);background:var(--accent);padding:6px 8px;border-radius:3px;animation:pop .6s ease-out}
 .retro .ov-goal{color:var(--lcd0);font-weight:500}
 .retro .ov-goal b{color:var(--lcd0)}
+.ov-loc{font:400 11px/1.35 var(--f-body);color:#aab1bf;max-width:30ch}
+.retro .ov-loc{color:var(--lcd0);opacity:.85}
+.info-card .ov-loc{max-width:none;margin:-4px 0 10px}
 .retro .ov-win{background:var(--lcd0);color:var(--lcd3);border-radius:2px}
 .shop{display:flex;flex-direction:column;align-items:center;gap:6px;max-width:100%}
 .shop-k{font:500 10px/1.3 var(--f-body);color:var(--muted);letter-spacing:.02em}

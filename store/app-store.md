@@ -100,7 +100,9 @@ Regenerate with `npm run store-shots`.
 > every game is written or reviewed by us before release. No native code is downloaded.
 > No login is needed. Location, camera and microphone are only optional game controls, processed on the
 > device and never sent; every game also works with touch alone. To try them: Tilt Maze (motion), Shout
-> Rocket (microphone), Saucer Swarm (camera and motion; AR · 3D).
+> Rocket (microphone), Saucer Swarm (camera and motion; AR · 3D), Street Lamps (location: the app asks
+> only when you press Play, rounds the position to about 1 km, and uses a made-up spot if you say no;
+> Settings → "Let games use my location" turns it off).
 
 ## App Privacy ("nutrition label")
 
@@ -116,7 +118,8 @@ Matches https://game-scroll.com/privacy/.
   - *Diagnostics → Crash Data, Performance Data, Other Diagnostic Data*: anonymous crash markers, game
     script errors and frame timings, with phone model, OS version and app build (kept 14 days).
     Purpose: App Functionality, Analytics. (Same Settings switch.) Details: docs/crash-reports.md.
-- Location, camera, microphone: **not collected** (processed on device only, never sent).
+- Location, camera, microphone: **not collected** (processed on device only, never sent; location is
+  rounded to about 1 km, or 10 m for walk-around games, and only read while such a game is played).
 - Game Center data is handled by Apple and doesn't count as collected by the app.
 
 ## Age rating questionnaire

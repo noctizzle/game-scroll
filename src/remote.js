@@ -15,7 +15,7 @@
 // than the one it already has, and checks every game file's full SHA-256 against it. So someone who
 // got write access to the games host still couldn't get their own code to run in the app.
 
-import { GAME_MODULES, HIDDEN, API_FEATURES } from './game-modules.js';
+import { GAME_MODULES, HIDDEN, API_FEATURES, LOCATION_LEVELS } from './game-modules.js';
 
 export const BASE = String(import.meta.env.VITE_GAMES_URL || '').replace(/\/+$/, '');
 export const CACHE_MAX = 100;
@@ -87,6 +87,8 @@ const known = new Map();   // id -> the app's entry for it (metadata, likes)
 // Can this app run the game? It must only use shared exports this build actually has.
 function compatible(g) {
   for (const [mod, names] of Object.entries(g.needs || {})) { const m = KIT[mod]; if (!m || names.some(n => !(n in m))) return false; }
+  // A location level this app doesn't know (a future one) would get no location at all: skip the game.
+  if (g.meta && g.meta.location !== undefined && !LOCATION_LEVELS.includes(g.meta.location)) return false;
   return true;
 }
 

@@ -1,6 +1,6 @@
 import { sfx } from '../sfx.js';
 import { PAL } from '../palettes.js';
-import { location, haptic } from '../kit/device.js';
+import { haptic } from '../kit/device.js';
 
 // A daily switch puzzle generated from your neighbourhood: everyone within a few kilometres gets the same boards today.
 // Tapping a lamp flips it and its four neighbours. Turn every lamp off. Solve as many boards as you can in 90 seconds.
@@ -28,7 +28,7 @@ function make(api) {
     update(dt) {
       t += dt; flash = Math.max(0, flash - dt);
       if (state === 'locating') {
-        if (!this._asked) { this._asked = true; Promise.race([location(), new Promise(r => setTimeout(() => r(null), 5000))]).then(l => { area = l; state = 'play'; build(); }); }
+        if (!this._asked) { this._asked = true; Promise.race([api.location(), new Promise(r => setTimeout(() => r(null), 5000))]).then(l => { area = l && l.real ? l : null; state = 'play'; build(); }); }
         return;
       }
       time -= dt; if (time <= 0) { time = 0; haptic('warning'); return api.over(); }
@@ -59,7 +59,7 @@ function make(api) {
 }
 
 export default {
-  id: 'street-lamps', title: 'Street Lamps', tag: 'Pocket · Puzzle · Local', retro: true, w: W, h: H, pal: 'amber', goal: 1,
+  id: 'street-lamps', title: 'Street Lamps', tag: 'Pocket · Puzzle · Local', retro: true, w: W, h: H, pal: 'amber', goal: 1, location: 'coarse',
   hint: 'Tap a lamp to flip it and its neighbours. Switch them all off. Boards are shared with everyone near you today.',
   make,
 };

@@ -151,6 +151,8 @@ export default {
 - `api.save(data)`, `api.load(fallback)`, `api.clearSave()`: this game's own save slot (unlocked
   levels, settings...), up to 2 KB of JSON, synced with the player's cloud save. See
   [Save slots](docs/maker-kit.md#save-slots).
+- `api.location()`, `api.watchLocation(cb)`: where the player is, rounded, only during a round. The
+  game must declare `location: 'coarse'` (or `'precise'`). See [Location](docs/maker-kit.md#location).
 
 ### The game object `make()` returns
 
@@ -338,8 +340,10 @@ can't import any other app code:
 - `src/kit/controls.js`: thumbsticks, buttons, the two-thumb layout, tap / double-tap / hold / swipe.
 - `src/kit/physics2d.js`: balls and boxes that fall, bounce, stack and collide.
 - `src/kit/device.js`: `haptic('light' | 'tick' | 'success' | 'warning' ...)`, `buzz()` patterns,
-  `tilt()`, `onShake(cb)`, `heading()` (compass), `faceDown()`, `location()` (GPS), `startMic()`,
+  `tilt()`, `onShake(cb)`, `heading()` (compass), `faceDown()`, `startMic()`,
   `startCamera()`, `orientation()` (raw gyro, used by the AR kit).
+- `src/kit/geo.js`: `distance`, `bearing`, `offset`, `toLocal`, `cellId` for location games. The
+  location itself comes from `api.location()` (see [Location](docs/maker-kit.md#location)).
 - `src/util.js`: `clamp`, `rnd`, `pix`, `disc`, `flickTracker`, `hash`, `fmt` (not `store`: use `api.save`).
 - `src/palettes.js`: `PAL`, `SHELL`, `C16`.
 - `src/kit/gfx.js` (2D shading helpers), `src/kit/toon3d.js` (Classic Console 3D), `src/kit/hd3d.js` (Next Gen Console HD 3D), `src/kit/ar3d.js` (AR · 3D: camera + gyro), `src/kit/bricks.js` (toy bricks).

@@ -27,6 +27,7 @@ import { playstats } from './playstats.js';
 import { perf } from './perf.js';
 import { history } from './history.js';
 import { savesFor } from './saves.js';
+import { geoFor, roundStarted, roundEnded } from './geo.js';
 import { stopMusic } from './kit/sound.js';
 import { makeDebug } from './debug.js';
 import { shareGame, onSharedGame } from './share.js';
@@ -75,6 +76,7 @@ function makeSlide(def){
     win:()=>win(s),                                     // for games with a natural win (cleared the board, etc.)
     has:id=>!!(s.run&&s.run.items.has(id)),             // is this shop item active for the current run?
     ...savesFor(def.id),                                // save(data) / load(fallback) / clearSave(): this game's own save slot
+    ...geoFor(def),                                     // location() / watchLocation(cb): rounded, only during a round (src/geo.js)
   });
   s.game.reset();
   // like
@@ -117,7 +119,7 @@ function openInfo(s){
   const kind=d.era==='console'?'Classic · Console game':d.era==='nextgen'?'Next Gen · Console game':d.era==='ar'?'AR 3D game: uses your camera and motion sensor':d.era==='advance'?'Advance-style pocket game':d.era==='color'?'Colour pocket game':d.retro?'Dot-matrix pocket game':'Phone game';
   infoDlg.innerHTML=`<div class="info-card"><button class="info-x" aria-label="Close">✕</button>
     <span class="tag">${d.tag}</span><h2>${d.title}</h2><div class="info-by">Created by <b>${creatorOf(d)}</b></div><div class="info-k">${kind}</div>
-    <h3>How to play</h3><p>${d.hint}</p>
+    <h3>How to play</h3><p>${d.hint}</p>${locNote(d)}
     <div class="info-stats"><div><b>${fmt(best(d.id))}</b>Your best</div>${d.goal?`<div><b>${d.goal}</b>Score to win</div>`:''}</div>
     <button class="play info-play">${s.state==='playing'?'Keep playing':'Play'}</button></div>`;
   infoDlg.querySelector('.info-x').onclick=()=>infoDlg.close();
@@ -127,10 +129,12 @@ function openInfo(s){
 function best(id){return progress.best(id)}
 function updateBest(s){s.el.querySelector('.best').textContent=fmt(best(s.def.id))}
 
+// Games that use location say so before Play, so the phone's question doesn't come out of nowhere.
+const locNote=d=>d.location?`<div class="ov-loc">📍 Uses your ${d.location==='precise'?'location to walk around':'rough area (about 1 km)'}. It stays on your phone, and you can say no.</div>`:'';
 function renderOverlay(s){
   const d=s.def,cue='<div class="swipe-cue">Swipe up for the next game</div>';
   if(s.state==='ready'){
-    s.overlay.innerHTML=`<div class="ov-k">${d.era==='nextgen'||d.era==='ar'?'Ready':d.retro?'Insert coin':'Tap to start'}</div><div class="ov-title">${d.title}</div><div class="ov-hint">${d.hint}</div>${goalHTML(d)}<button class="play">${d.retro?'PRESS START':'Play'}</button>${shopHTML(d)}${cue}`;
+    s.overlay.innerHTML=`<div class="ov-k">${d.era==='nextgen'||d.era==='ar'?'Ready':d.retro?'Insert coin':'Tap to start'}</div><div class="ov-title">${d.title}</div><div class="ov-hint">${d.hint}</div>${goalHTML(d)}${locNote(d)}<button class="play">${d.retro?'PRESS START':'Play'}</button>${shopHTML(d)}${cue}`;
     bindShop(s.overlay,d,()=>renderOverlay(s));
   }else if(s.state==='over'){
     const b=best(d.id),isNew=s.score>0&&s.score>=b&&s.newBest;
@@ -156,7 +160,7 @@ function startGame(s){
   s.run={items:new Set()};
   for(const it of s.def.shop||[])if(it.kind==='unlock'?progress.owned(s.def.id,it)>0:progress.use(s.def.id,it))s.run.items.add(it.id);
   s.won=false;s.paid=0;s.trophies=[];progress.played(s.def.id);playstats.started(s.def.id);perf.started(s.def.id);
-  s.game.reset();s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
+  roundStarted(s.def.id);s.game.reset();s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
   s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');s.startPerf=performance.now();renderOverlay(s);
   sfx(660,.08,'square',.04,300);
 }
@@ -174,13 +178,13 @@ function awardTrophies(s){
 }
 function gameOver(s){
   if(s.state!=='playing')return;
-  s.state='over';s.overAt=Date.now();stopMusic();logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
+  s.state='over';s.overAt=Date.now();stopMusic();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(progress.score(s.def.id,s.score))s.newBest=true;
   awardTrophies(s);services.reportRun(s.def);
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){stopMusic();if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function resetSlide(s){stopMusic();roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
 function goPrev(s){
   const i=slides.indexOf(s);if(i<=0)return;
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');

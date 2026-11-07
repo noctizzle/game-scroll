@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { GAME_MODULES, HIDDEN, API_FEATURES } from '../src/game-modules.js';
+import { GAME_MODULES, HIDDEN, API_FEATURES, LOCATION_LEVELS } from '../src/game-modules.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'src'), GAMES = join(SRC, 'games');
@@ -55,12 +55,15 @@ async function buildOne(file) {
     if (!key) continue;
     const names = m[1].split(',').map(x => x.trim().split(/\s+as\s+/)[0]).filter(Boolean);
     const hidden = names.filter(n => (HIDDEN[key] || []).includes(n));
-    if (hidden.length) throw new Error(`src/games/${file} imports ${hidden.join(', ')} from src/${key}, which games may not use (save with api.save / api.load instead)`);
+    if (hidden.length) throw new Error(`src/games/${file} imports ${hidden.join(', ')} from src/${key}, which games may not use (save with api.save / api.load, find the player with api.location)`);
     needs[key] = [...new Set([...(needs[key] || []), ...names])].sort();
   }
   // Newer api features (api.save ...): older apps without them skip the game instead of crashing.
   const feats = API_FEATURES.filter(f => new RegExp(`\\bapi\\s*\\.\\s*${f}\\b`).test(src));
   if (feats.length) needs['@api'] = feats;
+  // Location must be declared (location: 'coarse' | 'precise'), so the feed can say so before Play.
+  if (feats.some(f => /location/i.test(f)) && !new RegExp(`\\blocation\\s*:\\s*['"](${LOCATION_LEVELS.join('|')})['"]`).test(src))
+    throw new Error(`src/games/${file} uses api.location but doesn't declare it: add location: 'coarse' (or 'precise') to the game definition`);
   return { code: chunk.code, needs };
 }
 
@@ -96,6 +99,7 @@ export async function buildGames({ withMeta = false } = {}) {
       const meta = await readMeta(file);
       if (!meta || !meta.id) continue;        // helper files that are not games
       if (meta.id !== id) throw new Error(`src/games/${file} has id '${meta.id}'; the file name must match the id`);
+      if (meta.location !== undefined && !LOCATION_LEVELS.includes(meta.location)) throw new Error(`src/games/${file}: location must be one of ${LOCATION_LEVELS.join(', ')}`);
       g.meta = meta;
     }
     games.push(g);

@@ -141,6 +141,8 @@ export default {
   <tr><td><code>api.over()</code></td><td>Ends the round.</td></tr>
   <tr><td><code>api.win()</code></td><td>Wins right now, for games with a natural end.</td></tr>
   <tr><td><code>api.has('item')</code></td><td>True when the player bought that shop item for this run.</td></tr>
+  <tr><td><code>api.location()</code></td><td>Where the player is, rounded. Needs <code>location: 'coarse'</code> in your game. <a href="#location">Location games</a>.</td></tr>
+  <tr><td><code>api.watchLocation(cb)</code></td><td>Calls <code>cb</code> each time the player moves to a new spot, until the round ends.</td></tr>
 </table>
 <p>The <code>hint</code> and the genre in <code>tag</code> also feed the recommender, so mention the control (tap, drag, tilt...) and the genre honestly.</p>
 
@@ -213,11 +215,31 @@ export default {
   <li><code>src/kit/controls.js</code>: thumbsticks, buttons, two-thumb layouts, and tap, hold and swipe detection.</li>
   <li><code>src/kit/physics2d.js</code>: balls and boxes that bounce, stack and collide.</li>
   <li><code>src/sfx.js</code>: <code>sfx(freq, duration, type, volume)</code> for short synth sounds. Respects mute.</li>
-  <li><code>src/kit/device.js</code>: <code>haptic()</code>, <code>buzz()</code>, <code>tilt()</code>, <code>onShake()</code>, <code>heading()</code>, <code>faceDown()</code>, <code>location()</code>, <code>startMic()</code>, <code>startCamera()</code>.</li>
+  <li><code>src/kit/device.js</code>: <code>haptic()</code>, <code>buzz()</code>, <code>tilt()</code>, <code>onShake()</code>, <code>heading()</code>, <code>faceDown()</code>, <code>startMic()</code>, <code>startCamera()</code>.</li>
+  <li><code>src/kit/geo.js</code>: <code>distance()</code>, <code>bearing()</code>, <code>offset()</code>, <code>toLocal()</code> and <code>cellId()</code> for location games.</li>
   <li><code>src/util.js</code> and <code>src/palettes.js</code>: maths helpers, pixel sprites, palettes.</li>
 </ul>
 <p>The <a href="https://github.com/robthewizzuk/game-scroll/blob/main/docs/maker-kit.md">maker kit guide</a> explains all of these with examples.</p>
 <p>Sensors return nothing in the browser or when a player says no, so <b>every sensor game needs a touch fallback</b>: drag instead of tilt, tap instead of shout. Stop the mic or camera when the round ends. Location, camera and mic data must never leave the phone.</p>
+
+<h3 id="location">Location games</h3>
+<p>A game can build its level from the player's area (a daily puzzle shared with everyone nearby, local weather, monsters that live in this park) or be played by walking around. Say how precise it needs to be in the game definition:</p>
+<pre><code>export default { id: 'park-hunt', /* ... */ location: 'coarse', make };   // or 'precise' for walk-around games
+
+// inside make(api), during play (for example in update, the first time it runs):
+api.location().then(here => {
+  // { lat: 51.51, lon: -0.13, accuracy: 1100, real: true, precision: 'coarse' }
+  // or the stand-in { lat: 0, lon: 0, real: false, reason: 'denied' | 'off' | 'unavailable' | 'not-playing' }
+  buildLevel(here.real ? cellId(here, 2000) : dailySeed);   // cellId from src/kit/geo.js
+});</code></pre>
+<ul>
+  <li><b>Rounded for you.</b> <code>'coarse'</code> (use this unless you truly need more) rounds to about 1 km. <code>'precise'</code> rounds to about 10 m, for games played by walking, and a maintainer checks it's needed.</li>
+  <li><b>Only during a round.</b> The phone asks the first time a player presses Play on a location game, never before. Before Play and after the round you get the stand-in. The feed tells players "Uses your rough area" on the start screen.</li>
+  <li><b>Always playable.</b> When the player says no, switches it off in Settings, or is indoors with no fix, you get <code>real: false</code>. Fall back to a daily seed, or let the player walk the stand-in around by touch with <code>offset(here, east, north)</code>.</li>
+  <li><code>api.watchLocation(cb)</code> calls <code>cb</code> straight away and each time the rounded spot changes. It stops by itself when the round ends; it also returns a <code>stop()</code>.</li>
+  <li>Never read <code>navigator.geolocation</code> yourself, and location never leaves the phone. There are no map tiles yet, so draw the area yourself.</li>
+  <li>Older versions of the app don't have this, so they skip location games until they update.</li>
+</ul>
 
 <h2 id="credits">5. Credits and shop items</h2>
 <p>Winning any game pays credits, which is why <code>goal</code> is required. Pick a goal a decent player reaches in about a minute. You can also sell items for credits:</p>

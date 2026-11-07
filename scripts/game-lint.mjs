@@ -30,6 +30,8 @@ const RULES = [
   [/\b(localStorage|sessionStorage|indexedDB|caches|cookieStore)\b/, 'storage: $1 (use the kit\'s progress/store helpers)'],
   [/\bdocument\.cookie\b/, 'storage: document.cookie'],
   [/\bCapacitor\b|@capacitor\//, 'native: Capacitor (use the kit: haptics, sensors, share...)'],
+  [/\bnavigator\s*\.\s*geolocation\b|\bGeolocation\b/, 'location: reads it directly (use api.location(), which rounds it and asks at play time)'],
+  [/\blocation\s*:\s*['"`]precise['"`]/, "location: 'precise' (about 10 m). Check the game really needs walk-around precision; 'coarse' is enough to seed a level"],
   [/\b(window\.(parent|top|opener)|postMessage|BroadcastChannel)\b/, 'talks to other windows ($1)'],
   // hiding what code does
   [/\beval\s*\(|\bFunction\s*\(|\bconstructor\s*\.\s*constructor\b|\[\s*['"`]constructor['"`]\s*\]/, 'runs code from a string'],
@@ -67,7 +69,7 @@ export function lint(file) {
       const key = abs.slice(SRC.length + 1).split('\\').join('/');
       if (!GAME_MODULES.includes(key)) { out.push({ line: i + 1, why: `imports src/${key}, which is app-only (games may import: ${GAME_MODULES.join(', ')})`, code: line.trim().slice(0, 120) }); continue; }
       const names = (m[1] || '').split(',').map(x => x.trim().split(/\s+as\s+/)[0]).filter(Boolean);
-      for (const n of names) if ((HIDDEN[key] || []).includes(n)) out.push({ line: i + 1, why: `imports ${n} from src/${key}, which games may not use (save with api.save / api.load)`, code: line.trim().slice(0, 120) });
+      for (const n of names) if ((HIDDEN[key] || []).includes(n)) out.push({ line: i + 1, why: `imports ${n} from src/${key}, which games may not use (save with api.save / api.load, find the player with api.location)`, code: line.trim().slice(0, 120) });
     }
   });
   return out;

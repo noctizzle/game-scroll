@@ -102,7 +102,7 @@ Matches https://game-scroll.com/privacy/.
 | --- | --- | --- | --- | --- |
 | Device or other IDs (random app-made ID, not the advertising ID) | Yes | No | Required for hearts | App functionality, fraud prevention/security |
 | App interactions (anonymous per-game views, plays, skips, play time) | Yes | No | Optional (Settings) | Analytics, app functionality |
-| Location | **No** (used on device only, never sent) | | | |
+| Location | **No** (rounded and used on device only during play, never stored or sent) | | | |
 | Photos/videos, audio | **No** (camera and mic processed on device only) | | | |
 | App info and performance → Crash logs, Diagnostics (anonymous crash markers, game script errors, frame timings, phone model, OS and app version; kept 14 days) | Yes | No | Optional (same Settings switch) | Analytics, app functionality |
 
@@ -113,7 +113,7 @@ Google Play Games data is handled by Google under its own policy.
 
 | Permission | Why |
 | --- | --- |
-| Location (coarse and fine) | A few games build their level from where you are. Never leaves the phone. |
+| Location (coarse and fine, foreground only) | A few games build their level from the player's area (rounded to about 1 km), and walk-around games use about 10 m. Asked only when the player starts such a game, only used during play, never in the background, never stored or sent. Games still play with a made-up spot if refused, and Settings has a switch to turn it off. |
 | Camera | AR games show 3D objects over the camera picture, and a few games use it as a control. Nothing is saved or sent. |
 | Microphone (record audio) | A few games react to loudness, like shouting to launch a rocket. Audio is never recorded or sent. |
 | Vibrate | Haptic feedback in games. |
