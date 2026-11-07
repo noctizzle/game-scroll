@@ -312,3 +312,23 @@ Original takes on the toy-brick adventure games: smash scenery into studs, rebui
 - [ ] Ghost Lantern 📷 — ghosts hide around you; sweep the phone like a torch to find and trap them
 - [ ] Tower Toss 📷 — stack wobbly blocks into a tower on your floor, walk the phone round to check the lean
 - [ ] Bubble Garden 📷 — bubbles float up from your floor; pop them in colour order by pointing
+- [x] Freeze Rex 📷 — a dinosaur roams your room; snap photos, and hold the phone dead still when it sniffs (gyro motion)
+- [x] Table Siege 📷 — defend a tiny castle on your table from toy soldiers; tap to lob boulders, walk round to see behind
+- [x] Floor Golf 📷 — six mini golf holes laid out on your floor; pull back from the ball to putt
+- [x] Domino Run 📷 — drag a line of dominoes across the floor through every star, then tip them
+- [x] Laser Mirrors 📷 — place and turn mirrors on a floor grid to bounce a laser into the crystal
+- [x] Treasure Drop 📷📍 — a daily chest lands 100–300 m away; follow the light beam and warmer/colder buzzes, then smash it open in AR
+
+## Next Gen · Console (HD 3D, 2026-11-07) 🎮
+
+Modern HD 3D on `src/kit/hd3d.js` (see [nextgen-3d.md](nextgen-3d.md)).
+
+- [x] Bunker Breakout — corridor shooter against the cartoon Red Bear Guard
+- [x] Suit Ops — jungle shooter with four suit modes
+- [x] Gravity Grip — anti-gravity tube racer that drives on the walls and ceiling
+- [x] Neon Drift — night street circuit; hold drifts for a multiplier, gates add time, walls kill the combo
+- [x] Storm Hook — grapple-swing across a stormy harbour city; hold to hook, let go to fly
+- [x] Deep Pressure — sub in a black trench; sonar pings light the cave and buzz back as haptic echoes, but wake the Lurker
+- [x] Mech Brawl — two-thumb boxing between giant mechs; dodge glowing swings to open them up
+- [x] Frost Line — tilt-to-carve snowboarding ahead of an avalanche, with air tricks
+- [x] Canyon Ace — tilt-to-fly jet through a desert canyon; skim the rock for up to x4
