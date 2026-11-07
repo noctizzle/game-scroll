@@ -68,15 +68,26 @@ function compatible(g) {
   return true;
 }
 
+// Metadata of a game the app already lists can change too (a new category, title, hint...).
+// Update the app's entry in place so the feed filters and captions use the new values at once.
+function refreshMeta(e, meta) {
+  let diff = false;
+  for (const k of Object.keys(e)) if (k !== 'likes' && !(k in meta)) { delete e[k]; diff = true; }
+  for (const [k, v] of Object.entries(meta)) if (JSON.stringify(e[k]) !== JSON.stringify(v)) { e[k] = v; diff = true; }
+  return diff;
+}
+
 function apply(m) {
-  const added = [];
-  if (!m || m.v !== 1 || !Array.isArray(m.games)) return added;
+  const added = [], changed = [];
+  if (!m || m.v !== 1 || !Array.isArray(m.games)) return { added, changed };
   for (const g of m.games) {
     if (!g || !g.id || !g.file || !g.hash || !g.meta || g.meta.id !== g.id || !compatible(g)) continue;
     entries.set(g.id, g);
-    if (!known.has(g.id)) { const e = addGame({ ...g.meta }); known.set(g.id, e); added.push(e); }
+    const e = known.get(g.id);
+    if (!e) { const n = addGame({ ...g.meta }); known.set(g.id, n); added.push(n); }
+    else if (refreshMeta(e, g.meta)) changed.push(e);
   }
-  return added;
+  return { added, changed };
 }
 
 async function sha12(code) {
@@ -109,7 +120,8 @@ async function fetchCode(g) {
 export const remote = {
   enabled: !!BASE,
 
-  /** add(meta): put a game into the app's list and return it. changed(games): new games arrived later. */
+  /** add(meta): put a game into the app's list and return it.
+   *  changed(added, updated): the fresh catalogue brought new games, or new metadata for listed ones. */
   init(add, changed) {
     addGame = add; onChange = changed;
     try { apply(JSON.parse(localStorage.getItem(MANIFEST_KEY) || 'null')); } catch (_) {}
@@ -125,9 +137,9 @@ export const remote = {
       if (!Array.isArray(m.games)) return false;
       try { localStorage.setItem(MANIFEST_KEY, text); } catch (_) {}
       for (const id of [...entries.keys()]) if (!m.games.some(g => g.id === id)) entries.delete(id);   // taken down
-      const added = apply(m), live = new Set(m.games.map(g => g.file));
+      const { added, changed } = apply(m), live = new Set(m.games.map(g => g.file));
       cacheDrop(Object.keys(index).filter(f => !live.has(f)));   // old versions of updated games
-      if (added.length && onChange) onChange(added);
+      if ((added.length || changed.length) && onChange) onChange(added, changed);
       return true;
     } catch (_) { return false; }   // offline: keep using the saved catalogue
   },
