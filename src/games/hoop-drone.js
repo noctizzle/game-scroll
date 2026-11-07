@@ -92,12 +92,13 @@ function make(api) {
     },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      if (!v) return; v.live(); t += dt; msgT -= dt; flash = Math.max(0, flash - dt * 2);
+      if (!v) return; v.live(); if (v.calibrating) return;   // floor calibration open: pause t += dt; msgT -= dt; flash = Math.max(0, flash - dt * 2);
       time -= dt; if (time <= 0) { time = 0; v.off(); haptic('error'); return api.over(); }
       // target: along where the phone points, as far out as the hoop you're going for
       const cur = hoops[0]; v.forward(f);
       aim.copy(f).multiplyScalar(Math.hypot(cur.p.x, cur.p.z) / Math.max(.25, Math.hypot(f.x, f.z)) * .98);
       if (aim.length() > 3.4) aim.setLength(3.4);
+      aim.add(v.eyePos);   // from where the phone is
       aim.y = clamp(aim.y, FLOOR + .15, 1.6);
       // spring towards it with drag: weighty, but quick to respond
       tmp.copy(aim).sub(pos).multiplyScalar(14).addScaledVector(vel, -5.2);
@@ -149,9 +150,9 @@ function make(api) {
       if (flash > 0) { c.fillStyle = `rgba(255,60,80,${flash * .3})`; c.fillRect(0, 0, W, H); }
       arNote(c, v, W, H);
     },
-    down(x, y, id) { tap = { x, y, id }; },
-    move(x, y, pressed, id) { if (!pressed || !tap || tap.id !== id) return; v.drag(x - tap.x, y - tap.y); tap.x = x; tap.y = y; },
-    up() { tap = null; },
+    down(x, y, id) { if (v?.input('down', x, y, id)) return; tap = { x, y, id }; },
+    move(x, y, pressed, id) { if (v?.input('move', x, y, id, pressed)) return; if (!pressed || !tap || tap.id !== id) return; v.drag(x - tap.x, y - tap.y); tap.x = x; tap.y = y; },
+    up(x, y, id) { if (v?.input('up', x, y, id)) return; tap = null; },
   };
 }
 

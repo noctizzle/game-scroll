@@ -87,7 +87,7 @@ function make(api) {
     },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      if (!v) return; v.live();
+      if (!v) return; v.live(); if (v.calibrating) return;   // floor calibration open: pause
       t += dt; cool -= dt; comboT -= dt; hitFlash = Math.max(0, hitFlash - dt); hurt = Math.max(0, hurt - dt * 1.5);
       const cap = Math.min(7, 2 + Math.floor(t / 10));
       spawnT -= dt; if (spawnT <= 0 && saucers.length < cap) { spawn(); spawnT = Math.max(.5, 1.8 - t / 40); }
@@ -140,9 +140,9 @@ function make(api) {
       arNote(c, v, W, H);
     },
     // gyro: tap anywhere fires at once. No gyro: drag to look, a tap (no drag) fires.
-    down(x, y, id) { if (v?.sensor) return fire(); tap = { x, y, id, moved: 0 }; },
-    move(x, y, pressed, id) { if (!pressed || !tap || tap.id !== id || v.sensor) return; v.drag(x - tap.x, y - tap.y); tap.moved += Math.abs(x - tap.x) + Math.abs(y - tap.y); tap.x = x; tap.y = y; },
-    up(x, y, id) { if (tap && tap.id === id && tap.moved < 10 && !v.sensor) fire(); tap = null; },
+    down(x, y, id) { if (v?.input('down', x, y, id)) return; if (v?.sensor) return fire(); tap = { x, y, id, moved: 0 }; },
+    move(x, y, pressed, id) { if (v?.input('move', x, y, id, pressed)) return; if (!pressed || !tap || tap.id !== id || v.sensor) return; v.drag(x - tap.x, y - tap.y); tap.moved += Math.abs(x - tap.x) + Math.abs(y - tap.y); tap.x = x; tap.y = y; },
+    up(x, y, id) { if (v?.input('up', x, y, id)) return; if (tap && tap.id === id && tap.moved < 10 && !v.sensor) fire(); tap = null; },
   };
 }
 

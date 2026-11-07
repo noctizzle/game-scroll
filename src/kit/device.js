@@ -51,14 +51,15 @@ async function onGesture() {
 addEventListener('pointerup', onGesture, true);
 
 /* ---------- motion sensors: tilt, shake, compass ---------- */
-const tiltState = { x: 0, y: 0, ok: false, base: null }, raw = { alpha: null, beta: 0, gamma: 0, t: 0 };
+const tiltState = { x: 0, y: 0, ok: false, base: null }, raw = { alpha: null, beta: 0, gamma: 0, t: 0, absT: -1e9, abs: false };
 let headingDeg = null, lastAcc = null; const shakeCbs = new Set(); let lastShake = 0, sensorsOn = false;
 function startSensors() {
   if (sensorsOn) return; sensorsOn = true;
   addEventListener('deviceorientation', e => {
     if (e.beta == null) return;
     tiltState.beta = e.beta;
-    if (e.alpha != null) { raw.alpha = e.alpha; raw.beta = e.beta; raw.gamma = e.gamma; raw.t = performance.now(); }
+    // relative readings only when no compass-locked (absolute) ones are coming in: those don't drift
+    if (e.alpha != null && performance.now() - raw.absT > 1000) { raw.alpha = e.alpha; raw.beta = e.beta; raw.gamma = e.gamma; raw.t = performance.now(); raw.abs = false; }
     // Use landscape-aware axes so tilt feels right when the phone or an unfolded foldable is sideways.
     const ang = (screen.orientation?.angle ?? window.orientation ?? 0) | 0;
     let x = e.gamma, y = e.beta;
@@ -70,7 +71,12 @@ function startSensors() {
     if (e.webkitCompassHeading != null) headingDeg = e.webkitCompassHeading;
     else if (e.absolute && e.alpha != null) headingDeg = (360 - e.alpha) % 360;
   });
-  addEventListener('deviceorientationabsolute', e => { if (e.alpha != null) headingDeg = (360 - e.alpha) % 360; });
+  addEventListener('deviceorientationabsolute', e => {
+    if (e.alpha == null) return;
+    headingDeg = (360 - e.alpha) % 360;
+    // Android: the same orientation but locked to the compass, so "straight ahead" can't slowly drift
+    if (e.beta != null) { const now = performance.now(); raw.alpha = e.alpha; raw.beta = e.beta; raw.gamma = e.gamma; raw.t = raw.absT = now; raw.abs = true; }
+  });
   addEventListener('devicemotion', e => {
     const a = e.accelerationIncludingGravity; if (!a || a.x == null) return;
     if (lastAcc) {
@@ -90,10 +96,10 @@ export function calibrateTilt() { tiltState.base = null; }
 /** Subscribe to shakes; returns an unsubscribe function. */
 export function onShake(cb) { shakeCbs.add(cb); return () => shakeCbs.delete(cb); }
 /** Raw phone orientation for AR (src/kit/ar3d.js): { alpha, beta, gamma } in degrees plus the screen
- *  rotation, or null when there is no live gyro reading. */
+ *  rotation, or null when there is no live gyro reading. abs: true when it's compass-locked (no drift). */
 export function orientation() {
   if (raw.alpha == null || performance.now() - raw.t > 1500) return null;
-  return { alpha: raw.alpha, beta: raw.beta, gamma: raw.gamma, screen: (screen.orientation?.angle ?? window.orientation ?? 0) | 0 };
+  return { alpha: raw.alpha, beta: raw.beta, gamma: raw.gamma, abs: raw.abs, screen: (screen.orientation?.angle ?? window.orientation ?? 0) | 0 };
 }
 /** Compass heading in degrees (0 = north), or null. */
 export function heading() { return headingDeg; }

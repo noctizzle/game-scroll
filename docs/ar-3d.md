@@ -10,6 +10,22 @@ materials, reflections, and real-time shadows that fall on the real floor (an in
 only shows shadows). Bloom and the colour grade are left out, because they would also tint the real
 world behind the scene. Games built on it: `saucer-swarm.js`, `bin-flick.js`, `hoop-drone.js`.
 
+## Fitting the real room
+
+- **Floor calibration.** The first time the camera starts, the kit opens "Line up your floor": the
+  player points at the floor and drags a teal grid up or down until it lies flat on it, then taps
+  Done. That sets how high the phone is held (saved on the device), and the 3D camera sits at
+  `FLOOR + v.eyeH`, so anything a game puts at `y = FLOOR` stands on the real floor. A small
+  "⇕ Floor" chip (bottom left, while the camera is on) reopens it. While it's open
+  `v.calibrating` is true: games must skip their update (that pauses timers and enemies) and send
+  their input through `v.input(...)` first.
+- **Light estimation.** Every few frames the camera picture is shrunk to 8 x 6 pixels; its average
+  brightness and colour drive the sky light, sun and reflections, so objects get darker in a dim
+  room and pick up warm or cool light.
+- **Less drift.** On Android the kit uses the compass-locked orientation
+  (`deviceorientationabsolute`), so "straight ahead" can't slowly turn. iPhones use the gyro reading, which drifts very
+  little over a short game.
+
 ## Fallbacks (every AR game must play everywhere)
 
 - **No camera** (refused, desktop, web): a virtual room (wooden floor, painted walls) is drawn
@@ -31,7 +47,8 @@ function make(api) {
   let v;
   return {
     reset() { v?.off(); v?.recenter(); /* ... */ },     // stop the camera; "ahead" = where the phone points next
-    update(dt) { if (!v) return; v.live(); /* ... */ if (lost) { v.off(); api.over(); } },
+    update(dt) { if (!v) return; v.live(); if (v.calibrating) return; /* ... */ if (lost) { v.off(); api.over(); } },
+    down(x, y, id) { if (v?.input('down', x, y, id)) return; /* ... */ },          // same for move (pass pressed) and up
     draw(c) {
       if (!v) { v = new ARView(); /* build meshes, add to v.scene */ this.reset(); }
       v.look();                    // gyro (or drag) -> camera
@@ -43,8 +60,8 @@ function make(api) {
 }
 ```
 
-- The phone is the eye at the origin, about 1.3 m above the floor: the floor is at `y = FLOOR`
-  (-1.3). Straight ahead at the start is `-z`. Put things 1.5 to 7 m away at real-world sizes
+- The floor is at `y = FLOOR` (-1.3) and the phone (the eye) is at `v.eyePos`: above the origin by
+  however the player calibrated (1.3 m above the floor until then). Aim rays start at `v.eyePos`. Straight ahead at the start is `-z`. Put things 1.5 to 7 m away at real-world sizes
   (a bin is 38 cm tall, a saucer 80 cm across) so they look right on the real floor.
 - `v.forward()`, `v.heading()` and `v.offAim(p)` tell you where the phone points; `v.toScreen(x, y, z)`
   gives screen coordinates for tap tests and labels.
