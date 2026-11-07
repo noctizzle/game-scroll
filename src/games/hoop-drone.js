@@ -55,7 +55,8 @@ function make(api) {
   want('motion');
   let v, drone, hoops, mines, fx, pos, vel, time, score, t, lastA, flash, msg, msgT, tap, buzzT;
   const aim = new Vector3(), f = new Vector3(), tmp = new Vector3(), prev = new Vector3(), nrm = new Vector3(), O = new Vector3();
-  const eye = () => v.eyePos || O;   // where the player is (older app kits keep it at the origin)
+  let fresh = false;   // during reset: the new round starts at the origin, whatever last round's position was
+  const eye = () => !fresh && v.eyePos || O;   // where the player is (older app kits keep it at the origin)
   function setup() {
     v = new ARView();
     drone = makeDrone(); v.scene.add(drone);
@@ -86,8 +87,10 @@ function make(api) {
       time = 12; score = 0; t = 0; lastA = 0; flash = 0; msg = null; msgT = 0; tap = null; buzzT = 0;
       if (v) {
         pos = new Vector3(0, -.15, -.7); vel = new Vector3(); drone.position.copy(pos);
+        fresh = true;
         placeHoop(hoops[0], tmp.set(0, -.1, -2.2)); lastA = 0;
         placeHoop(hoops[1], nextSpot(tmp)); placeHoop(hoops[2], nextSpot(tmp));
+        fresh = false;
         hoops.forEach((h, i) => { h.g.userData.ring.material = i ? looks().next : looks().hoop; h.g.visible = i < 2; });
         mines.forEach(m => { m.on = false; m.g.visible = false; }); fx.clear();
       }

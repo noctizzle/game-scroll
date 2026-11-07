@@ -73,11 +73,10 @@ const eu = new Euler(), q0 = new Quaternion(), qd = new Quaternion(), qy = new Q
 const mA = new Matrix4(), mB = new Matrix4(), mC = new Matrix4(), sc = new Vector3(), ray = new Raycaster(), floorPl = new Plane(new Vector3(0, 1, 0), -FLOOR), v2 = new Vector2();
 const GOOD = { TRACKING: 1, LIMITED: 1 };
 // a fresh native-AR state: the latest pose and projection, and how native space maps to game space
-// The floor found last time (native height): the native session keeps its map between rounds, so
-// the next round doesn't have to look for the floor again.
-let keptFloor = null;
+// How far below the phone the floor can be: standing or sitting, never a table top right under it.
+const FLOOR_MIN = .75, FLOOR_MAX = 2.3;
 const natState = () => ({ pose: new Matrix4(), proj: new Matrix4(), has: false, tracking: 'PAUSED', light: null, planes: [], yaw0: null, x0: 0, z0: 0, yOff: null, yOffT: 0, floor: null, M: new Matrix4(), t0: performance.now(),
-  scan: keptFloor == null, scanT: 0, asking: false, cands: [], shown: 0 });
+  floorA: 0, scan: true, scanT: 0, asking: false, cands: [], shown: 0 });
 
 export class ARView extends HDView {
   constructor(o = {}) {
@@ -145,7 +144,6 @@ export class ARView extends HDView {
       // the first good pose (or after recenter): where the phone points becomes "straight ahead" (-z),
       // where it stands becomes x = z = 0, and until a floor is found it's held at the calibrated height
       n.yaw0 = Math.atan2(m[8], m[10]); n.x0 = m[12]; n.z0 = m[14];
-      if (n.floor == null && keptFloor != null && keptFloor < m[13] - .3) this.setFloor(keptFloor, false);
       if (n.floor == null) n.yOff = n.yOffT = FLOOR + (this.eye ?? -FLOOR) - m[13];
       if (n.yOff == null) n.yOff = n.yOffT;
     }
@@ -154,14 +152,19 @@ export class ARView extends HDView {
   planes(list) {
     const n = this.nat; if (!n) return;
     n.planes = list;
-    // the floor is the lowest surface at least 70 cm below the phone (so not a table; a lower one later wins)
-    const py = n.pose.elements[13]; let low = null;
-    for (const p of list) { const y = p.pose[13]; if (p.w * p.d >= .08 && y < py - .7 && (low == null || y < low)) low = y; }
-    if (low != null && (n.floor == null || low < n.floor - .03)) this.setFloor(low);
+    // the floor is the biggest surface a sensible height below the phone. It only changes for a
+    // clearly bigger one (or the same one growing), so the room doesn't keep shifting up and down.
+    const py = n.pose.elements[13]; let best = null;
+    for (const p of list) {
+      const y = p.pose[13], a = p.w * p.d;
+      if (a >= .08 && y < py - FLOOR_MIN && y > py - FLOOR_MAX && (!best || a > best.a)) best = { y, a };
+    }
+    if (!best) return;
+    if (n.floor == null || best.a > n.floorA * 1.5 || (Math.abs(best.y - n.floor) < .04 && best.a >= n.floorA)) this.setFloor(best.y, best.a);
   }
-  setFloor(y, fresh = true) {
+  setFloor(y, a = 0) {
     const n = this.nat, was = n.floor == null;
-    n.floor = keptFloor = y; n.yOffT = FLOOR - y; if (n.yOff == null || !fresh) n.yOff = n.yOffT;
+    n.floor = y; n.floorA = a; n.yOffT = FLOOR - y; if (n.yOff == null) n.yOff = n.yOffT;
     if (was && n.scan) { n.scan = false; n.shown = 1.4; haptic('success'); }   // found: show the grid on it for a moment
   }
   // While looking for the floor, ask where the middle of the screen meets something a few times a
@@ -172,7 +175,7 @@ export class ARView extends HDView {
     n.scanT = .2; n.asking = true;
     nativeHit(r.left + r.width / 2, r.top + r.height * .6).then(hs => {
       n.asking = false; const h = hs[0]; if (!h || this.nat !== n || n.floor != null) return;
-      const y = h.pose[13]; if (y > n.pose.elements[13] - .7) return;   // too close below the phone: a table top, not the floor
+      const y = h.pose[13], py = n.pose.elements[13]; if (y > py - FLOOR_MIN || y < py - FLOOR_MAX) return;   // a table top, or nonsense
       if (h.kind === 'plane') return this.setFloor(y);
       n.cands.push(y); if (n.cands.length > 6) n.cands.shift();
       const near = n.cands.filter(c => Math.abs(c - y) < .05);
@@ -235,7 +238,14 @@ export class ARView extends HDView {
   }
 
   /** Make where the phone points now "straight ahead" (call from reset()). */
-  recenter() { this.yaw0 = null; this.yaw = 0; this.pitch = 0; if (this.nat) this.nat.yaw0 = null; return this; }
+  recenter() {
+    this.yaw0 = null; this.yaw = 0; this.pitch = 0;
+    // where you stand becomes x = z = 0 (native AR takes it on the next frame), so things a game
+    // places now from eyePos line up with the new "ahead" instead of last round's position
+    if (this.nat) this.nat.yaw0 = null;
+    this.cam.position.x = this.cam.position.z = 0;
+    return this;
+  }
   /** No-gyro fallback: drag to look around (pixels moved). */
   drag(dx, dy) { if (this.sensor) return; this.yaw += dx * .007; this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch + dy * .006)); }
 

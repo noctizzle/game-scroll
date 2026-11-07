@@ -59,7 +59,8 @@ function make(api) {
     const spread = v.sensor ? Math.min(2.6, .35 + score * .22) : .3;
     const d = first ? 2.4 : clamp(1.6 + score * .14 + rnd(-.2, .3), 1.5, 4.2);
     binA = first ? 0 : clamp(binA + rnd(-1, 1) * spread, -spread, spread);
-    const e = v.eyePos || { x: 0, z: 0 };   // from where you stand (you can walk around with native AR)
+    // from where you stand (you can walk around with native AR); a new round starts at the origin
+    const e = !first && v.eyePos || { x: 0, z: 0 };
     bx = e.x - Math.sin(binA) * d; bz = e.z - Math.cos(binA) * d;
     bin.position.set(bx, FLOOR, bz);
     wind = score < 2 ? 0 : Math.round(rnd(-1, 1) * Math.min(1.6, .3 + score * .12) * 10) / 10;
