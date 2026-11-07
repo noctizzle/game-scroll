@@ -126,6 +126,8 @@ canvas{display:block;width:100%;height:100%;touch-action:pan-y}
 .rbtn{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;color:var(--text);cursor:pointer;font:600 11px/1 var(--f-body);padding:0;min-width:48px}
 .rbtn .ic{width:48px;height:48px;border-radius:50%;background:var(--panel);display:grid;place-items:center;font-size:21px;transition:transform .15s}
 .rbtn:active .ic{transform:scale(.88)}
+/* narrow phones: five buttons plus the caption, so slim the buttons a little */
+@media (max-width: 420px){.rail{gap:3px}.rbtn{min-width:42px;font-size:10px}.rbtn .ic{width:42px;height:42px;font-size:19px}}
 .like[aria-pressed="true"] .ic{color:var(--heart)}
 .swipe-cue{position:absolute;left:0;right:0;bottom:4px;text-align:center;font:500 11px/1 var(--f-body);color:var(--muted);pointer-events:none;animation:cue 1.8s ease-in-out infinite}
 @keyframes cue{50%{transform:translateY(-4px);opacity:.6}}
@@ -331,6 +333,8 @@ dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
 .set-row h3{margin:6px 16px 6px;font-size:15px}
 .set-stat{margin:0 16px 12px;color:var(--muted);font-size:14px}
 .set-stat b{color:var(--text);font-size:18px}
+.set-toggle{display:flex;align-items:center;gap:10px;margin:0 16px 12px;font-size:15px;cursor:pointer}
+.set-toggle input{width:20px;height:20px;accent-color:var(--accent,#ff4d6d)}
 .set-clear:disabled{opacity:.5;cursor:default}
 .set-note{margin:0 16px 12px;color:var(--accent);font-size:13px}
 .settings{overflow-y:auto}

@@ -1,6 +1,8 @@
 // Settings sheet, opened from the ⚙ button in the top bar.
 // How many streamed games are saved on this device (with a button to clear them), the licence, and credits.
 import { fmt } from './util.js';
+import { playstats } from './playstats.js';
+import { HEARTS_URL } from './hearts.js';
 
 const size = b => b < 1024 * 1024 ? `${Math.ceil(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
 
@@ -20,6 +22,11 @@ export function openSettings({ stream, cached, clear }) {
           : `<p class="qa-help">This is a test build with every game built in, so there's nothing to cache.</p>`}
         ${note ? `<p class="set-note" role="status">${note}</p>` : ''}
       </section>
+      ${HEARTS_URL ? `<section class="set-row">
+        <h3>Play stats</h3>
+        <p class="qa-help">Counts how often each game is played or skipped, added up across everyone. It helps pick which games to improve and which to show more. Nothing identifies you.</p>
+        <label class="set-toggle"><input type="checkbox" class="set-stats"${playstats.enabled ? ' checked' : ''}> Share anonymous play stats</label>
+      </section>` : ''}
       <section class="set-row">
         <h3>Licence</h3>
         <p class="qa-help">Copyright © 2026 Rob and Game Scroll contributors. The code is under the PolyForm Shield License 1.0.0: you can use, change and share it for anything except making a product that competes with Game Scroll.</p>
@@ -35,6 +42,7 @@ export function openSettings({ stream, cached, clear }) {
       </section>
       <footer class="set-made">Made by <b>Rob</b></footer>`;
     el.querySelector('.qa-x').onclick = () => el.close();
+    el.querySelector('.set-stats')?.addEventListener('change', e => { playstats.enabled = e.target.checked; });
     el.querySelector('.set-clear')?.addEventListener('click', async e => {
       e.target.disabled = true; await clear(); render('Cache cleared. Games will download again as you play them.');
     });

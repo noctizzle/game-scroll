@@ -74,6 +74,17 @@
 	<string>Some games react to your voice, like shouting to launch a rocket. Audio is never recorded or sent.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.gamescroll.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>gamescroll</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSMotionUsageDescription</key>
 	<string>Some games are played by tilting or shaking your phone.</string>
 </dict>

@@ -6,6 +6,8 @@
 //                     iOS:     first time { keyId, attestation }, later { keyId, assertion }  (App Attest)
 //                     Android: { token }                                                     (Play Integrity)
 //   POST /heart       body { device, game, on } (+ "Authorization: Bearer <session>") -> { game, n }
+//   POST /stats, GET /stats   anonymous play stats (see stats.js)
+//   play.game-scroll.com/<id> the page a shared game link opens (see sharepage.js)
 //
 // No accounts: each install sends a random anonymous device id; (game, device) is unique, so a phone
 // counts once per game. A "session" (pass) proves the app is genuine. With ENFORCE = "off" hearts
@@ -15,6 +17,8 @@ import { newChallenge, checkChallenge, newSession, readSession } from './session
 import { verifyAttestation, verifyAssertion } from './appattest.js';
 import { verifyIntegrity } from './playintegrity.js';
 import { unb64, b64u } from './util.js';
+import { cleanBatch, saveBatch, totals, prune } from './stats.js';
+import { sharePage, idFromPath } from './sharepage.js';
 
 // Browsers may call the API only from the app itself and the test website. (Not a security
 // boundary on its own, since scripts outside a browser ignore CORS, but it stops other sites
@@ -29,7 +33,8 @@ const ORIGINS = [
 const COUNTS_TTL = 60;
 const DEVICE_RE = /^[A-Za-z0-9-]{16,64}$/;
 const GAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const MAX_BODY = { '/heart': 512, '/session': 24_000 };
+const MAX_BODY = { '/heart': 512, '/session': 24_000, '/stats': 8_000 };
+const STATS_TTL = 600;
 
 function cors(req) {
   const o = req.headers.get('Origin');
@@ -56,14 +61,14 @@ async function body(req, max) {
   try { return JSON.parse(text); } catch (_) { return null; }
 }
 
-/** Game ids in the live catalogue, fetched at most every 5 minutes per Worker location. */
+/** The live catalogue as a Map id -> entry, fetched at most every 5 minutes per Worker location. */
 let known = null, knownAt = 0;
 async function gameIds(env) {
   if (!env.MANIFEST_URL) return null;   // tests: accept any well-formed id
   if (known && Date.now() - knownAt < 300_000) return known;
   try {
     const r = await fetch(env.MANIFEST_URL, { cf: { cacheTtl: 300, cacheEverything: true } });
-    if (r.ok) { const m = await r.json(); known = new Set((m.games || []).map(g => g.id)); knownAt = Date.now(); }
+    if (r.ok) { const m = await r.json(); known = new Map((m.games || []).map(g => [g.id, g])); knownAt = Date.now(); }
   } catch (_) { /* keep the last list */ }
   return known;
 }
@@ -127,6 +132,47 @@ async function session(env, req) {
   return json(req, { session: s.token, expires: s.expires }, 200, { 'Cache-Control': 'no-store' });
 }
 
+async function postStats(env, req) {
+  const b = await body(req, MAX_BODY['/stats']);
+  if (!b) return json(req, { error: 'bad request' }, 400);
+  if (typeof b.device !== 'string' || !DEVICE_RE.test(b.device)) return json(req, { error: 'bad device' }, 400);
+  if (await limited(env.LIMIT_STATS, 'st:' + ip(req)) || await limited(env.LIMIT_STATS, 'sd:' + b.device)) return json(req, { error: 'slow down' }, 429);
+  const rows = cleanBatch(b.games, await gameIds(env));
+  if (!rows) return json(req, { error: 'bad games' }, 400);
+  await saveBatch(env.DB, rows);
+  return json(req, { ok: true, saved: rows.length });
+}
+
+async function getStats(env, ctx, req) {
+  const ttl = env.STATS_TTL !== undefined ? Number(env.STATS_TTL) : STATS_TTL;   // tests set 0
+  const cache = caches.default, key = new Request(new URL('/stats', req.url).toString());
+  let res = ttl > 0 ? await cache.match(key) : null;
+  if (!res) {
+    res = new Response(JSON.stringify(await totals(env.DB)), { headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${ttl}` } });
+    if (ttl > 0) ctx.waitUntil(cache.put(key, res.clone()));
+    if (Math.random() < 0.05) ctx.waitUntil(prune(env.DB));   // now and then, drop days past the window
+  }
+  const h = new Headers(res.headers);
+  for (const [k, v] of Object.entries(cors(req))) h.set(k, v);
+  return new Response(res.body, { status: res.status, headers: h });
+}
+
+async function share(env, req) {
+  const url = new URL(req.url);
+  if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Method not allowed', { status: 405 });
+  const id = idFromPath(url.pathname);
+  const cat = id ? await gameIds(env) : null;
+  const game = id && cat ? cat.get(id) || null : null;
+  return new Response(sharePage(game, { webUrl: env.WEB_PLAY_URL || '' }), {
+    status: id && !game && cat ? 404 : 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      'Referrer-Policy': 'no-referrer',
+    },
+  });
+}
+
 async function heart(env, ctx, req) {
   const b = await body(req, MAX_BODY['/heart']);
   if (!b) return json(req, { error: 'bad request' }, 400);
@@ -162,13 +208,16 @@ async function heart(env, ctx, req) {
 
 export default {
   async fetch(req, env, ctx) {
-    const { pathname } = new URL(req.url);
+    const { pathname, hostname } = new URL(req.url);
+    if (hostname.startsWith('play.')) return await share(env, req);
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req) });
     try {
       if (req.method === 'GET' && pathname === '/counts') return await counts(env, ctx, req);
       if (req.method === 'GET' && pathname === '/challenge') return await challenge(env, req);
       if (req.method === 'POST' && pathname === '/session') return await session(env, req);
       if (req.method === 'POST' && pathname === '/heart') return await heart(env, ctx, req);
+      if (req.method === 'POST' && pathname === '/stats') return await postStats(env, req);
+      if (req.method === 'GET' && pathname === '/stats') return await getStats(env, ctx, req);
       if (req.method === 'GET' && pathname === '/') return json(req, { ok: true, service: 'game-scroll-api', enforce: env.ENFORCE === 'on' });
       return json(req, { error: 'not found' }, 404);
     } catch (e) {

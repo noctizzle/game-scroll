@@ -9,6 +9,7 @@
 // - BENCHED games are hidden for everyone (still in the code, waiting for a fix or a delete).
 import { store } from './util.js';
 import { progress } from './kit/progress.js';
+import { playstats } from './playstats.js';
 
 /** Hidden from the feed for everyone. Add an id here to pull a game without deleting its file. */
 export const BENCHED = new Set([]);
@@ -48,9 +49,16 @@ export function toast(msg, undo) {
   toastEl.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('on'), 3500);
 }
 
+/* ---------- everyone's play (anonymous stats, last 30 days) ---------- */
+function everyone(id) {
+  const c = playstats.global(id);
+  if (!c || !c.v) return '';
+  return `everyone: ${c.v} views, ${c.p} plays, ${Math.round(100 * c.k / c.v)}% quick skips, ${Math.round(c.s / c.v)}s/view`;
+}
+
 /* ---------- report ---------- */
 export function report(games, best) {
-  const line = g => { const x = db[g.id] || {}; return `${g.id} (${g.title})${x.plays ? ` · ${x.plays} plays, ${x.secs}s, best ${best(g.id)}` : ''}`; };
+  const line = g => { const x = db[g.id] || {}, e = everyone(g.id); return `${g.id} (${g.title})${x.plays ? ` · ${x.plays} plays, ${x.secs}s, best ${best(g.id)}` : ''}${e ? ` · ${e}` : ''}`; };
   const by = r => games.filter(g => rating(g.id) === r);
   const played = games.filter(g => !rating(g.id) && db[g.id]?.plays);
   return [
@@ -59,6 +67,8 @@ export function report(games, best) {
     `\nLIKED (${by(1).length}):`, ...by(1).map(line),
     `\nPLAYED, NOT RATED (${played.length}):`, ...played.sort((a, b) => db[b.id].secs - db[a.id].secs).map(line),
     `\nNOT PLAYED YET: ${games.filter(g => !db[g.id]?.plays && !rating(g.id)).length}`,
+    `\nMOST SKIPPED BY EVERYONE (20+ views):`, ...games.filter(g => (playstats.global(g.id)?.v || 0) >= 20)
+      .sort((a, b) => playstats.global(b.id).k / playstats.global(b.id).v - playstats.global(a.id).k / playstats.global(a.id).v).slice(0, 15).map(line),
   ].join('\n');
 }
 
@@ -69,7 +79,7 @@ export function openPanel(games, best, onChange) {
   const rows = [...games].sort((a, b) => rating(a.id) - rating(b.id) || a.title.localeCompare(b.title)).map(g => {
     const x = db[g.id] || {}, r = rating(g.id);
     return `<li data-id="${g.id}"><span class="qa-r">${BENCHED.has(g.id) ? '⏸' : r > 0 ? '♥' : r < 0 ? '👎' : '·'}</span>
-      <span class="qa-t">${g.title}<small>${x.plays ? `${x.plays} plays · ${x.secs}s · best ${best(g.id)}` : 'not played'}</small></span>
+      <span class="qa-t">${g.title}<small>${x.plays ? `${x.plays} plays · ${x.secs}s · best ${best(g.id)}` : 'not played'}${everyone(g.id) ? `<br>${everyone(g.id)}` : ''}</small></span>
       ${r < 0 ? '<button class="qa-un">Unhide</button>' : ''}</li>`;
   }).join('');
   el.innerHTML = `<div class="qa-head"><b>QA</b><span>${played}/${games.length} played · ${rated} rated</span><button class="qa-x" aria-label="Close">✕</button></div>

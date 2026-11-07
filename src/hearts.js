@@ -21,7 +21,8 @@ const COUNTS_KEY = 'gs_heart_counts', SENT_KEY = 'gs_heart_sent', QUEUE_KEY = 'g
 const REFRESH_MS = 2 * 60 * 1000, FRESH_MS = 3 * 60 * 1000;
 const PASS_KEY = 'gs_api_pass', ATTEST_KEY = 'gs_appattest_key', PASS_RETRY_MS = 30 * 60 * 1000;
 
-function deviceId() {
+/** This install's random anonymous id (shared with play stats, used only as a rate-limit key there). */
+export function deviceId() {
   let id = store.get(DEVICE_KEY, null);
   if (typeof id !== 'string' || !/^[A-Za-z0-9-]{16,64}$/.test(id)) {
     id = globalThis.crypto?.randomUUID?.() || Array.from({ length: 32 }, () => (Math.random() * 16 | 0).toString(16)).join('');

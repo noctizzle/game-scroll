@@ -13,6 +13,8 @@ import { verifyAttestation, verifyAssertion } from './src/appattest.js';
 import { verifyIntegrity, _reset } from './src/playintegrity.js';
 import { newChallenge, checkChallenge, newSession, readSession } from './src/session.js';
 import { cbor, b64u, sha256, concat } from './src/util.js';
+import { cleanBatch } from './src/stats.js';
+import { sharePage, idFromPath } from './src/sharepage.js';
 
 x509.cryptoProvider.set(crypto);
 const ok = msg => console.log('  ✓ ' + msg);
@@ -26,6 +28,26 @@ const rejects = async (p, re) => { await assert.rejects(p, e => re.test(e.messag
   ok('CBOR decoder reads what cbor-x writes');
 }
 
+/* ---------- play stats and share pages ---------- */
+{
+  const known = new Map([['mini-golf', {}], ['stack-up', {}]]);
+  const rows = cleanBatch({ 'mini-golf': { v: 3, p: 2, k: 9, s: 99999 }, 'stack-up': { v: 0, p: 0, k: 0, s: 0 }, 'nope': { v: 1 }, 'Bad!': { v: 1 } }, known);
+  assert.deepEqual(rows, [['mini-golf', 3, 2, 3, 3600]]);
+  assert.equal(cleanBatch([1, 2], known), null);
+  const many = Object.fromEntries(Array.from({ length: 100 }, (_, i) => ['g' + i, { v: 1 }]));
+  assert.equal(cleanBatch(many, null).length, 60);
+  ok('stats batches drop unknown games, cap numbers and size');
+  assert.equal(idFromPath('/Mini-Golf/'), 'mini-golf');
+  assert.equal(idFromPath('/../etc'), null);
+  const page = sharePage({ id: 'mini-golf', title: 'Mini <Golf>', hint: 'Putt "it"', tag: 'POCKET' }, { webUrl: 'https://x.test/' });
+  assert.match(page, /gamescroll:\/\/game\/mini-golf/);
+  assert.match(page, /Mini &lt;Golf&gt;/);
+  assert.ok(!page.includes('<Golf>'));
+  assert.match(page, /https:\/\/x\.test\/\?g=mini-golf/);
+  assert.match(sharePage(null), /didn’t work/);
+  ok('share pages escape game text and link to the app and the browser version');
+}
+
 /* ---------- sessions ---------- */
 {
   const secret = 'test-secret-1234567890';
@@ -36,7 +58,10 @@ const rejects = async (p, re) => { await assert.rejects(p, e => re.test(e.messag
   assert.equal(await checkChallenge(secret, ch, Date.now() + 6 * 60 * 1000), false);
   const s = await newSession(secret, 'device-aaaaaaaaaaaaaaaa', 'ios');
   assert.equal((await readSession(secret, s.token)).d, 'device-aaaaaaaaaaaaaaaa');
-  assert.equal(await readSession(secret, s.token.replace(/.$/, c => c === 'A' ? 'B' : 'A')), null);
+  // Flip the first character of the signature (the last one can carry unused padding bits).
+  const [sb, sm] = s.token.split('.');
+  assert.equal(await readSession(secret, sb + '.' + (sm[0] === 'A' ? 'B' : 'A') + sm.slice(1)), null);
+  assert.equal(await readSession(secret, sb.slice(0, -2) + 'xx.' + sm), null);
   assert.equal(await readSession(secret, s.token, Date.now() + 25 * 3600 * 1000), null);
   ok('challenges and passes are signed and expire');
 }
@@ -146,11 +171,13 @@ async function fakeAssertion(leafKeys, challenge, counter, app = appId) {
 const { unstable_startWorker } = await import('wrangler');
 const SECRET = 'local-test-secret-' + Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex');
 async function run(vars, fn) {
-  writeFileSync('.dev.vars', Object.entries({ SESSION_SECRET: SECRET, MANIFEST_URL: '', ...vars }).map(([k, v]) => `${k}=${v}`).join('\n'));
+  writeFileSync('.dev.vars', Object.entries({ SESSION_SECRET: SECRET, MANIFEST_URL: '', STATS_TTL: '0', ...vars }).map(([k, v]) => `${k}=${v}`).join('\n'));
   const w = await unstable_startWorker({ config: 'wrangler.toml', dev: { remote: false, server: { port: 0 }, logLevel: 'error' } });
   try { await fn((await w.url).toString().replace(/\/$/, '')); } finally { await w.dispose(); rmSync('.dev.vars', { force: true }); }
 }
-const A = 'test-device-aaaaaaaaaaaa', B = 'test-device-bbbbbbbbbbbb', game = 'test-game-' + Date.now();
+// Fresh device ids per run too: local rate-limit counters outlive one run.
+const run_ = Date.now().toString(36);
+const A = 'test-device-a-' + run_, B = 'test-device-b-' + run_, game = 'test-game-' + run_;
 // Each run uses its own fake address, since local rate-limit counters outlive one run.
 const IP = '198.51.100.' + (1 + crypto.getRandomValues(new Uint8Array(1))[0] % 250) + '.' + Date.now() % 1e6;
 const post = (url, path, body, headers = {}) => fetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': IP, ...headers }, body: JSON.stringify(body) });
@@ -187,6 +214,16 @@ await run({}, async url => {
   r = await post(url, '/session', { device: A, platform: 'ios', challenge, keyId: 'AAAA', attestation: 'AAAA' }); assert.equal(r.status, 403);
   r = await post(url, '/session', { device: A, platform: 'android', challenge: 'forged', token: 'x' }); assert.equal(r.status, 400);
   ok('passes need a real challenge and a verified app');
+
+  r = await post(url, '/stats', { device: A, games: { [game]: { v: 2, p: 1, k: 1, s: 30 } } }); assert.equal(r.status, 200);
+  r = await post(url, '/stats', { device: A, games: { [game]: { v: 1, p: 0, k: 1, s: 0 } } }); assert.equal(r.status, 200);
+  r = await fetch(url + '/stats'); assert.equal(r.status, 200);
+  assert.deepEqual((await r.json()).games[game], { v: 3, p: 1, k: 2, s: 30 });
+  r = await post(url, '/stats', { device: A, games: 'x' }); assert.equal(r.status, 400);
+  let lim = 0;
+  for (let i = 0; i < 8 && !lim; i++) { r = await post(url, '/stats', { device: B, games: {} }); if (r.status === 429) lim = 1; }
+  assert.ok(lim, 'stats batches are rate-limited');
+  ok('play stats add up per game per day, and batches are rate-limited');
 });
 
 await run({ ENFORCE: 'on' }, async url => {
