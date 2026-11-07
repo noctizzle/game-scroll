@@ -11,7 +11,7 @@ routes = [{ pattern = "api.game-scroll.com", custom_domain = true }]
 
 [vars]
 # The live catalogue, used to accept hearts only for games that exist.
-MANIFEST_URL = "https://pub-8db49903028243cf90dd4d7a8bb98735.r2.dev/manifest.json"
+MANIFEST_URL = "https://assets.game-scroll.com/manifest.json"
 
 [[d1_databases]]
 binding = "DB"

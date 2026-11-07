@@ -137,7 +137,7 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
    put the caption and buttons in one compact strip at the top so the game gets the full width,
    which matters most for two-thumb controls. */
 @media (min-aspect-ratio: 5/6) and (min-width: 560px) and (min-height: 480px){
-  .slide{grid-template-rows:auto minmax(0,1fr);gap:12px;padding-block:58px 14px}
+  .slide{grid-template-rows:auto minmax(0,1fr);gap:8px;padding-block:58px 8px}
   .meta{grid-row:1;align-items:center;gap:16px;padding:0 8px}
   .stage{grid-row:2}
   .caption{display:flex;align-items:center;flex-wrap:wrap;gap:4px 14px}
@@ -147,6 +147,10 @@ html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset
   .rail{gap:10px}
   .rbtn{flex-direction:row;gap:6px;min-width:0;font-size:12px}
   .rbtn .ic{width:40px;height:40px;font-size:17px}
+}
+/* ...and when that screen is landscape, drop the decorative bottom bezel so the game can be taller */
+@media (min-aspect-ratio: 6/5) and (min-width: 560px) and (min-height: 480px){
+  .bezel-bottom{display:none}
 }
 /* Short wide screens (a phone on its side): there's no height to spare, so the caption and
    buttons sit in a side column and the game keeps the full height. */
