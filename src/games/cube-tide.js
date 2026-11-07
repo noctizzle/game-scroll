@@ -1,7 +1,7 @@
 import { clamp } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
-import { box, backdrop } from '../kit/gfx.js';
+import { View, G, part, grp, flat } from '../kit/toon3d.js';
 
 // Waves of stone cubes tumble down a floating floor toward the edge. Tap a tile to set a trap,
 // then tap it again when a cube is on it to sink the cube. Grey cubes must be caught: every few
@@ -18,6 +18,22 @@ function make(api) {
     wave++; const depth = Math.min(4, 2 + (wave / 3 | 0)), blackP = wave < 2 ? 0 : Math.min(.22, .08 + wave * .015), greenP = .1;
     for (let r = 0; r < depth; r++) for (let c = 0; c < cols; c++) { const k = Math.random(); cubes.push({ c, r: -1 - r, k: k < blackP ? 'black' : k < blackP + greenP ? 'green' : 'grey', sink: 0 }); }
     period = Math.max(.75, 1.7 - wave * .07); waveClean = true; msg = { txt: `WAVE ${wave}`, l: 1 };
+  }
+  let v3;
+  function view3d() {
+    if (!v3) {
+      v3 = new View({ bg: '#181830', sun: [-.5, 1, .6], sunI: 2.4, amb: .9, sky: '#c0c8ff', ground: '#302040' });
+      v3.def('star', () => part(G.ball, '#7070c0', { s: .6, glow: 1, line: false }));
+      v3.def('tileA', () => part(G.box, '#7880a8', { y: -.5 })).def('tileB', () => part(G.box, '#8890b8', { y: -.5 }));
+      v3.def('base', () => part(G.box, '#4a5078', { sy: 10, y: -6 }));
+      v3.def('zone', () => part(G.plane, flat('#60e070', .4)));
+      v3.def('trap', () => grp(part(G.box, '#4080f8', { sy: .6, glow: .4 }), part(G.box, '#a0c8ff', { sx: .7, sy: .8, sz: .7, glow: .6, line: false })));
+      // cubes pivot at their centre half a tile up, so they visibly roll forward
+      const cube = (col, extra) => () => { const g = grp(part(G.box, col, { y: .5 })); if (extra) { const e = extra(); g.add(e); g.userData.eye = e; } return g; };
+      v3.def('grey', cube('#b0b0c0')).def('green', cube('#48c058', () => part(G.box, '#a0f8a8', { sx: .5, sy: .06, sz: .5, y: 1.02, glow: .5, line: false })));
+      v3.def('black', cube('#34344a', () => grp(part(G.box, '#f84040', { sx: .12, sy: .04, sz: .4, y: 1.01, z: -.08, glow: 1, line: false }), part(G.box, '#f84040', { sx: .12, sy: .04, sz: .12, y: 1.01, z: .25, glow: 1, line: false }))));
+    }
+    v3.board(W, H, .95, 34); return v3;
   }
   function burst(x, y, col) { for (let i = 0; i < 8; i++) parts.push({ x, y, vx: (Math.random() - .5) * 80, vy: -Math.random() * 70, l: .5, col }); }
   function capture(cells) {
@@ -48,27 +64,21 @@ function make(api) {
       }
     },
     draw(c) {
-      const T = tile(), X = ox(), Y = oy();
-      backdrop(c, 0, 0, W, H, '#232342', '#0c0c18');
-      for (let i = 0; i < 30; i++) { c.fillStyle = i % 3 ? '#303050' : '#5050a0'; c.fillRect((i * 61) % W, (i * 43 + t * 4) % H, 1, 1); }
-      // floor
-      for (let r = 0; r < rows; r++) for (let cc = 0; cc < cols; cc++) { box(c, X + cc * T + .5, Y + r * T + .5, T - 1, T - 1, (r + cc) % 2 ? '#7880a8' : '#8890b8', { r: 1.5, drop: false }); }
-      c.fillStyle = '#4a5078'; c.fillRect(X, Y + rows * T, cols * T, 5);
-      for (const f of fallRows) { c.globalAlpha = f.l; c.fillStyle = '#7880a8'; c.fillRect(X, Y + f.r * T + (1 - f.l) * 60, cols * T, T - 1); c.globalAlpha = 1; }
-      if (big) { c.fillStyle = (t * 6 | 0) % 2 ? '#60e07080' : '#60e07040'; c.fillRect(X + (big.c - 1) * T, Y + (big.r - 1) * T, T * 3, T * 3); c.save(); c.beginPath(); c.rect(X, Y, cols * T, rows * T); c.clip(); c.strokeStyle = '#60e070'; c.lineWidth = 2; c.strokeRect(X + (big.c - 1) * T + 1, Y + (big.r - 1) * T + 1, T * 3 - 2, T * 3 - 2); c.restore(); }
-      if (trap) { c.fillStyle = '#4080f8a0'; c.fillRect(X + trap.c * T, Y + trap.r * T, T - 1, T - 1); c.strokeStyle = '#a0c8ff'; c.lineWidth = 1; c.strokeRect(X + trap.c * T + 2.5, Y + trap.r * T + 2.5, T - 6, T - 6); }
-      // cubes roll: draw slightly lifted while tumbling between rows
+      const T = tile(), X = ox(), Y = oy(), v = view3d(), S = v.sin; v.frame();
+      for (let i = 0; i < 40; i++) v.put('star', v.at((i * 61) % W, (i * 43 + t * 4) % (H + 40) - 20, -60 - (i % 5) * 20));
+      for (let r = 0; r < rows; r++) for (let cc = 0; cc < cols; cc++) v.put((r + cc) % 2 ? 'tileA' : 'tileB', v.at(X + (cc + .5) * T, Y + (r + .5) * T), { sx: T - 1, sy: 1, sz: (T - 1) / S });
+      v.put('base', v.at(X + cols * T / 2, Y + rows * T / 2), { sx: cols * T + 2, sz: (rows * T + 2) / S });
+      for (const f of fallRows) v.put('tileA', v.at(X + cols * T / 2, Y + (f.r + .5) * T, -(1 - f.l) * 80), { sx: cols * T, sz: (T - 1) / S, rx: (1 - f.l) * .8 });
+      if (big) v.put('zone', v.at(X + (big.c + .5) * T, Y + (big.r + .5) * T, 1.2), { sx: T * 3, sz: T * 3 / S }).children[0].material.opacity = (t * 6 | 0) % 2 ? .5 : .25;
+      if (trap) v.put('trap', v.at(X + (trap.c + .5) * T, Y + (trap.r + .5) * T, 1.3), { sx: T - 2, sy: 1, sz: (T - 2) / S });
       const k = rollT / period, tumble = k > .75 ? (k - .75) / .25 : 0;
-      c.save(); c.beginPath(); c.rect(0, Y - T * 1.2, W, rows * T + T * 1.2 + 6); c.clip();
-      for (const q of [...cubes].sort((a, b) => a.r - b.r)) {
-        const sk = q.sink ? q.sink / .5 : 0, ty = q.sink ? 0 : tumble, x = X + q.c * T, y = Y + (q.r + ty) * T - Math.sin(ty * Math.PI) * T * .3, s = T - 1, inset = sk * s / 2;
-        const col = q.k === 'black' ? ['#303040', '#505068', '#181820'] : q.k === 'green' ? ['#40b050', '#80e888', '#207028'] : ['#b0b0c0', '#d8d8e8', '#787888'];
-        c.fillStyle = 'rgba(0,0,0,.3)'; c.fillRect(x + inset + 2, y + inset + 2, s - inset * 2, s - inset * 2);
-        c.fillStyle = col[2]; c.fillRect(x + inset, y + inset - 4 * (1 - sk), s - inset * 2, s - inset * 2 + 4 * (1 - sk));
-        box(c, x + inset, y + inset - 4 * (1 - sk), s - inset * 2, s - inset * 2, col[0], { r: 1.5, drop: false });
-        if (q.k === 'black' && !sk) { c.fillStyle = '#f84040'; c.fillRect(x + s / 2 - 1, y + s / 2 - 6, 2, 5); c.fillRect(x + s / 2 - 1, y + s / 2 + 1 - 2, 2, 2); }
+      for (const q of cubes) {
+        if (q.r < -1.5) continue;
+        const sk = q.sink ? q.sink / .5 : 0, ty = q.sink ? 0 : tumble, s = (T - 2) * (1 - sk * .3);
+        const o = v.put(q.k, v.at(X + (q.c + .5) * T, Y + (q.r + ty + .5) * T, Math.sin(ty * Math.PI) * T * .35 - sk * T), { s, rx: ty * Math.PI / 2 });
+        o.userData.eye && (o.userData.eye.visible = !sk);
       }
-      c.restore();
+      v.render(c, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
       for (const p of parts) { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); }
       c.fillStyle = '#10101c'; c.fillRect(0, 0, W, 12);
@@ -78,7 +88,7 @@ function make(api) {
       if (t < 7 && !msg) { c.textAlign = 'center'; c.fillStyle = '#000b'; c.fillRect(0, H - 22, W, 20); c.fillStyle = '#e0e0f0'; c.fillText('TAP: SET TRAP', W / 2, H - 14); c.fillText('TAP IT AGAIN: SINK', W / 2, H - 5); }
     },
     down(x, y) {
-      if (dead) return;
+      if (dead) return; [x, y] = view3d().pick(x, y);
       if (big) { capture([-1, 0, 1].flatMap(dc => [-1, 0, 1].map(dr => [big.c + dc, big.r + dr]))); big = null; return; }
       const T = tile(), cc = Math.floor((x - ox()) / T), r = Math.floor((y - oy()) / T);
       if (cc < 0 || cc >= cols || r < 0 || r >= rows) { if (trap) { capture([[trap.c, trap.r]]); trap = null; } return; }

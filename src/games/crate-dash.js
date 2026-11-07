@@ -1,7 +1,9 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
-import { box, ball, glow, shadow } from '../kit/gfx.js';
+import { View, G, part, grp, blob, THREE } from '../kit/toon3d.js';
+const { Group } = THREE;
+const LANE = 1.15;
 
 // Run into the screen down a jungle path. Swipe left or right to change lanes, swipe up to jump,
 // tap to spin. Spin through wooden crates and critters to smash them for gems, jump the logs and
@@ -13,7 +15,37 @@ let W = 176, H = 176;
 function make(api) {
   let objs, lane, lx, jumpT, spinT, speed, dist, gems, lives, t, nextZ, inv, parts, msg, dead, sw, bounce;
   const hor = () => H * .3, gnd = () => H - 6;
-  const proj = (x, z, y = 0) => { const s = F / (z + F); return { x: W / 2 + x * W * .26 * s, y: hor() + (gnd() - hor()) * s - y * (gnd() - hor()) * .5 * s, s }; };
+  // screen position of a lane/depth point (for the 2D pop-up text and sparks over the 3D view)
+  const proj = (x, z, y = 0) => { const [sx, sy] = view3d().toScreen(x * LANE, y * 1.1, -z); return { x: sx, y: sy, s: F / (z + F) }; };
+  let v3;
+  function view3d() {
+    if (!v3) {
+      v3 = new View({ bg: '#68b8f0', fog: ['#a8dcf8', 14, FAR], sun: [-.6, 1, .5], sunI: 2.4, amb: 1 });
+      v3.add(part(G.plane, '#3e9c40', { sx: 60, sz: 120, z: -50, line: false }), part(G.plane, '#d0a464', { sx: 3.7, sz: 120, z: -50, y: .005, line: false }));
+      for (const sx of [-1, 1]) v3.add(part(G.box, '#a07848', { sx: .25, sy: .18, sz: 120, x: sx * 1.95, y: .09, z: -50 }));
+      for (let i = 0; i < 12; i++) v3.add(part(G.ball, '#2c7a34', { sx: 5, sy: 3 + (i % 3), sz: 3, x: -28 + i * 5, y: 0, z: -FAR - 4, line: false }));
+      v3.def('stripe', () => part(G.plane, '#bc9050', { sx: 3.7, sz: 1, line: false }));
+      v3.def('tree', () => grp(part(G.cyl, '#70401c', { sx: .14, sy: 1.1, sz: .14, y: .55 }), part(G.blob, '#2a8a36', { s: .7, y: 1.4 }), part(G.blob, '#38a040', { s: .45, y: 1.9, x: .15 })));
+      v3.def('palm', () => grp(part(G.cyl, '#90602c', { sx: .1, sy: 1.8, sz: .1, y: .9, rz: .1 }), ...[0, 1, 2, 3, 4].map(k => part(G.cone, '#36a83c', { sx: .25, sy: 1.1, sz: .08, x: Math.cos(k * 1.26) * .45 + .1, y: 1.75, z: Math.sin(k * 1.26) * .45, rz: Math.PI / 2 + .3, ry: -k * 1.26 }))));
+      v3.def('pit', () => grp(part(G.box, '#140c06', { sx: 1.05, sy: .04, sz: 1 }), part(G.box, '#5a3818', { sx: 1.15, sy: .06, sz: .1, z: .5 })));
+      v3.def('log', () => grp(part(G.cyl, '#804820', { sx: .22, sy: 3.4, sz: .22, rz: Math.PI / 2 }), ...[-1, 1].map(k => part(G.cyl, '#d8a868', { sx: .2, sy: .02, sz: .2, x: k * 1.71, rz: Math.PI / 2, line: false }))));
+      v3.def('gem', () => part(G.gem, '#f84890', { sx: .2, sy: .28, sz: .2, glow: .45 }));
+      v3.def('critter', () => { const b = part(G.ball, '#48a048', { s: .32, y: .32 }); for (const k of [-1, 1]) { const e = part(G.ball, '#f8f8f0', { s: .3, x: k * .35, y: .35, z: .8 }); e.add(part(G.ball, '#14101c', { s: .5, z: .6, line: false })); b.add(e); } return grp(b, blob(.35)); });
+      const crate = (col, band, extra) => () => { const g = grp(part(G.box, col, { s: .78, y: .39 }), part(G.box, band, { sx: .8, sy: .1, sz: .8, y: .39, line: false }), part(G.box, band, { sx: .1, sy: .8, sz: .8, y: .39, line: false }), blob(.55)); if (extra) g.add(extra()); return g; };
+      v3.def('crate', crate('#c88840', '#805020'));
+      v3.def('bouncy', crate('#3878d8', '#183878', () => part(G.cyl, '#f8f8f0', { sx: .3, sy: .08, sz: .3, y: .82 })));
+      v3.def('boom', crate('#d83020', '#801810', () => grp(part(G.box, '#f8f040', { sx: .12, sy: .3, sz: .02, y: .5, z: .4, line: false }), part(G.box, '#f8f040', { sx: .12, sy: .1, sz: .02, y: .25, z: .4, line: false }))));
+      v3.def('runner', () => {
+        const g = new Group(), l = [-1, 1].map(k => { const leg = new Group(); leg.position.set(k * .12, .38, 0); leg.add(part(G.pill, '#2858c0', { sx: .16, sy: .3, sz: .16, y: -.18 })); return leg; });
+        g.add(...l, part(G.pill, '#e87020', { sx: .46, sy: .4, sz: .36, y: .62 }), part(G.ball, '#f8a050', { s: .27, y: 1.02 }), part(G.ball, '#c84020', { sx: .3, sy: .15, sz: .3, y: 1.18 }));
+        for (const k of [-1, 1]) g.add(part(G.ball, '#14101c', { s: .05, x: k * .1, y: 1.06, z: -.25, line: false }));
+        g.userData.l = l; return g;
+      });
+      v3.def('spin', () => grp(part(G.ball, '#e87020', { sx: .55, sy: .45, sz: .55, y: .55 }), part(G.ring, '#f8f8f0', { sx: .6, sy: .6, sz: .3, y: .55, rx: Math.PI / 2, line: false })));
+      v3.def('blob', () => blob(1, .3));
+    }
+    v3.persp(W, H, 58, .1, 80); return v3;
+  }
   function spawn(z) {
     const r = Math.random(), lvl = Math.min(1, dist / 1500), L = [-1, 0, 1][Math.random() * 3 | 0];
     if (r < .32) { const n = 1 + (Math.random() * 3 | 0); for (let i = 0; i < n; i++) objs.push({ k: Math.random() < .15 ? 'bouncy' : 'crate', lane: L, z: z + i * 1.4 }); }
@@ -63,35 +95,25 @@ function make(api) {
       api.score(gems + Math.floor(dist / 10));
     },
     draw(c) {
-      const hz = hor();
-      const sky = c.createLinearGradient(0, 0, 0, hz); sky.addColorStop(0, '#2888d8'); sky.addColorStop(1, '#a8e0f8'); c.fillStyle = sky; c.fillRect(0, 0, W, hz);
-      c.fillStyle = '#287838'; for (let i = 0; i < 9; i++) { const x = (i * 37 + 10) % W; c.beginPath(); c.arc(x, hz, 14 + (i % 3) * 6, Math.PI, 0); c.fill(); }
-      { const gg = c.createLinearGradient(0, hz, 0, H); gg.addColorStop(0, '#2f8a34'); gg.addColorStop(1, '#4cb048'); c.fillStyle = gg; c.fillRect(0, hz, W, H - hz); }
-      // path with scrolling stripes
-      const a = proj(-1.6, FAR), b = proj(1.6, FAR), cc = proj(-1.6, 0), d = proj(1.6, 0);
-      c.fillStyle = '#c8a060'; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.lineTo(d.x + 30, H); c.lineTo(cc.x - 30, H); c.fill();
-      for (let z = (-dist % 2 + 2) % 2; z < FAR; z += 2) { const p = proj(-1.6, z), q = proj(1.6, z), p2 = proj(-1.6, z + 1), q2 = proj(1.6, z + 1); c.fillStyle = '#b89050'; c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(q.x, q.y); c.lineTo(q2.x, q2.y); c.lineTo(p2.x, p2.y); c.fill(); }
-      for (let z = (-dist % 3 + 3) % 3; z < FAR; z += 3) for (const s of [-1, 1]) { const p = proj(s * 2.1, z); c.fillStyle = '#1c6828'; c.beginPath(); c.arc(p.x, p.y - 10 * p.s * 3, 10 * p.s * 3, 0, 7); c.fill(); c.fillStyle = '#704020'; c.fillRect(p.x - p.s * 3, p.y - 4 * p.s * 3, p.s * 6, 4 * p.s * 3); }
-      const list = objs.filter(o => o.z < FAR && !o.done || o.k === 'pit').sort((p, q) => q.z - p.z);
-      for (const o of list) {
-        if (o.z > FAR) continue;
-        if (o.k === 'pit') { const n = proj(o.lane - .5, Math.max(0, o.z)), m = proj(o.lane + .5, Math.max(0, o.z)), f1 = proj(o.lane - .5, Math.max(0, o.z + o.len)), f2 = proj(o.lane + .5, Math.max(0, o.z + o.len)); if (o.z + o.len < 0) continue; c.fillStyle = '#181008'; c.beginPath(); c.moveTo(n.x, n.y); c.lineTo(m.x, m.y); c.lineTo(f2.x, f2.y); c.lineTo(f1.x, f1.y); c.fill(); continue; }
-        const p = proj(o.lane, Math.max(o.z, -.4), o.y || 0), s = p.s * 18;
-        if (o.k === 'gem') { glow(c, p.x, p.y - s * .55, s * .8, '#f84890', .45); c.fillStyle = '#f84890'; c.beginPath(); c.moveTo(p.x, p.y - s * .9); c.lineTo(p.x + s * .3, p.y - s * .55); c.lineTo(p.x, p.y - s * .2); c.lineTo(p.x - s * .3, p.y - s * .55); c.fill(); c.fillStyle = '#ffc0e0'; c.fillRect(p.x - s * .1, p.y - s * .75, s * .12, s * .12); }
-        else if (o.k === 'log') { const l = proj(-1.5, Math.max(o.z, 0)), r = proj(1.5, Math.max(o.z, 0)); c.fillStyle = '#804820'; c.fillRect(l.x, l.y - s * .4, r.x - l.x, s * .4); c.fillStyle = '#a06830'; c.fillRect(l.x, l.y - s * .4, r.x - l.x, s * .1); }
-        else if (o.k === 'critter') { const hop = Math.abs(Math.sin(t * 6 + o.ph)) * s * .2; shadow(c, p.x, p.y, s * .3, s * .1); ball(c, p.x, p.y - s * .3 - hop, s * .3, '#48a048'); c.fillStyle = '#f8f8f0'; c.fillRect(p.x - s * .18, p.y - s * .45 - hop, s * .12, s * .12); c.fillRect(p.x + s * .06, p.y - s * .45 - hop, s * .12, s * .12); }
-        else { const col = o.k === 'boom' ? ['#d83020', '#f86048', '#801810'] : o.k === 'bouncy' ? ['#3878d8', '#78a8f8', '#183878'] : ['#c88840', '#e8b060', '#805020'];
-          shadow(c, p.x, p.y, s * .55, s * .16); box(c, p.x - s * .4, p.y - s * .8, s * .8, s * .8, col[0], { r: s * .06, drop: false }); c.fillStyle = col[2]; c.fillRect(p.x - s * .4, p.y - s * .45, s * .8, s * .08); c.fillRect(p.x - s * .04, p.y - s * .8, s * .08, s * .8);
-          if (o.k === 'boom') { c.fillStyle = '#f8f040'; c.font = `${Math.max(4, s * .35 | 0)}px "Press Start 2P", monospace`; c.textAlign = 'center'; c.fillText('!', p.x, p.y - s * .25); }
-          if (o.k === 'bouncy') { c.fillStyle = '#f8f8f0'; c.fillRect(p.x - s * .2, p.y - s * .7, s * .4, s * .08); } }
+      const v = view3d(); v.frame();
+      const off = dist % 2;
+      for (let z = -off - 2; z < FAR; z += 2) v.put('stripe', [0, .01, -z]);
+      for (let z = -(dist % 3) - 3; z < FAR; z += 3) for (const sd of [-1, 1]) v.put((Math.floor((z + dist) / 3) + (sd > 0)) % 2 ? 'tree' : 'palm', [sd * (2.6 + ((Math.floor(z + dist) * 7) % 3) * .3), 0, -z], { ry: z + dist });
+      for (const o of objs) {
+        if (o.z > FAR || (o.done && o.k !== 'pit')) continue;
+        const X = o.lane * LANE, Z = -o.z;
+        if (o.k === 'pit') { if (o.z + o.len < -2) continue; v.put('pit', [X, .02, Z - o.len / 2], { sz: o.len }); continue; }
+        if (o.k === 'gem') { v.put('gem', [X, .45 + (o.y || 0) * 1.1 + Math.sin(t * 4 + o.z) * .06, Z], { ry: t * 3 + o.z }); continue; }
+        if (o.k === 'log') { v.put('log', [0, .2, Z], { rx: dist * 1.5 }); continue; }
+        if (o.k === 'critter') { v.put('critter', [X, Math.abs(Math.sin(t * 6 + o.ph)) * .25, Z], { ry: Math.sin(t * 3 + o.ph) * .5 }); continue; }
+        v.put(o.k, [X, 0, Z]);
       }
-      // runner
-      const pp = proj(lx, 0, air()), s = 22, x = pp.x, yy = pp.y, sh = proj(lx, 0);
-      c.fillStyle = '#00000040'; c.beginPath(); c.ellipse(sh.x, sh.y, 8, 3, 0, 0, 7); c.fill();
-      if (!(inv > 0 && (t * 14 | 0) % 2)) {
-        if (spinT > 0) { c.fillStyle = '#e87020'; c.beginPath(); c.ellipse(x, yy - s * .5, s * .55, s * .45, 0, 0, 7); c.fill(); c.strokeStyle = '#f8f8f0'; c.lineWidth = 1; for (let i = 0; i < 3; i++) { const a = t * 30 + i * 2; c.beginPath(); c.arc(x, yy - s * .5, s * .5, a, a + .8); c.stroke(); } }
-        else { const run = (t * 12 | 0) % 2; c.fillStyle = '#2858c0'; c.fillRect(x - 4, yy - 7, 3, 7 - run * 2); c.fillRect(x + 1, yy - 7, 3, 5 + run * 2); c.fillStyle = '#e87020'; c.fillRect(x - 5, yy - 16, 10, 10); c.fillStyle = '#f8a050'; c.fillRect(x - 4, yy - 22, 8, 7); c.fillStyle = '#202020'; c.fillRect(x - 3, yy - 20, 2, 2); c.fillRect(x + 1, yy - 20, 2, 2); c.fillStyle = '#c84020'; c.fillRect(x - 5, yy - 24, 10, 3); }
-      }
+      const y = air(), run = v.put(spinT > 0 ? 'spin' : 'runner', [lx * LANE, y * 1.1, 0], { ry: spinT > 0 ? t * 30 : 0 });
+      if (spinT <= 0) { const sw = Math.sin(t * 14); run.userData.l[0].rotation.x = sw * .8; run.userData.l[1].rotation.x = -sw * .8; }
+      run.visible = !(inv > 0 && (t * 14 | 0) % 2);
+      v.put('blob', [lx * LANE, .03, 0], { s: .45 * (1 - Math.min(.5, y * .4)) });
+      v.cam.position.set(lx * LANE * .3, 3, 5.4); v.cam.lookAt(lx * LANE * .15, 0, -8);
+      v.render(c, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
       for (const p of parts) { if (p.txt) { c.fillStyle = '#301808'; c.fillText(p.txt, p.x + 1, p.y + 1); c.fillStyle = p.col; c.fillText(p.txt, p.x, p.y); } else { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); } }
       c.fillStyle = '#00000060'; c.fillRect(0, 0, W, 12); c.textAlign = 'left';

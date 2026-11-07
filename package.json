@@ -31,6 +31,7 @@
     "@capacitor/motion": "^8.0.1",
     "@fontsource/press-start-2p": "^5.2.5",
     "@fontsource/rubik": "^5.2.5",
-    "game-services": "file:plugins/game-services"
+    "game-services": "file:plugins/game-services",
+    "three": "^0.180.0"
   }
 }

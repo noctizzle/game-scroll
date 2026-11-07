@@ -1,7 +1,9 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
-import { backdrop, box, ball, shadow, glow } from '../kit/gfx.js';
+import { View, G, part, grp, blob, flat, THREE } from '../kit/toon3d.js';
+const { Group } = THREE;
+const teleHigh = flat('#ff4848', .35), teleLow = flat('#4890ff', .35);
 
 // A one-on-one arena fighter built for thumbs. Tap to jab, swipe forward for a heavy blow, swipe
 // down to sweep low, swipe up to hop, swipe back to step away, and hold still to guard. Guard
@@ -27,6 +29,52 @@ function make(api) {
   const mk = (x, dir, col, skin) => ({ x, dir, hp: 60, max: 60, st: 'idle', mv: null, tt: 0, guard: false, air: 0, down: 0, stun: 0, col, skin, hitDone: false });
   function startFight() { const r = RIVALS[wins % RIVALS.length], lap = Math.floor(wins / RIVALS.length); rival = { ...r, speed: r.speed + lap * .2, aggro: r.aggro + lap * .3 }; foe = mk(W * .7, -1, r.col, r.skin); foe.hp = foe.max = 50 + wins * 6; foe.think = .8; you.x = W * .3; you.st = 'idle'; you.mv = null; between = 1.4; msg = { txt: `VS ${rival.name}`, l: 1.4 }; }
   function act(f, name) { if (f.st !== 'idle' || f.down > 0 || f.stun > 0 || f.air > 0) return false; f.st = 'wind'; f.mv = name; f.tt = 0; f.hitDone = false; f.guard = false; if (name === 'heavy') f.x += f.dir * 10; return true; }
+  let v3;
+  const limb = (col, len, w, fist) => { const g = new Group(); g.add(part(G.pill, col, { sx: w, sy: len, sz: w, y: -len / 2 })); if (fist) g.add(part(G.ball, fist, { s: w * .7, y: -len })); return g; };
+  function rig(col, skin) {
+    const g = new Group(), hips = new Group(); hips.position.y = 14; g.add(hips);
+    const torso = new Group(); hips.add(torso);
+    torso.add(part(G.box, col, { sx: 9, sy: 12, sz: 6, y: 7 }), part(G.box, '#302030', { sx: 9.4, sy: 2, sz: 6.4, y: 1 }), part(G.ball, skin, { s: 4.5, y: 17.5 }));
+    torso.add(part(G.ball, col, { sx: 4.8, sy: 2, sz: 4.8, y: 19.5 }), part(G.ball, '#14101c', { s: .7, x: 1.6, y: 18, z: 4, line: false }), part(G.ball, '#14101c', { s: .7, x: -1.6, y: 18, z: 4, line: false }));
+    const arms = [-1, 1].map(sx => { const a = limb(skin, 9, 2.6, skin); a.position.set(sx * 5.5, 11.5, 0); torso.add(a); return a; });
+    const legs = [-1, 1].map(sx => { const l = limb('#302030', 14, 3.2, '#201820'); l.position.set(sx * 2.4, 0, 0); hips.add(l); return l; });
+    const tele = part(G.ball, teleHigh, { s: 20, y: 18, line: false }); g.add(tele);
+    g.userData = { hips, torso, arms, legs, tele }; return g;
+  }
+  function pose(u, f) {
+    const { hips, torso, arms, legs } = u; hips.rotation.set(0, 0, 0); hips.position.y = 14; torso.rotation.set(0, 0, 0);
+    legs[0].rotation.set(.25, 0, 0); legs[1].rotation.set(-.25, 0, 0);
+    // guard-up boxing stance by default: fists in front of the face
+    arms[0].rotation.set(-2.2, 0, .2); arms[1].rotation.set(-1.9, 0, -.2);
+    if (f.down > 0) { hips.rotation.x = -Math.PI / 2; hips.position.y = 3; return; }
+    const crouch = f.mv === 'sweep' && f.st !== 'wind';
+    if (f.guard && f.st === 'idle') { arms[0].rotation.set(-2.6, 0, .7); arms[1].rotation.set(-2.6, 0, -.7); torso.rotation.x = .15; }
+    else if (f.st === 'act' || (f.st === 'rec' && f.tt < .1)) {
+      if (f.mv === 'sweep') { hips.position.y = 8; legs[1].rotation.set(-1.5, 0, 0); legs[0].rotation.set(.9, 0, 0); torso.rotation.x = -.3; }
+      else if (f.mv === 'heavy') { arms[1].rotation.set(-1.6, 0, 0); torso.rotation.x = .3; arms[1].scale.y = 1.4; }
+      else { arms[0].rotation.set(-1.57, 0, 0); arms[0].scale.y = 1.3; }
+    } else if (f.st === 'wind') { torso.rotation.y = -.6; arms[1].rotation.set(-.6, 0, -.3); if (crouch || f.mv === 'sweep') hips.position.y = 10; }
+    if (!(f.st === 'act' || f.st === 'rec')) { arms[0].scale.y = arms[1].scale.y = 1; }
+    if (f.air > 0) { legs[0].rotation.x = .9; legs[1].rotation.x = -.4; }
+    if (f.stun > 0) torso.rotation.z = Math.sin(t * 12) * .2;
+  }
+  function view3d() {
+    if (!v3) {
+      v3 = new View({ bg: '#20142c', sun: [-.5, .9, .8], sunI: 2.4, amb: .9, sky: '#c0a0ff', ground: '#402030' });
+      v3.def('arena', () => {
+        const g = new Group();
+        g.add(part(G.box, '#a07858', { sx: 260, sy: 4, sz: 70, y: -2, z: -10 }), part(G.box, '#c09068', { sx: 200, sy: .6, sz: 34, y: .1, z: 0, line: false }));
+        g.add(part(G.box, '#2a1c38', { sx: 300, sy: 160, sz: 4, y: 70, z: -60, line: false }));
+        for (let i = -3; i <= 3; i++) { g.add(part(G.box, '#48385a', { sx: 22, sy: 46, sz: 6, x: i * 32, y: 70, z: -52 })); g.add(part(G.box, '#f8c040', { sx: 8, sy: 2, sz: 1, x: i * 32, y: 48, z: -48.5, glow: .8, line: false })); }
+        for (let i = 0; i < 26; i++) g.add(part(G.ball, ['#5a4070', '#6a4a80', '#4a3460'][i % 3], { sx: 4, sy: 5, sz: 4, x: -110 + i * 9, y: 10 + (i % 2) * 3, z: -36 }));
+        for (const sx of [-1, 1]) { g.add(part(G.box, '#e04040', { sx: 3, sy: 22, sz: 3, x: sx * 100, y: 11, z: -6 })); g.add(part(G.box, '#f8f0e0', { sx: 200, sy: 1, sz: 1, y: 12 + sx * 4, z: -6, line: false })); }
+        return g;
+      });
+      for (const r of [...RIVALS, { col: '#e8e8f0', skin: '#f0c090' }]) v3.def('fighter:' + r.col + r.skin, () => rig(r.col, r.skin));
+      v3.def('blob', () => blob(1, .4));
+    }
+    v3.side(W, H, 40, 0, H * .45); return v3;
+  }
   function burst(x, y, col) { for (let i = 0; i < 8; i++) parts.push({ x, y, vx: rnd(-60, 60), vy: rnd(-70, 10), l: .35, col }); }
   function strike(a, b) {
     const m = MOVES[a.mv], d = Math.abs(a.x - b.x); if (d > m.reach || a.hitDone) return; a.hitDone = true;
@@ -77,27 +125,16 @@ function make(api) {
       else if (you.hp <= 0) { you.hp = 0; dead = .01; msg = { txt: 'DOWN AND OUT', l: 9 }; haptic('error'); sfx(110, .7, 'sawtooth', .05, -40); }
     },
     draw(c) {
-      if (flash > 0) { c.fillStyle = '#f8f8f0'; c.fillRect(0, 0, W, H); } else backdrop(c, 0, 0, W, floor(), '#20142c', '#5a4070');
-      if (!flash) { for (let i = 0; i < 6; i++) box(c, i * W / 6 + 6, H * .25, W / 6 - 12, H * .3, '#48385a', { r: 3, drop: false }); glow(c, W / 2, H * .18, 60, '#f8c840', .35); }
-      backdrop(c, 0, floor(), W, H - floor(), '#a07858', '#4a3020'); c.fillStyle = '#d0a07880'; c.fillRect(0, floor(), W, 1);
-      for (const f of [foe, you]) shadow(c, f.x, floor(), 12 * (f.air > 0 ? .7 : 1), 3, .45);
-      const fig = f => {
-        const x = Math.round(f.x), base = floor() - (f.air > 0 ? Math.sin(f.air / .55 * Math.PI) * 22 : 0), d = f.dir;
-        if (f.down > 0) { c.fillStyle = f.col; c.fillRect(x - 14, base - 6, 24, 6); c.fillStyle = f.skin; c.fillRect(x + 10 * d - 3, base - 7, 6, 6); return; }
-        const crouch = f.mv === 'sweep' && f.st !== 'wind' ? 10 : 0, by = base - 34 + crouch;
-        // telegraph glow during wind-up
-        if (f.st === 'wind' && f === foe) { c.fillStyle = MOVES[f.mv].kind === 'low' ? '#4890ff70' : '#ff484870'; c.beginPath(); c.arc(x, base - 18, 22, 0, 7); c.fill(); }
-        c.fillStyle = '#302030'; c.fillRect(x - 5, by + 20, 4, 14 - crouch); c.fillRect(x + 1, by + 20, 4, 14 - crouch);
-        box(c, x - 6, by + 6, 12, 15, f.col, { r: 3, drop: false });
-        ball(c, x, by + 2, 4.5, f.skin, { gloss: .35 }); c.fillStyle = '#202020'; c.fillRect(x + d * 2 - 1, by + 1, 2, 2);
-        c.fillStyle = f.skin;
-        if (f.guard && f.st === 'idle') { c.fillRect(x + d * 6 - 2, by + 2, 4, 12); }
-        else if (f.st === 'act' || (f.st === 'rec' && f.tt < .1)) { const m = MOVES[f.mv]; if (f.mv === 'sweep') { c.fillStyle = '#302030'; c.fillRect(d > 0 ? x : x - m.reach + 6, base - 4, m.reach - 6, 4); } else { const ly = f.mv === 'heavy' ? by + 12 : by + 6; c.fillRect(d > 0 ? x + 4 : x - m.reach + 6, ly, m.reach - 10, 4); } }
-        else if (f.st === 'wind') { c.fillRect(x - d * 9 - 2, by + 8, 4, 4); }
-        else { c.fillRect(x + d * 6 - 2, by + 8, 4, 4); }
-        if (f.stun > 0) { c.fillStyle = '#f8e040'; c.fillRect(x - 6 + (t * 20 % 12), by - 6, 2, 2); }
-      };
-      fig(foe); fig(you);
+      const v = view3d(); v.frame();
+      v.put('arena', v.sv(W / 2, floor()), { sx: W / 192 });
+      for (const f of [foe, you]) {
+        const air = f.air > 0 ? Math.sin(f.air / .55 * Math.PI) * 22 : 0, o = v.put('fighter:' + f.col + f.skin, v.sv(f.x, floor() - air, 0), { s: 1.35, ry: f.dir > 0 ? Math.PI / 2 : -Math.PI / 2 });
+        pose(o.userData, f); o.userData.tele.visible = f === foe && f.st === 'wind'; if (o.userData.tele.visible) o.userData.tele.material = MOVES[f.mv].kind === 'low' ? teleLow : teleHigh;
+        v.put('blob', v.sv(f.x, floor(), 0), { s: 12 * (f.air > 0 ? .7 : 1) });
+      }
+      v.render(c, W, H);
+      if (flash > 0) { c.fillStyle = '#f8f8f0a0'; c.fillRect(0, 0, W, H); }
+      for (const f of [foe, you]) if (f.stun > 0) { c.fillStyle = '#f8e040'; for (let i = 0; i < 3; i++) c.fillRect(f.x - 6 + ((t * 20 + i * 4) % 12), floor() - 40 - i, 2, 2); }
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
       for (const p of parts) { if (p.txt) { c.fillStyle = '#000'; c.fillText(p.txt, p.x + 1, p.y + 1); c.fillStyle = p.col; c.fillText(p.txt, p.x, p.y); } else { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); } }
       // health bars

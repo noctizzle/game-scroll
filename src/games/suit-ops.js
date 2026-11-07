@@ -1,7 +1,9 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
-import { backdrop, box, ball, shadow, glow } from '../kit/gfx.js';
+import { box } from '../kit/gfx.js';
+import { View, G, part, grp, blob, toon, THREE } from '../kit/toon3d.js';
+const { Group } = THREE;
 
 // Fight up through an island jungle in a power suit and reach the chopper. Drag anywhere to walk;
 // the suit fires on its own at the nearest guard. Four suit modes share one energy bar: ARMOR soaks
@@ -12,9 +14,34 @@ const MODES = [
   { k: 'ARMOR', col: '#58a8f8' }, { k: 'CLOAK', col: '#a8f8f8' }, { k: 'SPEED', col: '#f8d048' }, { k: 'POWER', col: '#f85858' },
 ];
 
+const trimMat = MODES.map(m => toon(m.col, { glow: .5 }));
 function make(api) {
   let p, trees, foes, shots, bolts, parts, cam, L, stage, score, t, mode, energy, msg, stick, dead, cleared, fireT, ambush, hurtT;
   const barH = 30, top = 12;
+  let v3;
+  function view3d() {
+    if (!v3) {
+      v3 = new View({ bg: '#2e5226', sun: [-.6, 1, .3], sunI: 2.3, amb: .9, sky: '#c0f0a0', ground: '#203010' });
+      v3.add(part(G.plane, '#3a5c2e', { sx: 4000, sz: 4000, line: false }));
+      v3.def('fern', () => grp(...[0, 1, 2, 3].map(k => part(G.cone, '#4a7a36', { sx: 1.2, sy: 6, sz: .4, y: 2, rz: 1, ry: k * 1.57, x: Math.cos(k * 1.57) * 2, z: -Math.sin(k * 1.57) * 2, line: false }))));
+      v3.def('pad', () => { const rotor = new Group(); rotor.position.y = 22; rotor.add(part(G.box, '#202820', { sx: 54, sy: .8, sz: 2.4 }), part(G.box, '#202820', { sx: 2.4, sy: .8, sz: 54 })); return grp(part(G.box, '#707860', { sx: 60, sy: 3, sz: 40, y: 1.5 }), part(G.box, '#f8f8f0', { sx: 3, sy: .4, sz: 16, x: -6, y: 3.2, line: false }), part(G.box, '#f8f8f0', { sx: 3, sy: .4, sz: 16, x: 6, y: 3.2, line: false }), part(G.box, '#f8f8f0', { sx: 12, sy: .4, sz: 3, y: 3.2, line: false }), part(G.pill, '#4a5a3a', { sx: 14, sy: 14, sz: 14, y: 12, rx: Math.PI / 2 }), part(G.cyl, '#4a5a3a', { sx: 2.4, sy: 22, sz: 2.4, y: 12, z: -18, rx: Math.PI / 2 }), part(G.box, '#a0d8f8', { sx: 9, sy: 5, sz: 2, y: 15, z: 8, glow: .3 }), rotor); });
+      const flash = g => { const f = part(G.ball, '#ffffff', { s: 8, y: 6, glow: 1, opacity: .7, line: false }); f.visible = false; g.add(f); g.userData.flash = f; return g; };
+      const trooper = (col, sc) => () => flash(grp(part(G.box, col, { sx: 7 * sc, sy: 7 * sc, sz: 4.5 * sc, y: 6 * sc }), part(G.ball, '#e8b890', { s: 2.6 * sc, y: 11.5 * sc }), part(G.ball, '#506040', { sx: 3 * sc, sy: 1.6 * sc, sz: 3 * sc, y: 12.6 * sc }), part(G.box, '#202020', { sx: 1.2, sy: 1.2, sz: 9 * sc, x: 3 * sc, y: 7 * sc, z: 3 * sc }), ...[-1, 1].map(k => part(G.box, '#4a4030', { sx: 2.4 * sc, sy: 4 * sc, sz: 2.4 * sc, x: k * 1.6 * sc, y: 2 * sc })), blob(6 * sc, .35)));
+      v3.def('grunt', trooper('#a07848', 1)).def('heavy', trooper('#806048', 1.4));
+      v3.def('nest', () => flash(grp(part(G.cyl, '#8a7a58', { sx: 10, sy: 6, sz: 10, y: 3 }), part(G.box, '#404038', { sx: 3, sy: 3, sz: 12, y: 7, z: 4 }), part(G.box, '#686860', { sx: 8, sy: 6, sz: 6, y: 8 }), blob(11, .35))));
+      v3.def('shot', () => part(G.ball, '#f8f8a0', { sx: 1.2, sy: 1.2, sz: 1.2, glow: 1, line: false })).def('shotP', () => part(G.ball, '#f87858', { s: 2, glow: 1, line: false }));
+      v3.def('bolt', () => part(G.ball, '#f84040', { s: 2.5, glow: 1, line: false }));
+      const suit = cloak => () => {
+        const g = new Group(), op = cloak ? .35 : 1, legs = [-1, 1].map(k => { const l = new Group(); l.position.set(k * 2.2, 5, 0); l.add(part(G.box, '#283848', { sx: 2.8, sy: 5, sz: 3, y: -2.5, opacity: op })); return l; });
+        const trim = part(G.box, '#58a8f8', { sx: 8.4, sy: 1.2, sz: 5.4, y: 9, glow: .5 });
+        g.add(...legs, part(G.box, '#384858', { sx: 8, sy: 8, sz: 5, y: 9, opacity: op }), trim, part(G.ball, '#384858', { s: 3, y: 15, opacity: op }), part(G.box, '#a8f8f8', { sx: 3.6, sy: 1, sz: 1, y: 15.4, z: 2.6, glow: 1, line: false }), part(G.box, '#202830', { sx: 1.6, sy: 1.6, sz: 8, x: 5, y: 10, z: 3 }));
+        if (!cloak) g.add(blob(7, .4)); g.userData = { legs, trim }; return g;
+      };
+      v3.def('suit', suit(false)).def('suitCloak', suit(true));
+      v3.def('tree', () => grp(part(G.cyl, '#6a4a2a', { sx: 2.2, sy: 18, sz: 2.2, y: 9 }), part(G.blob, '#3c7a30', { sx: 12, sy: 9, sz: 12, y: 22 }), part(G.blob, '#4c9a40', { s: 7, x: -4, y: 28, z: 3 }), part(G.blob, '#468c38', { s: 6, x: 5, y: 26, z: -3 }), blob(13, .35)));
+    }
+    v3.board(W, H, .82); return v3;
+  }
   function build() {
     L = 1300 + stage * 260; trees = []; foes = []; shots = []; bolts = []; parts = [];
     // trees always leave a walkable gap between each other and the edges
@@ -90,24 +117,27 @@ function make(api) {
       bolts = bolts.filter(b => b.l > 0);
     },
     draw(c) {
-      backdrop(c, 0, 0, W, H, '#3a5c2e', '#22401c');
-      c.save(); c.translate(0, -cam);
-      c.fillStyle = '#365a2c'; for (let y = Math.floor(cam / 40) * 40; y < cam + H; y += 40) for (let x = (y / 40 % 2) * 20; x < W; x += 40) c.fillRect(x, y, 14, 3);
-      // landing pad
-      box(c, W / 2 - 30, 8, 60, 36, '#707860', { r: 4 }); c.fillStyle = '#f8f8f0'; c.font = '8px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText('H', W / 2, 31);
-      const rot = t * 18; c.strokeStyle = '#202820'; c.lineWidth = 2; c.beginPath(); c.moveTo(W / 2 + Math.cos(rot) * 26, 26 + Math.sin(rot) * 8); c.lineTo(W / 2 - Math.cos(rot) * 26, 26 - Math.sin(rot) * 8); c.stroke(); c.lineWidth = 1;
-      for (const f of foes) { if (f.y < cam - 20 || f.y > cam + H + 20) continue; const fc = f.flash ? '#f8f8f8' : f.kind === 'heavy' ? '#806048' : f.kind === 'nest' ? '#686860' : '#a07848'; shadow(c, f.x + 2, f.y + 6, 9, 3, .35); if (f.kind === 'nest') { box(c, f.x - 8, f.y - 6, 16, 12, fc, { r: 2 }); box(c, f.x - 2, f.y - 9, 4, 6, '#404038', { r: 1, drop: false }); } else ball(c, f.x, f.y, f.kind === 'heavy' ? 7 : 5, fc);
-        if (f.alert > 0 && mode !== 1) { c.fillStyle = '#f84040'; c.fillText('!', f.x, f.y - 9); } if (f.hp < f.max) { c.fillStyle = '#300'; c.fillRect(f.x - 7, f.y + 8, 14, 2); c.fillStyle = '#f84040'; c.fillRect(f.x - 7, f.y + 8, 14 * f.hp / f.max, 2); } }
-      for (const s of shots) { glow(c, s.x, s.y, s.pierce ? 6 : 4, s.pierce ? '#f87858' : '#f8f8a0', .7); c.fillStyle = s.pierce ? '#f87858' : '#f8f8a0'; c.fillRect(s.x - 1, s.y - 1, s.pierce ? 3 : 2, s.pierce ? 3 : 2); }
-      for (const b of bolts) { glow(c, b.x, b.y, 7, '#f84040', .6); ball(c, b.x, b.y, 2.5, '#f84040', { gloss: .5 }); }
-      // you
-      const m = MODES[mode]; c.globalAlpha = mode === 1 ? .35 + Math.sin(t * 8) * .1 : 1;
-      shadow(c, p.x + 2, p.y + 6, 8, 3, .4); ball(c, p.x, p.y, 6, '#384858'); c.strokeStyle = m.col; c.lineWidth = 2; c.beginPath(); c.arc(p.x, p.y, 6, 0, 7); c.stroke(); c.lineWidth = 1;
-      if (mode === 2 && stick) { c.fillStyle = '#f8d04860'; c.fillRect(p.x - Math.cos(stick.a) * 12 - 2, p.y - Math.sin(stick.a) * 12 - 2, 4, 4); }
-      c.globalAlpha = 1;
-      for (const tr of trees) { if (tr.y < cam - 20 || tr.y > cam + H + 20) continue; shadow(c, tr.x + 4, tr.y + 5, tr.r * 1.2, tr.r * .8, .45); ball(c, tr.x, tr.y, tr.r, '#3c7a30', { gloss: .15 }); ball(c, tr.x - tr.r * .3, tr.y - tr.r * .3, tr.r * .5, '#4c9a40', { gloss: .2 }); }
-      for (const q of parts) { if (q.txt) { c.font = '6px "Press Start 2P", monospace'; c.fillStyle = '#f8e048'; c.fillText(q.txt, q.x, q.y); } else { c.fillStyle = q.col; c.fillRect(q.x, q.y, 2, 2); } }
-      c.restore();
+      const v = view3d(), S = v.sin, A = (x, y, h = 0) => v.at(x, y - cam, h); v.frame();
+      for (let y = Math.floor(cam / 40) * 40 - 40; y < cam + H + 40; y += 40) for (let x = (y / 40 % 2) * 20; x < W; x += 40) v.put('fern', A(x + 7, y), { ry: x + y });
+      if (cam < 60) { const pad = v.put('pad', A(W / 2, 26)); pad.userData.rotor.rotation.y = t * 18; }
+      for (const f of foes) {
+        if (f.y < cam - 30 || f.y > cam + H + 30) continue;
+        const o = v.put(f.kind, A(f.x, f.y), { ry: Math.atan2(p.x - f.x, p.y - f.y) }); o.userData.flash.visible = !!f.flash;
+      }
+      for (const sh of shots) v.put(sh.pierce ? 'shotP' : 'shot', A(sh.x, sh.y, 6));
+      for (const b of bolts) v.put('bolt', A(b.x, b.y, 6));
+      const m = MODES[mode], me = v.put(mode === 1 ? 'suitCloak' : 'suit', A(p.x, p.y), { ry: stick ? Math.PI / 2 - stick.a : Math.PI });
+      me.userData.trim.material = trimMat[mode];
+      me.userData.legs.forEach((l, i) => l.rotation.x = stick ? Math.sin(t * (mode === 2 ? 24 : 14) + i * Math.PI) * .6 : 0);
+      for (const tr of trees) { if (tr.y < cam - 40 || tr.y > cam + H + 40) continue; v.put('tree', A(tr.x, tr.y), { s: tr.r / 12, ry: tr.x }); }
+      v.render(c, W, H);
+      c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
+      for (const f of foes) {
+        if (f.y < cam - 20 || f.y > cam + H + 20) continue; const [fx, fy] = v.over(f.x, f.y - cam, 14);
+        if (f.alert > 0 && mode !== 1) { c.fillStyle = '#000'; c.fillText('!', fx + 1, fy + 1); c.fillStyle = '#f84040'; c.fillText('!', fx, fy); }
+        if (f.hp < f.max) { c.fillStyle = '#300'; c.fillRect(fx - 7, fy + 2, 14, 2); c.fillStyle = '#f84040'; c.fillRect(fx - 7, fy + 2, 14 * f.hp / f.max, 2); }
+      }
+      for (const q of parts) { const [qx, qy] = v.over(q.x, q.y - cam, 4); if (q.txt) { c.fillStyle = '#f8e048'; c.fillText(q.txt, qx, qy); } else { c.fillStyle = q.col; c.fillRect(qx, qy, 2, 2); } }
       if (stick) { c.strokeStyle = '#ffffff50'; c.beginPath(); c.arc(stick.x, stick.y, 22, 0, 7); c.stroke(); c.fillStyle = '#ffffff50'; c.beginPath(); c.arc(stick.x + Math.cos(stick.a) * stick.m * 22, stick.y + Math.sin(stick.a) * stick.m * 22, 7, 0, 7); c.fill(); }
       if (p.hp < 40) { c.fillStyle = `rgba(200,0,0,${(.4 - p.hp / 100) * (.6 + Math.sin(t * 6) * .4)})`; c.fillRect(0, 0, W, H); }
       // HUD
