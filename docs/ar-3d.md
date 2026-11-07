@@ -10,6 +10,31 @@ materials, reflections, and real-time shadows that fall on the real floor (an in
 only shows shadows). Bloom and the colour grade are left out, because they would also tint the real
 world behind the scene. Games built on it: `saucer-swarm.js`, `bin-flick.js`, `hoop-drone.js`.
 
+## Native AR: walk around (world mode)
+
+In the phone app, the kit uses ARKit (iPhone) or ARCore (Android) through the `NativeAR` plugin
+(`plugins/native-ar`, bridged by `src/kit/native-ar.js`). The camera picture is then drawn natively
+**behind** a see-through page (the `ar-live` class on `<html>`; CSS keeps only the game screen
+clear), and every frame the plugin sends the phone's real position and turn, the lens, and a light
+estimate. So the 3D camera moves when the player walks, and things stay put on the real floor.
+
+- `v.mode` is `'world'` with native AR, `'look'` otherwise. Games don't have to care: `FLOOR`,
+  `look()`, `draw()`, `eyePos`, `forward()` and `recenter()` all work the same in both.
+- The floor is found, not calibrated: the lowest big surface below the phone becomes `y = FLOOR`
+  (until one is found the calibrated phone height is used). The Floor chip is hidden.
+- `recenter()` makes where the phone points and stands now "straight ahead" at x = z = 0.
+- `v.surfaces()` lists found surfaces `{ id, p, q, w, d, floor }` (empty in look mode);
+  `v.floorFound` says whether the floor is known.
+- `await v.hit(x, y)` finds where a screen point meets a real surface: `{ p, kind }` with kind
+  `'plane'` or `'point'`, or `'floor'` in look mode (the line of sight meets `FLOOR`), or null.
+  Feature-check new methods (`v.hit?.(...)`, `v.surfaces?.()`) so a game still runs on an older app.
+- `ar: 'world'` on a game definition means it only makes sense walking around; the feed leaves it
+  out on phones without native AR. Leave it off for games that play fine in look mode.
+- `AR Lab` (`src/games/ar-lab.js`, benched, opened from Settings > AR test) is the test scene: a
+  cube on the floor, found surfaces drawn as outlines, and a status panel.
+- ARCore is optional in the Android manifest, so the app still installs on phones without it; the
+  first native AR game may ask to install Google Play Services for AR. The privacy page says so.
+
 ## Fitting the real room
 
 - **Floor calibration.** The first time the camera starts, the kit opens "Line up your floor": the

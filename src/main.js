@@ -21,6 +21,7 @@ import { initWallet, toast, shopHTML, bindShop } from './kit/wallet-ui.js';
 import { haptic } from './kit/device.js';
 import { remote } from './remote.js';
 import { openSettings } from './settings.js';
+import { nativeARProbe, nativeARSupported } from './kit/native-ar.js';
 import { hearts } from './hearts.js';
 import { playstats } from './playstats.js';
 import { perf } from './perf.js';
@@ -242,7 +243,8 @@ function fit(s,again){
 
 // Shuffled queue over the whole catalogue; the feed pulls a few at a time so 1000 games never means 1000 slides in the DOM.
 let queue=[];
-function inPool(g){return (filter.startsWith('id:')||!isHidden(g.id))&&(filter==='all'||(filter.startsWith('id:')?g.id===filter.slice(3):filter==='pocket'?g.retro&&g.era!=='console'&&g.era!=='nextgen'&&g.era!=='ar':filter==='console'?g.era==='console':filter==='nextgen'?g.era==='nextgen':filter==='ar'?g.era==='ar':!g.retro))}
+// ar:'world' games need native AR (walking around), so the feed leaves them out on phones without it.
+function inPool(g){return (filter.startsWith('id:')||!isHidden(g.id)&&!(g.ar==='world'&&nativeARSupported()!==true))&&(filter==='all'||(filter.startsWith('id:')?g.id===filter.slice(3):filter==='pocket'?g.retro&&g.era!=='console'&&g.era!=='nextgen'&&g.era!=='ar':filter==='console'?g.era==='console':filter==='nextgen'?g.era==='nextgen':filter==='ar'?g.era==='ar':!g.retro))}
 function pickDefs(n=6){
   let pool=GAMES.filter(inPool);
   if(!pool.length)pool=GAMES;
@@ -405,7 +407,7 @@ logo.onclick=()=>openPanel(GAMES,best);
 const mineBtn=document.createElement('button');mineBtn.className='iconbtn';mineBtn.id='mine';mineBtn.setAttribute('aria-label','My games: hearted and Meh');mineBtn.textContent='♥';
 const muteBtn=document.getElementById('mute');muteBtn.before(mineBtn);
 const setBtn=document.createElement('button');setBtn.className='iconbtn';setBtn.id='settings';setBtn.setAttribute('aria-label','Settings');setBtn.textContent='⚙';
-muteBtn.after(setBtn);setBtn.onclick=()=>openSettings({stream:STREAM,cached:()=>remote.cacheInfo(),clear:()=>remote.clearCache()});
+muteBtn.after(setBtn);setBtn.onclick=()=>openSettings({stream:STREAM,cached:()=>remote.cacheInfo(),clear:()=>remote.clearCache(),arTest:()=>playNow('ar-lab')});
 mineBtn.onclick=()=>openMyGames({games:GAMES,best,play:playNow,changed:(id,r)=>{hearts.set(id,r>0);slides.forEach(x=>{if(x.def.id===id)x.setLike(r>0)});rerank()},qa:()=>openPanel(GAMES,best)});
 const paintMute=()=>{muteBtn.textContent=sound.muted?'🔇':'🔊';muteBtn.setAttribute('aria-pressed',String(sound.muted))};paintMute();
 muteBtn.onclick=()=>{sound.muted=!sound.muted;store.set('gs_muted',sound.muted);paintMute()};
@@ -437,6 +439,7 @@ function start(){
   feedMsg('loading');
   remote.refresh().then(()=>GAMES.length?boot():feedMsg('offline'));
 }
+nativeARProbe();   // ask early whether walk-around AR games can go in the feed
 start();
 // Coming back to the app: look for game updates (cheap: one small catalogue file).
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(remote.enabled)remote.refresh();if(active)playstats.shown(active.def.id)}});

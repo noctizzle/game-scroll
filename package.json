@@ -48,6 +48,7 @@
     "@fontsource/press-start-2p": "^5.2.5",
     "@fontsource/rubik": "^5.2.5",
     "game-services": "file:plugins/game-services",
+    "native-ar": "file:plugins/native-ar",
     "three": "^0.180.0"
   }
 }

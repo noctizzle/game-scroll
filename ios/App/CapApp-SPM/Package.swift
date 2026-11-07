@@ -17,7 +17,8 @@ let package = Package(
         .package(name: "CapacitorGeolocation", path: "../../../node_modules/@capacitor/geolocation"),
         .package(name: "CapacitorHaptics", path: "../../../node_modules/@capacitor/haptics"),
         .package(name: "CapacitorShare", path: "../../../node_modules/@capacitor/share"),
-        .package(name: "GameServices", path: "../../../plugins/game-services")
+        .package(name: "GameServices", path: "../../../plugins/game-services"),
+        .package(name: "NativeAr", path: "../../../plugins/native-ar")
     ],
     targets: [
         .target(
@@ -30,7 +31,8 @@ let package = Package(
                 .product(name: "CapacitorGeolocation", package: "CapacitorGeolocation"),
                 .product(name: "CapacitorHaptics", package: "CapacitorHaptics"),
                 .product(name: "CapacitorShare", package: "CapacitorShare"),
-                .product(name: "GameServices", package: "GameServices")
+                .product(name: "GameServices", package: "GameServices"),
+                .product(name: "NativeAr", package: "NativeAr")
             ]
         )
     ]

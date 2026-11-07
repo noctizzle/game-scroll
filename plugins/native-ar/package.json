@@ -1,0 +1,13 @@
+{
+  "name": "native-ar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Game Scroll's native AR: ARKit (iOS) and ARCore (Android) world tracking behind a see-through WebView.",
+  "main": "index.js",
+  "files": ["index.js", "Package.swift", "ios/Sources", "android/src/main", "android/build.gradle"],
+  "capacitor": {
+    "ios": { "src": "ios" },
+    "android": { "src": "android" }
+  },
+  "peerDependencies": { "@capacitor/core": "^8.0.0" }
+}

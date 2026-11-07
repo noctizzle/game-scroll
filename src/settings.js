@@ -3,11 +3,12 @@
 import { fmt } from './util.js';
 import { playstats } from './playstats.js';
 import { HEARTS_URL } from './hearts.js';
+import { nativeARSupported } from './kit/native-ar.js';
 
 const size = b => b < 1024 * 1024 ? `${Math.ceil(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
 
-/** opts: { stream, cached(): {games, bytes, max}, clear(): Promise } */
-export function openSettings({ stream, cached, clear }) {
+/** opts: { stream, cached(): {games, bytes, max}, clear(): Promise, arTest(): opens the AR test scene } */
+export function openSettings({ stream, cached, clear, arTest }) {
   const el = document.createElement('dialog'); el.className = 'qa-panel settings';
   document.body.appendChild(el);
   const render = note => {
@@ -22,6 +23,11 @@ export function openSettings({ stream, cached, clear }) {
           : `<p class="qa-help">This is a test build with every game built in, so there's nothing to cache.</p>`}
         ${note ? `<p class="set-note" role="status">${note}</p>` : ''}
       </section>
+      ${arTest ? `<section class="set-row">
+        <h3>AR test</h3>
+        <p class="qa-help">A cube on your floor for checking how well AR games track the room: walk around it and it should stay put.${nativeARSupported() === false ? ' This phone or version plays AR games in look-around mode.' : ''}</p>
+        <div class="qa-actions"><button class="set-ar">Open AR test</button></div>
+      </section>` : ''}
       ${HEARTS_URL ? `<section class="set-row">
         <h3>Play stats and crash reports</h3>
         <p class="qa-help">Counts how often each game is played or skipped, and reports crashes, errors and stutters along with your phone model (like “SM-F966B”), added up across everyone. It helps pick which games to improve, fix and show more. Nothing identifies you.</p>
@@ -42,6 +48,7 @@ export function openSettings({ stream, cached, clear }) {
       </section>
       <footer class="set-made">Made by <b>Rob</b></footer>`;
     el.querySelector('.qa-x').onclick = () => el.close();
+    el.querySelector('.set-ar')?.addEventListener('click', () => { el.close(); arTest(); });
     el.querySelector('.set-stats')?.addEventListener('change', e => { playstats.enabled = e.target.checked; });
     el.querySelector('.set-clear')?.addEventListener('click', async e => {
       e.target.disabled = true; await clear(); render('Cache cleared. Games will download again as you play them.');

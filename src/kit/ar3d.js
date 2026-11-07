@@ -17,10 +17,18 @@
 //  - light estimation: the camera picture's brightness and colour set the 3D lights, so objects
 //    dim in a dark room and pick up warm lamp light.
 //  - on Android the compass-locked orientation is used, so "straight ahead" doesn't drift.
+//
+// Native AR (world mode): in the phone app, where the NativeAR plugin and ARKit / ARCore are
+// there, the camera picture is drawn natively behind a see-through page and the 3D camera follows
+// the phone's real position as well as its turn, so players can walk around things. The floor
+// comes from the lowest surface the phone finds (no calibration needed), and light from the
+// phone's own estimate. v.mode says which is running ('world' or 'look'); v.surfaces() lists found
+// surfaces and v.hit(x, y) finds where a screen point meets one. Everything else works the same.
 import { HDView, pbr, surface, speckle, sun, THREE } from './hd3d.js';
 import { startCamera, stopCamera, orientation, haptic } from './device.js';
 import { store } from '../util.js';
-const { Group, Mesh, PlaneGeometry, BoxGeometry, ShadowMaterial, MeshBasicMaterial, CanvasTexture, SRGBColorSpace, Vector3, Quaternion, Euler, BackSide, GridHelper } = THREE;
+import { nativeStart, nativeStop, nativeHit } from './native-ar.js';
+const { Matrix4, Plane, Raycaster, Vector2, Group, Mesh, PlaneGeometry, BoxGeometry, ShadowMaterial, MeshBasicMaterial, CanvasTexture, SRGBColorSpace, Vector3, Quaternion, Euler, BackSide, GridHelper } = THREE;
 
 // A 50 cm grid of bright lines that fades out towards its edges, for lining up the floor.
 let GT = null;
@@ -62,6 +70,10 @@ function roomLooks() {
 
 const Z = new Vector3(0, 0, 1), Y = new Vector3(0, 1, 0), Q1 = new Quaternion(-Math.sqrt(.5), 0, 0, Math.sqrt(.5));
 const eu = new Euler(), q0 = new Quaternion(), qd = new Quaternion(), qy = new Quaternion(), tmp = new Vector3();
+const mA = new Matrix4(), mB = new Matrix4(), mC = new Matrix4(), sc = new Vector3(), ray = new Raycaster(), floorPl = new Plane(new Vector3(0, 1, 0), -FLOOR), v2 = new Vector2();
+const GOOD = { TRACKING: 1, LIMITED: 1 };
+// a fresh native-AR state: the latest pose and projection, and how native space maps to game space
+const natState = () => ({ pose: new Matrix4(), proj: new Matrix4(), has: false, tracking: 'PAUSED', light: null, planes: [], yaw0: null, x0: 0, z0: 0, yOff: null, yOffT: 0, floor: null, M: new Matrix4(), t0: performance.now() });
 
 export class ARView extends HDView {
   constructor(o = {}) {
@@ -85,7 +97,7 @@ export class ARView extends HDView {
     // light estimate from the camera picture
     this.lightCv = null; this.lightN = 0; this.lum = .45; this.tint = [1, 1, 1];
     this.camState = 'off'; this.camera = null; this.yaw0 = null; this.yaw = 0; this.pitch = 0; this.sensor = false;
-    this.camQ = new Quaternion();
+    this.camQ = new Quaternion(); this.nat = null; this.rect = null;
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.off(); });
   }
   /** Let a game react to quality changes (the kit already handles the sun's shadows). */
@@ -95,25 +107,110 @@ export class ARView extends HDView {
   live() {
     if (this.camState !== 'off') return this;
     this.camState = 'asking';
-    startCamera().then(c => {
-      if (this.camState !== 'asking') { if (c) stopCamera(); return; }   // switched off while asking
-      this.camera = c; this.camState = c ? 'on' : 'denied';
-      if (c && this.eye == null) this.calibrate();   // first time with a camera: line up the floor
+    // native AR first (phone app with ARKit / ARCore), else the web camera with the gyro
+    nativeStart(this).then(r => {
+      if (this.camState !== 'asking') { if (r.started) nativeStop(this); return; }
+      if (r.started) { this.camState = 'native'; this.nat = natState(); this.cal = null; this.calGrid.visible = false; return; }
+      if (r.reason === 'camera') { this.camState = 'denied'; return; }   // camera refused: don't ask twice
+      startCamera().then(c => {
+        if (this.camState !== 'asking') { if (c) stopCamera(); return; }   // switched off while asking
+        this.camera = c; this.camState = c ? 'on' : 'denied';
+        if (c && this.eye == null) this.calibrate();   // first time with a camera: line up the floor
+      });
     });
     return this;
   }
   /** Stop the camera (call from reset() and before api.over()). Denied stays denied for this game. */
-  off() { if (this.camState === 'on' || this.camState === 'asking') stopCamera(); if (this.camState !== 'denied') this.camState = 'off'; this.camera = null; return this; }
+  off() {
+    if (this.camState === 'on' || this.camState === 'asking') stopCamera();
+    nativeStop(this); this.nat = null;
+    if (this.camState !== 'denied') this.camState = 'off'; this.camera = null; return this;
+  }
   /** True while the real camera picture is showing. */
-  get seeing() { const v = this.camera?.video; return !!(v && v.readyState >= 2 && v.videoWidth); }
+  get seeing() { if (this.camState === 'native') return true; const v = this.camera?.video; return !!(v && v.readyState >= 2 && v.videoWidth); }
+  /** 'world' while native AR tracks the phone's real position (walk around), else 'look' (turn on the spot). */
+  get mode() { return this.camState === 'native' ? 'world' : 'look'; }
+
+  /* ---------- native AR (called by native-ar.js) ---------- */
+  frame(d) {
+    const n = this.nat; if (!n || !d.pose) { if (n && d.tracking) n.tracking = d.tracking; return; }
+    n.tracking = d.tracking; n.pose.fromArray(d.pose); n.proj.fromArray(d.proj); n.light = d.light || null;
+    if (!GOOD[d.tracking]) return;
+    const m = d.pose;
+    if (n.yaw0 == null) {
+      // the first good pose (or after recenter): where the phone points becomes "straight ahead" (-z),
+      // where it stands becomes x = z = 0, and until a floor is found it's held at the calibrated height
+      n.yaw0 = Math.atan2(m[8], m[10]); n.x0 = m[12]; n.z0 = m[14];
+      if (n.floor == null) n.yOff = n.yOffT = FLOOR + (this.eye ?? -FLOOR) - m[13];
+      if (n.yOff == null) n.yOff = n.yOffT;
+    }
+    n.has = true;
+  }
+  planes(list) {
+    const n = this.nat; if (!n) return;
+    n.planes = list;
+    // the floor is the lowest big surface well below the phone
+    const py = n.pose.elements[13]; let low = null;
+    for (const p of list) { const y = p.pose[13]; if (p.w * p.d >= .25 && y < py - .3 && (low == null || y < low)) low = y; }
+    if (low != null) { n.floor = low; n.yOffT = FLOOR - low; if (n.yOff == null) n.yOff = n.yOffT; }
+  }
+  /**
+   * Surfaces native AR has found, in game space: [{ id, p (centre), q (turn), w, d, floor }]. w runs
+   * along the surface's own x and d along its z. Empty in look mode.
+   */
+  surfaces() {
+    const n = this.nat; if (!n?.has) return [];
+    return n.planes.map(s => {
+      const p = new Vector3(), q = new Quaternion(); mA.fromArray(s.pose).premultiply(n.M).decompose(p, q, sc);
+      return { id: s.id, p, q, w: s.w, d: s.d, floor: n.floor != null && Math.abs(s.pose[13] - n.floor) < .05 };
+    });
+  }
+  /** True once native AR has found the real floor. */
+  get floorFound() { return this.nat?.floor != null; }
+  /**
+   * Where game point (x, y) on the screen meets a real surface: resolves { p: Vector3, kind } or null.
+   * kind is 'plane' or 'point' (native AR) or 'floor' (look mode: the line of sight hits FLOOR).
+   */
+  async hit(x, y) {
+    const n = this.nat, r = this.rect;
+    if (n?.has && r) {
+      const h = (await nativeHit(r.left + x / this.W * r.width, r.top + y / this.H * r.height))[0];
+      if (h && this.nat === n) return { p: new Vector3().setFromMatrixPosition(mA.fromArray(h.pose).premultiply(n.M)), kind: h.kind };
+      if (h) return null;
+    }
+    ray.setFromCamera(v2.set(x / this.W * 2 - 1, 1 - y / this.H * 2), this.cam);
+    const p = ray.ray.intersectPlane(floorPl, new Vector3());
+    return p && p.distanceTo(this.cam.position) < 15 ? { p, kind: 'floor' } : null;
+  }
+  // native pose -> 3D camera; called from look()
+  lookNative(dt) {
+    const n = this.nat;
+    if (n.has) {
+      n.yOff += (n.yOffT - n.yOff) * (1 - Math.exp(-dt * 5));   // a newly found floor eases in
+      n.M.makeTranslation(-n.x0, 0, -n.z0).premultiply(mB.makeRotationY(-n.yaw0)).premultiply(mC.makeTranslation(0, n.yOff, 0));
+      mA.multiplyMatrices(n.M, n.pose).decompose(this.cam.position, this.cam.quaternion, sc);
+    } else this.cam.position.set(0, FLOOR + this.eyeH, 0);
+    this.sensor = true; this.cam.updateMatrixWorld();
+    return this;
+  }
+  // native projection, cropped from the full screen to where the game's canvas sits
+  projectNative(c) {
+    const n = this.nat, r = this.rect = c.canvas.getBoundingClientRect(), VW = innerWidth, VH = innerHeight;
+    if (!n.has || !r.width || !r.height) return;
+    const sx = VW / r.width, ox = (VW - 2 * r.left - r.width) / r.width, sy = VH / r.height, oy = (r.height - VH + 2 * r.top) / r.height;
+    mA.set(sx, 0, 0, ox, 0, sy, 0, oy, 0, 0, 1, 0, 0, 0, 0, 1);
+    this.cam.projectionMatrix.multiplyMatrices(mA, n.proj); this.cam.projectionMatrixInverse.copy(this.cam.projectionMatrix).invert();
+    this.cam.fov = 2 * Math.atan(1 / this.cam.projectionMatrix.elements[5]) * 180 / Math.PI;   // games use fov for sizes
+  }
 
   /** Make where the phone points now "straight ahead" (call from reset()). */
-  recenter() { this.yaw0 = null; this.yaw = 0; this.pitch = 0; return this; }
+  recenter() { this.yaw0 = null; this.yaw = 0; this.pitch = 0; if (this.nat) this.nat.yaw0 = null; return this; }
   /** No-gyro fallback: drag to look around (pixels moved). */
   drag(dx, dy) { if (this.sensor) return; this.yaw += dx * .007; this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch + dy * .006)); }
 
   /** Point the 3D camera the way the phone points. Call once per frame before draw(). */
   look(dt = 1 / 60) {
+    if (this.nat) return this.lookNative(dt);
     const o = orientation(), d = Math.PI / 180;
     if (o) {
       if (this.absSeen !== o.abs) { this.absSeen = o.abs; this.yaw0 = null; }   // source changed: re-take "ahead"
@@ -131,7 +228,7 @@ export class ARView extends HDView {
     return this;
   }
   /** How high the phone is held above the floor, in metres. */
-  get eyeH() { return this.cal ? this.cal.eye : this.eye ?? -FLOOR; }
+  get eyeH() { return this.nat?.has ? this.cam.position.y - FLOOR : this.cal ? this.cal.eye : this.eye ?? -FLOOR; }
   /** Where the phone is (the camera position). */
   get eyePos() { return this.cam.position; }
 
@@ -181,6 +278,12 @@ export class ARView extends HDView {
       this.tint = this.tint.map((t, i) => t + ((.55 + .45 * [r, gr, b][i] / m) - t) * k);
     } catch { /* picture not readable yet */ }
   }
+  nativeLight() {
+    const l = this.nat.light; if (!l) return;
+    const k = .05, c = l.color || [1, 1, 1], m = Math.max(...c, 1e-3);
+    this.lum += (Math.min(1, Math.max(0, l.intensity)) - this.lum) * k;
+    this.tint = this.tint.map((t, i) => t + ((.55 + .45 * c[i] / m) - t) * k);
+  }
   applyLight(on) {
     const L = on ? this.lum : .45, [r, g, b] = on ? this.tint : [1, 1, 1];
     this.hemi.intensity = .3 + L * 1.35; this.sunL.intensity = .7 + L * 3.6; this.envI = .25 + L * 1;
@@ -198,6 +301,11 @@ export class ARView extends HDView {
   draw(c, W, H) {
     this.fit(W, H);
     let fov = 62;
+    if (this.nat) {
+      // the camera picture is drawn natively behind the page: leave the canvas see-through
+      c.clearRect(0, 0, W, H); this.room.visible = false; this.nativeLight(); this.applyLight(true);
+      this.projectNative(c); this.render(c, W, H); return;
+    }
     if (this.seeing) {
       const v = this.camera.video, vw = v.videoWidth, vh = v.videoHeight, s = Math.max(W / vw, H / vh);
       c.drawImage(v, (W - vw * s) / 2, (H - vh * s) / 2, vw * s, vh * s);
@@ -236,6 +344,7 @@ export class ARView extends HDView {
 export function arNote(c, v, W, H) {
   if (v.cal) return calHUD(c, v, W, H);
   // the Floor chip: redo the calibration any time the camera is on
+  if (v.nat) return nativeNote(c, v, W, H);
   if (v.seeing) {
     const k = v.chip = { x: 10, y: H - 36, w: 62, h: 24 };
     c.save(); c.fillStyle = '#04110ecc'; c.strokeStyle = '#19e3b188'; c.lineWidth = 1; c.beginPath(); c.roundRect(k.x, k.y, k.w, k.h, 12); c.fill(); c.stroke();
@@ -249,6 +358,18 @@ export function arNote(c, v, W, H) {
   c.save(); c.font = '600 11px Rubik, sans-serif'; c.textAlign = 'center';
   const w = c.measureText(t).width + 20; c.fillStyle = '#000a'; const y = v.chip ? H - 64 : H - 34; c.beginPath(); c.roundRect(W / 2 - w / 2, y, w, 22, 11); c.fill();
   c.fillStyle = '#fff'; c.fillText(t, W / 2, y + 15); c.restore();
+}
+
+function pill(c, t, W, y) {
+  c.save(); c.font = '600 11px Rubik, sans-serif'; c.textAlign = 'center';
+  const w = c.measureText(t).width + 20; c.fillStyle = '#000a'; c.beginPath(); c.roundRect(W / 2 - w / 2, y, w, 22, 11); c.fill();
+  c.fillStyle = '#fff'; c.fillText(t, W / 2, y + 15); c.restore();
+}
+function nativeNote(c, v, W, H) {
+  v.chip = null;
+  const n = v.nat;
+  if (!GOOD[n.tracking]) pill(c, 'Finding your room: move the phone slowly', W, H - 34);
+  else if (n.floor == null && performance.now() - n.t0 < 8000) pill(c, 'Point at the floor to find it', W, H - 34);
 }
 
 function calHUD(c, v, W, H) {
