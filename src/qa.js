@@ -10,6 +10,7 @@
 import { store } from './util.js';
 import { progress } from './kit/progress.js';
 import { playstats } from './playstats.js';
+import { perf } from './perf.js';
 
 /** Hidden from the feed for everyone. Add an id here to pull a game without deleting its file. */
 export const BENCHED = new Set([]);
@@ -56,6 +57,39 @@ function everyone(id) {
   return `everyone: ${c.v} views, ${c.p} plays, ${Math.round(100 * c.k / c.v)}% quick skips, ${Math.round(c.s / c.v)}s/view`;
 }
 
+/* ---------- smoothness (anonymous perf reports, src/perf.js) ---------- */
+const smooth = c => c && c.f >= 120 ? `${Math.round(1000 * c.f / c.ms)} fps, ${(100 * c.sl / c.f).toFixed(1)}% slow, ${c.h} freezes` : '';
+/** Everyone's numbers for a game, all phones together, from GET /perf. */
+function everyoneSmooth(id) {
+  const rows = (perf.global?.games || []).filter(r => r.game === id);
+  if (!rows.length) return '';
+  const t = rows.reduce((a, r) => ({ f: a.f + r.frames, ms: a.ms + r.ms, sl: a.sl + r.slow, h: a.h + r.hitches }), { f: 0, ms: 0, sl: 0, h: 0 });
+  return smooth(t);
+}
+function perfLine(id) {
+  const mine = smooth(perf.local(id)), all = everyoneSmooth(id);
+  return [mine && `this phone: ${mine}`, all && `everyone: ${all}`].filter(Boolean).join(' · ');
+}
+/** Report lines: worst games on this phone, everyone's worst game+phone rows, and errors/crashes. */
+function perfReport(games) {
+  const title = id => games.find(g => g.id === id)?.title || id || 'feed';
+  const mine = games.map(g => [g, perf.local(g.id)]).filter(([, c]) => c && c.f >= 120).sort((a, b) => b[1].sl / b[1].f - a[1].sl / a[1].f).slice(0, 10);
+  const all = (perf.global?.games || []).filter(r => r.frames >= 300).slice(0, 15);
+  const errs = (perf.global?.errors || []).slice(0, 15);
+  const i = perf.info();
+  return [
+    `\nSTUTTERS ON THIS PHONE (${i.model}, ${i.os || i.platform}, ${i.form} screen, build ${i.app}):`,
+    ...(mine.length ? mine.map(([g, c]) => `${g.id} (${g.title}) · ${smooth(c)}, longest ${Math.round(c.x)} ms`) : ['none measured yet']),
+    ...(perf.global ? [
+      `\nSTUTTERS, EVERYONE (worst game + phone, last ${perf.global.days} days):`,
+      ...(all.length ? all.map(r => `${r.game} (${title(r.game)}) on ${r.model} ${r.form} · ${r.fps} fps, ${(100 * r.slow / r.frames).toFixed(1)}% slow, ${r.hitches} freezes, longest ${r.worst} ms`) : ['none yet']),
+      `\nCRASHES AND ERRORS, EVERYONE:`,
+      ...(errs.length ? errs.map(e => `${e.kind} ×${e.n} · ${title(e.game)} · ${e.msg}${e.place ? ' @ ' + e.place : ''} · ${e.models} · ${e.apps}`) : ['none reported']),
+      `Full table: ${perf.reportUrl}`,
+    ] : []),
+  ];
+}
+
 /* ---------- report ---------- */
 export function report(games, best) {
   const line = g => { const x = db[g.id] || {}, e = everyone(g.id); return `${g.id} (${g.title})${x.plays ? ` · ${x.plays} plays, ${x.secs}s, best ${best(g.id)}` : ''}${e ? ` · ${e}` : ''}`; };
@@ -67,6 +101,7 @@ export function report(games, best) {
     `\nLIKED (${by(1).length}):`, ...by(1).map(line),
     `\nPLAYED, NOT RATED (${played.length}):`, ...played.sort((a, b) => db[b.id].secs - db[a.id].secs).map(line),
     `\nNOT PLAYED YET: ${games.filter(g => !db[g.id]?.plays && !rating(g.id)).length}`,
+    ...perfReport(games),
     `\nMOST SKIPPED BY EVERYONE (20+ views):`, ...games.filter(g => (playstats.global(g.id)?.v || 0) >= 20)
       .sort((a, b) => playstats.global(b.id).k / playstats.global(b.id).v - playstats.global(a.id).k / playstats.global(a.id).v).slice(0, 15).map(line),
   ].join('\n');
@@ -79,12 +114,12 @@ export function openPanel(games, best, onChange) {
   const rows = [...games].sort((a, b) => rating(a.id) - rating(b.id) || a.title.localeCompare(b.title)).map(g => {
     const x = db[g.id] || {}, r = rating(g.id);
     return `<li data-id="${g.id}"><span class="qa-r">${BENCHED.has(g.id) ? '⏸' : r > 0 ? '♥' : r < 0 ? '👎' : '·'}</span>
-      <span class="qa-t">${g.title}<small>${x.plays ? `${x.plays} plays · ${x.secs}s · best ${best(g.id)}` : 'not played'}${everyone(g.id) ? `<br>${everyone(g.id)}` : ''}</small></span>
+      <span class="qa-t">${g.title}<small>${x.plays ? `${x.plays} plays · ${x.secs}s · best ${best(g.id)}` : 'not played'}${everyone(g.id) ? `<br>${everyone(g.id)}` : ''}${perfLine(g.id) ? `<br>${perfLine(g.id)}` : ''}</small></span>
       ${r < 0 ? '<button class="qa-un">Unhide</button>' : ''}</li>`;
   }).join('');
   el.innerHTML = `<div class="qa-head"><b>QA</b><span>${played}/${games.length} played · ${rated} rated</span><button class="qa-x" aria-label="Close">✕</button></div>
     <p class="qa-help">👎 Meh on a game hides it from your feed. Copy the report and paste it into chat to flag games for removal.</p>
-    <div class="qa-actions"><button class="qa-copy">Copy report</button></div>
+    <div class="qa-actions"><button class="qa-copy">Copy report</button>${perf.reportUrl ? `<a class="qa-perf" href="${perf.reportUrl}" target="_blank" rel="noopener">Crashes &amp; stutters ↗</a>` : ''}</div>
     <ul>${rows}</ul>`;
   document.body.appendChild(el);
   el.querySelector('.qa-x').onclick = () => el.close();

@@ -23,9 +23,9 @@ export function openSettings({ stream, cached, clear }) {
         ${note ? `<p class="set-note" role="status">${note}</p>` : ''}
       </section>
       ${HEARTS_URL ? `<section class="set-row">
-        <h3>Play stats</h3>
-        <p class="qa-help">Counts how often each game is played or skipped, added up across everyone. It helps pick which games to improve and which to show more. Nothing identifies you.</p>
-        <label class="set-toggle"><input type="checkbox" class="set-stats"${playstats.enabled ? ' checked' : ''}> Share anonymous play stats</label>
+        <h3>Play stats and crash reports</h3>
+        <p class="qa-help">Counts how often each game is played or skipped, and reports crashes, errors and stutters along with your phone model (like “SM-F966B”), added up across everyone. It helps pick which games to improve, fix and show more. Nothing identifies you.</p>
+        <label class="set-toggle"><input type="checkbox" class="set-stats"${playstats.enabled ? ' checked' : ''}> Share anonymous play stats and crash reports</label>
       </section>` : ''}
       <section class="set-row">
         <h3>Licence</h3>
