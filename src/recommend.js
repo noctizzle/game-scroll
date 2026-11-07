@@ -21,7 +21,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const cache = new Map();
 export function traits(g) {
   if (cache.has(g.id)) return cache.get(g.id);
-  const t = new Set([g.era === 'nextgen' || g.era === 'console' ? 'era:' + g.era : g.retro ? 'era:pocket' : 'era:casual']);
+  const t = new Set([g.era === 'nextgen' || g.era === 'console' || g.era === 'ar' ? 'era:' + g.era : g.retro ? 'era:pocket' : 'era:casual']);
   for (const part of String(g.tag || '').split('·').slice(1)) for (const w of part.trim().toLowerCase().split(/\s+/)) t.add('genre:' + w);
   for (const [k, re] of Object.entries(CONTROLS)) if (re.test(g.hint || '') || re.test(g.tag || '')) t.add('ctl:' + k);
   for (const x of g.traits || []) t.add(x);   // a game can add its own, e.g. traits: ['theme:space']

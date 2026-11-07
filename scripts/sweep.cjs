@@ -10,7 +10,7 @@ const { chromium } = require('playwright');
   const pageErrs = []; p.on('pageerror', e => pageErrs.push(e.message));
   await p.goto('http://localhost:4185/'); await p.waitForTimeout(400);
   const ids = process.argv.slice(2).length ? process.argv.slice(2)
-    : await p.evaluate(() => __gs.GAMES.filter(g => g.era === 'console' || g.era === 'nextgen').map(g => g.id));
+    : await p.evaluate(() => __gs.GAMES.filter(g => g.era === 'console' || g.era === 'nextgen' || g.era === 'ar').map(g => g.id));
   let failed = 0;
   for (const id of ids) {
     await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(150);
