@@ -20,6 +20,8 @@ import { haptic } from './kit/device.js';
 import { remote } from './remote.js';
 import { openSettings } from './settings.js';
 import { hearts } from './hearts.js';
+import { playstats } from './playstats.js';
+import { shareGame, onSharedGame } from './share.js';
 import BUNDLED from 'virtual:bundled-games';
 
 /* ---------- catalogue ---------- */
@@ -50,6 +52,7 @@ function makeSlide(def){
       <button class="caption" aria-label="How to play ${def.title}"><span class="tag">${def.tag}</span><h2>${def.title}</h2><p>${def.hint}</p><span class="more"><b>ⓘ How to play</b> · Best <span class="best">0</span></span></button>
       <div class="rail">
         <button class="rbtn like" aria-pressed="false"><span class="ic">♥</span><span class="n"></span></button>
+        <button class="rbtn sharebtn" aria-label="Share this game"><span class="ic">↗</span><span>Share</span></button>
         <button class="rbtn meh" aria-label="Meh: hide this game"><span class="ic">👎</span><span>Meh</span></button>
         <button class="rbtn walletbtn" aria-label="Credits and trophies"><span class="ic">◆</span><span class="n">${fmt(progress.credits)}</span></button>
         <button class="rbtn nextbtn" aria-label="Next game"><span class="ic">↓</span><span>Next</span></button>
@@ -74,6 +77,7 @@ function makeSlide(def){
   el.querySelector('.meh').onclick=()=>{const was=rating(def.id);setRating(def.id,-1);if(likeBtn.getAttribute('aria-pressed')==='true'){store.set('gs_like_'+def.id,false);setLike(false);hearts.set(def.id,false)}
     rerank();qaToast(`Hidden: ${def.title}`,()=>{setRating(def.id,was);rerank()});goNext(s)};
   el.querySelector('.nextbtn').onclick=()=>goNext(s);
+  el.querySelector('.sharebtn').onclick=async()=>{haptic('light');const r=await shareGame(def,best(def.id));if(r==='copied')toast(el,'Link copied','info')};
   s.overlay.onclick=e=>{if(Date.now()-s.overAt<550)return;startGame(s)};
   // pointer input
   const pt=e=>{const r=s.canvas.getBoundingClientRect();return[(e.clientX-r.left)/r.width*s.w,(e.clientY-r.top)/r.height*s.h]};
@@ -140,7 +144,7 @@ function startGame(s){
   // Boosts the player owns for this game are used up on this run; unlocks stay on.
   s.run={items:new Set()};
   for(const it of s.def.shop||[])if(it.kind==='unlock'?progress.owned(s.def.id,it)>0:progress.use(s.def.id,it))s.run.items.add(it.id);
-  s.won=false;s.paid=0;s.trophies=[];progress.played(s.def.id);
+  s.won=false;s.paid=0;s.trophies=[];progress.played(s.def.id);playstats.started(s.def.id);
   s.game.reset();s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
   s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');s.startPerf=performance.now();renderOverlay(s);
   sfx(660,.08,'square',.04,300);
@@ -159,13 +163,13 @@ function awardTrophies(s){
 }
 function gameOver(s){
   if(s.state!=='playing')return;
-  s.state='over';s.overAt=Date.now();logRound(s.def.id,s.overAt-s.startAt);s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
+  s.state='over';s.overAt=Date.now();logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(progress.score(s.def.id,s.score))s.newBest=true;
   awardTrophies(s);services.reportRun(s.def);
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){if(s.state==='playing')logRound(s.def.id,Date.now()-s.startAt);s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function resetSlide(s){if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt)}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
 function goPrev(s){
   const i=slides.indexOf(s);if(i<=0)return;
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
@@ -295,10 +299,19 @@ function playNow(id){
   const s=makeSlide(def),next=slides[i+1];feed.insertBefore(s.el,next?next.el:null);slides.splice(i+1,0,s);fit(s);paint(s);io.observe(s.el);
   requestAnimationFrame(()=>s.el.scrollIntoView({behavior:'auto'}));
 }
+// A shared link: at launch the game goes first in the feed; while the app is open it plays next.
+function openShared(id){
+  const g=GAMES.find(x=>x.id===id);if(!g)return;
+  if(active&&slides.indexOf(active)===0&&active.state==='ready'&&feed.scrollTop<4){
+    const def=playable(g);if(!def){remote.load(id).then(d=>{if(d)openShared(id)});return}
+    if(active.def.id===id)return;
+    const s=makeSlide(def);feed.insertBefore(s.el,slides[0].el);slides.unshift(s);fit(s);paint(s);io.observe(s.el);feed.scrollTop=0;setActive(s);return}
+  playNow(id);
+}
 function setActive(s){
   if(active===s)return;
   if(active&&active.state!=='ready')resetSlide(active);
-  feed.classList.remove('locked');active=s;s.dirty=true;if(STREAM)remote.touch(s.def.id);
+  feed.classList.remove('locked');active=s;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);
   topUp();
 }
 
@@ -372,8 +385,8 @@ feedMenu.addEventListener('keydown',e=>{const i=feedOpts.indexOf(document.active
   else if(e.key==='Escape'||e.key==='Tab'){feedOpen(false);feedBtn.focus()}});
 document.addEventListener('pointerdown',e=>{if(!feedMenu.hidden&&!e.target.closest('.feedpick'))feedOpen(false)},true);
 
-function boot(){initWallet(GAMES);services.init(GAMES);booted=true;
-  hearts.reconcile(GAMES.map(g=>g.id),id=>rating(id)>0||(rating(id)===0&&store.get('gs_like_'+id,false)));hearts.load(true);rebuild();requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
+function boot(){initWallet(GAMES);services.init(GAMES);booted=true;playstats.load(true);
+  hearts.reconcile(GAMES.map(g=>g.id),id=>rating(id)>0||(rating(id)===0&&store.get('gs_like_'+id,false)));hearts.load(true);rebuild();onSharedGame(openShared);requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
 // Streaming: with a saved catalogue, start at once and check for updates in the background.
 // First launch has to fetch the catalogue before there is anything to show.
 function start(){
@@ -387,9 +400,9 @@ function start(){
 }
 start();
 // Coming back to the app: look for game updates (cheap: one small catalogue file).
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&remote.enabled)remote.refresh()});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(remote.enabled)remote.refresh();if(active)playstats.shown(active.def.id)}});
 // And every 5 minutes while the app is open, so newly published games join the feed without a restart.
 if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refresh()},5*60*1000);
 
 // Test hook used by scripts/smoke.cjs
-window.__gs={GAMES,remote,progress,api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};
+window.__gs={GAMES,remote,progress,playstats,api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};

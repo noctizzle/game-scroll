@@ -3,6 +3,7 @@
 // raise the weight of those traits; Meh lowers it. The feed queue is a weighted shuffle, so
 // games like the ones you heart come up sooner, but every game still comes round once per cycle.
 import { rating, stats } from './qa.js';
+import { popularity } from './playstats.js';
 
 const CONTROLS = { tap: /\btap/i, hold: /\bhold/i, drag: /\bdrag/i, swipe: /\bswipe|flick/i, tilt: /\btilt/i, shake: /\bshake/i, mic: /\bmic|shout|blow|clap|voice/i, camera: /camera/i, compass: /compass|turn your (whole )?body/i, haptics: /buzz|haptic|thump/i };
 
@@ -37,8 +38,9 @@ export function weight(g, aff) {
   return Math.max(.15, Math.min(8, Math.exp(s * .35)));
 }
 
-/** Weighted shuffle (Efraimidis-Spirakis): higher weight tends to come earlier, nothing is excluded. */
+/** Weighted shuffle (Efraimidis-Spirakis): higher weight tends to come earlier, nothing is excluded.
+ *  Your own taste sets the weight; everyone's play (anonymous stats) nudges it by 0.7x to 1.6x. */
 export function rankQueue(pool, allGames) {
   const aff = affinity(allGames);
-  return pool.map(g => ({ g, k: Math.pow(Math.random(), 1 / weight(g, aff)) })).sort((x, y) => y.k - x.k).map(x => x.g);
+  return pool.map(g => ({ g, k: Math.pow(Math.random(), 1 / (weight(g, aff) * popularity(g.id))) })).sort((x, y) => y.k - x.k).map(x => x.g);
 }
