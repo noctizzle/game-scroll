@@ -268,12 +268,15 @@ io=new IntersectionObserver(es=>{if(performance.now()-resizeAt<500)return;for(co
 let lastT=performance.now();
 function frame(now){
   const dt=Math.min(.033,(now-lastT)/1000);lastT=now;
+  requestAnimationFrame(frame);
   const s=active;
   if(s){
-    if(s.state==='playing'&&!s.paused)s.game.update(dt);else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
-    if(s.state!=='ready'||s.dirty){paint(s);s.dirty=false}
+    // one broken game must never stop the loop (that froze every game): end its round instead
+    try{
+      if(s.state==='playing'&&!s.paused)s.game.update(dt);else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
+      if(s.state!=='ready'||s.dirty){paint(s);s.dirty=false}
+    }catch(e){console.error(s.def.id,e);s.dirty=false;if(s.state==='playing')try{gameOver(s)}catch(_){}}
   }
-  requestAnimationFrame(frame);
 }
 
 /* keyboard (desktop preview) */
