@@ -15,7 +15,7 @@ const fs = require('fs'), path = require('path'), os = require('os');
 
 const ROOT = path.resolve(__dirname, '..');
 const RAW = fs.mkdtempSync(path.join(os.tmpdir(), 'gs-shots-'));
-const ONLY = process.argv.slice(2);   // optional: only these outputs, e.g. "android-phone site"
+const ONLY = process.argv.slice(2);   // optional: only these outputs, e.g. "android-phone site styles"
 
 // One screenshot per entry, in store order. play: how to get the game to a good-looking moment.
 //   taps: tap n times near the middle; hold: keep a finger down (racers); sim: run the game this many
@@ -33,8 +33,8 @@ const SHOTS = [
 ];
 // On iPad the menu and Stack Up look empty (the phone UI on a big screen), so `pad` swaps in another shot.
 const PAD_SHOTS = SHOTS.map(s => s.pad || s);
-// The six style pictures on the landing page.
-const STYLES = { casual: 'bubble-pop', pocket: 'sheep-herder', color: 'fossil-dig', advance: 'pocket-kart', console: 'garden-guard', nextgen: 'bunker-breakout' };
+// The style pictures on the landing page (AR games show their virtual room, since there's no camera here).
+const STYLES = { casual: 'bubble-pop', pocket: 'sheep-herder', color: 'fossil-dig', advance: 'pocket-kart', console: 'garden-guard', nextgen: 'bunker-breakout', ar: 'saucer-swarm' };
 
 const want = k => !ONLY.length || ONLY.includes(k);
 const file = p => 'file://' + p;
@@ -142,13 +142,15 @@ const slug = s => (s.title + ' ' + s.accent).toLowerCase().replace(/[^a-z0-9]+/g
   ${imgs.map((f, i) => `<div class="ph" style="left:${W * (.58 + i * .135)}px;top:${H * (.1 + (i % 2) * .16)}px;transform:rotate(${[-7, 4, -3][i]}deg)"><img src="${file(f)}"></div>`).join('')}`;
   if (want('feature')) await render(b, promo(1024, 500, [phone[0], phone[4], phone[1]]), 1024, 500, 1, path.join(ROOT, 'store/feature-graphic.png'));
 
+  const img = path.join(ROOT, 'site/img'); fs.mkdirSync(img, { recursive: true });
   if (want('site')) {
-    const img = path.join(ROOT, 'site/img'); fs.mkdirSync(img, { recursive: true });
     await render(b, promo(1200, 630, [phone[0], phone[4], phone[1]]), 1200, 630, 1, path.join(img, 'og.png'));
     // feed reel in the hero phone: the raw captures, smaller, as JPEG
     const reel = [0, 1, 3, 4, 5, 6];
     for (const [n, i] of reel.entries())
       await render(b, `<style>html,body{margin:0}img{display:block;width:390px}</style><img src="${file(phone[i])}">`, 390, 844, 2, path.join(img, `feed-${n + 1}.jpg`), 'jpeg');
+  }
+  if (want('site') || want('styles')) {
     // style pictures: each game on a landscape screen, so the whole game card shows
     const ctx = await b.newContext({ viewport: { width: 800, height: 600 }, deviceScaleFactor: 2, hasTouch: true });
     const p = await ctx.newPage(); await p.goto('http://localhost:4182/'); await p.waitForTimeout(1200);
@@ -157,6 +159,11 @@ const slug = s => (s.title + ' ' + s.accent).toLowerCase().replace(/[^a-z0-9]+/g
       await p.evaluate(() => __gs.start()); await p.waitForTimeout(300);
       const r = await p.evaluate(() => { const c = __gs.active.canvas.getBoundingClientRect(); return { x: c.x, y: c.y, w: c.width, h: c.height }; });
       for (let t = 0; t < 6; t++) { await p.mouse.click(r.x + r.w * (.3 + .4 * Math.random()), r.y + r.h * (.4 + .3 * Math.random())); await p.waitForTimeout(200); }
+      if (k === 'ar') {   // let the saucers fly in, then drag the view round to face them
+        await p.evaluate(() => { const g = __gs.active.game; for (let t = 0; t < 6; t += 1 / 30) g.update(1 / 30); });
+        const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+        await p.mouse.move(cx, cy); await p.mouse.down(); await p.mouse.move(cx - 70, cy, { steps: 8 }); await p.mouse.up();
+      }
       await p.waitForTimeout(1200);
       // just the game and its frame, not the app around it
       const st = await p.evaluate(() => { const r = __gs.active.canvas.closest('.stage').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; });

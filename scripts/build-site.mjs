@@ -3,8 +3,7 @@
 //   node scripts/build-site.mjs        (or: npm run site)
 //
 // site/ holds the hand-written pages. This script copies them, fills in the {{...}} placeholders
-// (game count, store buttons, year), writes games.json (every game's title, tag and hint, read from
-// src/games) for the landing page's game list, and copies the app icons and fonts.
+// (game count read from src/games, store buttons, year), and copies the app icons and fonts.
 // Deployed by .github/workflows/site.yml (a Cloudflare Worker serving static files, workers/site).
 //
 // Store links: fill these in once the app is live; while empty the buttons say "Coming soon".
@@ -33,7 +32,6 @@ mkdirSync(join(OUT, 'assets/fonts'), { recursive: true });
 const font = (pkg, file, name) => cpSync(join(ROOT, 'node_modules/@fontsource', pkg, 'files', file), join(OUT, 'assets/fonts', name));
 for (const w of [400, 500, 700, 800]) font('rubik', `rubik-latin-${w}-normal.woff2`, `rubik-${w}.woff2`);
 font('press-start-2p', 'press-start-2p-latin-400-normal.woff2', 'press-start-2p-400.woff2');
-writeFileSync(join(OUT, 'games.json'), JSON.stringify({ built: new Date().toISOString(), count: games.length, games }));
 
 const apple = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.4 12.6c0-2.5 2-3.7 2.1-3.8-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.3 1-4.1 2.5-1.8 3.1-.5 7.6 1.3 10.1.8 1.2 1.8 2.6 3.1 2.5 1.3 0 1.7-.8 3.3-.8 1.5 0 1.9.8 3.3.8 1.4 0 2.2-1.2 3-2.4 1-1.4 1.4-2.7 1.4-2.8-.1 0-2.7-1-2.7-4.1zM14 5.1c.7-.8 1.1-1.9 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4z"/></svg>';
 const play = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4.2 2.4c-.3.3-.4.7-.4 1.2v16.8c0 .5.1.9.4 1.2l9.4-9.6-9.4-9.6zm10.6 10.8 2.6 2.6-11 6.3 8.4-8.9zm0-2.4L6.4 1.9l11 6.3-2.6 2.6zm3.9-1.8 3 1.7c.9.5.9 1.4 0 1.9l-3 1.7-2.8-2.7 2.8-2.6z"/></svg>';
