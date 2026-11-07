@@ -6,3 +6,6 @@ dist-games
 # Cloudflare local dev state
 .wrangler
 .dev.vars
+
+# Website build (scripts/build-site.mjs)
+dist-site

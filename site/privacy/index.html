@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Game Scroll privacy policy</title>
+<meta name="description" content="What the Game Scroll app collects, what stays on your phone, and your choices.">
+<meta name="theme-color" content="#0c0e12">
+<link rel="canonical" href="https://game-scroll.com/privacy/">
+<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="/"><img src="/icons/icon-192.png" alt="" width="34" height="34"><span>GAME<br><b>SCROLL</b></span></a>
+    <ul><li class="hide-s"><a href="/#games">Games</a></li><li><a href="/make/">Make a game</a></li><li><a href="/support/">Help</a></li></ul>
+  </div>
+</header>
+<main id="main" class="wrap doc single">
+<div class="prose">
+<h1>Privacy policy</h1>
+<p class="updated">Last updated 7 November 2026</p>
+<p>Game Scroll is a feed of mini games for iPhone, iPad and Android, made by Rob ("we"). We built it to need as little of your data as possible. There are no accounts, no ads and no ad tracking, and we never sell data.</p>
+
+<h2 id="phone">What stays on your phone</h2>
+<p>Your credits, wins, best scores, bought items, trophies, settings, hearts and the games you've downloaded are saved on your device. Deleting the app deletes them, unless you use cloud saves (below).</p>
+<p>Some games use your phone's sensors. All of this is processed on your device only and is never recorded, stored or sent anywhere:</p>
+<ul>
+  <li><b>Location</b>: a few games build their level from where you are.</li>
+  <li><b>Camera</b>: a few games look for real-world colours or movement.</li>
+  <li><b>Microphone</b>: a few games react to how loud you are, like shouting to launch a rocket.</li>
+  <li><b>Motion</b>: games you play by tilting or shaking.</li>
+</ul>
+<p>Your phone asks before a game can use location, the camera or the microphone. You can say no; every game also works with touch alone.</p>
+
+<h2 id="sent">What the app sends</h2>
+<p>The app talks to our servers at <code>game-scroll.com</code>, run on Cloudflare:</p>
+<ul>
+  <li><b>Downloading games.</b> The app downloads the game catalogue and game files from <code>assets.game-scroll.com</code>.</li>
+  <li><b>Hearts.</b> When you heart a game, the app sends the game's name and a random ID made up by the app on your phone. The random ID is not linked to your name, email, Apple or Google account, or advertising ID; it only stops one phone hearting the same game twice. We show everyone the total hearts per game.</li>
+  <li><b>App checks.</b> To stop fake hearts, the app may ask Apple (App Attest) or Google (Play Integrity) to confirm it's a genuine copy of the app. We keep the result and the app's random ID, nothing about you.</li>
+  <li><b>Anonymous play stats.</b> The app counts how often each game is shown, played and skipped, and for how long, and sends those counts about once a minute. We only keep daily totals per game, with no ID attached. They help us improve the feed and remove weak games. Turn this off in Settings → "Share anonymous play stats and crash reports".</li>
+  <li><b>Anonymous crash and performance reports.</b> To find games that crash or stutter, the app sends, about once a minute: your phone model (like "iPhone17,1"), OS version, app version, whether the screen is phone or tablet sized, how smoothly each game ran (frame rates, slow frames, freezes), and up to 10 error messages from games, with web addresses cut down to a file name. The app's random ID is used only to limit how often reports can be sent and isn't stored. We keep daily totals per game and phone model, and delete them after 14 days. The same Settings switch turns this off.</li>
+</ul>
+<p>Like every website, our servers see your IP address when the app connects. We use it only to stop abuse (rate limits that reset after a minute) and don't store it. Cloudflare may keep short-lived security logs under its own <a href="https://www.cloudflare.com/privacypolicy/">privacy policy</a>.</p>
+
+<h2 id="cloud">Game Center, Google Play Games and cloud saves</h2>
+<p>If you're signed in to Game Center (Apple) or Google Play Games, the app reports trophies, leaderboard scores and your saved progress to them so they sync across your devices. Apple and Google handle that data under their own privacy policies. We don't receive your Apple or Google account details.</p>
+
+<h2 id="sharing">Sharing a game</h2>
+<p>When you share a game, the app makes a link like <code>play.game-scroll.com/game-name</code> and hands it to your phone's share sheet. We don't see who you share it with.</p>
+
+<h2 id="children">Children</h2>
+<p>Game Scroll is made to be family friendly. We don't knowingly collect personal information from anyone, including children: there are no accounts, no chat and no ads.</p>
+
+<h2 id="choices">Your choices</h2>
+<ul>
+  <li>Turn off anonymous play stats and crash reports in Settings.</li>
+  <li>Turn location, camera, microphone and motion access on or off in your phone's settings.</li>
+  <li>Clear downloaded games in Settings → Clear cache, or delete the app to remove everything on your phone.</li>
+  <li>Because hearts are tied only to a random ID, we can't link them to you. Deleting the app removes the random ID, so your old hearts can no longer be tied to your phone.</li>
+</ul>
+
+<h2 id="makers">Games made by other people</h2>
+<p>Some games are made by other people and added after review. Every game must follow the same rules: no network requests, no tracking, and sensor data never leaves the phone. Games are checked before they go live.</p>
+
+<h2 id="changes">Changes</h2>
+<p>If we change what the app collects, we'll update this page and the date at the top before the change ships.</p>
+
+<h2 id="contact">Contact</h2>
+<p>Email <a href="mailto:support@game-scroll.com">support@game-scroll.com</a>, or open an issue on <a href="https://github.com/robthewizzuk/game-scroll/issues">GitHub</a>.</p>
+</div>
+</main>
+<footer>
+  <div class="wrap">
+    <span>© {{YEAR}} Game Scroll.</span>
+    <nav><a href="/">Home</a><a href="/make/">Make a game</a><a href="/support/">Help</a><a href="https://github.com/robthewizzuk/game-scroll">GitHub</a></nav>
+  </div>
+</footer>
+</body>
+</html>

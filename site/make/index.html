@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Make a game for Game Scroll</title>
+<meta name="description" content="How to make your own mini game for Game Scroll and submit it, so it streams to every player with your name on it.">
+<meta name="theme-color" content="#0c0e12">
+<link rel="canonical" href="https://game-scroll.com/make/">
+<meta property="og:title" content="Make a game for Game Scroll">
+<meta property="og:description" content="Write one small JavaScript file, open a pull request, and your game streams to every player.">
+<meta property="og:image" content="https://game-scroll.com/img/og.png">
+<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="/"><img src="/icons/icon-192.png" alt="" width="34" height="34"><span>GAME<br><b>SCROLL</b></span></a>
+    <ul>
+      <li class="hide-s"><a href="/#games">Games</a></li>
+      <li><a href="/make/" aria-current="page">Make a game</a></li>
+      <li><a href="/support/">Help</a></li>
+    </ul>
+  </div>
+</header>
+
+<div class="wrap doc">
+<aside aria-label="On this page">
+  <ol>
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#rules">The rules</a></li>
+    <li><a href="#setup">1. Get set up</a></li>
+    <li><a href="#file">2. Write your game</a></li>
+    <li><a href="#style">3. Pick a style</a></li>
+    <li><a href="#phone">4. Sound, haptics, sensors</a></li>
+    <li><a href="#credits">5. Credits and shop items</a></li>
+    <li><a href="#test">6. Test it</a></li>
+    <li><a href="#submit">7. Submit it</a></li>
+    <li><a href="#after">After it's merged</a></li>
+    <li><a href="#licence">Your rights</a></li>
+    <li><a href="#idea">Not a coder?</a></li>
+  </ol>
+</aside>
+
+<main id="main" class="prose">
+<h1>Make a game for <span class="grad">Game Scroll</span></h1>
+<p class="lead">Every game in the feed is one small JavaScript file. Write yours, send it in, and once it's merged it streams to every player's phone within minutes, credited to you. No app update, no store review.</p>
+
+<h2 id="how">How it works</h2>
+<ol class="steps">
+  <li><b>Write one file.</b> Your game lives in <code>src/games/your-game.js</code>. It draws on a canvas and reacts to touches. The app handles the rest: the start screen, the game-over screen, scores, credits, sizing for every phone.</li>
+  <li><b>Try it on your phone.</b> Run the app on your computer and open it on your phone over Wi-Fi.</li>
+  <li><b>Open a pull request on GitHub.</b> Automatic checks play your game in a headless browser, then Rob plays it.</li>
+  <li><b>It goes live.</b> When it's merged, your game streams into the feed for everyone, with your name on it.</li>
+</ol>
+<div class="note"><p>You'll need some JavaScript. If you've made something with an HTML canvas before, you're ready. If not, copy the starter game below and change one thing at a time.</p></div>
+
+<h2 id="rules">The rules</h2>
+<ul>
+  <li><b>Original games only.</b> Take inspiration from a genre or a mechanic (falling blocks, kart racing, platformers), but don't recreate a specific existing game: no copied names, characters, art, music, levels or look, even renamed.</li>
+  <li><b>A new mechanic.</b> The goal is 1,000 games that each play differently. A reskin or harder version of a game already in the feed won't be merged. Browse <a href="/#games">every game in the feed</a> and the <a href="https://github.com/robthewizzuk/game-scroll/blob/main/docs/game-ideas.md">ideas list</a> first.</li>
+  <li><b>Quick to learn, quick to play.</b> A player should get it from a one-sentence hint. A round lasts about 20 seconds to 3 minutes.</li>
+  <li><b>Self-contained.</b> One file, everything drawn in code. No image, font or sound files, no network requests, no tracking, no ads, no links out of the app.</li>
+  <li><b>Touch first.</b> Every game must be fully playable with touch alone. Sensors are welcome as an extra.</li>
+  <li><b>Family friendly.</b> Cartoon action is fine. No gore, hate, real-money gambling, or anything you wouldn't show a 12-year-old.</li>
+</ul>
+
+<h2 id="setup">1. Get set up</h2>
+<h3>Option A: on your computer</h3>
+<p>Install <a href="https://nodejs.org">Node.js</a> 22 or newer and <a href="https://git-scm.com">Git</a>. Then <a href="https://github.com/robthewizzuk/game-scroll/fork">fork the repository</a> on GitHub (you need a free GitHub account) and run:</p>
+<pre><code>git clone https://github.com/YOUR-NAME/game-scroll.git
+cd game-scroll
+npm install
+npm run dev</code></pre>
+<p>Open the address it prints. On a desktop browser, Space starts a game, the arrow keys steer and ↓ goes to the next game. To try it on your phone, open the "Network" address on your phone while it's on the same Wi-Fi.</p>
+<h3>Option B: in your browser, nothing to install</h3>
+<p>Fork the repository, then on your fork click <b>Code → Codespaces → Create codespace</b>. You get an editor in the browser. In its terminal, run <code>npm install</code> and <code>npm run dev</code>, then open the forwarded port it offers. GitHub gives every account free Codespaces hours each month.</p>
+
+<h2 id="file">2. Write your game</h2>
+<p>Create <code>src/games/tap-bubbles.js</code> (the file name must match the game's <code>id</code>). This is a complete, working game you can start from:</p>
+<pre><code>import { sfx } from '../sfx.js';
+import { haptic } from '../kit/device.js';
+
+const W = 360, H = 640;
+
+function make(api) {
+  let bubbles, score, t, missed;
+  return {
+    reset() { bubbles = []; score = 0; t = 0; missed = 0; },
+    update(dt) {                       // dt is in seconds
+      t += dt;
+      if (Math.random() &lt; dt * (1 + t / 10)) bubbles.push({ x: 30 + Math.random() * (W - 60), y: H + 30, r: 24 });
+      for (const b of bubbles) b.y -= dt * (90 + t * 4);
+      missed += bubbles.filter(b =&gt; b.y &lt; -30).length;
+      bubbles = bubbles.filter(b =&gt; b.y &gt;= -30);
+      if (missed &gt;= 3) { haptic('warning'); api.over(); }
+    },
+    draw(c) {                          // a 2D canvas context, W x H units
+      c.fillStyle = '#16212e'; c.fillRect(0, 0, W, H);
+      c.fillStyle = '#5aa8ff';
+      for (const b of bubbles) { c.beginPath(); c.arc(b.x, b.y, b.r, 0, 7); c.fill(); }
+    },
+    down(x, y) {                       // already in game units
+      const i = bubbles.findIndex(b =&gt; Math.hypot(b.x - x, b.y - y) &lt; b.r + 8);
+      if (i &lt; 0) return;
+      bubbles.splice(i, 1); api.score(++score);
+      haptic('light'); sfx(520 + score * 10, .06, 'triangle', .04);
+    },
+  };
+}
+
+export default {
+  id: 'tap-bubbles', title: 'Tap Bubbles',
+  tag: 'Casual · Reflex',             // "&lt;Style&gt; · &lt;Genre&gt;"
+  retro: false, w: W, h: H,
+  goal: 25,                           // the score that counts as a win
+  hint: 'Pop the bubbles before they float away. Miss three and it is over.',
+  make,
+};</code></pre>
+<p>Then jump straight to it: open the browser console and run <code>__gs.only('tap-bubbles')</code>.</p>
+
+<h3>What your game gets and gives</h3>
+<table>
+  <tr><th>Your game object</th><th>When it's called</th></tr>
+  <tr><td><code>reset()</code></td><td>Before every round. Put all round state here so "Play again" starts clean.</td></tr>
+  <tr><td><code>update(dt)</code></td><td>Every frame while playing. <code>dt</code> is seconds since the last frame.</td></tr>
+  <tr><td><code>draw(ctx)</code></td><td>Every frame. Draw the whole frame; nothing is cleared for you.</td></tr>
+  <tr><td><code>down / move / up(x, y, id)</code></td><td>Touches, in game units. <code>id</code> tells fingers apart for two-thumb controls.</td></tr>
+  <tr><td><code>key(k, isDown)</code></td><td>Optional keyboard support for desktop.</td></tr>
+  <tr><td><code>resize(w, h)</code></td><td>Optional, for games that grow to fill big screens.</td></tr>
+</table>
+<table>
+  <tr><th>The <code>api</code></th><th>What it does</th></tr>
+  <tr><td><code>api.score(n)</code></td><td>Sets the score. Reaching <code>goal</code> wins credits; the game keeps going.</td></tr>
+  <tr><td><code>api.over()</code></td><td>Ends the round.</td></tr>
+  <tr><td><code>api.win()</code></td><td>Wins right now, for games with a natural end.</td></tr>
+  <tr><td><code>api.has('item')</code></td><td>True when the player bought that shop item for this run.</td></tr>
+</table>
+<p>The <code>hint</code> and the genre in <code>tag</code> also feed the recommender, so mention the control (tap, drag, tilt...) and the genre honestly.</p>
+
+<h2 id="style">3. Pick a style</h2>
+<p>Every game picks one of six looks. The style sets the frame around your game, the start and game-over screens, and which tab it appears in.</p>
+<img src="/img/make/styles.png" alt="The styles side by side: Phone, Dot matrix, Color, Advance and Console" loading="lazy">
+<table>
+  <tr><th>Style</th><th>Set</th><th>Typical size</th><th>Look</th></tr>
+  <tr><td><span class="chip s-casual">Casual</span></td><td><code>retro: false</code></td><td>360 × 640</td><td>Full screen, smooth, any colours.</td></tr>
+  <tr><td><span class="chip s-pocket">Pocket</span></td><td><code>retro: true, pal: 'moss'</code></td><td>160 × 160</td><td>Handheld shell, chunky pixels, exactly 4 shades.</td></tr>
+  <tr><td><span class="chip s-color">Color</span></td><td><code>era: 'color'</code></td><td>160 × 160–192</td><td>Coloured handheld, bright 16-colour palette.</td></tr>
+  <tr><td><span class="chip s-advance">Advance</span></td><td><code>era: 'advance'</code></td><td>176–192 wide</td><td>Wider handheld, detailed sprites, parallax.</td></tr>
+  <tr><td><span class="chip s-console">Classic Console</span></td><td><code>era: 'console'</code></td><td>192 × 160, fluid</td><td>Real-time cel-shaded 3D with the shared toon kit.</td></tr>
+  <tr><td><span class="chip s-nextgen">Next Gen</span></td><td><code>era: 'nextgen'</code></td><td>300 × 300, fluid</td><td>HD 3D: real materials, shadows, bloom, particles.</td></tr>
+</table>
+<p>Retro styles also set <code>retro: true</code> and a shell colour with <code>pal</code>. The 3D styles share one renderer, so never make your own WebGL context. The <a href="https://github.com/robthewizzuk/game-scroll/blob/main/CONTRIBUTING.md#choosing-a-style">full contributor guide</a> has the palettes, code samples for each style, and the 3D kits.</p>
+
+<h3>Big screens and foldables</h3>
+<p>Players use everything from small phones to unfolded Galaxy Z Fold and iPhone foldables, and can fold mid-game. By default your canvas is scaled to fit. To fill the extra space, add <code>maxW</code> and <code>maxH</code> and a <code>resize(w, h)</code> method; the app picks the best size and tells you. Keep the game fair at every size.</p>
+<img src="/img/make/fluid.png" alt="The same game on a folded and an unfolded phone" loading="lazy">
+
+<h2 id="phone">4. Sound, haptics and phone sensors</h2>
+<p>Import shared helpers from the app; it hands them to streamed games:</p>
+<ul>
+  <li><code>src/sfx.js</code>: <code>sfx(freq, duration, type, volume)</code> for short synth sounds. Respects mute.</li>
+  <li><code>src/kit/device.js</code>: <code>haptic()</code>, <code>buzz()</code>, <code>tilt()</code>, <code>onShake()</code>, <code>heading()</code>, <code>faceDown()</code>, <code>location()</code>, <code>startMic()</code>, <code>startCamera()</code>.</li>
+  <li><code>src/util.js</code> and <code>src/palettes.js</code>: maths helpers, pixel sprites, palettes.</li>
+</ul>
+<p>Sensors return nothing in the browser or when a player says no, so <b>every sensor game needs a touch fallback</b>: drag instead of tilt, tap instead of shout. Stop the mic or camera when the round ends. Location, camera and mic data must never leave the phone.</p>
+
+<h2 id="credits">5. Credits and shop items</h2>
+<p>Winning any game pays credits, which is why <code>goal</code> is required. Pick a goal a decent player reaches in about a minute. You can also sell items for credits:</p>
+<pre><code>reward: 10,   // credits per win; the first win pays double
+shop: [
+  { id: 'shield', name: 'Shield', price: 25, kind: 'boost', desc: 'Survive one crash.' },
+  { id: 'gold', name: 'Gold Skin', price: 150, kind: 'unlock', desc: 'Forever gold.' },
+],
+// in your game: if (api.has('shield')) { ... }</code></pre>
+
+<h2 id="test">6. Test it</h2>
+<p>Play it on a real phone if you can: check the controls feel good with a thumb, the hint makes sense, and the goal is reachable. Then run the same checks the pull request runs:</p>
+<pre><code>npm i --no-save playwright &amp;&amp; npx playwright install chromium   # first time only
+npm run build:bundled
+node scripts/smoke.cjs tap-bubbles    # plays it with random input; fails on any error
+node scripts/fold.cjs tap-bubbles     # folds and unfolds the screen mid-game
+node scripts/sweep.cjs tap-bubbles    # long play at odd sizes (needed for 3D games)
+npm run games                         # fails if the file name and id differ</code></pre>
+
+<h2 id="submit">7. Submit it</h2>
+<ol class="steps">
+  <li>Commit your game file on a branch of your fork and push it.</li>
+  <li>On GitHub, open a <b>pull request</b> against <code>main</code> of <a href="https://github.com/robthewizzuk/game-scroll">robthewizzuk/game-scroll</a>.</li>
+  <li>Fill in the template: what the game is, why its mechanic is new, its style, and a screenshot or short clip.</li>
+  <li>The automatic checks build the app and play your game. Fix anything they flag.</li>
+  <li>Rob plays it and may ask for changes. Games that break the rules or play too much like one already in the feed may be turned down.</li>
+</ol>
+<div class="note"><p>A game pull request should only add or change your file in <code>src/games/</code>. Changes to shared code ship inside the app and need an app update, so open those separately and explain why.</p></div>
+
+<h2 id="after">After it's merged</h2>
+<p>You don't need to do anything. Every merge builds each game as its own small file and uploads it with a new catalogue. Phones check the catalogue regularly, so your game appears in feeds within minutes, credited to you by your GitHub name. Fixes reach players the same way.</p>
+<p>Games that turn out weak or broken in play testing may be hidden or removed later.</p>
+
+<h2 id="licence">Your rights</h2>
+<p>Game Scroll's code is under the <a href="https://github.com/robthewizzuk/game-scroll/blob/main/LICENSE">PolyForm Shield licence</a>: you can read, run, fork and change it, but not use it for a product that competes with Game Scroll. When you open a pull request you confirm the game is your own original work, you keep the copyright, and you give the project a permanent licence to use, change and ship it, including in the app stores. The <a href="https://github.com/robthewizzuk/game-scroll/blob/main/CONTRIBUTING.md#licence-of-your-contribution">exact terms are here</a>.</p>
+
+<h2 id="idea">Not a coder?</h2>
+<p>Ideas are welcome too. <a href="https://github.com/robthewizzuk/game-scroll/issues/new?template=game-idea.yml">Suggest a game idea</a> on GitHub: describe how it plays in a few sentences, and it may become one of the 1,000.</p>
+</main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>© {{YEAR}} Game Scroll. Made by Rob and the people who build its games.</span>
+    <nav><a href="/">Home</a><a href="/support/">Help</a><a href="/privacy/">Privacy</a><a href="https://github.com/robthewizzuk/game-scroll">GitHub</a></nav>
+  </div>
+</footer>
+</body>
+</html>
