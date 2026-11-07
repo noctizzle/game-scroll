@@ -81,7 +81,7 @@ The app supports folding and unfolding mid-game (tested at Galaxy Z Fold 8 and i
 
 ## Roadmap
 
-Launch target is **1000 unique games** (distinct mechanics, not reskins), built in batches of about eight. There are 132 so far. Games can be fluid: set `maxW`/`maxH` (and optional `step`) and implement `resize(w, h)` to receive the extra space on tall or unfolded screens. The idea list lives in `docs/game-ideas.md`, with built games ticked.
+Launch target is **1000 unique games** (distinct mechanics, not reskins), built in batches of about eight. There are 142 so far. Games can be fluid: set `maxW`/`maxH` (and optional `step`) and implement `resize(w, h)` to receive the extra space on tall or unfolded screens. The idea list lives in `docs/game-ideas.md`, with built games ticked.
 
 ## License
 

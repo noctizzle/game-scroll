@@ -289,7 +289,14 @@ Original takes on the toy-brick adventure games: smash scenery into studs, rebui
 - [x] Boss Brickfall: build launchers from the bricks a boss robot drops, fire when its core glows
 - [x] Build Rush: follow the instruction booklet and tap the right brick from the tray, fast
 
-## Next up (Rob's requests, 2026-11-07)
-- [ ] Artillery duel on destructible terrain (turn-based, drag to aim, wind, varied weapons), original critters
-- [ ] Dinosaur games in touch-friendly genres
-- [ ] Lane defence: plant original defenders in a garden grid to stop waves marching across
+## Batch 17 (Rob's requests, 2026-11-07)
+- [x] Shell Duel: turn-based artillery squads on destructible terrain, three weapons, wind (Console)
+- [x] Rex Rampage: dinosaur runner, snap to eat and grow, leap the spikes
+- [x] Fossil Dig: brush dirt off a buried skeleton, haptic ticks over bone, the pick cracks it
+- [x] Garden Guard: lane defence with original defenders against bug waves (Console)
+- [x] Agent Zero: spy shootout from cover with a stun-pulse watch (Console)
+- [x] Mind Gym: four 15-second brain drills and a Mind Score
+- [x] Blitz Bits 2: sensor microgames (tilt, blow, shake, hush, pour) with touch fallbacks
+- [x] Blob Ball: one-on-one slime football against quicker and quicker rivals
+- [x] Suit Ops: jungle shooter with ARMOR, CLOAK, SPEED and POWER suit modes (Console)
+- [x] Front Line: WW2 beach assault, dash between cover past the MG sweep, grenade the bunker (Console)
