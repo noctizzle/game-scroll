@@ -2,7 +2,7 @@
 # and new games without a new app release (see src/remote.js and scripts/build-games.mjs).
 #
 # Public read URL: the bucket's custom domain (set in the app builds as VITE_GAMES_URL in .env):
-#   https://games.game-scroll.com
+#   https://assets.game-scroll.com
 #
 # One-time setup: add a repository secret CLOUDFLARE_API_TOKEN (Settings -> Secrets and variables ->
 # Actions) holding a Cloudflare API token with "Workers R2 Storage: Edit" on this account.
@@ -27,7 +27,7 @@ concurrency:
 env:
   CF_ACCOUNT: 4d04f07305a8d0b2efd5221d16d92e35
   BUCKET: game-scroll
-  PUBLIC_URL: https://games.game-scroll.com
+  PUBLIC_URL: https://assets.game-scroll.com
 
 jobs:
   publish:
