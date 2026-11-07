@@ -333,7 +333,7 @@ Here is the same fluid game (Brick Bounce, `160 x 160` growing to `240 x 280`) o
 Import shared helpers only from these modules; the app provides them to streamed games, and a game
 can't import any other app code:
 
-- `src/sfx.js`: `sfx(freq, duration, type, volume, slide)` makes short synth sounds. Respects mute.
+- `src/sfx.js`: `sfx(freq, duration, type, volume, slide)` makes short synth sounds. Respects the Sound & haptics settings.
 - `src/kit/sound.js`: ready-made sounds (`sounds.coin()`, `sounds.boom()`...), `noise()` for hits and
   explosions, `notes()` for jingles and `music()` for looping tunes.
 - `src/kit/juice.js`: particles, screen shake, easing and tweens, pop-up text, flashes, hit-stop.

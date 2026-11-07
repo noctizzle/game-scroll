@@ -4,19 +4,46 @@
 // or return null, so every game must also be playable by touch alone.
 import { Capacitor } from '@capacitor/core';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
+import { store } from '../util.js';
 
 const native = Capacitor.isNativePlatform();
 
 /* ---------- haptics ---------- */
+// The player's haptics settings (the Sound & haptics sheet): on/off and strength 'light' | 'normal' |
+// 'strong'. Games don't get this object; haptic(), buzz() and canBuzz() follow it.
+const STRENGTHS = ['light', 'normal', 'strong'];
+export const hapticSettings = {
+  on: store.get('gs_haptics', true),
+  strength: STRENGTHS.includes(store.get('gs_haptic_strength', 'normal')) ? store.get('gs_haptic_strength', 'normal') : 'normal',
+};
+/** Change and save haptics settings, e.g. setHaptics({ strength: 'strong' }). */
+export function setHaptics(patch) {
+  Object.assign(hapticSettings, patch);
+  if (!STRENGTHS.includes(hapticSettings.strength)) hapticSettings.strength = 'normal';
+  store.set('gs_haptics', !!hapticSettings.on); store.set('gs_haptic_strength', hapticSettings.strength);
+}
 const VIBE = { tick: 8, light: 12, medium: 22, heavy: 40, success: [15, 60, 25], warning: [30, 50, 30], error: [60, 40, 90] };
+const STEPS = ['tick', 'light', 'medium', 'heavy'];
+const SCALE = { light: .5, normal: 1, strong: 1.7 };
+/** The kind of tap to play once the strength setting is applied (one step softer or harder). */
+function shifted(kind) {
+  const st = hapticSettings.strength, i = STEPS.indexOf(kind);
+  if (st === 'normal') return kind;
+  if (i >= 0) return STEPS[Math.max(0, Math.min(3, i + (st === 'strong' ? 1 : -1)))];
+  // success / warning / error: a soft single tap on light, the normal pattern on strong
+  return st === 'light' ? 'light' : kind;
+}
 export function haptic(kind = 'light') {
+  if (!hapticSettings.on) return;
+  kind = shifted(kind);
   try {
     if (native) {
       if (kind === 'tick') return Haptics.selectionChanged();
       if (kind === 'success' || kind === 'warning' || kind === 'error') return Haptics.notification({ type: { success: NotificationType.Success, warning: NotificationType.Warning, error: NotificationType.Error }[kind] });
       return Haptics.impact({ style: { light: ImpactStyle.Light, medium: ImpactStyle.Medium, heavy: ImpactStyle.Heavy }[kind] || ImpactStyle.Light });
     }
-    navigator.vibrate?.(VIBE[kind] ?? 15);
+    const v = VIBE[kind] ?? 15, k = SCALE[hapticSettings.strength];
+    navigator.vibrate?.(Array.isArray(v) ? v.map((ms, j) => j % 2 ? ms : Math.round(ms * k)) : Math.round(v * k));
   } catch { /* no haptics here */ }
 }
 
@@ -24,16 +51,17 @@ export function haptic(kind = 'light') {
  *  is a quick run of taps, since iOS ignores vibration lengths. */
 export function buzz(pattern, short = 90, long = 380, gap = 220) {
   let at = 0;
+  const style = { light: ImpactStyle.Medium, normal: ImpactStyle.Heavy, strong: ImpactStyle.Heavy }[hapticSettings.strength];
   for (const p of pattern) {
     const d = p ? long : short;
-    if (native) { for (let k = 0; k < d; k += 45) setTimeout(() => { try { Haptics.impact({ style: ImpactStyle.Heavy }); } catch { /* none */ } }, at + k); }
+    if (native && hapticSettings.on) { for (let k = 0; k < d; k += 45) setTimeout(() => { try { Haptics.impact({ style }); } catch { /* none */ } }, at + k); }
     at += d + gap;
   }
-  if (!native) { const seq = []; pattern.forEach((p, i) => { seq.push(p ? long : short); if (i < pattern.length - 1) seq.push(gap); }); try { navigator.vibrate?.(seq); } catch { /* none */ } }
+  if (!native && hapticSettings.on) { const seq = []; pattern.forEach((p, i) => { seq.push(p ? long : short); if (i < pattern.length - 1) seq.push(gap); }); try { navigator.vibrate?.(seq); } catch { /* none */ } }
   return at;
 }
-/** Can this device vibrate at all? */
-export function canBuzz() { return native || typeof navigator.vibrate === 'function'; }
+/** Can this device vibrate at all (and has the player left haptics on)? Games show a fallback if not. */
+export function canBuzz() { return hapticSettings.on && (native || typeof navigator.vibrate === 'function'); }
 
 /* ---------- permissions that need a user gesture (iOS motion) ---------- */
 // Games call want('motion') when created; the request fires on the player's next tap (the Play tap).

@@ -18,10 +18,10 @@ export const GAME_MODULES = [
   'kit/juice.js', 'kit/sound.js', 'kit/controls.js', 'kit/physics2d.js', 'kit/geo.js',
 ];
 
-// Exports of allowed modules that games still don't get: raw storage, the app's mute switch, and the
+// Exports of allowed modules that games still don't get: raw storage, the player's sound and haptics settings, and the
 // old unrounded location(). Games save with api.save() / api.load() and find the player with
 // api.location() instead (see docs/maker-kit.md).
-export const HIDDEN = { 'util.js': ['store'], 'sfx.js': ['sound', 'audio'], 'kit/device.js': ['location'] };
+export const HIDDEN = { 'util.js': ['store'], 'sfx.js': ['sound', 'setSound', 'audio'], 'kit/device.js': ['location', 'hapticSettings', 'setHaptics'] };
 
 // Extra features on the `api` a game receives in make(api). A streamed game that uses one is only
 // offered to apps that have it (older apps skip the game instead of crashing).

@@ -1,21 +1,24 @@
 // Settings sheet, opened from the ⚙ button in the top bar.
-// How many streamed games are saved on this device (with a button to clear them), the licence, and credits.
+// Sound & haptics (also its own sheet from the 🔊 button), how many streamed games are saved on this device (with a button to clear them), the licence, and credits.
 import { fmt } from './util.js';
 import { playstats } from './playstats.js';
 import { HEARTS_URL } from './hearts.js';
 import { nativeARSupported } from './kit/native-ar.js';
 import { fpsPick, setFpsPick, autoFps, phoneClass, screenHz } from './kit/speed.js';
 import { geoSettings } from './geo.js';
+import { feelHTML, bindFeel } from './feel.js';
 
 const size = b => b < 1024 * 1024 ? `${Math.ceil(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
 
-/** opts: { stream, cached(): {games, bytes, max}, clear(): Promise, arTest(): opens the AR test scene } */
-export function openSettings({ stream, cached, clear, arTest }) {
+/** opts: { stream, cached(): {games, bytes, max}, clear(): Promise, arTest(): opens the AR test scene,
+ *  feelChanged(): sound or haptics settings changed (repaints the top-bar icon) } */
+export function openSettings({ stream, cached, clear, arTest, feelChanged = () => {} }) {
   const el = document.createElement('dialog'); el.className = 'qa-panel settings';
   document.body.appendChild(el);
   const render = note => {
     const c = cached();
     el.innerHTML = `<div class="qa-head"><b>SETTINGS</b><span></span><button class="qa-x" aria-label="Close">✕</button></div>
+      ${feelHTML()}
       <section class="set-row">
         <h3>Game cache</h3>
         ${stream
@@ -60,6 +63,7 @@ export function openSettings({ stream, cached, clear, arTest }) {
       </section>
       <footer class="set-made">Made by <b>Rob</b></footer>`;
     el.querySelector('.qa-x').onclick = () => el.close();
+    bindFeel(el, { render: () => render(), changed: feelChanged });
     el.querySelector('.set-ar')?.addEventListener('click', () => { el.close(); arTest(); });
     el.querySelectorAll('.set-fps button').forEach(b => b.addEventListener('click', () => { setFpsPick(b.dataset.fps); render(); }));
     el.querySelector('.set-loc').addEventListener('change', e => { geoSettings.enabled = e.target.checked; });

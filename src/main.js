@@ -5,7 +5,8 @@ import '@fontsource/rubik/latin-500.css';
 import '@fontsource/rubik/latin-700.css';
 import '@fontsource/rubik/latin-800.css';
 import { store, hash, fmt } from './util.js';
-import { sfx, sound } from './sfx.js';
+import { sfx } from './sfx.js';
+import { openFeel, feelIcon } from './feel.js';
 import { PAL, SHELL } from './palettes.js';
 import { isHidden, setRating, rating, logRound, toast as qaToast, openPanel } from './qa.js';
 import { rankQueue as rank, explain } from './recommend.js';
@@ -417,10 +418,12 @@ logo.onclick=()=>openPanel(GAMES,best);
 const mineBtn=document.createElement('button');mineBtn.className='iconbtn';mineBtn.id='mine';mineBtn.setAttribute('aria-label','My games: hearted and Meh');mineBtn.textContent='♥';
 const muteBtn=document.getElementById('mute');muteBtn.before(mineBtn);
 const setBtn=document.createElement('button');setBtn.className='iconbtn';setBtn.id='settings';setBtn.setAttribute('aria-label','Settings');setBtn.textContent='⚙';
-muteBtn.after(setBtn);setBtn.onclick=()=>openSettings({stream:STREAM,cached:()=>remote.cacheInfo(),clear:()=>remote.clearCache(),arTest:()=>playNow('ar-lab')});
+muteBtn.after(setBtn);setBtn.onclick=()=>openSettings({stream:STREAM,cached:()=>remote.cacheInfo(),clear:()=>remote.clearCache(),arTest:()=>playNow('ar-lab'),feelChanged:()=>paintMute()});
 mineBtn.onclick=()=>openMyGames({games:GAMES,best,play:playNow,changed:(id,r)=>{hearts.set(id,r>0);slides.forEach(x=>{if(x.def.id===id)x.setLike(r>0)});rerank()},qa:()=>openPanel(GAMES,best)});
-const paintMute=()=>{muteBtn.textContent=sound.muted?'🔇':'🔊';muteBtn.setAttribute('aria-pressed',String(sound.muted))};paintMute();
-muteBtn.onclick=()=>{sound.muted=!sound.muted;store.set('gs_muted',sound.muted);paintMute()};
+// 🔊 opens the Sound & haptics sheet (sound on/off, volume, music, vibration on/off and strength)
+muteBtn.setAttribute('aria-label','Sound and haptics');
+const paintMute=()=>{muteBtn.textContent=feelIcon()};paintMute();
+muteBtn.onclick=()=>openFeel({changed:paintMute});
 // feed picker: a styled menu (not the system picker) under the pill in the top bar
 const feedBtn=document.getElementById('feed-btn'),feedMenu=document.getElementById('feed-menu'),feedOpts=[...feedMenu.querySelectorAll('[role=option]')];
 function feedOpen(on){feedMenu.hidden=!on;feedBtn.setAttribute('aria-expanded',String(on));
