@@ -377,6 +377,8 @@ dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
    game plays the page goes see-through. Only the game screen stays clear: a huge shadow around it repaints
    the shell and the dark backdrop, and the shell's labels and the game info sit above that shadow. */
 html.ar-live,html.ar-live body{background:transparent}
+/* the strips under the status bar and the home bar (html's safe-area padding) stay dark */
+html.ar-live{background:linear-gradient(var(--ink),var(--ink)) top/100% env(safe-area-inset-top,0px) no-repeat,linear-gradient(var(--ink),var(--ink)) bottom/100% env(safe-area-inset-bottom,0px) no-repeat}
 html.ar-live .slide.ar.playing,html.ar-live .retro.ar.playing .device{background:transparent}
 html.ar-live .slide.ar.playing .stage{z-index:0}
 html.ar-live .slide.ar.playing .screen{box-shadow:0 0 0 1px #19e3b155,0 0 0 7px #1a1d24,0 0 0 200vmax #070a12}
