@@ -22,7 +22,9 @@
     "games": "node scripts/build-games.mjs",
     "recommend": "node scripts/recommend.mjs",
     "dev:stream": "vite --host",
-    "icons": "node scripts/icons.cjs"
+    "icons": "node scripts/icons.cjs",
+    "site": "node scripts/build-site.mjs",
+    "store-shots": "vite build --mode bundled && node scripts/store-shots.cjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.6.0",
