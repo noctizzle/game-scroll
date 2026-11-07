@@ -1,0 +1,14 @@
+{
+  "name": "game-scroll-hearts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "migrate": "wrangler d1 migrations apply game-scroll-hearts --remote",
+    "deploy": "wrangler deploy",
+    "test": "node test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.151.2"
+  }
+}

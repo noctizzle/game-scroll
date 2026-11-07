@@ -1,0 +1,22 @@
+# Game Scroll hearts: a Cloudflare Worker + D1 database that keeps one shared heart count per game.
+# Deployed by .github/workflows/hearts-worker.yml (which fills in database_id), or by hand with
+#   npx wrangler d1 migrations apply game-scroll-hearts --remote && npx wrangler deploy
+name = "game-scroll-hearts"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# The live catalogue, used to accept hearts only for games that exist.
+MANIFEST_URL = "https://pub-8db49903028243cf90dd4d7a8bb98735.r2.dev/manifest.json"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "game-scroll-hearts"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# Per-address write limit, so one person can't spam the counts.
+[[ratelimits]]
+name = "LIMIT"
+namespace_id = "7301"
+simple = { limit = 40, period = 60 }

@@ -19,6 +19,7 @@ import { initWallet, toast, shopHTML, bindShop } from './kit/wallet-ui.js';
 import { haptic } from './kit/device.js';
 import { remote } from './remote.js';
 import { openSettings } from './settings.js';
+import { hearts } from './hearts.js';
 import BUNDLED from 'virtual:bundled-games';
 
 /* ---------- catalogue ---------- */
@@ -66,10 +67,11 @@ function makeSlide(def){
   s.game.reset();
   // like
   const likeBtn=el.querySelector('.like'),liked=rating(def.id)>0||(rating(def.id)===0&&store.get('gs_like_'+def.id,false));
-  const setLike=v=>{likeBtn.setAttribute('aria-pressed',v);likeBtn.querySelector('.n').textContent=fmt(def.likes+(v?1:0))};setLike(liked);
-  likeBtn.onclick=()=>{const v=likeBtn.getAttribute('aria-pressed')!=='true';store.set('gs_like_'+def.id,v);setRating(def.id,v?1:0);rerank();document.querySelectorAll('.slide').forEach(x=>{if(x._s&&x._s.def.id===def.id)x._s.setLike(v)})};
+  // Shared counts come from the hearts backend; dev/test builds without it keep the old local number.
+  const setLike=v=>{likeBtn.setAttribute('aria-pressed',v);likeBtn.querySelector('.n').textContent=fmt(hearts.enabled?hearts.count(def.id,v):def.likes+(v?1:0))};setLike(liked);
+  likeBtn.onclick=()=>{const v=likeBtn.getAttribute('aria-pressed')!=='true';store.set('gs_like_'+def.id,v);setRating(def.id,v?1:0);hearts.set(def.id,v);rerank();document.querySelectorAll('.slide').forEach(x=>{if(x._s&&x._s.def.id===def.id)x._s.setLike(v)})};
   s.setLike=setLike;
-  el.querySelector('.meh').onclick=()=>{const was=rating(def.id);setRating(def.id,-1);if(likeBtn.getAttribute('aria-pressed')==='true'){store.set('gs_like_'+def.id,false);setLike(false)}
+  el.querySelector('.meh').onclick=()=>{const was=rating(def.id);setRating(def.id,-1);if(likeBtn.getAttribute('aria-pressed')==='true'){store.set('gs_like_'+def.id,false);setLike(false);hearts.set(def.id,false)}
     rerank();qaToast(`Hidden: ${def.title}`,()=>{setRating(def.id,was);rerank()});goNext(s)};
   el.querySelector('.nextbtn').onclick=()=>goNext(s);
   s.overlay.onclick=e=>{if(Date.now()-s.overAt<550)return;startGame(s)};
@@ -338,6 +340,9 @@ addEventListener('resize',()=>{resizeAt=performance.now();clearTimeout(rt);rt=se
 if(window.visualViewport)visualViewport.addEventListener('resize',()=>{resizeAt=performance.now();clearTimeout(rt);rt=setTimeout(onResize,80)});
 screen.orientation?.addEventListener?.('change',()=>setTimeout(onResize,150));
 
+// Fresh heart counts from other players: repaint the ♥ number on every slide (keeping your own state).
+hearts.onChange(ids=>slides.forEach(x=>{if(!ids||ids.includes(x.def.id))x.setLike(x.el.querySelector('.like').getAttribute('aria-pressed')==='true')}));
+
 /* top bar */
 const logo=document.querySelector('.logo');logo.setAttribute('role','button');logo.tabIndex=0;logo.title='QA panel';
 logo.onclick=()=>openPanel(GAMES,best);
@@ -345,7 +350,7 @@ const mineBtn=document.createElement('button');mineBtn.className='iconbtn';mineB
 const muteBtn=document.getElementById('mute');muteBtn.before(mineBtn);
 const setBtn=document.createElement('button');setBtn.className='iconbtn';setBtn.id='settings';setBtn.setAttribute('aria-label','Settings');setBtn.textContent='⚙';
 muteBtn.after(setBtn);setBtn.onclick=()=>openSettings({stream:STREAM,cached:()=>remote.cacheInfo(),clear:()=>remote.clearCache()});
-mineBtn.onclick=()=>openMyGames({games:GAMES,best,play:playNow,changed:(id,r)=>{slides.forEach(x=>{if(x.def.id===id)x.setLike(r>0)});rerank()},qa:()=>openPanel(GAMES,best)});
+mineBtn.onclick=()=>openMyGames({games:GAMES,best,play:playNow,changed:(id,r)=>{hearts.set(id,r>0);slides.forEach(x=>{if(x.def.id===id)x.setLike(r>0)});rerank()},qa:()=>openPanel(GAMES,best)});
 const paintMute=()=>{muteBtn.textContent=sound.muted?'🔇':'🔊';muteBtn.setAttribute('aria-pressed',String(sound.muted))};paintMute();
 muteBtn.onclick=()=>{sound.muted=!sound.muted;store.set('gs_muted',sound.muted);paintMute()};
 // feed picker: a styled menu (not the system picker) under the pill in the top bar
@@ -363,7 +368,8 @@ feedMenu.addEventListener('keydown',e=>{const i=feedOpts.indexOf(document.active
   else if(e.key==='Escape'||e.key==='Tab'){feedOpen(false);feedBtn.focus()}});
 document.addEventListener('pointerdown',e=>{if(!feedMenu.hidden&&!e.target.closest('.feedpick'))feedOpen(false)},true);
 
-function boot(){initWallet(GAMES);services.init(GAMES);booted=true;rebuild();requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
+function boot(){initWallet(GAMES);services.init(GAMES);booted=true;
+  hearts.reconcile(GAMES.map(g=>g.id),id=>rating(id)>0||(rating(id)===0&&store.get('gs_like_'+id,false)));hearts.load(true);rebuild();requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
 // Streaming: with a saved catalogue, start at once and check for updates in the background.
 // First launch has to fetch the catalogue before there is anything to show.
 function start(){
