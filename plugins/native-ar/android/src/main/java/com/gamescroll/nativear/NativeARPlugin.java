@@ -21,7 +21,6 @@ import com.getcapacitor.annotation.PermissionCallback;
 import com.google.ar.core.ArCoreApk;
 import com.google.ar.core.Camera;
 import com.google.ar.core.Config;
-import com.google.ar.core.DepthPoint;
 import com.google.ar.core.Frame;
 import com.google.ar.core.HitResult;
 import com.google.ar.core.LightEstimate;
@@ -107,8 +106,6 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
                     cfg.setLightEstimationMode(Config.LightEstimationMode.AMBIENT_INTENSITY);
                     cfg.setFocusMode(Config.FocusMode.AUTO);
                     cfg.setUpdateMode(Config.UpdateMode.LATEST_CAMERA_IMAGE);
-                    // depth (on phones that have it) lets hitTest find the floor before a plane is mapped
-                    if (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) cfg.setDepthMode(Config.DepthMode.AUTOMATIC);
                     session.configure(cfg);
                 }
                 if (glView == null) {
@@ -298,7 +295,7 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
             for (HitResult h : frame.hitTest(x, y)) {
                 Trackable t = h.getTrackable();
                 boolean plane = t instanceof Plane && ((Plane) t).isPoseInPolygon(h.getHitPose()) && ((Plane) t).getType() == Plane.Type.HORIZONTAL_UPWARD_FACING;
-                boolean point = t instanceof Point || t instanceof DepthPoint;
+                boolean point = t instanceof Point;
                 if (!plane && !point) continue;
                 float[] m = new float[16];
                 h.getHitPose().toMatrix(m, 0);
