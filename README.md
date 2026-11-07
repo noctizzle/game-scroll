@@ -34,6 +34,8 @@ Every push to `main` also builds the web app and publishes it to https://robthew
 
 ## Adding a game
 
+Anyone can add a game with a pull request: see **[CONTRIBUTING.md](CONTRIBUTING.md)** for the rules, the game API, the five styles (Phone, Dot matrix, Color, Advance, Console 3D) with screenshots, palettes, fluid sizes and how to test.
+
 Every file in `src/games/` is one game and is picked up by the feed automatically. A game exports:
 
 ```js
@@ -103,4 +105,4 @@ Launch target is **1000 unique games** (distinct mechanics, not reskins), built 
 
 ## License
 
-Copyright © 2026 Rob ([@robthewizzuk](https://github.com/robthewizzuk)). All rights reserved. The code is public to view only; copying, modifying, redistributing or publishing it is not allowed. See [LICENSE](LICENSE).
+Game Scroll is source-available under the [PolyForm Shield License 1.0.0](LICENSE): you can read, run, fork and change the code and contribute games, but you can't use it to offer a product that competes with Game Scroll. Contributions are accepted under the terms in [CONTRIBUTING.md](CONTRIBUTING.md#licence-of-your-contribution).

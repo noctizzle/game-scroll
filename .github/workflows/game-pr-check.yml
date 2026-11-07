@@ -1,0 +1,73 @@
+# Checks pull requests that add or change games: builds every game as a streamed file (fails if a
+# file name and its id differ), then plays the changed games in a headless browser (smoke + fold,
+# plus sweep for Console games). Runs with read-only permissions and no secrets, so it is safe for
+# pull requests from forks. See CONTRIBUTING.md.
+name: Game PR check
+
+on:
+  pull_request:
+    paths: ['src/**', 'scripts/**', 'package.json', 'package-lock.json']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: game-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build every game as a streamed file
+        run: npm run games
+
+      - name: Find changed games
+        id: changed
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          ids=$(git diff --name-only --diff-filter=AM "origin/$BASE...HEAD" -- 'src/games/*.js' | sed -n 's#^src/games/\([a-z0-9-]*\)\.js$#\1#p' | tr '\n' ' ')
+          console=$(for id in $ids; do grep -q "era: *'console'" "src/games/$id.js" && echo -n "$id "; done || true)
+          echo "ids=$ids" >> "$GITHUB_OUTPUT"
+          echo "console=$console" >> "$GITHUB_OUTPUT"
+          echo "Changed games: ${ids:-none}"
+
+      - name: Install Playwright
+        if: steps.changed.outputs.ids != ''
+        run: npm i --no-save playwright && npx playwright install --with-deps chromium
+
+      - name: Build the app with games inside
+        if: steps.changed.outputs.ids != ''
+        run: npm run build:bundled
+
+      - name: Smoke test
+        if: steps.changed.outputs.ids != ''
+        env:
+          IDS: ${{ steps.changed.outputs.ids }}
+        run: node scripts/smoke.cjs $IDS
+
+      - name: Fold test
+        if: steps.changed.outputs.ids != ''
+        env:
+          IDS: ${{ steps.changed.outputs.ids }}
+        run: node scripts/fold.cjs $IDS
+
+      - name: Sweep test (Console games)
+        if: steps.changed.outputs.console != ''
+        env:
+          IDS: ${{ steps.changed.outputs.console }}
+        run: node scripts/sweep.cjs $IDS
