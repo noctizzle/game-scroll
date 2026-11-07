@@ -203,8 +203,10 @@ function goNext(s){
 // size is scaled to fit, the leftover space is handed to the game as extra width or height (up to
 // the max, in multiples of def.step if set) through game.resize(w, h), so tall phones and unfolded foldables are filled, not letterboxed.
 const CHROME={retro:[28,88],modern:[0,0]};
-function fit(s){
-  const st=s.el.querySelector('.stage'),d=s.def,[cw,ch]=CHROME[d.retro?'retro':'modern'];
+function fit(s,again){
+  const st=s.el.querySelector('.stage'),d=s.def,dev=s.el.querySelector('.device');let [cw,ch]=CHROME[d.retro?'retro':'modern'];
+  // use the frame's real border/bezel size once it's laid out, so no space is reserved that the frame doesn't use
+  if(dev&&s.screen.offsetWidth>40){const mw=dev.offsetWidth-s.screen.offsetWidth,mh=dev.offsetHeight-s.screen.offsetHeight;if(mw>=0&&mw<=80&&mh>=0&&mh<=160){cw=mw;ch=mh}}
   const aw=st.clientWidth-cw,ah=st.clientHeight-ch;
   if(aw<=0||ah<=0)return;
   let sc=Math.min(aw/d.w,ah/d.h);
@@ -218,6 +220,8 @@ function fit(s){
   if(pixel){s.canvas.width=w;s.canvas.height=h;s.ctx.setTransform(1,0,0,1,0,0)}
   else{const k=sc*Math.min(2.5,window.devicePixelRatio||1);s.canvas.width=Math.round(w*k);s.canvas.height=Math.round(h*k);s.ctx.setTransform(k,0,0,k,0,0)}
   s.ctx.imageSmoothingEnabled=!pixel;s.canvas.classList.toggle('hires',!pixel);s.dirty=true;
+  // first fit of a new slide guessed the frame size; now it's laid out, refit once with the real one
+  if(!again&&dev&&dev.offsetHeight-s.screen.offsetHeight!==ch)fit(s,true);
 }
 
 // Shuffled queue over the whole catalogue; the feed pulls a few at a time so 1000 games never means 1000 slides in the DOM.
