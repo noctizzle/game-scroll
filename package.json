@@ -20,7 +20,8 @@
     "wallet": "vite build --mode bundled && node scripts/wallet.cjs",
     "game-services": "node scripts/game-services.mjs",
     "games": "node scripts/build-games.mjs",
-    "dev:stream": "vite --host"
+    "dev:stream": "vite --host",
+    "icons": "node scripts/icons.cjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.3",
