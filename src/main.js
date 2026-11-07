@@ -8,7 +8,9 @@ import { store, hash, fmt } from './util.js';
 import { sfx, sound } from './sfx.js';
 import { PAL, SHELL } from './palettes.js';
 import { isHidden, setRating, rating, logRound, toast as qaToast, openPanel } from './qa.js';
-import { rankQueue } from './recommend.js';
+import { rankQueue as rank, explain } from './recommend.js';
+import { live } from './feedsignals.js';
+const rankQueue=(pool,all)=>rank(pool,all,live);
 import { openMyGames } from './mygames.js';
 import { post as consolePost } from './kit/gfx.js';
 import { progress } from './kit/progress.js';
@@ -21,6 +23,7 @@ import { remote } from './remote.js';
 import { openSettings } from './settings.js';
 import { hearts } from './hearts.js';
 import { playstats } from './playstats.js';
+import { history } from './history.js';
 import { shareGame, onSharedGame } from './share.js';
 import BUNDLED from 'virtual:bundled-games';
 
@@ -248,8 +251,10 @@ function pickDefs(n=6){
   remote.prefetch(queue.slice(0,AHEAD+3));   // start downloading the games after those too
   return out;
 }
-// After a heart or Meh, re-rank the games still waiting in this cycle so similar ones come sooner.
-function rerank(){if(queue.length>1)queue=rankQueue(queue.filter(g=>!isHidden(g.id)),GAMES)}
+// After a heart or Meh, a skip or a real play, or fresh stats from everyone, re-rank the games still
+// waiting in this cycle. The next few stay put: they're already downloading.
+function rerank(keep=0){if(queue.length<=keep+1)return;const head=queue.slice(0,keep);queue=head.concat(rankQueue(queue.slice(keep).filter(g=>!isHidden(g.id)),GAMES))}
+history.onChange((id,w)=>{if(w)rerank(3)});
 function paint(s){s.game.draw(s.ctx);if(s.def.era==='console'){s.ctx.save();consolePost(s.ctx,s.w||s.def.w,s.h||s.def.h);s.ctx.restore()}}
 // Always keep AHEAD games downloaded and ready below the one you're on, so swiping never waits.
 const AHEAD=5;
@@ -385,7 +390,7 @@ feedMenu.addEventListener('keydown',e=>{const i=feedOpts.indexOf(document.active
   else if(e.key==='Escape'||e.key==='Tab'){feedOpen(false);feedBtn.focus()}});
 document.addEventListener('pointerdown',e=>{if(!feedMenu.hidden&&!e.target.closest('.feedpick'))feedOpen(false)},true);
 
-function boot(){initWallet(GAMES);services.init(GAMES);booted=true;playstats.load(true);
+function boot(){initWallet(GAMES);services.init(GAMES);booted=true;playstats.load(true).then(()=>rerank(3));
   hearts.reconcile(GAMES.map(g=>g.id),id=>rating(id)>0||(rating(id)===0&&store.get('gs_like_'+id,false)));hearts.load(true);rebuild();onSharedGame(openShared);requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
 // Streaming: with a saved catalogue, start at once and check for updates in the background.
 // First launch has to fetch the catalogue before there is anything to show.
@@ -405,4 +410,4 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refresh()},5*60*1000);
 
 // Test hook used by scripts/smoke.cjs
-window.__gs={GAMES,remote,progress,playstats,api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};
+window.__gs={GAMES,remote,progress,playstats,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};
