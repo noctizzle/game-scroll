@@ -112,9 +112,11 @@ Matches https://game-scroll.com/privacy/.
     attestation. Purpose: App Functionality.
   - *Usage Data → Product Interaction*: anonymous per-game counts of views, plays, skips and play time.
     Purpose: Analytics, App Functionality. (Can be turned off in Settings.)
+  - *Diagnostics → Crash Data, Performance Data, Other Diagnostic Data*: anonymous crash markers, game
+    script errors and frame timings, with phone model, OS version and app build (kept 14 days).
+    Purpose: App Functionality, Analytics. (Same Settings switch.) Details: docs/crash-reports.md.
 - Location, camera, microphone: **not collected** (processed on device only, never sent).
 - Game Center data is handled by Apple and doesn't count as collected by the app.
-- If crash reporting is added later, add *Diagnostics → Crash Data / Performance Data* (not linked).
 
 ## Age rating questionnaire
 
