@@ -13,7 +13,8 @@ import { playstats } from './playstats.js';
 import { perf } from './perf.js';
 
 /** Hidden from the feed for everyone. Add an id here to pull a game without deleting its file. */
-export const BENCHED = new Set([]);
+// ar-lab is the native AR test scene: opened from Settings > AR test, never in the feed.
+export const BENCHED = new Set(['ar-lab']);
 
 const K = 'gs_qa';
 let db = store.get(K, {});            // { [id]: { r: 1|-1|0, t: when r last changed, plays, secs } }

@@ -362,3 +362,13 @@ dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
 .retro.ar .tag,.retro.ar .ov-win{background:linear-gradient(90deg,#19e3b1,#2a8cff);color:#04110e}
 .retro.ar .ov-k,.retro.ar .ov-best,.retro.ar .chip span,.retro.ar .shop-k{color:#8affdc}
 .retro.ar .play{box-shadow:0 0 0 4px #19e3b144,0 0 24px #19e3b166}
+/* native AR (src/kit/native-ar.js): the camera picture is drawn natively BEHIND the page, so while an AR
+   game plays the page goes see-through. Only the game screen stays clear: a huge shadow around it repaints
+   the shell and the dark backdrop, and the shell's labels and the game info sit above that shadow. */
+html.ar-live,html.ar-live body{background:transparent}
+html.ar-live .slide.ar.playing,html.ar-live .retro.ar.playing .device{background:transparent}
+html.ar-live .slide.ar.playing .stage{z-index:0}
+html.ar-live .slide.ar.playing .screen{box-shadow:0 0 0 1px #19e3b155,0 0 0 7px #1a1d24,0 0 0 200vmax #070a12}
+html.ar-live .slide.ar.playing .bezel-top,html.ar-live .slide.ar.playing .bezel-bottom{position:relative;z-index:1}
+html.ar-live .slide.ar.playing .meta{position:relative;z-index:1}
+html.ar-live .slide.ar.playing .bezel-top .era{color:#8affdc}

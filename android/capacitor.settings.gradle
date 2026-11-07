@@ -19,3 +19,6 @@ project(':capacitor-share').projectDir = new File('../node_modules/@capacitor/sh
 
 include ':game-services'
 project(':game-services').projectDir = new File('../plugins/game-services/android')
+
+include ':native-ar'
+project(':native-ar').projectDir = new File('../plugins/native-ar/android')
