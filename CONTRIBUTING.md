@@ -9,7 +9,7 @@ This guide covers everything you need:
 1. [The rules](#the-rules)
 2. [Quick start](#quick-start)
 3. [How a game file works](#how-a-game-file-works)
-4. [Choosing a style](#choosing-a-style): Phone, Dot matrix, Color, Advance or Console
+4. [Choosing a style](#choosing-a-style): Phone, Dot matrix, Color, Advance, Classic Console or Next Gen Console
 5. [Palettes and shells](#palettes-and-shells)
 6. [Screen sizes, foldables and fluid games](#screen-sizes-foldables-and-fluid-games)
 7. [Sound, haptics and phone sensors](#sound-haptics-and-phone-sensors)
@@ -155,7 +155,7 @@ your game only needs to draw gameplay.
 
 ## Choosing a style
 
-Every game picks one of five looks. The style decides the frame around your game, the start and
+Every game picks one of six looks. The style decides the frame around your game, the start and
 game-over screens, which feed tab it appears in and how it is scaled.
 
 ![The five styles side by side: Phone, Dot matrix, Color, Advance and Console](docs/contributing/styles.png)
@@ -166,7 +166,8 @@ game-over screens, which feed tab it appears in and how it is scaled.
 | **Dot matrix (Pocket)** | `retro: true, pal: 'moss'` | `Pocket ·` | `160 x 160` | Handheld shell, chunky pixels, exactly **4 shades** from the palette. |
 | **Color (Pocket)** | `retro: true, era: 'color', pal: 'lemon'` | `Color ·` | `160 x 160` to `160 x 192` | Coloured handheld, chunky pixels, bright colours (`C16`). |
 | **Advance (Pocket)** | `retro: true, era: 'advance', pal: 'grape'` | `Advance ·` | `176 x 176` to `192 x 160` | Wider handheld, chunky pixels, rich colours, sprites, parallax. |
-| **Console (3D)** | `retro: true, era: 'console', pal: 'grape'` | `Console ·` | `192 x 160` (fluid up to ~300 x 240) | TV frame, real-time 3D, cel-shaded with ink outlines, sharp hi-res HUD. |
+| **Classic · Console (3D)** | `retro: true, era: 'console', pal: 'grape'` | `Console ·` | `192 x 160` (fluid up to ~300 x 240) | TV frame, real-time 3D, cel-shaded with ink outlines, sharp hi-res HUD. |
+| **Next Gen · Console (HD 3D)** | `retro: true, era: 'nextgen', pal: 'grape'` | `Next Gen ·` | `300 x 300` (fluid up to ~440 x 420) | Slim glossy console, modern HD 3D: PBR materials, shadows, bloom, AO, particles. |
 
 How each style looks in the app, start screen and in play:
 
@@ -205,9 +206,9 @@ The wider, later handheld era: more colours, detailed sprites, scrolling backgro
 racing floors. Still pixel art and still scaled in whole pixels. Any colours are fine; `C16` is a good
 start. Good for platformers, RPG battles, karts and tactics.
 
-### Console (3D)
+### Classic · Console (3D)
 
-Home-console and PC inspired games. These are real-time 3D using three.js through the shared kit
+Home-console and PC inspired games from the 32 to 128-bit era (they appear under **Classic · Console**). These are real-time 3D using three.js through the shared kit
 `src/kit/toon3d.js`: toon shading with a three-band light ramp and ink outlines, giving a cel-shaded
 cartoon look. The HUD and text are drawn in normal 2D on top, at full resolution.
 
@@ -230,6 +231,33 @@ performance rules. Never create your own WebGL renderer: phones only allow a few
 share one. A Console game should look clearly 3D; if yours doesn't, make it an Advance game instead.
 Run `npm run sweep` on Console games (see [Testing](#testing-your-game)).
 
+### Next Gen · Console (HD 3D)
+
+Games that look like they belong on a current home console. They use `src/kit/hd3d.js`:
+physically based materials (roughness, metal, clearcoat, normal maps painted in code), image-based
+reflections, real-time shadows, HDR lighting with bloom, ambient occlusion, filmic tone mapping,
+a colour grade, and GPU particles for sparks, smoke and dust. Characters can be stylised or
+cartoony, but the rendering must be **clearly a generation ahead of the Classic Console games**.
+If a game can't reach that bar, make it a Classic Console game instead.
+
+```js
+import { HDView, Particles, pbr, rbox, surface, spot } from '../kit/hd3d.js';
+let v;   // in draw(c): move v.cam and your meshes, then v.render(c, W, H), then the 2D HUD
+v = new HDView({ bg: '#06080c', fog: .07 }).lampLights(9);
+```
+
+Things that make the difference: bevelled shapes (`rbox`) instead of sharp boxes, real surface
+detail (`surface()` with a height layer for the normal map), a few strong light sources with
+shadows rather than flat ambient light, emissive glow for lamps, screens and muzzle flashes (values
+above 1 bloom), particles for every impact, and camera life (bob, recoil, shake).
+
+Phones must stay smooth: the kit lowers the render resolution and then the quality tier by itself
+when frames get slow, but keep draw calls low (merge level geometry, `InstancedMesh` for repeated
+props, hide what's beyond the fog). Read [`docs/nextgen-3d.md`](docs/nextgen-3d.md) for the full
+kit, the quality tiers and performance rules. Like Console games, they share one WebGL renderer;
+never create your own. Run `npm run sweep` on Next Gen games too. These appear under
+**Next Gen · Console**.
+
 ## Palettes and shells
 
 For retro styles, `pal` sets the handheld shell colour, the start and game-over screen colours, and
@@ -239,7 +267,7 @@ For retro styles, `pal` sets the handheld shell colour, the start and game-over 
 
 ![The six dot-matrix palettes: moss, amber, ice, mono, rose and mint](docs/contributing/palettes-dot.png)
 
-**Colour shells** for Color, Advance and Console games (`berry`, `grape`, `teal`, `lemon`; `mint`
+**Colour shells** for Color, Advance and Classic Console games (Next Gen games always use the slim modern console, so `pal` only needs to be set) (`berry`, `grape`, `teal`, `lemon`; `mint`
 works too). In these styles you draw in full colour, and `pal` only sets the shell and the overlay
 screens:
 
@@ -283,7 +311,7 @@ Import shared helpers only from these modules; the app provides them to streamed
   `startCamera()`.
 - `src/util.js`: `clamp`, `rnd`, `pix`, `disc`, `flickTracker`, `hash`, `fmt`, `store`.
 - `src/palettes.js`: `PAL`, `SHELL`, `C16`.
-- `src/kit/gfx.js` (2D shading helpers), `src/kit/toon3d.js` (Console 3D), `src/kit/bricks.js` (toy bricks).
+- `src/kit/gfx.js` (2D shading helpers), `src/kit/toon3d.js` (Classic Console 3D), `src/kit/hd3d.js` (Next Gen Console HD 3D), `src/kit/bricks.js` (toy bricks).
 
 Sensors return `null` or do nothing on desktop, in the browser, or when the player says no to a
 permission, so **every sensor game needs a touch fallback** (for example drag instead of tilt, tap
@@ -316,7 +344,7 @@ needed for the browser tests: `npm i --no-save playwright && npx playwright inst
 npm run build:bundled                     # build the app with all games inside
 node scripts/smoke.cjs my-game            # plays your game with random input; fails on any error or missing goal
 node scripts/fold.cjs my-game             # folds and unfolds the screen mid-game
-node scripts/sweep.cjs my-game            # long random play at odd sizes (required for Console games)
+node scripts/sweep.cjs my-game            # long random play at odd sizes (required for Console and Next Gen games)
 npm run games                             # builds the streamed files; fails if the file name and id differ
 ```
 

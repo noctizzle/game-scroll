@@ -1,6 +1,6 @@
 // Drives games directly (no real-time wait) through odd screen sizes and long random play, so code
 // that only runs late in a round or near a level's ends gets exercised. Fails if any game throws.
-// Usage: npm run build:bundled && node scripts/sweep.cjs [id ...]   (default: all Console games)
+// Usage: npm run build:bundled && node scripts/sweep.cjs [id ...]   (default: all Console and Next Gen games)
 // Example it catches: Suit Ops threw every frame once the chopper pad came into view.
 const { chromium } = require('playwright');
 (async () => {
@@ -10,7 +10,7 @@ const { chromium } = require('playwright');
   const pageErrs = []; p.on('pageerror', e => pageErrs.push(e.message));
   await p.goto('http://localhost:4185/'); await p.waitForTimeout(400);
   const ids = process.argv.slice(2).length ? process.argv.slice(2)
-    : await p.evaluate(() => __gs.GAMES.filter(g => g.era === 'console').map(g => g.id));
+    : await p.evaluate(() => __gs.GAMES.filter(g => g.era === 'console' || g.era === 'nextgen').map(g => g.id));
   let failed = 0;
   for (const id of ids) {
     await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(150);
