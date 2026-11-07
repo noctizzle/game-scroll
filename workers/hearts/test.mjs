@@ -117,7 +117,7 @@ async function fakeAssertion(leafKeys, challenge, counter, app = appId) {
   const saJson = JSON.stringify({ client_email: 'x@y.iam.gserviceaccount.com', private_key: `-----BEGIN PRIVATE KEY-----\n${pk}\n-----END PRIVATE KEY-----\n` });
   let payload;
   const fetchFn = async (url, init) => {
-    if (url.startsWith('https://oauth2.googleapis.com')) {
+    if (new URL(url).host === 'oauth2.googleapis.com') {
       const jwt = new URLSearchParams(init.body).get('assertion').split('.');
       const good = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', rsa.publicKey, Buffer.from(jwt[2], 'base64url'), new TextEncoder().encode(jwt[0] + '.' + jwt[1]));
       return new Response(JSON.stringify(good ? { access_token: 'at', expires_in: 3600 } : {}), { status: good ? 200 : 401 });
@@ -144,7 +144,7 @@ async function fakeAssertion(leafKeys, challenge, counter, app = appId) {
 
 /* ---------- the Worker end to end ---------- */
 const { unstable_startWorker } = await import('wrangler');
-const SECRET = 'local-test-secret-' + Math.random().toString(36).slice(2);
+const SECRET = 'local-test-secret-' + Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex');
 async function run(vars, fn) {
   writeFileSync('.dev.vars', Object.entries({ SESSION_SECRET: SECRET, MANIFEST_URL: '', ...vars }).map(([k, v]) => `${k}=${v}`).join('\n'));
   const w = await unstable_startWorker({ config: 'wrangler.toml', dev: { remote: false, server: { port: 0 }, logLevel: 'error' } });
