@@ -1,6 +1,6 @@
 // Checks feed swipes while a game is running: a deliberate flick outside the game screen changes
 // game, but a flick right after in-game input, or a drag that starts on the game, does not.
-// Usage: npm run build && node scripts/swipe.cjs
+// Usage: npm run build:bundled && node scripts/swipe.cjs
 const { chromium } = require('playwright');
 (async () => {
   const server = await (await import('vite')).preview({ preview: { port: 4185 } });

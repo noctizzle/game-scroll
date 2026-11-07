@@ -261,3 +261,19 @@ dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
 @media (max-width:440px){.tabs{gap:2px}.tabs button{padding:7px 7px;font-size:11.5px}}
 @media (max-width:400px){.logo{display:none}.top{gap:6px}}
 .retro.console .hud .score{background:#0b0d14cc;color:#f2f4fa;border-radius:6px;font-size:13px;padding:5px 8px;box-shadow:0 2px 8px #0006}
+
+/* streaming: empty-feed card (first download / offline) and the settings sheet */
+.feed-msg{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:0 32px;text-align:center;color:var(--muted)}
+.feed-msg.loading{animation:fm-in .2s .4s both}   /* only shows if loading takes a moment */
+.feed-msg b{color:var(--text);font-size:18px}
+.feed-msg p{margin:0;max-width:320px;line-height:1.45}
+.fm-spin{width:34px;height:34px;border-radius:50%;border:3px solid #ffffff22;border-top-color:var(--accent);animation:fm-spin .8s linear infinite}
+@keyframes fm-spin{to{transform:rotate(360deg)}}
+@keyframes fm-in{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion: reduce){.fm-spin{animation-duration:2.4s}}
+.set-row{padding:0 0 8px}
+.set-row h3{margin:6px 16px 6px;font-size:15px}
+.set-stat{margin:0 16px 12px;color:var(--muted);font-size:14px}
+.set-stat b{color:var(--text);font-size:18px}
+.set-clear:disabled{opacity:.5;cursor:default}
+.set-note{margin:0 16px 12px;color:var(--accent);font-size:13px}

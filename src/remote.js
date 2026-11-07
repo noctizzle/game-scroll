@@ -1,15 +1,17 @@
-// Streams games in over the network, like a video feed loads the next clip.
+// Streams every game in over the network, like a video feed loads the next clip.
 //
-// The app ships with every game built in, so it works offline and on first launch. On top of that
-// it reads a catalogue (manifest.json) from the game host (Cloudflare R2, VITE_GAMES_URL at build
-// time). A game in the catalogue is used instead of the built-in copy when its code differs (a fix
-// or update), and games the app has never seen are added to the feed. Each game is one small file;
-// the feed downloads the next few ahead of time and keeps them in IndexedDB, so swiping stays
-// instant and they still play offline later. scripts/build-games.mjs makes the files.
-import BUNDLED_HASH from 'virtual:game-hashes';
+// The app ships with no games inside. It reads a catalogue (manifest.json) from the game host
+// (Cloudflare R2, VITE_GAMES_URL at build time) with each game's title, hint, era and so on, and
+// downloads a game's code (one small file) just before it comes up in the feed. Downloaded games
+// are kept in IndexedDB, up to CACHE_MAX of them (the least recently played are dropped first),
+// so they open instantly and still play offline. scripts/build-games.mjs makes the files.
+//
+// Local dev and the test scripts build with VITE_GAMES_URL empty (vite --mode bundled): then the
+// games in src/games/ are built in and this module stays out of the way.
 
-const BASE = String(import.meta.env.VITE_GAMES_URL || '').replace(/\/+$/, '');
-const MANIFEST_KEY = 'gs_manifest';
+export const BASE = String(import.meta.env.VITE_GAMES_URL || '').replace(/\/+$/, '');
+export const CACHE_MAX = 100;
+const MANIFEST_KEY = 'gs_manifest', INDEX_KEY = 'gs_cache_index';
 
 // The app's shared code, handed to downloaded games so they use the same sound, haptics, wallet...
 const KIT = {};
@@ -31,17 +33,34 @@ async function idb(mode, fn) {
   const d = await db();
   return new Promise((ok, no) => { const t = d.transaction('files', mode), q = fn(t.objectStore('files')); t.oncomplete = () => ok(q && q.result); t.onerror = () => no(t.error); });
 }
+
+/* ---------- cache index: file -> [last used, bytes], kept in localStorage so it's readable at once ---------- */
+let index = {};
+try { index = JSON.parse(localStorage.getItem(INDEX_KEY) || '{}') || {}; } catch (_) {}
+const saveIndex = () => { try { localStorage.setItem(INDEX_KEY, JSON.stringify(index)); } catch (_) {} };
+
 const cacheGet = f => idb('readonly', s => s.get(f)).catch(() => undefined);
-const cachePut = (f, code) => idb('readwrite', s => s.put(code, f)).catch(() => {});
-async function cachePrune(keep) {
-  try { const keys = await idb('readonly', s => s.getAllKeys()); const old = keys.filter(k => !keep.has(k)); if (old.length) await idb('readwrite', s => old.forEach(k => s.delete(k))); } catch (_) {}
+async function cacheDrop(files) {
+  if (!files.length) return;
+  for (const f of files) delete index[f];
+  saveIndex();
+  try { await idb('readwrite', s => files.forEach(f => s.delete(f))); } catch (_) {}
+}
+async function cachePut(f, code) {
+  index[f] = [Date.now(), code.length]; saveIndex();
+  try { await idb('readwrite', s => s.put(code, f)); } catch (_) { delete index[f]; saveIndex(); return; }
+  const files = Object.keys(index);
+  if (files.length > CACHE_MAX)   // over the limit: drop the games played longest ago
+    await cacheDrop(files.sort((a, b) => index[a][0] - index[b][0]).slice(0, files.length - CACHE_MAX));
 }
 
 /* ---------- state ---------- */
-const entries = new Map();   // id -> manifest entry we should use instead of (or as well as) the built-in game
+const entries = new Map();   // id -> manifest entry
 const loaded = new Map();    // id -> { hash, def }
 const inflight = new Map();  // id -> Promise
-let games = [], addGame = null, onChange = null;
+const failed = new Map();    // id -> time of the last failed download (skipped for a while, e.g. offline)
+let addGame = null, onChange = null;
+const known = new Map();   // id -> the app's entry for it (metadata, likes)
 
 // Can this app run the game? It must only use shared exports this build actually has.
 function compatible(g) {
@@ -50,13 +69,12 @@ function compatible(g) {
 }
 
 function apply(m) {
-  if (!m || m.v !== 1 || !Array.isArray(m.games)) return false;
   const added = [];
+  if (!m || m.v !== 1 || !Array.isArray(m.games)) return added;
   for (const g of m.games) {
-    if (!g || !g.id || !g.file || !g.hash) continue;
-    if (BUNDLED_HASH[g.id] === g.hash || !compatible(g)) { entries.delete(g.id); continue; }   // built-in copy is current (or the update needs a newer app)
+    if (!g || !g.id || !g.file || !g.hash || !g.meta || g.meta.id !== g.id || !compatible(g)) continue;
     entries.set(g.id, g);
-    if (!games.some(x => x.id === g.id) && g.meta && g.meta.id === g.id) added.push(addGame({ ...g.meta, _stub: true }));
+    if (!known.has(g.id)) { const e = addGame({ ...g.meta }); known.set(g.id, e); added.push(e); }
   }
   return added;
 }
@@ -77,74 +95,81 @@ function evaluate(id, code) {
 }
 
 async function fetchCode(g) {
-  let code = await cacheGet(g.file), fresh = false;
-  if (typeof code !== 'string') {
-    if (!BASE) throw new Error('no game host');
-    const r = await fetch(`${BASE}/${g.file}`);
-    if (!r.ok) throw new Error(`${r.status} for ${g.file}`);
-    code = await r.text(); fresh = true;
-  }
+  let code = await cacheGet(g.file);
+  if (typeof code === 'string') { if (index[g.file]) { index[g.file][0] = Date.now(); saveIndex(); } return code; }
+  const r = await fetch(`${BASE}/${g.file}`);
+  if (!r.ok) throw new Error(`${r.status} for ${g.file}`);
+  code = await r.text();
   const h = await sha12(code);
   if (h && h !== g.hash) throw new Error('hash mismatch for ' + g.file);
-  if (fresh) cachePut(g.file, code);
+  cachePut(g.file, code);
   return code;
 }
 
 export const remote = {
   enabled: !!BASE,
 
-  /** list: the app's GAMES array. add(meta): put a new game into it and return it. changed(games): new games arrived. */
-  init(list, add, changed) {
-    games = list; addGame = add; onChange = changed;
+  /** add(meta): put a game into the app's list and return it. changed(games): new games arrived later. */
+  init(add, changed) {
+    addGame = add; onChange = changed;
     try { apply(JSON.parse(localStorage.getItem(MANIFEST_KEY) || 'null')); } catch (_) {}
-    if (BASE) this.refresh();
   },
 
-  /** Fetch the latest catalogue. Runs at start-up and when the app comes back to the foreground. */
+  /** Fetch the latest catalogue. Resolves true if it got one. Runs at start-up and on return to the app. */
   async refresh() {
+    failed.clear();   // give games that failed to download (e.g. while offline) another go
     try {
       const r = await fetch(`${BASE}/manifest.json`, { cache: 'no-cache' });
-      if (!r.ok) return;
+      if (!r.ok) return false;
       const text = await r.text(), m = JSON.parse(text);
+      if (!Array.isArray(m.games)) return false;
       try { localStorage.setItem(MANIFEST_KEY, text); } catch (_) {}
-      for (const id of [...entries.keys()]) if (!m.games?.some(g => g.id === id)) entries.delete(id);
-      const added = apply(m);
-      cachePrune(new Set(m.games.map(g => g.file)));
+      for (const id of [...entries.keys()]) if (!m.games.some(g => g.id === id)) entries.delete(id);   // taken down
+      const added = apply(m), live = new Set(m.games.map(g => g.file));
+      cacheDrop(Object.keys(index).filter(f => !live.has(f)));   // old versions of updated games
       if (added.length && onChange) onChange(added);
-    } catch (_) { /* offline: keep using the cached catalogue */ }
+      return true;
+    } catch (_) { return false; }   // offline: keep using the saved catalogue
   },
 
-  /** The playable definition for a feed entry: the downloaded version when we have it, the built-in one
-   *  otherwise, or null for a streamed-only game that hasn't downloaded yet. */
+  /** The playable definition of a feed entry, or null while it downloads (the download starts). */
   def(d) {
     const g = entries.get(d.id), l = loaded.get(d.id);
-    if (g && l && l.hash === g.hash) return l.def;
-    if (g) this.load(d.id);
-    return d._stub ? null : d;
+    if (!g) return null;
+    if (l && l.hash === g.hash) return l.def;
+    this.load(d.id); return null;
   },
 
-  /** Download (or read from the offline cache) one game. Resolves to its definition, or null. */
+  /** Can this game be shown soon? (In the catalogue and not just failed to download.) */
+  has(id) { const t = failed.get(id); return entries.has(id) && !(t && Date.now() - t < 20000); },
+
+  /** Download (or read from the cache) one game. Resolves to its definition, or null. */
   load(id) {
     const g = entries.get(id);
     if (!g) return Promise.resolve(null);
     const l = loaded.get(id);
     if (l && l.hash === g.hash) return Promise.resolve(l.def);
     if (inflight.has(id)) return inflight.get(id);
-    const base = games.find(x => x.id === id);
     const p = fetchCode(g).then(code => {
-      const def = { likes: base && base.likes, ...evaluate(id, code), _remote: g.hash };
-      loaded.set(id, { hash: g.hash, def }); return def;
-    }).catch(e => { console.warn('[remote]', e.message); return null; })
+      const def = { ...known.get(id), ...evaluate(id, code) };
+      loaded.set(id, { hash: g.hash, def }); failed.delete(id); return def;
+    }).catch(e => { console.warn('[games]', id, e.message); failed.set(id, Date.now()); return null; })
       .finally(() => inflight.delete(id));
     inflight.set(id, p); return p;
   },
 
-  /** Is a newer or extra version of this game on the game host? */
-  has(id) { return entries.has(id); },
-
   /** Get the next few games in the feed ready so they open instantly. */
-  prefetch(list) { for (const d of list) if (entries.has(d.id)) this.load(d.id); },
+  prefetch(list) { for (const d of list) if (this.has(d.id)) this.load(d.id); },
 
-  /** For the QA panel / tests: what's streamed right now. */
-  status() { return { host: BASE || null, streamed: [...entries.keys()], loaded: [...loaded.keys()] }; },
+  /** Mark a game as just played, so the cache keeps it. */
+  touch(id) { const g = entries.get(id); if (g && index[g.file]) { index[g.file][0] = Date.now(); saveIndex(); } },
+
+  /** For the settings screen. */
+  cacheInfo() { const v = Object.values(index); return { games: v.length, bytes: v.reduce((a, x) => a + x[1], 0), max: CACHE_MAX }; },
+  async clearCache() {
+    index = {}; saveIndex();
+    try { await idb('readwrite', s => s.clear()); } catch (_) {}
+  },
+
+  status() { return { host: BASE || null, games: entries.size, loaded: [...loaded.keys()], cache: this.cacheInfo() }; },
 };

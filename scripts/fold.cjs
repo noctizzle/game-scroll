@@ -1,5 +1,5 @@
 // Simulates folding/unfolding mid-game on Galaxy Z Fold 8 and iPhone Duo screen sizes (CSS px, approx.)
-// and checks the running game survives and stays on screen. Usage: npm run build && node scripts/fold.cjs
+// and checks the running game survives and stays on screen. Usage: npm run build:bundled && node scripts/fold.cjs
 const { chromium } = require('playwright');
 const SIZES = {
   'fold8-cover': { width: 374, height: 591 }, 'fold8-inner': { width: 549, height: 735 },
