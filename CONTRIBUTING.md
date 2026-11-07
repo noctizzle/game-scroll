@@ -32,6 +32,9 @@ This guide covers everything you need:
   seconds of play. A round should last roughly 20 seconds to 3 minutes.
 - **Self-contained.** One file in `src/games/`, everything drawn in code on a canvas. No image,
   font or sound files, no network requests, no `eval`, no tracking, no ads, no links out of the app.
+  Saving, sound, haptics and sensors all go through the shared kit: a game never touches
+  `localStorage`, `fetch`, Capacitor or other windows itself. `node scripts/game-lint.mjs my-game`
+  flags any line that does, and the app blocks network calls to anywhere but our own servers anyway.
 - **Touch first.** Every game must be fully playable with touch alone. Phone sensors are welcome as
   long as there is a touch fallback (see [below](#sound-haptics-and-phone-sensors)).
 - **Family friendly.** Cartoon action is fine. No gore, hateful content, gambling with real money,
@@ -358,6 +361,7 @@ node scripts/smoke.cjs my-game            # plays your game with random input; f
 node scripts/fold.cjs my-game             # folds and unfolds the screen mid-game
 node scripts/sweep.cjs my-game            # long random play at odd sizes (required for Console and Next Gen games)
 npm run games                             # builds the streamed files; fails if the file name and id differ
+node scripts/game-lint.mjs my-game        # flags code that touches the network, storage or native features
 ```
 
 `npm run qa` runs bot play tests over every game and is useful for checking that your game doesn't
@@ -370,7 +374,8 @@ the controls feel good with a thumb, the hint makes sense, and the goal is reach
 
 1. Commit your game file on a branch in your fork and open a pull request against `main`.
 2. Fill in the template: what the game is, the mechanic, the style, and a screenshot or short clip.
-3. GitHub Actions builds the app and smoke-tests the games you changed. Fix anything it reports.
+3. GitHub Actions builds the app, smoke-tests the games you changed and flags risky code
+   (`scripts/game-lint.mjs`). Fix anything it reports.
 4. A maintainer plays it and may ask for changes. Games that don't fit the rules above, or play too
    much like a game already in the feed, may be declined.
 

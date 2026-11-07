@@ -8,10 +8,21 @@
 //
 // Local dev and the test scripts build with VITE_GAMES_URL empty (vite --mode bundled): then the
 // games in src/games/ are built in and this module stays out of the way.
+//
+// Signed catalogue: when the app has a public key (VITE_CATALOGUE_KEY), it reads catalogue.json
+// instead, which holds manifest.json's exact text plus a signature made in CI with a key only GitHub
+// has (scripts/sign-catalogue.mjs). It rejects a catalogue that isn't signed by that key or is older
+// than the one it already has, and checks every game file's full SHA-256 against it. So someone who
+// got write access to the games host still couldn't get their own code to run in the app.
 
 export const BASE = String(import.meta.env.VITE_GAMES_URL || '').replace(/\/+$/, '');
 export const CACHE_MAX = 100;
-const MANIFEST_KEY = 'gs_manifest', INDEX_KEY = 'gs_cache_index';
+// Base64 SPKI public key for ECDSA P-256. Empty = the old unsigned manifest.json (before the key exists).
+const PUBKEY = String(import.meta.env.VITE_CATALOGUE_KEY || '').trim();
+export const SIGNED = !!PUBKEY;
+// A signed build saves its verified catalogue under its own name, so an unsigned copy saved by an
+// older build is never used.
+const MANIFEST_KEY = SIGNED ? 'gs_catalogue' : 'gs_manifest', INDEX_KEY = 'gs_cache_index';
 
 // The app's shared code, handed to downloaded games so they use the same sound, haptics, wallet...
 const KIT = {};
@@ -90,11 +101,26 @@ function apply(m) {
   return { added, changed };
 }
 
-async function sha12(code) {
+async function sha256(code) {
   if (!globalThis.crypto || !crypto.subtle) return null;
   const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code));
-  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('').slice(0, 12);
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
 }
+
+/* ---------- signed catalogue ---------- */
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+let pubkey = null;
+/** The manifest text inside a signed catalogue.json, or null if the signature doesn't check out. */
+async function openCatalogue(env) {
+  if (!env || env.v !== 2 || typeof env.data !== 'string' || typeof env.sig !== 'string') return null;
+  if (!globalThis.crypto || !crypto.subtle) return null;   // can't check it, so don't trust it
+  try {
+    pubkey ??= await crypto.subtle.importKey('spki', unb64(PUBKEY), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    const ok = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pubkey, unb64(env.sig), new TextEncoder().encode(env.data));
+    return ok ? env.data : null;
+  } catch (_) { return null; }
+}
+let savedBuilt = 0;   // build time of the catalogue in use; an older one (a replayed old catalogue) is refused
 
 function evaluate(id, code) {
   const module = { exports: {} };
@@ -108,12 +134,15 @@ function evaluate(id, code) {
 
 async function fetchCode(g) {
   let code = await cacheGet(g.file);
+  // A copy saved by an older, unsigned build was only checked with the short hash: check it again.
+  if (SIGNED && typeof code === 'string' && await sha256(code) !== g.sha256) { cacheDrop([g.file]); code = undefined; }
   if (typeof code === 'string') { if (index[g.file]) { index[g.file][0] = Date.now(); saveIndex(); } return code; }
   const r = await fetch(`${BASE}/${g.file}`);
   if (!r.ok) throw new Error(`${r.status} for ${g.file}`);
   code = await r.text();
-  const h = await sha12(code);
-  if (h && h !== g.hash) throw new Error('hash mismatch for ' + g.file);
+  const h = await sha256(code);
+  // Signed: the full hash must match, and a phone that can't hash can't play streamed games.
+  if (SIGNED ? h !== g.sha256 : h && h.slice(0, 12) !== g.hash) throw new Error('hash mismatch for ' + g.file);
   cachePut(g.file, code);
   return code;
 }
@@ -125,17 +154,22 @@ export const remote = {
    *  changed(added, updated): the fresh catalogue brought new games, or new metadata for listed ones. */
   init(add, changed) {
     addGame = add; onChange = changed;
-    try { apply(JSON.parse(localStorage.getItem(MANIFEST_KEY) || 'null')); } catch (_) {}
+    // The saved copy was checked when it was saved (for a signed catalogue, the verified text).
+    try { const m = JSON.parse(localStorage.getItem(MANIFEST_KEY) || 'null'); savedBuilt = +m?.built || 0; apply(m); } catch (_) {}
   },
 
   /** Fetch the latest catalogue. Resolves true if it got one. Runs at start-up and on return to the app. */
   async refresh() {
     failed.clear();   // give games that failed to download (e.g. while offline) another go
     try {
-      const r = await fetch(`${BASE}/manifest.json`, { cache: 'no-cache' });
+      const r = await fetch(`${BASE}/${SIGNED ? 'catalogue.json' : 'manifest.json'}`, { cache: 'no-cache' });
       if (!r.ok) return false;
-      const text = await r.text(), m = JSON.parse(text);
-      if (!Array.isArray(m.games)) return false;
+      let text = await r.text();
+      if (SIGNED && !(text = await openCatalogue(JSON.parse(text)))) { console.warn('[games] catalogue signature check failed'); return false; }
+      const m = JSON.parse(text);
+      if (m.v !== 1 || !Array.isArray(m.games)) return false;
+      if (SIGNED && !(+m.built >= savedBuilt)) { console.warn('[games] catalogue is older than the saved one'); return false; }
+      savedBuilt = +m.built || 0;
       try { localStorage.setItem(MANIFEST_KEY, text); } catch (_) {}
       for (const id of [...entries.keys()]) if (!m.games.some(g => g.id === id)) entries.delete(id);   // taken down
       const { added, changed } = apply(m), live = new Set(m.games.map(g => g.file));
@@ -184,5 +218,5 @@ export const remote = {
     try { await idb('readwrite', s => s.clear()); } catch (_) {}
   },
 
-  status() { return { host: BASE || null, games: entries.size, loaded: [...loaded.keys()], cache: this.cacheInfo() }; },
+  status() { return { host: BASE || null, signed: SIGNED, games: entries.size, loaded: [...loaded.keys()], cache: this.cacheInfo() }; },
 };

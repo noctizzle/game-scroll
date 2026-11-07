@@ -22,7 +22,10 @@
     "games": "node scripts/build-games.mjs",
     "recommend": "node scripts/recommend.mjs",
     "dev:stream": "vite --host",
-    "icons": "node scripts/icons.cjs"
+    "icons": "node scripts/icons.cjs",
+    "prune": "vite build --mode bundled && node scripts/prune.cjs",
+    "lint:games": "node scripts/game-lint.mjs",
+    "catalogue-test": "node scripts/catalogue-test.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.6.0",

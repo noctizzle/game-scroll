@@ -82,8 +82,9 @@ export async function buildGames({ withMeta = false } = {}) {
   for (const file of files) {
     const id = file.replace(/\.js$/, '');
     const { code, needs } = await buildOne(file);
-    const hash = createHash('sha256').update(code).digest('hex').slice(0, 12);
-    const g = { id, hash, file: `games/${id}.${hash}.js`, bytes: Buffer.byteLength(code), needs, code };
+    const sha256 = createHash('sha256').update(code).digest('hex'), hash = sha256.slice(0, 12);
+    // hash (short) names the file; sha256 (full) is what the app checks, via the signed catalogue.
+    const g = { id, hash, sha256, file: `games/${id}.${hash}.js`, bytes: Buffer.byteLength(code), needs, code };
     if (withMeta) {
       const meta = await readMeta(file);
       if (!meta || !meta.id) continue;        // helper files that are not games

@@ -31,9 +31,39 @@ function buildLabel() {
   return [run ? '1.0.' + run : 'local', sha].filter(Boolean).join(' ');
 }
 
+// Content Security Policy for the built app: the app, and every game running inside it, can only talk
+// to the games host and our API. A game can't send anything to another server, load scripts from
+// elsewhere or open frames. 'unsafe-eval' is needed because streamed games run via new Function
+// (src/remote.js). Build only: the dev server needs its own websocket for live reload.
+function csp(env) {
+  const origin = u => { try { return new URL(u).origin; } catch (_) { return ''; } };
+  const hosts = [env.VITE_GAMES_URL, env.VITE_HEARTS_URL].map(origin).filter(Boolean);
+  // 'self' is the app itself: capacitor://localhost on iOS, https://localhost on Android.
+  const self = "'self' capacitor://localhost";
+  const policy = [
+    `default-src ${self}`,
+    `script-src ${self} 'unsafe-eval'`,
+    `style-src ${self} 'unsafe-inline'`,
+    `img-src ${self} data: blob:`,
+    `font-src ${self} data:`,
+    `media-src ${self} data: blob: mediastream:`,
+    `connect-src ${[self, ...hosts].join(' ')}`,
+    `worker-src ${self} blob:`,
+    "frame-src 'none'", "object-src 'none'", "base-uri 'none'", "form-action 'none'",
+  ].join('; ');
+  return {
+    name: 'csp',
+    apply: 'build',
+    transformIndexHtml: () => [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: policy }, injectTo: 'head-prepend' }],
+  };
+}
+
 // Relative base so the build works inside the Capacitor webview and on any static host.
-export default defineConfig(({ mode }) => ({
-  base: './',
-  define: { __APP_BUILD__: JSON.stringify(buildLabel()) },
-  plugins: [bundledGames(!!loadEnv(mode, process.cwd(), 'VITE_').VITE_GAMES_URL)],
-}));
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'VITE_');
+  return {
+    base: './',
+    define: { __APP_BUILD__: JSON.stringify(buildLabel()) },
+    plugins: [bundledGames(!!env.VITE_GAMES_URL), csp(env)],
+  };
+});

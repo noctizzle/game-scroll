@@ -1,12 +1,14 @@
 # Checks pull requests that add or change games: builds every game as a streamed file (fails if a
 # file name and its id differ), then plays the changed games in a headless browser (smoke + fold,
-# plus sweep for Console games). Runs with read-only permissions and no secrets, so it is safe for
-# pull requests from forks. See CONTRIBUTING.md.
+# plus sweep for Console games). A second job flags game code that touches the network, storage or
+# native features (scripts/game-lint.mjs), and lists changed files outside src/games/ that need a
+# careful read. Runs with read-only permissions and no secrets, so it is safe for pull requests from
+# forks. See CONTRIBUTING.md.
 name: Game PR check
 
 on:
   pull_request:
-    paths: ['src/**', 'scripts/**', 'package.json', 'package-lock.json']
+    paths: ['src/**', 'scripts/**', 'package.json', 'package-lock.json', '.github/**', 'workers/**', 'public/**', 'index.html', 'vite.config.js', '.env*']
 
 permissions:
   contents: read
@@ -71,3 +73,36 @@ jobs:
         env:
           IDS: ${{ steps.changed.outputs.console }}
         run: node scripts/sweep.cjs $IDS
+
+  # Flags risky code for review. Fails (red) when a changed game reaches the network, storage,
+  # Capacitor or other windows, or hides code; the flagged lines show on the Files tab.
+  code-flags:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Flag risky code in changed games
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          files=$(git diff --name-only --diff-filter=AM "origin/$BASE...HEAD" -- 'src/games/*.js' | tr '\n' ' ')
+          if [ -z "$files" ]; then echo "No game files changed."; exit 0; fi
+          node scripts/game-lint.mjs $files
+
+      - name: List changed files outside src/games/
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          # Game PRs should only add or change files in src/games/ (and maybe docs). Anything else
+          # runs inside the app or in CI, so a maintainer must read it line by line.
+          other=$(git diff --name-only "origin/$BASE...HEAD" | grep -vE '^(src/games/[a-z0-9-]+\.js|docs/.*\.(md|png|jpg|webp))$' || true)
+          if [ -z "$other" ]; then echo "Only game files changed."; exit 0; fi
+          { echo "### Changed outside src/games/ (review every line)"; echo; echo "$other" | sed 's/^/- `/; s/$/`/'; } >> "$GITHUB_STEP_SUMMARY"
+          for f in $other; do echo "::warning file=$f::This pull request changes $f, which is outside src/games/. Shared code and CI files run for every game, so review it line by line."; done
