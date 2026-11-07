@@ -270,6 +270,35 @@ dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
 .slide.console{background:radial-gradient(120% 70% at 50% 35%,#1c2030 0%,var(--ink) 70%)}
 .retro.console .hud .score{background:#0b0d14cc;color:#f2f4fa;border-radius:6px;font-size:13px;padding:5px 8px;box-shadow:0 2px 8px #0006}
 
+/* Next Gen console: a slim, glossy modern console with a light bar, and glassy HD menus over the game */
+.slide.nextgen{background:radial-gradient(120% 70% at 50% 30%,#10233a 0%,#070a12 72%)}
+.retro.nextgen .device{background:linear-gradient(160deg,#f4f6fa 0%,#d9dde6 46%,#1a1d24 46.4%,#0d0f14 100%);border-radius:20px;padding:7px;
+  box-shadow:inset 0 1px 0 #fff,inset 0 -2px 0 #0008,0 0 0 1px #ffffff18,0 22px 60px #000c,0 0 40px #2a8cff22}
+.retro.nextgen .screen{border:3px solid #05060a;border-radius:14px;box-shadow:0 0 0 1px #2a8cff55,0 0 18px #2a8cff33}
+.retro.nextgen .screen::after{background:linear-gradient(165deg,#ffffff10 0%,#0000 28%)}
+.retro.nextgen .bezel-top{color:#5b6274;font:600 9px/1 var(--f-body);letter-spacing:.32em}
+.retro.nextgen .bezel-top .era{color:#11151d;font-weight:800}
+.retro.nextgen .led{width:22px;height:3px;border-radius:2px;background:#2a8cff;box-shadow:0 0 6px #2a8cff}
+.retro.nextgen.playing .led{background:#7cc4ff;box-shadow:0 0 10px #3aa0ff,0 0 3px #fff}
+.retro.nextgen .bezel-bottom .slot{width:90px;height:3px;background:linear-gradient(90deg,#0000,#2a8cff,#0000);box-shadow:0 0 8px #2a8cff88}
+.retro.nextgen .pads i{width:8px;height:8px;background:#2a2f3a}
+.retro.nextgen .pads i:first-child{background:#2a8cff;box-shadow:0 0 6px #2a8cff}
+.retro.nextgen .tag{background:linear-gradient(90deg,#2a8cff,#7a5cff);color:#fff}
+.retro.nextgen .overlay{background:linear-gradient(180deg,#060a14b8,#060a14e6);backdrop-filter:blur(6px) saturate(1.2);color:#f2f5fb;gap:12px}
+.retro.nextgen .ov-k{font:700 11px/1 var(--f-body);letter-spacing:.3em;color:#7cc4ff}
+.retro.nextgen .ov-title{font:800 34px/1 var(--f-body);letter-spacing:-.01em;text-transform:uppercase;background:linear-gradient(#fff,#9fb4d8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.retro.nextgen .ov-hint{font:400 13px/1.45 var(--f-body);color:#c4ccdc;max-width:30ch}
+.retro.nextgen .ov-score{font:800 44px/1 var(--f-body)}
+.retro.nextgen .ov-best{font:600 12px/1 var(--f-body);color:#7cc4ff}
+.retro.nextgen .ov-goal,.retro.nextgen .ov-goal b{color:#c4ccdc}
+.retro.nextgen .ov-win{background:linear-gradient(90deg,#2a8cff,#7a5cff);color:#fff;border-radius:6px;font:700 12px/1 var(--f-body);letter-spacing:.1em}
+.retro.nextgen .play{font:700 13px/1 var(--f-body);letter-spacing:.24em;color:#05070c;background:#f2f5fb;border-radius:999px;padding:13px 26px;box-shadow:0 0 0 4px #2a8cff44,0 0 24px #2a8cff66}
+.retro.nextgen .chip{background:#ffffff10;border-color:#ffffff30;color:#f2f5fb;border-radius:10px}
+.retro.nextgen .chip span,.retro.nextgen .shop-k{color:#7cc4ff}
+.retro.nextgen .toast{background:#f2f5fb;color:#05070c;border-radius:6px;font:700 11px/1 var(--f-body);letter-spacing:.08em}
+.retro.nextgen .ov-trophy{font:600 12px/1 var(--f-body);color:#f2f5fb;background:#ffffff14;padding:6px 10px}
+.retro.nextgen .hud .score{font:800 15px/1 var(--f-body);background:#05070c99;color:#fff;border-radius:999px;padding:6px 12px;box-shadow:0 0 0 1px #ffffff22;backdrop-filter:blur(4px)}
+
 /* streaming: empty-feed card (first download / offline) and the settings sheet */
 .feed-msg{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:0 32px;text-align:center;color:var(--muted)}
 .feed-msg.loading{animation:fm-in .2s .4s both}   /* only shows if loading takes a moment */
