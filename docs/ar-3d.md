@@ -8,7 +8,9 @@ tilt and look up and down on the spot; walking around is not tracked.
 The kit is `src/kit/ar3d.js`, built on the Next Gen renderer (`src/kit/hd3d.js`): physically based
 materials, reflections, and real-time shadows that fall on the real floor (an invisible floor that
 only shows shadows). Bloom and the colour grade are left out, because they would also tint the real
-world behind the scene. Games built on it: `saucer-swarm.js`, `bin-flick.js`, `hoop-drone.js`.
+world behind the scene. Games built on it: `saucer-swarm.js`, `bin-flick.js`, `hoop-drone.js`, `freeze-rex.js` (reads how much
+the phone moves), `table-siege.js`, `floor-golf.js`, `domino-run.js` and `laser-mirrors.js` (things placed on a
+real surface: tap with native AR, in front of you otherwise) and `treasure-drop.js` (uses `api.location`).
 
 ## Native AR: walk around (world mode)
 
