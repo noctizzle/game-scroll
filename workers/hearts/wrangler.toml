@@ -4,6 +4,10 @@
 name = "game-scroll-hearts"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
+workers_dev = true
+
+# Served at api.game-scroll.com (Rob's domain on this Cloudflare account). Cloudflare makes the DNS record.
+routes = [{ pattern = "api.game-scroll.com", custom_domain = true }]
 
 [vars]
 # The live catalogue, used to accept hearts only for games that exist.

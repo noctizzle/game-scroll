@@ -2,9 +2,9 @@
 #
 # One-time setup:
 #   1. The CLOUDFLARE_API_TOKEN repository secret (already used by games-r2.yml) also needs
-#      "Workers Scripts: Edit" and "D1: Edit" on this account. Edit the token in the Cloudflare
-#      dashboard (My Profile -> API Tokens) and add both permissions.
-#   2. Open Workers & Pages in the dashboard once, so the account has a workers.dev subdomain.
+#      "Workers Scripts: Edit" and "D1: Edit" on this account, plus "Workers Routes: Edit" and
+#      "Zone: Read" on the game-scroll.com zone (for the api.game-scroll.com custom domain).
+#      Edit the token in the Cloudflare dashboard (My Profile -> API Tokens).
 #
 # The first run creates the D1 database "game-scroll-hearts"; later runs reuse it.
 name: Hearts backend (Cloudflare Worker)
@@ -78,5 +78,4 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           npx wrangler deploy 2>&1 | tee deploy.log
-          url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)
-          echo "Hearts backend live at $url (set VITE_HEARTS_URL in .env to this)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Hearts backend deployed to https://api.game-scroll.com" | tee -a "$GITHUB_STEP_SUMMARY"
