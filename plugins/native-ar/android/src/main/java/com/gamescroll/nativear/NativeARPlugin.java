@@ -119,8 +119,14 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
                 WebView web = getBridge().getWebView();
                 ViewGroup parent = (ViewGroup) web.getParent();
                 if (glView.getParent() == null) {
-                    // behind the WebView: the page is made see-through while an AR game plays
-                    parent.addView(glView, parent.indexOfChild(web), new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                    // behind the WebView, exactly its size and place (the page is made see-through while
+                    // an AR game plays, and the game lines its 3D up with the WebView's area)
+                    parent.addView(glView, parent.indexOfChild(web), new ViewGroup.LayoutParams(Math.max(1, web.getWidth()), Math.max(1, web.getHeight())));
+                    matchWebView(web);
+                    if (!layoutHooked) {
+                        layoutHooked = true;
+                        web.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> { if (glView != null && glView.getParent() != null) matchWebView(web); });
+                    }
                 }
                 web.setBackgroundColor(Color.TRANSPARENT);
                 session.resume();
@@ -136,6 +142,19 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
                 notStarted(call, e.getClass().getSimpleName());
             }
         });
+    }
+
+    private boolean layoutHooked = false;
+
+    private void matchWebView(WebView web) {
+        ViewGroup.LayoutParams lp = glView.getLayoutParams();
+        if (lp.width != web.getWidth() || lp.height != web.getHeight()) {
+            lp.width = Math.max(1, web.getWidth());
+            lp.height = Math.max(1, web.getHeight());
+            glView.setLayoutParams(lp);
+        }
+        glView.setX(web.getX());
+        glView.setY(web.getY());
     }
 
     @PluginMethod

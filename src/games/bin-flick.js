@@ -55,10 +55,11 @@ function make(api) {
     conf = new Particles(v, { max: 260, additive: false });
   }
   function place(first) {
-    // the bin wanders further and further round you; without a gyro it stays in view
-    const spread = v.sensor ? Math.min(2.6, .35 + score * .22) : .3;
-    const d = first ? 2.4 : clamp(1.6 + score * .14 + rnd(-.2, .3), 1.5, 4.2);
-    binA = first ? 0 : clamp(binA + rnd(-1, 1) * spread, -spread, spread);
+    // the next bin goes roughly where you're facing: a bit left or right, nearer or further, so it
+    // stays on screen (it never jumps behind you)
+    const d = first ? 2.4 : clamp(1.9 + score * .1 + rnd(-.4, .4), 1.8, 3.8);
+    const spread = v.sensor ? Math.min(.45, .2 + score * .03) : .25;
+    binA = first ? 0 : (v.sensor ? v.heading() : 0) + rnd(-1, 1) * spread;
     // from where you stand (you can walk around with native AR); a new round starts at the origin
     const e = !first && v.eyePos || { x: 0, z: 0 };
     bx = e.x - Math.sin(binA) * d; bz = e.z - Math.cos(binA) * d;
