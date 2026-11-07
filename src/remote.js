@@ -15,6 +15,8 @@
 // than the one it already has, and checks every game file's full SHA-256 against it. So someone who
 // got write access to the games host still couldn't get their own code to run in the app.
 
+import { GAME_MODULES, HIDDEN, API_FEATURES } from './game-modules.js';
+
 export const BASE = String(import.meta.env.VITE_GAMES_URL || '').replace(/\/+$/, '');
 export const CACHE_MAX = 100;
 // Base64 SPKI public key for ECDSA P-256. Empty = the old unsigned manifest.json (before the key exists).
@@ -24,10 +26,19 @@ export const SIGNED = !!PUBKEY;
 // older build is never used.
 const MANIFEST_KEY = SIGNED ? 'gs_catalogue' : 'gs_manifest', INDEX_KEY = 'gs_cache_index';
 
-// The app's shared code, handed to downloaded games so they use the same sound, haptics, wallet...
+// The app's shared code, handed to downloaded games so they use the same sound, haptics, 3D kits...
+// Only the modules in src/game-modules.js are handed over, minus their HIDDEN exports: app-only code
+// (the wallet, saved progress, settings) is never reachable from a game.
 const KIT = {};
-for (const [p, m] of Object.entries(import.meta.glob(['./*.js', '!./main.js', '!./remote.js', './kit/*.js'], { eager: true })))
-  KIT[p.slice(2)] = m;
+const ALL = import.meta.glob(['./*.js', '!./main.js', '!./remote.js', './kit/*.js'], { eager: true });
+for (const mod of GAME_MODULES) {
+  const m = ALL['./' + mod]; if (!m) continue;
+  const hide = HIDDEN[mod] || [], out = {};
+  for (const k of Object.keys(m)) if (!hide.includes(k)) out[k] = m[k];
+  KIT[mod] = Object.freeze(out);
+}
+// Not a module: the api features this app gives games in make(api) (see API_FEATURES).
+KIT['@api'] = Object.fromEntries(API_FEATURES.map(k => [k, true]));
 
 /* ---------- tiny IndexedDB store: file path -> code ---------- */
 let dbp = null;
@@ -124,7 +135,7 @@ let savedBuilt = 0;   // build time of the catalogue in use; an older one (a rep
 
 function evaluate(id, code) {
   const module = { exports: {} };
-  const require = spec => { const m = spec.startsWith('gs:') && KIT[spec.slice(3)]; if (!m) throw new Error('missing shared module ' + spec); return m; };
+  const require = spec => { const m = spec.startsWith('gs:') && spec[3] !== '@' && KIT[spec.slice(3)]; if (!m) throw new Error('missing shared module ' + spec); return m; };
   // sourceURL names the file in error reports (src/perf.js) instead of an anonymous function.
   new Function('require', 'module', 'exports', code + '\n//# sourceURL=games/' + String(id).replace(/[^a-z0-9-]/g, '') + '.js')(require, module, module.exports);
   const def = module.exports.default;

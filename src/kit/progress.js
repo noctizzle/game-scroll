@@ -89,6 +89,8 @@ export const progress = {
   },
   totalBought: () => Object.values(P.by).reduce((a, d) => a + Object.values(d.bought || {}).reduce((x, y) => x + y, 0), 0),
 
+  /** Tells listeners (the cloud save) that a section's data changed. */
+  touch() { changed(); },
   hasTrophy: id => !!P.trophies[id],
   grant(id) { if (P.trophies[id]) return false; P.trophies[id] = Date.now(); changed(); return true; },
 
