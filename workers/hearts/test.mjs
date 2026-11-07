@@ -240,7 +240,7 @@ await run({}, async url => {
   r = await post(url, '/stats', { device: A, games: { [game]: { v: 2, p: 1, k: 1, s: 30 } } }); assert.equal(r.status, 200);
   r = await post(url, '/stats', { device: A, games: { [game]: { v: 1, p: 0, k: 1, s: 0 } } }); assert.equal(r.status, 200);
   r = await fetch(url + '/stats'); assert.equal(r.status, 200);
-  assert.deepEqual((await r.json()).games[game], { v: 3, p: 1, k: 2, s: 30 });
+  assert.deepEqual((await r.json()).games[game], { v: 3, p: 1, k: 2, s: 30, wv: 3, wp: 1 });
   r = await post(url, '/stats', { device: A, games: 'x' }); assert.equal(r.status, 400);
   let lim = 0;
   for (let i = 0; i < 8 && !lim; i++) { r = await post(url, '/stats', { device: B, games: {} }); if (r.status === 429) lim = 1; }
