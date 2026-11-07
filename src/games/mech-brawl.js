@@ -171,7 +171,9 @@ function make(api) {
   function draw(c) {
     if (!built) self.reset();
     const sh = shake * .15;
-    v.cam.position.set(me.position.x * .5 + 2.7 + rnd(-sh, sh), 5.4 + rnd(-sh, sh), -6.2); v.cam.lookAt(me.position.x * .3 - .3, 2.6, 4.4);
+    // three-quarter ringside view, so neither mech hides the other; pull back on tall (portrait) screens
+    const back = Math.max(1, H / W * .9);
+    v.cam.position.set(6.4 * back + me.position.x * .3 + rnd(-sh, sh), 4.3 + rnd(-sh, sh), -3.6 * back); v.cam.lookAt(me.position.x * .3, 2.3, 2.2);
     v.placeLamps(spots, 0, 3, 2, t); v.hurt = hitFlash * .8;
     v.render(c, W, H); hud(c);
   }

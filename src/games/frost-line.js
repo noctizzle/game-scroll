@@ -57,7 +57,7 @@ function make(api) {
     v.exposure = .8; v.bloom = .25;
     sunL = sun('#fff2e0', 2.2, 22, [-.5, .8, -.4]); v.scene.add(sunL, sunL.target); v.onTier(T => sunL.setTier(T));
     const m = looks();
-    tiles = [0, 1].map(() => { const g = new PlaneGeometry(WID * 2, TILE, 70, 80); g.rotateX(-Math.PI / 2); const ms = new Mesh(g, m.snow); ms.receiveShadow = true; v.scene.add(ms); return ms; });
+    tiles = [0, 1].map(() => { const g = new PlaneGeometry(WID * 2, TILE, 70, 80); g.rotateX(-Math.PI / 2); const ms = new Mesh(g, m.snow); ms.receiveShadow = true; ms.frustumCulled = false; v.scene.add(ms); return ms; });
     const N = 260;
     trees = { g: new Group(), pine: new InstancedMesh(new ConeGeometry(1, 1, 8), m.pine, N), cap: new InstancedMesh(new ConeGeometry(1, 1, 8), m.cap, N), trunk: new InstancedMesh(new CylinderGeometry(.15, .2, 1, 6), m.trunk, N) };
     rocks = new InstancedMesh(new DodecahedronGeometry(1, 0), m.rock, 60);
@@ -71,7 +71,7 @@ function make(api) {
   function shapeTile(ms, z0) {
     const p = ms.geometry.attributes.position;
     for (let i = 0; i < p.count; i++) { const lx = p.getX(i), lz = p.getZ(i) + z0 + TILE / 2; p.setY(i, ground(lx, lz)); }
-    p.needsUpdate = true; ms.geometry.computeVertexNormals(); ms.position.z = z0 + TILE / 2; ms.userData.z0 = z0; v.shadowsDirty();
+    p.needsUpdate = true; ms.geometry.computeVertexNormals(); ms.geometry.computeBoundingSphere(); ms.geometry.computeBoundingBox(); ms.position.z = z0 + TILE / 2; ms.userData.z0 = z0; v.shadowsDirty();   // bounds move with the reshaped tile, else it gets culled
   }
   // things on the slope ahead: trees in clumps, rocks, kickers, gates of flags
   function populate(z0, z1) {

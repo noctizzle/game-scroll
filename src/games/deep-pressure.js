@@ -68,10 +68,14 @@ function makeLurker() {
 function make(api) {
   let v, sub, lurker, lamp, bubbles, snow, spark, curve, LEN, PT, TN, NN, BN, world, spikes, mines, pearls, pearlIM, built;
   let d, ox, oy, vx, vy, speed, hull, hurtT, pingT, noiseLvl, lurkGap, lurkT, score, pearlsGot, t, msg, fingers, keys, stick, best, beatT;
-  const mx = new Object3D(), pos = new Vector3(), tmp = new Vector3(), camPos = new Vector3(), look = new Vector3();
+  const mx = new Object3D(), pos = new Vector3(), tmp = new Vector3(), camPos = new Vector3(), look = new Vector3(), camOff = { x: 0, y: 0 };
 
   function frame(dd) { const f = ((dd % LEN) + LEN) % LEN / LEN * NF, i = Math.floor(f) % NF; return i; }
-  function at(dd, x, y, out = pos) { const i = frame(dd); return out.copy(PT[i]).addScaledVector(NN[i], y).addScaledVector(BN[i], x); }
+  // smooth position + frame along the trench: blend the two nearest samples, so nothing steps from one to the next
+  const aN = new Vector3(), aB = new Vector3(), dT = new Vector3(), dN = new Vector3(), dB = new Vector3();
+  function blend(dd) { const f = ((dd % LEN) + LEN) % LEN / LEN * NF, i = Math.floor(f) % NF; return [i, f - Math.floor(f)]; }
+  function at(dd, x, y, out = pos) { const [i, k] = blend(dd); aN.lerpVectors(NN[i], NN[i + 1], k).normalize(); aB.lerpVectors(BN[i], BN[i + 1], k).normalize(); return out.lerpVectors(PT[i], PT[i + 1], k).addScaledVector(aN, y).addScaledVector(aB, x); }
+  function basis(dd) { const [i, k] = blend(dd); dT.lerpVectors(TN[i], TN[i + 1], k).normalize(); dN.lerpVectors(NN[i], NN[i + 1], k).normalize(); dB.lerpVectors(BN[i], BN[i + 1], k).normalize(); }
   function setup() {
     v = new HDView({ bg: '#010409', fog: .055, env: .15, sky: '#1a4058', ground: '#000000', amb: .22, fov: 70 }).lampLights(10);
     v.exposure = 1.1; v.bloom = .8;
@@ -157,13 +161,13 @@ function make(api) {
   }
   function draw(c) {
     if (!built) self.reset();
-    const i = frame(d);
+    basis(d);
     at(d, ox, oy); sub.position.copy(pos);
-    look.copy(pos).addScaledVector(TN[i], 4).addScaledVector(BN[i], vx * .06).addScaledVector(NN[i], vy * .06); sub.lookAt(look); sub.rotateZ(-vx * .05);
+    look.copy(pos).addScaledVector(dT, 4).addScaledVector(dB, vx * .06).addScaledVector(dN, vy * .06); sub.lookAt(look); sub.rotateZ(-vx * .05);
     sub.userData.prop.rotation.z += speed * .05;
-    at(d - 6, ox * .7, oy * .7 + 1.6, tmp); if (!camPos.lengthSq() || camPos.distanceTo(tmp) > 8) camPos.copy(tmp); camPos.lerp(tmp, .15);
-    v.cam.position.copy(camPos); v.cam.up.copy(NN[i]); at(d + 8, ox * .5, oy * .5, look); v.cam.lookAt(look);
-    lamp.position.copy(sub.position).addScaledVector(TN[i], 1); lamp.target.position.copy(sub.position).addScaledVector(TN[i], 20).addScaledVector(BN[i], vx * .3).addScaledVector(NN[i], vy * .3); lamp.target.updateMatrixWorld();
+    camOff.x += (ox * .7 - camOff.x) * .15; camOff.y += (oy * .7 - camOff.y) * .15; at(d - 6, camOff.x, camOff.y + 1.6, camPos);   // forward motion is followed exactly, only sideways moves are eased
+    v.cam.position.copy(camPos); v.cam.up.copy(dN); at(d + 8, ox * .5, oy * .5, look); v.cam.lookAt(look);
+    lamp.position.copy(sub.position).addScaledVector(dT, 1); lamp.target.position.copy(sub.position).addScaledVector(dT, 20).addScaledVector(dB, vx * .3).addScaledVector(dN, vy * .3); lamp.target.updateMatrixWorld();
     // the Lurker trails behind (its lure glows in the dark when it's close)
     at(d - lurkGap, Math.sin(t * .7) * 2, Math.cos(t * .5) * 1.5, tmp); lurker.position.copy(tmp); at(d, 0, 0, look); lurker.lookAt(look); lurker.visible = lurkGap < 30;
     PING.pos.value.copy(sub.position);
@@ -195,7 +199,7 @@ function make(api) {
     reset() {
       buildWorld();
       d = 8; ox = 0; oy = 0; vx = 0; vy = 0; speed = 6.5; hull = HULL; hurtT = 0; pingT = 1; noiseLvl = 0; lurkGap = 46; score = 0; pearlsGot = 0; t = 0; msg = null; fingers = {}; keys = new Set(); beatT = 0;
-      stick = { on: false, x: 0, y: 0, ax: 0, ay: 0, id: null }; camPos.set(0, 0, 0); bubbles.clear(); snow.clear(); spark.clear(); PING.a.value = 0;
+      stick = { on: false, x: 0, y: 0, ax: 0, ay: 0, id: null }; camPos.set(0, 0, 0); camOff.x = camOff.y = 0; bubbles.clear(); snow.clear(); spark.clear(); PING.a.value = 0;
     },
     resize(w, h) { W = w; H = h; },
     update, draw,
