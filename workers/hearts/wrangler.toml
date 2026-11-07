@@ -4,7 +4,10 @@
 name = "game-scroll-hearts"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
-workers_dev = true
+# Only reachable at api.game-scroll.com, where the zone's WAF rate limit applies (the workers.dev
+# address would skip it).
+workers_dev = false
+preview_urls = false
 
 # Served at api.game-scroll.com (Rob's domain on this Cloudflare account). Cloudflare makes the DNS record.
 routes = [{ pattern = "api.game-scroll.com", custom_domain = true }]
