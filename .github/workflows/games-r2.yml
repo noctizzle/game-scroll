@@ -1,0 +1,90 @@
+# Publishes every game as its own small file to Cloudflare R2, so the app can stream game updates
+# and new games without a new app release (see src/remote.js and scripts/build-games.mjs).
+#
+# Public read URL (set in the app builds as VITE_GAMES_URL):
+#   https://pub-8db49903028243cf90dd4d7a8bb98735.r2.dev
+#
+# One-time setup: add a repository secret CLOUDFLARE_API_TOKEN (Settings -> Secrets and variables ->
+# Actions) holding a Cloudflare API token with "Workers R2 Storage: Edit" on this account.
+#
+# Game files are named by their content hash, so they never change once uploaded and are cached
+# forever; only manifest.json (the catalogue) is re-uploaded every run, with a short cache time.
+name: Games (Cloudflare R2)
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'scripts/build-games.mjs', '.github/workflows/games-r2.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: games-r2
+  cancel-in-progress: false
+
+env:
+  CF_ACCOUNT: 4d04f07305a8d0b2efd5221d16d92e35
+  BUCKET: game-scroll
+  PUBLIC_URL: https://pub-8db49903028243cf90dd4d7a8bb98735.r2.dev
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build the game files
+        run: node scripts/build-games.mjs dist-games
+
+      - name: Check the token is set
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Add the CLOUDFLARE_API_TOKEN repository secret (see the top of this file)."; exit 1
+          fi
+
+      - name: Allow the app to read the bucket (CORS)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          curl -fsS -X PUT "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/cors" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+            --data '{"rules":[{"allowed":{"origins":["*"],"methods":["GET","HEAD"]},"maxAgeSeconds":86400}]}' >/dev/null
+
+      - name: Upload new game files
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          put() {  # put <local file> <key> <content-type> <cache-control>
+            curl -fsS --retry 3 -X PUT "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/r2/buckets/$BUCKET/objects/$2" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: $3" -H "Cache-Control: $4" \
+              --data-binary "@$1" >/dev/null
+          }
+          up=0; same=0
+          cd dist-games
+          for f in games/*.js; do
+            # Already there? The name includes the hash, so the same name means the same code.
+            if curl -fsI "$PUBLIC_URL/$f" >/dev/null 2>&1; then same=$((same+1)); continue; fi
+            put "$f" "$f" "text/javascript; charset=utf-8" "public, max-age=31536000, immutable"
+            up=$((up+1))
+          done
+          # Catalogue last, so it never points at a file that isn't uploaded yet.
+          put manifest.json manifest.json "application/json" "public, max-age=60"
+          echo "Uploaded $up new game files ($same unchanged) and the catalogue." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Check the catalogue is live
+        run: |
+          sleep 5
+          curl -fsS "$PUBLIC_URL/manifest.json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const m=JSON.parse(s);console.log(m.games.length+' games in the live catalogue')})"

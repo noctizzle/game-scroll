@@ -52,6 +52,19 @@ export default {
 
 `fx(dt)` is optional and keeps effects animating on the game-over screen.
 
+## Streaming games (Cloudflare R2)
+
+Games are built into the app (so it works offline and on first launch) and also streamed from a
+Cloudflare R2 bucket, so a game can be fixed or added without a new app release.
+
+- `npm run games` builds every game in `src/games/` as its own file in `dist-games/` plus a `manifest.json` catalogue.
+- On every push to main, `.github/workflows/games-r2.yml` uploads them to R2 (needs the `CLOUDFLARE_API_TOKEN` repo secret).
+- The app (`src/remote.js`) reads the catalogue from `VITE_GAMES_URL` (set in `.env`), swaps in any game whose code changed,
+  adds games it doesn't have, downloads the next few in the feed ahead of time, and keeps them in IndexedDB for offline play.
+- A streamed game may only use shared exports (`src/util.js`, `src/sfx.js`, `src/kit/*.js`...) the installed app has.
+  If it needs newer shared code, older apps keep their built-in copy until they're updated.
+- A game's file name must match its `id`.
+
 ## Phone features
 
 `src/kit/device.js` gives games haptics (including short/long `buzz()` patterns), tilt, shake, face-down detection (`faceDown()`), compass heading, GPS location, the microphone and the camera. On web and desktop, or when the player refuses a permission, these calls do nothing or return `null`. That means every game needs a touch fallback (for example, drag instead of tilt). Call `want('motion')` in `make()` for tilt, shake or compass games: iOS asks for motion permission on the player's next tap. The usage strings for iOS and the permissions for Android are already set.

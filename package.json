@@ -16,10 +16,12 @@
     "fold": "vite build && node scripts/fold.cjs",
     "swipe": "vite build && node scripts/swipe.cjs",
     "wallet": "vite build && node scripts/wallet.cjs",
-    "game-services": "node scripts/game-services.mjs"
+    "game-services": "node scripts/game-services.mjs",
+    "games": "node scripts/build-games.mjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.3",
+    "rolldown": "^1.2.16",
     "vite": "^8.3.4"
   },
   "dependencies": {
