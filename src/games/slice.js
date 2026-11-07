@@ -1,5 +1,6 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
+import { haptic } from '../kit/device.js';
 
 function Slice(api){
   const W=360,H=640,G=900;
@@ -24,7 +25,7 @@ function Slice(api){
       if(segDist(it.x,it.y,ax,ay,bx,by)<=it.r){
         items.splice(items.indexOf(it),1);
         if(it.bomb){flash=1;for(let i=0;i<30;i++){const a=rnd(0,7),s=rnd(100,500);parts.push({x:it.x,y:it.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:rnd(.4,.9),c:i%2?'#ffcf4a':'#ff4b3a',s:rnd(3,7)})}
-          sfx(90,.6,'sawtooth',.08,-60);try{navigator.vibrate&&navigator.vibrate(120)}catch(e){}return api.over()}
+          sfx(90,.6,'sawtooth',.08,-60);haptic('heavy');return api.over()}
         const a=Math.atan2(by-ay,bx-ax);stroke++;score+=stroke>=3?2:1;api.score(score);sfx(700+stroke*90,.07,'triangle',.05);
         for(const s of[1,-1])halves.push({x:it.x,y:it.y,vx:it.vx*.5+Math.cos(a+s*Math.PI/2)*110,vy:Math.min(it.vy,0)*.3+Math.sin(a+s*Math.PI/2)*110,r:it.r,c:it.c,ang:a,side:s,rot:0,vr:s*rnd(2,4)});
         for(let i=0;i<12;i++){const b=rnd(0,7),s=rnd(60,260);parts.push({x:it.x,y:it.y,vx:Math.cos(b)*s,vy:Math.sin(b)*s,life:rnd(.3,.6),c:it.c[0],s:rnd(2,5)})}

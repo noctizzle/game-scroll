@@ -182,7 +182,7 @@ tune.start(); tune.speed(1.2); tune.stop();
   `s` snare, `h` hi-hat, `c` crash (several at once: `kh`). Parts can be different lengths.
 - Start music in `update()`, not in `reset()` (reset also runs while the game waits in the feed).
   The app stops all music when a round ends or the player moves to another game.
-- Everything respects the mute button. `sfx()` still works as before.
+- Everything respects the player's Sound & haptics settings (sound, volume, music). `sfx()` still works as before.
 
 ## Controls
 

@@ -7,7 +7,7 @@
 //   const m = music({ tempo: 120, lead: 'C5 . E5 . G5 . E5 .', bass: 'C3 . . . G2 . . .', drums: 'k . h . s . h .' });
 //   m.start();  m.stop();  m.speed(1.2);                                 // looping background music
 //
-// Everything respects the app's mute button. Music stops by itself when the round ends or the
+// Everything respects the player's Sound & haptics settings (sound on/off, volume, music on/off). Music stops by itself when the round ends or the
 // player swipes to another game, but stop it in your own game-over code too if it should end sooner.
 import { sfx, sound, audio } from '../sfx.js';
 
@@ -29,7 +29,7 @@ export function freq(n) {
  * at: seconds from now to start it (for scheduling).
  */
 export function tone(f, { len = .1, wave = 'square', vol = .05, slide = 0, attack = .005, at = 0 } = {}) {
-  if (sound.muted) return;
+  if (sound.muted || !sound.volume) return;
   const a = audio(); if (!a) return;
   const hz = freq(f); if (!hz) return;
   try {
@@ -57,7 +57,7 @@ function noiseBuffer(ctx) {
  * filter: 'lowpass' (default) | 'highpass' | 'bandpass'.
  */
 export function noise(len = .25, { vol = .08, from = 3000, to = 300, filter = 'lowpass', q = 1, at = 0 } = {}) {
-  if (sound.muted) return;
+  if (sound.muted || !sound.volume) return;
   const a = audio(); if (!a) return;
   try {
     const { ctx } = a, t = ctx.currentTime + at, src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
@@ -137,7 +137,7 @@ export function music({ tempo = 120, vol = 1, swing = 0, ...parts } = {}) {
     const now = a.ctx.currentTime;
     if (next < now) next = now + .03;
     while (next < now + .15) {          // look ahead a little so timing stays tight
-      if (!sound.muted) for (const tr of tracks) {
+      if (!sound.muted && sound.volume && sound.music) for (const tr of tracks) {
         const tok = tr.steps[step % tr.steps.length], at = next - now + (step % 2 ? swing * stepLen() : 0);
         if (tok === '.' || tok === '-') continue;
         if (tr.name === 'drums') { for (const d of tok) DRUM[d]?.(at, vol); continue; }

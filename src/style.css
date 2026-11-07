@@ -385,3 +385,9 @@ html.ar-live .slide.ar.playing .screen{box-shadow:0 0 0 1px #19e3b155,0 0 0 7px 
 html.ar-live .slide.ar.playing .bezel-top,html.ar-live .slide.ar.playing .bezel-bottom{position:relative;z-index:1}
 html.ar-live .slide.ar.playing .meta{position:relative;z-index:1}
 html.ar-live .slide.ar.playing .bezel-top .era{color:#8affdc}
+/* Sound & haptics controls */
+.set-slider{display:flex;align-items:center;gap:12px;margin:0 16px 12px;font-size:15px}
+.set-slider input{flex:1;min-width:0;accent-color:var(--accent,#ff4d6d);height:28px}
+.set-slider output{width:44px;text-align:right;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.set-row .off{opacity:.45}
+.feel .set-row:last-child{padding-bottom:12px}
