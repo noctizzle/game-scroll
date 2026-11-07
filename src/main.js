@@ -320,7 +320,26 @@ function setActive(s){
   if(active===s)return;
   if(active&&active.state!=='ready')resetSlide(active);
   feed.classList.remove('locked');active=s;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);
-  topUp();
+  topUp();schedulePrune();
+}
+
+// Cards you've scrolled past stay in the page so you can swipe back, but only the last BEHIND of
+// them: every card holds a canvas and a whole game, so a long session would keep using more memory
+// until the phone closes the app. Older cards are dropped a few at a time, once the feed has
+// settled, and the scroll position is corrected in the same frame so nothing on screen moves.
+const BEHIND=8,PRUNE_BATCH=4;
+let pruneT=0,touches=0;
+addEventListener('pointerdown',()=>touches++,true);
+for(const ev of ['pointerup','pointercancel'])addEventListener(ev,()=>{touches=Math.max(0,touches-1)},true);
+function schedulePrune(wait=800){clearTimeout(pruneT);pruneT=setTimeout(pruneBehind,wait)}
+function pruneBehind(){
+  const i=active?slides.indexOf(active):-1,n=i-BEHIND;
+  if(n<PRUNE_BATCH)return;
+  const top=()=>active.el.getBoundingClientRect().top-feed.getBoundingClientRect().top;
+  if(touches||Math.abs(top())>1)return schedulePrune();   // still moving or under a finger: try again soon
+  const before=top();
+  for(const s of slides.splice(0,n)){io.unobserve(s.el);try{s.game.dispose?.()}catch(_){}s.el.remove()}
+  feed.scrollTop+=top()-before;   // undo the jump (some browsers already did, then this adds 0)
 }
 
 let built=0;

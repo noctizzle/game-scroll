@@ -4,8 +4,13 @@ Game Scroll talks to two Cloudflare hosts:
 
 - **assets.game-scroll.com**: the public R2 bucket of game files and the catalogue (`manifest.json`).
   It holds nothing secret. The risk there is cost, because R2 charges per read that isn't served from cache.
+  It also matters what's in it: the app only runs games from a catalogue signed in CI
+  ([catalogue-signing.md](catalogue-signing.md)), so a file swapped in R2 won't run.
 - **api.game-scroll.com**: the Worker in `workers/hearts`, which stores shared heart counts in D1.
   The risks there are fake hearts and cost.
+
+The app also has a Content Security Policy (`vite.config.js`): code in the app, including every
+game, can only connect to these two hosts, so a game can't send data anywhere else.
 
 ## What the API does
 

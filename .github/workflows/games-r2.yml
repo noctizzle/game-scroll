@@ -14,7 +14,7 @@ name: Games (Cloudflare R2)
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'scripts/build-games.mjs', '.github/workflows/games-r2.yml']
+    paths: ['src/**', 'scripts/build-games.mjs', 'scripts/sign-catalogue.mjs', '.env', '.github/workflows/games-r2.yml']
   workflow_dispatch:
 
 permissions:
@@ -46,6 +46,20 @@ jobs:
 
       - name: Build the game files
         run: node scripts/build-games.mjs dist-games
+
+      # Signs the catalogue (scripts/sign-catalogue.mjs) so the app can tell it came from this repo.
+      # Needs the secret CATALOGUE_SIGNING_KEY once .env has VITE_CATALOGUE_KEY (see docs/catalogue-signing.md).
+      - name: Sign the catalogue
+        env:
+          CATALOGUE_SIGNING_KEY: ${{ secrets.CATALOGUE_SIGNING_KEY }}
+        run: |
+          pub=$(grep -E '^VITE_CATALOGUE_KEY=' .env | cut -d= -f2- | tr -d '[:space:]' || true)
+          if [ -z "$CATALOGUE_SIGNING_KEY" ]; then
+            if [ -n "$pub" ]; then echo "::error::.env has VITE_CATALOGUE_KEY but the CATALOGUE_SIGNING_KEY secret is missing, so apps would get no new games."; exit 1; fi
+            echo "::warning::No CATALOGUE_SIGNING_KEY secret yet: publishing the unsigned catalogue only (see docs/catalogue-signing.md)."
+            exit 0
+          fi
+          EXPECT_PUBKEY="$pub" node scripts/sign-catalogue.mjs dist-games
 
       - name: Check the token is set
         env:
@@ -80,7 +94,9 @@ jobs:
             put "$f" "$f" "text/javascript; charset=utf-8" "public, max-age=31536000, immutable"
             up=$((up+1))
           done
-          # Catalogue last, so it never points at a file that isn't uploaded yet.
+          # Catalogue last, so it never points at a file that isn't uploaded yet. catalogue.json is the
+          # signed one the app reads; manifest.json stays for older app builds and the API Worker.
+          if [ -f catalogue.json ]; then put catalogue.json catalogue.json "application/json" "public, max-age=60"; fi
           put manifest.json manifest.json "application/json" "public, max-age=60"
           echo "Uploaded $up new game files ($same unchanged) and the catalogue." | tee -a "$GITHUB_STEP_SUMMARY"
 
