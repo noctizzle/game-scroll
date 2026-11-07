@@ -8,7 +8,7 @@ const W = 360, H = 640;
 const C = [['RED', '#ff4d4d'], ['BLUE', '#3d8bff'], ['GREEN', '#3dd17a'], ['YELLOW', '#ffd34a']];
 
 function make(api) {
-  let word, ink, rule, time, limit, score, t, flip, shake, btnOrder;
+  let lives, word, ink, rule, time, limit, score, t, flip, shake, btnOrder;
   function next() {
     word = Math.random() * 4 | 0; do ink = Math.random() * 4 | 0; while (ink === word && Math.random() < .8);
     if (score >= 4 && Math.random() < .3) { rule = rule === 'ink' ? 'word' : 'ink'; flip = 1; haptic('warning'); }
@@ -16,12 +16,14 @@ function make(api) {
     if (score >= 10) btnOrder = btnOrder.sort(() => Math.random() - .5);
   }
   const self = {
-    reset() { rule = 'ink'; score = 0; t = 0; flip = 0; shake = 0; btnOrder = [0, 1, 2, 3]; next(); },
-    update(dt) { t += dt; flip = Math.max(0, flip - dt * 2); shake = Math.max(0, shake - dt * 3); time -= dt; if (time <= 0) { haptic('error'); sfx(140, .3, 'square', .05, -40); return api.over(); } },
+    reset() { lives = 3; rule = 'ink'; score = 0; t = 0; flip = 0; shake = 0; btnOrder = [0, 1, 2, 3]; next(); },
+    update(dt) { t += dt; flip = Math.max(0, flip - dt * 2); shake = Math.max(0, shake - dt * 3); time -= dt; if (time <= 0) self.miss(); },
+    miss() { shake = 1; haptic('error'); sfx(140, .3, 'square', .05, -40); if (--lives <= 0) return api.over(); next(); },
     draw(c) {
       c.fillStyle = '#16131f'; c.fillRect(0, 0, W, H);
       c.fillStyle = flip ? `rgba(255,255,255,${flip * .25})` : '#ffffff10'; c.beginPath(); c.roundRect(40, 80, 280, 60, 14); c.fill();
       c.fillStyle = '#fff'; c.font = '400 13px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(rule === 'ink' ? 'TAP THE INK' : 'TAP THE WORD', W / 2, 117);
+      c.font = '20px sans-serif'; for (let i = 0; i < 3; i++) { c.fillStyle = i < lives ? '#ff4d6d' : '#ffffff22'; c.fillText('♥', W / 2 - 28 + i * 28, 60); }
       c.fillStyle = '#ffffff20'; c.fillRect(40, 160, 280, 8); c.fillStyle = time / limit < .3 ? '#ff4d4d' : '#ffffffcc'; c.fillRect(40, 160, 280 * clamp(time / limit, 0, 1), 8);
       c.save(); c.translate(W / 2 + (shake ? Math.sin(t * 80) * 6 * shake : 0), 290);
       c.fillStyle = C[ink][1]; c.font = '800 54px Rubik, sans-serif'; c.fillText(C[word][0], 0, 0); c.restore();
@@ -35,7 +37,7 @@ function make(api) {
       if (y < 380 || y > 600) return; const i = (x > W / 2 ? 1 : 0) + (y > 485 ? 2 : 0), k = btnOrder[i];
       const want = rule === 'ink' ? ink : word;
       if (k === want) { score++; api.score(score); haptic('light'); sfx(600 + score * 10, .05, 'square', .04, 150); next(); }
-      else { shake = 1; haptic('error'); sfx(140, .3, 'square', .05, -40); api.over(); }
+      else self.miss();
     },
     key(k, d) { if (!d) return; const i = { 1: 0, 2: 1, 3: 2, 4: 3 }[k]; if (i != null) { const idx = btnOrder.indexOf(i); self.down(idx % 2 ? 300 : 60, idx > 1 ? 540 : 420); } },
   };
@@ -44,6 +46,6 @@ function make(api) {
 
 export default {
   id: 'colour-word', title: 'Colour Word Trap', tag: 'Casual · Brain', retro: false, w: W, h: H, goal: 25,
-  hint: 'Read the rule: tap the colour of the INK, or the colour the WORD says. The rule flips without warning. One wrong tap ends it.',
+  hint: 'Read the rule: tap the colour of the INK, or the colour the WORD says. The rule flips without warning. You have three hearts: a wrong tap or running out of time costs one.',
   make,
 };

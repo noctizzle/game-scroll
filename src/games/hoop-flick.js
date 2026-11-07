@@ -5,10 +5,10 @@ import { sfx } from '../sfx.js';
 const W = 360, H = 640, G = 1500, BR = 20, RIM = 46, START = { x: W / 2, y: H - 90 };
 
 function make(api) {
-  let ball, hoop, score, flick, held, scored, t, net, msg, dead;
+  let lives, ball, hoop, score, flick, held, scored, t, net, msg, dead;
   function newBall() { ball = { x: START.x, y: START.y, vx: 0, vy: 0, live: false, passedTop: false, spin: 0 }; scored = false; }
   return {
-    reset() { hoop = { x: W / 2, y: 190, dir: 1, speed: 0 }; score = 0; flick = flickTracker(); held = false; t = 0; net = 0; msg = null; dead = 0; newBall(); },
+    reset() { lives = 3; hoop = { x: W / 2, y: 190, dir: 1, speed: 0 }; score = 0; flick = flickTracker(); held = false; t = 0; net = 0; msg = null; dead = 0; newBall(); },
     update(dt) {
       t += dt; net = Math.max(0, net - dt * 3);
       hoop.speed = score < 3 ? 0 : Math.min(170, 40 + score * 10);
@@ -29,7 +29,7 @@ function make(api) {
           msg = { txt: clean ? 'SWISH +2' : 'NICE', life: .9 }; sfx(clean ? 880 : 660, .18, 'triangle', .06, 200);
         }
       }
-      if (ball.y > H + BR) { if (scored) newBall(); else { sfx(140, .35, 'triangle', .06, -60); return api.over(); } }
+      if (ball.y > H + BR) { if (scored) newBall(); else { sfx(140, .35, 'triangle', .06, -60); if (--lives <= 0) return api.over(); msg = { txt: 'MISS', life: .7 }; newBall(); } }
     },
     fx(dt) { dead += dt; if (ball.live) { ball.vy += G * dt; ball.y += ball.vy * dt; } },
     draw(c) {
@@ -55,6 +55,7 @@ function make(api) {
       c.strokeStyle = '#ff7a3d'; c.lineWidth = 6; c.beginPath(); c.ellipse(hoop.x, hoop.y, RIM, 9, 0, 0, Math.PI); c.stroke();
       if (!ballBehind) drawBall();
       if (!ball.live && !dead) { c.fillStyle = '#ffffff55'; c.font = '600 14px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('flick up ↑', W / 2, H - 20 - (t * 2 % 1) * 6); }
+      c.font = '20px sans-serif'; c.textAlign = 'left'; for (let i = 0; i < 3; i++) { c.fillStyle = i < lives ? '#ff4d6d' : '#ffffff22'; c.fillText('♥', 14 + i * 24, H - 14); }
       if (msg && msg.life > 0) { c.globalAlpha = clamp(msg.life * 2, 0, 1); c.fillStyle = '#ffd34a'; c.font = '400 16px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(msg.txt, hoop.x, hoop.y - 110); c.globalAlpha = 1; }
     },
     down(x, y) { if (ball.live) return; held = true; flick.start(x, y); },
@@ -71,7 +72,7 @@ function make(api) {
 
 export default {
   id: 'hoop-flick', title: 'Hoop Flick', tag: 'Casual · Sports', retro: false, w: W, h: H,
-  hint: 'Flick the ball up into the hoop. A clean swish scores double. One miss ends it.',
+  hint: 'Flick the ball up into the hoop. A clean swish scores double. You get three misses.',
   goal: 15,
   make,
 };

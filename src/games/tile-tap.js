@@ -10,7 +10,7 @@ function make(api) {
   return {
     reset() { rows = []; for (let i = 0; i < 6; i++) addRow(H - TH * (i + 2)); off = 0; speed = 260; score = 0; t = 0; miss = null; bad = null; dead = 0; },
     update(dt) {
-      t += dt; speed = Math.min(780, 260 + score * 6);
+      t += dt; speed = score ? Math.min(780, 260 + score * 6) : 0;
       for (const r of rows) r.y += speed * dt;
       const top = Math.min(...rows.map(r => r.y)); if (top > -TH) addRow(top - TH);
       for (const r of rows) if (!r.hit && r.y > H) { miss = r; sfx(130, .4, 'triangle', .06, -60); return api.over(); }

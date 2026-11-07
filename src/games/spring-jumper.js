@@ -10,7 +10,7 @@ const P = PAL.mint, W = 160, H = 160, G = 420, PX = 40, RUN = 46;
 function make(api) {
   let roofs, y, vy, onRoof, charge, holding, dist, t, score, squash, dead;
   function addRoof() {
-    const last = roofs[roofs.length - 1], gap = rnd(14, 26 + Math.min(30, dist / 60)), w = rnd(26, 60);
+    const last = roofs[roofs.length - 1], gap = rnd(12, 20 + Math.min(36, dist / 50)), w = rnd(26, 60);
     roofs.push({ x: last.x + last.w + gap, w, y: clamp(last.y + rnd(-22, 22), 70, 135) });
   }
   return {
@@ -45,6 +45,10 @@ function make(api) {
       c.fillStyle = P[1]; for (let k = 0; k < 3; k++) c.fillRect(PX - 2, Math.round(y) - 9 + k * 3, 4, 1);
       c.fillStyle = P[0]; c.fillRect(PX - 4, Math.round(y) - 12 + sq * .5, 8, 2);
       c.fillRect(PX - 3, top, 6, 8); c.fillRect(PX - 2, top - 5, 4, 4); c.fillStyle = P[3]; c.fillRect(PX, top - 4, 1, 1);
+      if (onRoof && holding) {   // landing preview: dotted arc of the jump you'd get if you let go now
+        const sp = RUN * (1 + Math.min(1, dist / 1500)); let px = PX, py = y, pv = -(110 + charge * 150); c.fillStyle = P[1];
+        for (let k = 0; k < 40 && py < H; k++) { const h = 1 / 30; px += sp * h; pv += G * h; py += pv * h; if (k % 2) c.fillRect(Math.round(px), Math.round(py) - 6, 1, 1); }
+      }
       if (onRoof && charge > 0) { c.fillStyle = P[0]; c.fillRect(PX - 8, top - 12, 16, 3); c.fillStyle = P[2]; c.fillRect(PX - 7, top - 11, Math.round(14 * charge), 1); }
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = P[0]; if (t < 4) { c.fillStyle = P[3]; c.fillText('HOLD = BIGGER JUMP', 4, 154); }
     },
@@ -56,6 +60,6 @@ function make(api) {
 
 export default {
   id: 'spring-jumper', title: 'Spring Jumper', tag: 'Pocket · Timing', retro: true, w: W, h: H, pal: 'mint', goal: 30,
-  hint: 'You hop forward by yourself. Hold to squeeze the spring for a bigger jump and let go to launch. Read each gap and land on the next roof.',
+  hint: 'You hop forward by yourself. Hold to squeeze the spring for a bigger jump and let go to launch. The dotted arc shows where you will land. Read each gap and land on the next roof.',
   make,
 };

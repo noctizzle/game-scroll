@@ -113,3 +113,63 @@ Sorted weakest first. ✂ = on the removal shortlist.
 | 99 | merge-ten | 4 | 5 | 5 | 4 | 4 | **22** | Very readable, very sticky. |
 | 100 | town-mayor | 4 | 5 | 5 | 4 | 4 | **22** | Swipe-card choices work well. |
 | 101 | merge-drop | 5 | 5 | 5 | 4 | 4 | **23** | The best casual game in the set. |
+
+## Batches 13-17 (41 games), reviewed 2026-11-07
+
+Same scoring. Most of these are deeper "handheld era" games (RPGs, tactics, farming, racing), so they score lower on Length for a scroll feed and higher on Uniqueness. None crashed in the bot test. None are put forward for removal; the weakest are listed first.
+
+| # | Game | Fun | Clarity | Controls | Length | Unique | Total | Notes |
+|---|---|---|---|---|---|---|---|---|
+| 1 | blitz-sense | 3 | 3 | 2 | 4 | 4 | **16** | Fun idea, but half the micro games need the mic, tilt or shake, which a lot of players can't use on a bus. |
+| 2 | fossil-dig | 3 | 3 | 3 | 3 | 4 | **16** | Rub-to-brush is calm but slow; the brush/pick difference takes a try to learn. |
+| 3 | cube-tide | 3 | 2 | 3 | 3 | 4 | **15** | Three trap rules (grey, green, black) at once is a lot to read from the hint. |
+| 4 | kit-hunt | 3 | 3 | 3 | 3 | 4 | **16** | Detector sweep is neat; swings run out fast. |
+| 5 | pocket-tactics | 3 | 3 | 4 | 2 | 4 | **16** | Proper tactics, but a battle is several minutes. Better as a "sit down" game. |
+| 6 | pocket-farm | 3 | 4 | 4 | 2 | 4 | **17** | Cosy; days take a while to pay off in a feed. |
+| 7 | critter-quest | 4 | 3 | 4 | 2 | 4 | **17** | Rob's monster-catching request. Lots of content; long for a scroll. |
+| 8 | mansion-night | 3 | 4 | 3 | 3 | 4 | **17** | Atmospheric; reload swipe is easy to miss. |
+| 9 | shell-duel | 4 | 3 | 3 | 3 | 4 | **17** | Artillery turns are slow next to the rest of the feed. |
+| 10 | spell-school | 3 | 3 | 3 | 4 | 4 | **17** | Rune tracing is unique; the V and peak shapes get confused. |
+| 11 | blueprint-stack | 3 | 4 | 4 | 3 | 4 | **18** | Tidy drop puzzle. |
+| 12 | build-rush | 3 | 4 | 5 | 3 | 3 | **18** | Clear speed-match game. |
+| 13 | front-line | 3 | 4 | 4 | 3 | 4 | **18** | Timing the dash past the sweep reads well. |
+| 14 | grid-duel | 4 | 3 | 4 | 3 | 4 | **18** | Grid battler with chips; dense first screen. |
+| 15 | kit-racer | 3 | 4 | 4 | 3 | 4 | **18** | Garage pick then race; fine. |
+| 16 | mind-gym | 3 | 5 | 5 | 3 | 2 | **18** | Overlaps Fast Maths, Path Memory and Odd One Out. |
+| 17 | pile-builder | 3 | 3 | 4 | 4 | 4 | **18** | Hold-to-build is a fresh idea. |
+| 18 | timing-brawl | 4 | 3 | 4 | 3 | 4 | **18** | Timed-hit RPG fights; good feel once learned. |
+| 19 | agent-zero | 4 | 4 | 4 | 3 | 4 | **19** | Cover shooter in one hold. Works well. |
+| 20 | blob-pairs | 4 | 4 | 4 | 4 | 3 | **19** | Solid falling-pairs puzzle. |
+| 21 | boss-brickfall | 4 | 3 | 4 | 4 | 4 | **19** | Build launchers from the fallen bricks: clever. |
+| 22 | garden-guard | 4 | 4 | 4 | 4 | 3 | **19** | Rob's lane-defence request; reads clearly. |
+| 23 | net-catch | 4 | 4 | 4 | 3 | 4 | **19** | Sneak-and-catch, nice and readable. |
+| 24 | panel-rise | 4 | 4 | 4 | 4 | 3 | **19** | Swap-and-raise puzzle, solid. |
+| 25 | pocket-kart | 4 | 4 | 4 | 3 | 4 | **19** | Mode-7 style racer looks great. |
+| 26 | rex-rampage | 4 | 5 | 5 | 3 | 3 | **20** | Simple, punchy. |
+| 27 | ramp-combo | 4 | 4 | 4 | 4 | 4 | **20** | Pump-and-trick loop is satisfying. |
+| 28 | saber-knight | 4 | 4 | 5 | 3 | 4 | **20** | Deflect timing feels great. |
+| 29 | shadow-ops | 4 | 4 | 4 | 4 | 4 | **20** | Best of the stealth games. |
+| 30 | sling-smash | 4 | 5 | 5 | 3 | 3 | **20** | Rob's slingshot-physics request; works. |
+| 31 | stud-smash | 4 | 4 | 4 | 4 | 4 | **20** | Smash-and-collect is very moreish. |
+| 32 | suit-ops | 4 | 4 | 4 | 4 | 4 | **20** | Mode-switch shooter with real choices. |
+| 33 | swipe-fighter | 4 | 3 | 4 | 4 | 5 | **20** | Swipe fighting with readable tells. |
+| 34 | sword-rooms | 4 | 5 | 4 | 4 | 3 | **20** | Classic top-down rooms, clear. |
+| 35 | blitz-bits | 4 | 4 | 4 | 5 | 4 | **21** | Micro-game rapid fire is perfect for a feed. |
+| 36 | blob-ball | 4 | 4 | 4 | 4 | 5 | **21** | Silly one-on-one football; very replayable. |
+| 37 | copy-puff | 4 | 4 | 4 | 4 | 4 | **21** | Copy-ability platformer with real variety. |
+| 38 | crate-dash | 4 | 5 | 4 | 4 | 4 | **21** | Lane runner with spin; polished. |
+| 39 | hop-quest | 4 | 5 | 4 | 4 | 3 | **20** | Classic platformer feel. |
+| 40 | star-bloom | 4 | 5 | 5 | 4 | 3 | **21** | Clean auto-fire shooter with power levels. |
+| 41 | tag-team | 4 | 4 | 4 | 4 | 5 | **21** | Hero-swap runner, the best of the brick games. |
+
+## Changes made in the 2026-11-07 pass
+
+**Console look.** Console games used to render as chunky pixels like the Pocket games. They now draw at full phone resolution, with a shared lighting pass (warm key light and vignette), and every console game was redrawn with soft shadows, gradients, glossy spheres and glows from the new `src/kit/gfx.js`. The brick kit is now glossy plastic with lit studs.
+
+**Balance.**
+- **colour-word, fast-maths, hoop-flick:** three hearts instead of one mistake ending the round. All three were flagged for very short rounds.
+- **cave:** hovers until your first touch, instead of crashing in under a second if you don't react.
+- **tile-tap:** tiles wait for your first tap, like the genre.
+- **rope-swing:** you start hanging from the first hook, instead of falling unless you grab within a second.
+- **spring-jumper:** a dotted arc shows where you'll land while you charge, and early gaps are smaller.
+- **jelly-bounce:** the timing windows are wider. A tap just before landing now counts as GOOD; it used to be silently thrown away.

@@ -8,7 +8,7 @@ import { haptic } from '../kit/device.js';
 const P = PAL.ice, W = 160, H = 160;
 
 function make(api) {
-  let q, time, limit, score, t, flash;
+  let lives, q, time, limit, score, t, flash;
   function next() {
     const lvl = Math.min(4, Math.floor(score / 6)); let a, b, op, r;
     const ops = ['+', '-', 'x', '+', '-'].slice(0, 2 + lvl);
@@ -22,13 +22,17 @@ function make(api) {
   }
   function answer(yes) {
     if (yes === q.truth) { score++; api.score(score); flash = { ok: true, l: .2 }; haptic('light'); sfx(700 + score * 8, .05, 'square', .04, 150); next(); }
-    else { flash = { ok: false, l: .4 }; haptic('error'); sfx(140, .3, 'square', .05, -40); api.over(); }
+    else miss();
+  }
+  function miss() {
+    flash = { ok: false, l: .4 }; haptic('error'); sfx(140, .3, 'square', .05, -40); if (--lives <= 0) return api.over(); next();
   }
   return {
-    reset() { score = 0; t = 0; flash = null; next(); },
-    update(dt) { t += dt; if (flash) { flash.l -= dt; if (flash.l <= 0) flash = null; } time -= dt; if (time <= 0) { haptic('error'); return api.over(); } },
+    reset() { lives = 3; score = 0; t = 0; flash = null; next(); },
+    update(dt) { t += dt; if (flash) { flash.l -= dt; if (flash.l <= 0) flash = null; } time -= dt; if (time <= 0) miss(); },
     draw(c) {
       c.fillStyle = P[3]; c.fillRect(0, 0, W, H);
+      for (let i = 0; i < 3; i++) { c.fillStyle = i < lives ? P[0] : P[2]; c.fillRect(W / 2 - 13 + i * 10, 8, 6, 6); }
       c.fillStyle = P[2]; c.fillRect(10, 22, 140, 4); c.fillStyle = P[0]; c.fillRect(10, 22, 140 * clamp(time / limit, 0, 1), 4);
       c.fillStyle = P[0]; c.font = '12px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(q.txt, 80, 62); c.fillText(`= ${q.shown}`, 80, 86);
       c.fillStyle = P[1]; c.fillRect(6, 106, 70, 44); c.fillRect(84, 106, 70, 44);
@@ -42,6 +46,6 @@ function make(api) {
 
 export default {
   id: 'fast-maths', title: 'Fast Maths', tag: 'Pocket · Brain', retro: true, w: W, h: H, pal: 'ice', goal: 25,
-  hint: 'Is the sum right? Tap YES or NO before the bar runs out. It gets harder as you go. One wrong answer ends it.',
+  hint: 'Is the sum right? Tap YES or NO before the bar runs out. It gets harder as you go. Three strikes: a wrong answer or a timeout costs one.',
   make,
 };

@@ -8,7 +8,7 @@ function make(api) {
   let p, hooks, rope, camX, best, t, dead, sparks;
   function more() { let x = hooks.length ? hooks[hooks.length - 1].x : 120; while (x < camX + W * 2) { x += rnd(150, 230); hooks.push({ x, y: rnd(110, 210) }); } }
   return {
-    reset() { hooks = []; camX = 0; more(); p = { x: 60, y: 260, vx: 260, vy: -150 }; rope = null; best = 0; t = 0; dead = 0; sparks = []; },
+    reset() { hooks = []; camX = 0; more(); p = { x: 60, y: 260, vx: 260, vy: -150 }; rope = null; { const k = hooks.filter(k => k.x > p.x - 20).sort((a, b) => a.x - b.x)[0]; if (k) rope = { x: k.x, y: k.y, len: clamp(Math.hypot(k.x - p.x, k.y - p.y), 60, 330) }; } best = 0; t = 0; dead = 0; sparks = []; },
     update(dt) {
       t += dt;
       const steps = 3, h = dt / steps;

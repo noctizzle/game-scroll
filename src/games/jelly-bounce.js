@@ -18,7 +18,7 @@ function make(api) {
         if (contact <= 0) {
           // leave the mat: the timing of your tap decides the boost
           const v = j.vin; let mult = .82;
-          if (tapped) { const off = Math.abs(tapped - .08); mult = off < .025 ? 1.18 : off < .05 ? 1.06 : .9; msg = { txt: off < .025 ? 'PERFECT' : off < .05 ? 'GOOD' : 'EARLY/LATE', l: .7 }; haptic(off < .025 ? 'success' : 'light'); sfx(off < .025 ? 880 : 600, .08, 'triangle', .05, 300); }
+          if (tapped) { const off = Math.abs(tapped - .08); mult = off < .03 ? 1.18 : off < .06 ? 1.06 : .9; msg = { txt: off < .03 ? 'PERFECT' : off < .06 ? 'GOOD' : 'EARLY/LATE', l: .7 }; haptic(off < .03 ? 'success' : 'light'); sfx(off < .03 ? 880 : 600, .08, 'triangle', .05, 300); }
           else { misses++; }
           j.vh = Math.min(2900, Math.max(520, v * mult)); squash = 0; tapped = false; peak = 0;
           if (j.vh <= 540 && misses > 2) { msg = { txt: 'OUT OF BOUNCE', l: 1.2 }; haptic('error'); return api.over(); }
@@ -29,7 +29,7 @@ function make(api) {
       if (drift) j.vx += clamp((drift.x - j.x) * 6, -900, 900) * dt; j.vx *= Math.pow(.2, dt); j.x = clamp(j.x + j.vx * dt, 30, W - 30);
       if (j.h <= 0 && j.vh < 0) {
         j.h = 0; if (Math.abs(j.x - W / 2) > 150) { msg = { txt: 'MISSED THE MAT', l: 1.2 }; haptic('error'); sfx(120, .4, 'triangle', .05, -40); return api.over(); }
-        j.vin = -j.vh; contact = .16; tapped = false; haptic('tick'); sfx(160, .1, 'sine', .05, -40);
+        j.vin = -j.vh; contact = .16; tapped = tapped === 'early' ? .08 - .045 : false;   // a tap just before landing still counts as GOOD haptic('tick'); sfx(160, .1, 'sine', .05, -40);
         if (peak > best) { best = peak; }
       }
       cam += (Math.max(0, j.h - 260) - cam) * Math.min(1, dt * 6);
