@@ -18,10 +18,15 @@ const FLOWS = [['fold8-cover', 'fold8-inner', 'fold8-cover'], ['duo-cover', 'duo
     const probs = [];
     for (const step of flow.slice(1)) {
       await p.setViewportSize(SIZES[step]); await p.waitForTimeout(400);
-      const r = await p.evaluate(() => { const s = __gs.active, c = s.canvas.getBoundingClientRect(); return { id: s.def.id, state: s.state, top: c.top, bottom: c.bottom, left: c.left, right: c.right, vw: innerWidth, vh: innerHeight }; });
+      // Software-rendered 3D games can take a few slow frames before the refit lands, so give the
+      // layout up to 5 s to settle; a game that never fits still fails.
+      const probe = () => p.evaluate(() => { const s = __gs.active, c = s.canvas.getBoundingClientRect(); return { id: s.def.id, state: s.state, top: c.top, bottom: c.bottom, left: c.left, right: c.right, vw: innerWidth, vh: innerHeight }; });
+      const off = r => r.top < 0 || r.left < 0 || r.bottom > r.vh + 1 || r.right > r.vw + 1;
+      let r = await probe();
+      for (let t = 0; t < 20 && off(r); t++) { await p.waitForTimeout(250); r = await probe(); }
       if (r.id !== id) probs.push(`${step}: switched to ${r.id}`);
       if (r.state === 'ready') probs.push(`${step}: game was reset`);
-      if (r.top < 0 || r.left < 0 || r.bottom > r.vh + 1 || r.right > r.vw + 1) probs.push(`${step}: canvas off screen ${JSON.stringify(r)}`);
+      if (off(r)) probs.push(`${step}: canvas off screen ${JSON.stringify(r)}`);
       if (process.env.SHOTS) await p.screenshot({ path: `${process.env.SHOTS}/${id}-${step}.png` });
     }
     const ok = !probs.length && !errs.length; if (!ok) failed++;

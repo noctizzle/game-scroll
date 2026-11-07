@@ -145,7 +145,7 @@ export default {
 | `reset()` | Before every round. Put **all** round state here so "Play again" starts clean. |
 | `update(dt)` | Every frame while playing. `dt` is seconds since the last frame. |
 | `draw(ctx)` | Every frame. Draw the whole frame; nothing is cleared for you. |
-| `down(x, y)`, `move(x, y, pressed)`, `up(x, y)` | Touch / mouse, already converted to game units. |
+| `down(x, y, id)`, `move(x, y, pressed, id)`, `up(x, y, id)` | Touch / mouse, already converted to game units. `id` is the pointer id, so a game can track several fingers at once (two-thumb controls); single-touch games can ignore it. |
 | `key(k, isDown)` | Optional keyboard support for desktop (`'ArrowLeft'`, `' '`...). |
 | `fx(dt)` | Optional. Keeps effects animating behind the game-over screen. |
 | `resize(w, h)` | Optional, for fluid games. |
@@ -167,7 +167,7 @@ game-over screens, which feed tab it appears in and how it is scaled.
 | **Color (Pocket)** | `retro: true, era: 'color', pal: 'lemon'` | `Color ·` | `160 x 160` to `160 x 192` | Coloured handheld, chunky pixels, bright colours (`C16`). |
 | **Advance (Pocket)** | `retro: true, era: 'advance', pal: 'grape'` | `Advance ·` | `176 x 176` to `192 x 160` | Wider handheld, chunky pixels, rich colours, sprites, parallax. |
 | **Classic · Console (3D)** | `retro: true, era: 'console', pal: 'grape'` | `Console ·` | `192 x 160` (fluid up to ~300 x 240) | TV frame, real-time 3D, cel-shaded with ink outlines, sharp hi-res HUD. |
-| **Next Gen · Console (HD 3D)** | `retro: true, era: 'nextgen', pal: 'grape'` | `Next Gen ·` | `300 x 300` (fluid up to ~440 x 420) | Slim glossy console, modern HD 3D: PBR materials, shadows, bloom, AO, particles. |
+| **Next Gen · Console (HD 3D)** | `retro: true, era: 'nextgen', pal: 'grape'` | `Next Gen ·` | `300 x 300` (fluid up to ~600 x 420, so landscape foldables are filled edge to edge) | Slim glossy console, modern HD 3D: PBR materials, shadows, bloom, AO, particles. |
 
 How each style looks in the app, start screen and in play:
 

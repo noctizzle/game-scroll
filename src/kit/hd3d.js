@@ -15,10 +15,10 @@
 // (down to 55%), then drops a quality tier (ultra: AO + MSAA + 1024 shadows -> high -> medium ->
 // low: no shadows, no AO, half-size bloom). Tiers are listed in TIERS below.
 import {
-  WebGLRenderer, Scene, Color, FogExp2, PerspectiveCamera, HemisphereLight, PointLight, SpotLight,
+  WebGLRenderer, Scene, Color, FogExp2, PerspectiveCamera, HemisphereLight, PointLight, SpotLight, DirectionalLight,
   MeshStandardMaterial, MeshPhysicalMaterial, ShaderMaterial, BufferGeometry, BufferAttribute, Points, AdditiveBlending, NormalBlending,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, NoColorSpace, PCFSoftShadowMap, ACESFilmicToneMapping, HalfFloatType,
-  WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter,
+  WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry,
 } from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -51,11 +51,30 @@ export const TIERS = [
 ];
 // Phones start on high and can climb to ultra if they keep up; desktops start on ultra.
 const touchy = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-const Q = { tier: touchy ? 2 : 3, res: 1, avg: 16, n: 0, lastT: 0, calm: 0, force: null };
+// Resolution moves in a few fixed steps (each step reallocates the render targets, so it must be
+// rare): drop a step after two slow windows of ~45 frames, climb back after ~6 s at full speed, and
+// never climb back above a step that already proved too slow (for 30 s). Tiers change the same way.
+const LEVELS = [1, .85, .7, .55];
+const Q = { tier: touchy ? 2 : 3, lvl: 0, sum: 0, cnt: 0, slow: 0, fast: 0, lastT: 0, ceil: 0, ceilT: 0, tierCeil: 3, force: null };
+function adapt(gap) {
+  if (Q.force != null || !(gap > 0 && gap < 100)) return;
+  Q.sum += gap; if (++Q.cnt < 45) return;
+  const a = Q.sum / Q.cnt, now = performance.now(); Q.sum = Q.cnt = 0;
+  if (now - Q.ceilT > 30000) { Q.ceil = 0; Q.tierCeil = 3; }
+  if (a > 21) {
+    Q.fast = 0; if (++Q.slow < 2) return; Q.slow = 0; Q.ceilT = now;
+    if (Q.lvl < LEVELS.length - 1) { Q.lvl++; Q.ceil = Q.lvl; } else if (Q.tier > 0) { Q.tierCeil = Q.tier - 1; Q.tier--; Q.lvl = 1; Q.ceil = 1; }
+  } else if (a < 17.4) {
+    Q.slow = 0; if (++Q.fast < 8) return; Q.fast = 0;
+    if (Q.lvl > Q.ceil) Q.lvl--; else if (Q.lvl === 0 && Q.tier < Math.min(Q.tierCeil, TIERS.length - 1)) { Q.tier++; Q.lvl = 1; }
+  } else { Q.slow = 0; Q.fast = 0; }
+}
 /** Current quality: { tier, name, res }. Set HD.force = 0..3 to pin a tier (tests, screenshots). */
 export const HD = {
-  get tier() { return Q.force ?? Q.tier; }, get name() { return TIERS[this.tier].name; }, get res() { return Q.force != null ? 1 : Q.res; },
+  get tier() { return Q.force ?? Q.tier; }, get name() { return TIERS[this.tier].name; }, get res() { return Q.force != null ? 1 : LEVELS[Q.lvl]; },
   set force(t) { Q.force = t; }, get force() { return Q.force; },
+  /** Last frame: draw calls, triangles, and milliseconds spent in render() on the CPU. */
+  info: { calls: 0, tris: 0, cpu: 0 },
 };
 const tier = () => TIERS[HD.tier];
 if (typeof window !== 'undefined') window.__hd = HD;   // test hook: __hd.force = 3 pins ultra
@@ -96,9 +115,13 @@ const GRADE = {
     }`,
 };
 function chain(r, w, h) {
-  const T = tier(), key = [T.msaa].join();
-  if (!comp || compKey !== key) {
-    comp?.dispose(); compKey = key;
+  const T = tier();
+  if (comp && compKey !== T.msaa) {   // MSAA on/off: re-create just the two buffers
+    compKey = T.msaa;
+    for (const rt of [comp.renderTarget1, comp.renderTarget2]) { rt.dispose(); rt.samples = T.msaa; }
+  }
+  if (!comp) {
+    compKey = T.msaa;
     const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: T.msaa });
     comp = new EffectComposer(r, rt);
     P.render = new RenderPass(new Scene(), new PerspectiveCamera());
@@ -203,7 +226,7 @@ export class Particles {
       L[n++] = p;
     }
     L.length = n; g.setDrawRange(0, n);
-    for (const a of ['position', 'size', 'tint']) g.attributes[a].needsUpdate = true;
+    for (const [a, k] of [['position', 3], ['size', 1], ['tint', 4]]) { const at = g.attributes[a]; at.clearUpdateRanges(); at.addUpdateRange(0, Math.max(1, n * k)); at.needsUpdate = true; }
   }
 }
 
@@ -246,6 +269,22 @@ export class HDView {
   fit(W, H) { if (W !== this.W || H !== this.H || this.cam.aspect !== W / H) { this.W = W; this.H = H; this.cam.aspect = W / H; this.cam.updateProjectionMatrix(); } return this; }
   /** Logical screen position of a world point: [x, y, depth] (depth > 1 = behind the camera). */
   toScreen(x, y, z) { const p = new Vector3(x, y, z).project(this.cam); return [(p.x + 1) / 2 * this.W, (1 - p.y) / 2 * this.H, p.z]; }
+  /**
+   * Compile every shader the scene can need now (hidden things too: muzzle flashes, explosions,
+   * swapped materials), so nothing compiles mid-game and stutters. Call after building a level;
+   * extra materials that get swapped in later can be passed in.
+   */
+  warm(...extra) {
+    const r = renderer(); if (!r) return; this.warmed = true;
+    const hidden = [], tmp = [];
+    this.scene.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    for (const m of extra) { const ms = new Mesh(new BoxGeometry(.01, .01, .01), m); this.scene.add(ms); tmp.push(ms); }
+    this.scene.environment = envTex;
+    const was = r.shadowMap.enabled;
+    try { for (const sh of [true, false]) { r.shadowMap.enabled = sh; r.compile(this.scene, this.cam); } } catch (e) { /* compile is only a warm-up */ }
+    r.shadowMap.enabled = was;
+    for (const o of hidden) o.visible = false; for (const ms of tmp) { this.scene.remove(ms); ms.geometry.dispose(); }
+  }
   /** Called when the quality tier changes: let the game switch shadows on lights it owns. */
   onTier(fn) { this.tierFn = fn; return this; }
 
@@ -255,14 +294,7 @@ export class HDView {
     const r = renderer();
     if (!r) { c.fillStyle = '#' + this.scene.background.getHexString(); c.fillRect(0, 0, w, h); c.fillStyle = '#fff'; c.font = '600 12px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('This device cannot show 3D', w / 2, h / 2); return; }
     // adaptive quality: first resolution, then tier
-    const now = performance.now(), gap = now - (Q.lastT || now); Q.lastT = now;
-    if (gap > 0 && gap < 200) {
-      Q.avg = Q.avg * .93 + gap * .07;
-      if (++Q.n % 20 === 0 && Q.force == null) {
-        if (Q.avg > 21) { Q.calm = 0; Q.res *= .9; if (Q.res < .55) { if (Q.tier > 0) { Q.tier--; Q.res = .85; } else Q.res = .55; } }
-        else if (Q.avg < 17.5) { Q.res = Math.min(1, Q.res * 1.04); if (Q.res >= 1 && ++Q.calm > 25 && Q.tier < TIERS.length - 1 && Q.avg < 14) { Q.tier++; Q.res = .8; Q.calm = 0; } }
-      }
-    }
+    const now = performance.now(), gap = now - (Q.lastT || now); Q.lastT = now; adapt(gap);
     const T = tier();
     if (this.tierSeen !== HD.tier) { this.tierSeen = HD.tier; this.tierFn?.(T); }
     let pw = c.canvas.width, ph = c.canvas.height; const q = Math.min(1, Math.sqrt(T.px / (pw * ph))) * HD.res;
@@ -277,11 +309,29 @@ export class HDView {
     P.ao.enabled = T.ao; P.bloom.strength = this.bloom;
     P.bloom.resolution.set(pw * T.bloom, ph * T.bloom);
     this.t += 1 / 60; P.grade.uniforms.t.value = this.t % 10; P.grade.uniforms.hurt.value = this.hurt; P.grade.uniforms.px.value.set(1 / pw, 1 / ph);
+    if (!this.warmed) this.warm();
+    r.info.autoReset = false; r.info.reset();
     cp.render();
+    HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now;
     c.save(); c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high'; c.drawImage(cv, 0, 0, pw, ph, 0, 0, w, h); c.restore();
   }
 }
 
+/**
+ * Sunlight: a shadow-casting directional light covering a size x size metre box that follows the
+ * action (s.follow(x, y, z) each frame; it snaps to shadow texels so edges don't shimmer).
+ */
+export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
+  const s = new DirectionalLight(col, i), c = s.shadow.camera, d = new Vector3(...dir).normalize();
+  s.castShadow = true; c.left = c.bottom = -size; c.right = c.top = size; c.near = 1; c.far = 120;
+  s.shadow.bias = -.0004; s.shadow.normalBias = .04; s.shadow.radius = 2;
+  s.setTier = T => { s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow * 2) { s.shadow.mapSize.set(T.shadow * 2, T.shadow * 2); s.shadow.map?.dispose(); s.shadow.map = null; } };
+  s.follow = (x, y, z) => {
+    const tx = 2 * size / s.shadow.mapSize.x; x = Math.round(x / tx) * tx; z = Math.round(z / tx) * tx;
+    s.target.position.set(x, y, z); s.position.set(x + d.x * 50, y + d.y * 50, z + d.z * 50); s.target.updateMatrixWorld();
+  };
+  return s;
+}
 /** A shadow-casting spotlight (torch, searchlight) whose shadow follows the quality tier. */
 export function spot(col = '#fff2e0', i = 30, dist = 16, angle = .5) {
   const s = new SpotLight(col, i, dist, angle, .55, 1.6);

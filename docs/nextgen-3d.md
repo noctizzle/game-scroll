@@ -5,7 +5,9 @@ to the Classic Console games (`era: 'console'`, cel-shaded, see [console-3d.md](
 must look clearly a generation ahead of them. Stylised and cartoony characters are fine; the
 rendering is what makes it Next Gen.
 
-The kit is `src/kit/hd3d.js`. The first game built on it is `src/games/bunker-breakout.js`.
+The kit is `src/kit/hd3d.js`. Games built on it: `bunker-breakout.js` (corridor shooter),
+`suit-ops.js` (top-down jungle twin-stick) and `gravity-grip.js` (tube racer that drives on walls and
+ceilings).
 
 ## What the kit gives you
 
@@ -19,6 +21,9 @@ The kit is `src/kit/hd3d.js`. The first game built on it is `src/games/bunker-br
   "modern" far more than sharp boxes.
 - **Real-time shadows** (`spot(...)`): a shadow-casting spotlight whose shadow map size follows
   the quality tier. Mark meshes `castShadow` / `receiveShadow`.
+- **Sun** (`sun(colour, intensity, size)`): a shadowed directional light for outdoor scenes. Call
+  `s.follow(x, y, z)` each frame so the shadow box tracks the player (it snaps to shadow texels, so
+  shadows do not shimmer) and `v.onTier(T => s.setTier(T))`.
 - **Lamp light pool** (`v.lampLights(range)` then `v.placeLamps(spots, x, y, z, t)` each frame):
   a level can have dozens of lamps; the nearest few get real point lights (with flicker) and the
   rest only glow. Light count stays fixed, so shaders never recompile mid-game.
@@ -41,9 +46,16 @@ Phones must stay smooth, so the kit adapts on its own:
 | medium | 0.75 M | 512 | 3 | no | none |
 | low | 0.45 M | off | 2 | no | none |
 
-Phones start on **high**, desktops on **ultra**. If frames come slower than about 48 fps the
-render resolution drops first (to 55%), then the tier. If frames stay fast for a few seconds, it
-climbs back. The 3D frame is scaled up into the slide's canvas; the 2D HUD is always drawn at
+Phones start on **high**, desktops on **ultra**. Frame times are averaged over 45-frame windows.
+After two slow windows (slower than about 48 fps) the render resolution steps down one fixed level
+(100%, 85%, 70%, 55%), then the tier drops. It only climbs back after eight fast windows in a row,
+and never above a level that was too slow in the last 30 seconds, so it does not bounce up and down
+(each step reallocates render targets, which used to cause the occasional stutter).
+
+Shaders are compiled up front: the first `render()` calls `v.warm()`, which compiles every material
+in the scene, including hidden ones, with shadows on and off. If you build new geometry or
+materials later (a new floor), set `v.warmed = false` so the next frame warms again before play.
+`__hd.info` reports `{ calls, tris, cpu }` for the last frame. The 3D frame is scaled up into the slide's canvas; the 2D HUD is always drawn at
 full resolution on top. `v.onTier(T => ...)` lets a game react (for example `spotLight.setTier(T)`).
 
 Rules of thumb:
@@ -55,6 +67,13 @@ Rules of thumb:
   games share one, and the Classic kit has its own.
 - Build textures once per game module (lazily, on first draw), not per round.
 - `window.__hd.force = 0..3` pins a tier for tests and screenshots.
+
+## Multi-touch
+
+Next Gen games use two thumbs. Input callbacks get a pointer id: `down(x, y, id)`,
+`move(x, y, pressed, id)`, `up(x, y, id)`. The pattern used by all three games: the first finger is
+the movement stick; a second finger (or a finger on the other half of the screen) is the aim, look,
+fire or nitro control. Keep a single-finger fallback so the game still plays with one thumb.
 
 ## Writing a Next Gen game
 
@@ -79,7 +98,7 @@ Game definition:
 export default {
   id: 'my-game', title: 'My Game', tag: 'Next Gen · Shooter',
   retro: true, era: 'nextgen', pal: 'grape',
-  w: 300, h: 300, maxW: 440, maxH: 420,   // fluid: the camera adapts to any shape
+  w: 300, h: 300, maxW: 600, maxH: 420,   // fluid: the camera adapts to any shape
   goal: 1500, hint: '...', make,
 };
 ```
