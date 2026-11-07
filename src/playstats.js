@@ -7,13 +7,14 @@
 // nudge towards games people actually play. Off switch: Settings → "Share anonymous play stats".
 import { store } from './util.js';
 import { HEARTS_URL, deviceId } from './hearts.js';
+import { history } from './history.js';
 
 const PENDING_KEY = 'gs_stats_pending', GLOBAL_KEY = 'gs_stats_global', OFF_KEY = 'gs_stats_off';
 const SKIP_MS = 5000, MIN_VIEW_MS = 300, FLUSH_MS = 60_000, LOAD_MS = 30 * 60_000;
 
 let pending = store.get(PENDING_KEY, {}) || {};   // id -> { v, p, k, s } not sent yet
 let global = store.get(GLOBAL_KEY, { games: {} }) || { games: {} };
-let cur = null;                                    // { id, at, played }
+let cur = null;                                    // { id, at, played, secs }
 let flushing = false, lastLoad = 0;
 
 const add = (id, f, n = 1) => { const c = pending[id] || (pending[id] = { v: 0, p: 0, k: 0, s: 0 }); c[f] += n; store.set(PENDING_KEY, pending); };
@@ -23,19 +24,21 @@ export const playstats = {
   set enabled(on) { store.set(OFF_KEY, !on); if (!on) { pending = {}; store.set(PENDING_KEY, pending); } },
 
   /** A game came up in the feed. */
-  shown(id) { this.left(); cur = { id, at: performance.now(), played: false }; },
+  shown(id) { this.left(); cur = { id, at: performance.now(), played: false, secs: 0 }; },
   /** The current game scrolled away (or the app went to the background). */
   left() {
     if (!cur) return;
     const ms = performance.now() - cur.at, c = cur; cur = null;
-    if (!this.enabled || ms < MIN_VIEW_MS) return;
+    if (ms < MIN_VIEW_MS) return;
+    history.viewed(c.id, ms, c.played, c.secs);   // your own history: kept on the phone even with sharing off
+    if (!this.enabled) return;
     add(c.id, 'v');
     if (!c.played && ms < SKIP_MS) add(c.id, 'k');
   },
   /** A round started. */
   started(id) { if (cur && cur.id === id) cur.played = true; if (this.enabled) add(id, 'p'); },
   /** A round ended after ms milliseconds. */
-  round(id, ms) { if (this.enabled && ms > 0) add(id, 's', Math.round(Math.min(ms, 3600_000) / 1000)); },
+  round(id, ms) { if (cur && cur.id === id && ms > 0) cur.secs += ms / 1000; if (this.enabled && ms > 0) add(id, 's', Math.round(Math.min(ms, 3600_000) / 1000)); },
 
   /** Everyone's totals for a game over the last 30 days: { v, p, k, s } or null. */
   global(id) { return global.games[id] || null; },
@@ -75,17 +78,6 @@ export const playstats = {
     finally { flushing = false; }
   },
 };
-
-/**
- * Feed nudge from everyone's play: 1 is neutral, from 0.7 (often skipped, little played) to 1.6
- * (rarely skipped, long sessions). Games with fewer than 20 views stay neutral.
- */
-export function popularity(id) {
-  const c = global.games[id];
-  if (!c || c.v < 20) return 1;
-  const skip = Math.min(1, c.k / c.v), secsPerView = c.s / c.v;
-  return 0.7 + 0.6 * Math.min(1, secsPerView / 60) + 0.3 * (1 - skip);
-}
 
 if (HEARTS_URL && typeof document !== 'undefined') {
   setInterval(() => { if (document.visibilityState === 'visible') playstats.flush(); }, FLUSH_MS);

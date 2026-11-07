@@ -1,12 +1,13 @@
 // Anonymous play stats: daily totals per game (views, plays, quick skips, seconds played).
 //
 //   POST /stats  body { device, games: { "<id>": { v, p, k, s }, ... } }   -> { ok: true }
-//   GET  /stats  -> { days, games: { "<id>": { v, p, k, s } } }              last 30 days, cached 10 min
+//   GET  /stats  -> { days, games: { "<id>": { v, p, k, s, wv, wp } } }      last 30 days, cached 10 min
+//                   wv, wp: views and plays in the last 7 days only (the feed uses them for "trending")
 //
 // Nothing is stored per person: the device id is used only as a rate-limit key. Each batch is
 // capped (at most 60 games, small per-game numbers) so one phone can't swing the totals much.
 
-export const STATS_DAYS = 30;
+export const STATS_DAYS = 30, RECENT_DAYS = 7;
 const MAX_GAMES = 60;
 const CAP = { v: 30, p: 60, k: 30, s: 3600 };
 const GAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -39,10 +40,12 @@ export async function saveBatch(db, rows, t = Date.now()) {
 
 export async function totals(db, t = Date.now()) {
   const { results } = await db.prepare(
-    'SELECT game, SUM(views) v, SUM(plays) p, SUM(skips) k, SUM(secs) s FROM play_stats WHERE day > ?1 GROUP BY game'
-  ).bind(day(t) - STATS_DAYS).all();
+    'SELECT game, SUM(views) v, SUM(plays) p, SUM(skips) k, SUM(secs) s, ' +
+    'SUM(CASE WHEN day > ?2 THEN views ELSE 0 END) wv, SUM(CASE WHEN day > ?2 THEN plays ELSE 0 END) wp ' +
+    'FROM play_stats WHERE day > ?1 GROUP BY game'
+  ).bind(day(t) - STATS_DAYS, day(t) - RECENT_DAYS).all();
   const games = {};
-  for (const r of results) games[r.game] = { v: r.v, p: r.p, k: r.k, s: r.s };
+  for (const r of results) games[r.game] = { v: r.v, p: r.p, k: r.k, s: r.s, wv: r.wv, wp: r.wp };
   return { days: STATS_DAYS, games };
 }
 
