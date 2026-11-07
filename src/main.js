@@ -334,8 +334,7 @@ muteBtn.after(setBtn);setBtn.onclick=()=>openSettings({stream:STREAM,cached:()=>
 mineBtn.onclick=()=>openMyGames({games:GAMES,best,play:playNow,changed:(id,r)=>{slides.forEach(x=>{if(x.def.id===id)x.setLike(r>0)});rerank()},qa:()=>openPanel(GAMES,best)});
 const paintMute=()=>{muteBtn.textContent=sound.muted?'🔇':'🔊';muteBtn.setAttribute('aria-pressed',String(sound.muted))};paintMute();
 muteBtn.onclick=()=>{sound.muted=!sound.muted;store.set('gs_muted',sound.muted);paintMute()};
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{if(filter===b.dataset.f)return;filter=b.dataset.f;
-  document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));rebuild()});
+const feedPick=document.getElementById('feed-filter');feedPick.onchange=()=>{if(filter===feedPick.value)return;filter=feedPick.value;feedPick.blur();rebuild()};
 
 function boot(){initWallet(GAMES);services.init(GAMES);booted=true;rebuild();requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
 // Streaming: with a saved catalogue, start at once and check for updates in the background.

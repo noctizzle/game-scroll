@@ -24,9 +24,13 @@ body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(--text
 .top > *{pointer-events:auto}
 .logo{font-family:var(--f-pixel);font-size:11px;letter-spacing:.04em;line-height:1.3;white-space:nowrap}
 .logo b{color:var(--accent);font-weight:400}
-.tabs{display:flex;gap:4px;margin-left:auto;background:var(--panel);border-radius:999px;padding:3px}
-.tabs button{font:500 12px/1 var(--f-body);color:var(--muted);background:none;border:0;border-radius:999px;padding:7px 11px;cursor:pointer}
-.tabs button[aria-pressed="true"]{background:var(--text);color:var(--ink)}
+/* feed picker: one compact dropdown so it never gets cut off on narrow phones */
+.feedpick{position:relative;margin-left:auto;flex:none}
+.feedpick::after{content:"";position:absolute;right:13px;top:50%;width:6px;height:6px;margin-top:-5px;border:solid var(--text);border-width:0 2px 2px 0;transform:rotate(45deg);pointer-events:none}
+.feedpick select{appearance:none;-webkit-appearance:none;font:600 13px/1 var(--f-body);color:var(--text);background:var(--panel);border:0;border-radius:999px;height:34px;padding:0 32px 0 14px;cursor:pointer;outline-offset:2px}
+.feedpick select:focus-visible{outline:2px solid var(--accent)}
+.feedpick option{color:#111;background:#fff}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .iconbtn{width:34px;height:34px;flex:none;border-radius:50%;border:0;background:var(--panel);color:var(--text);font-size:15px;cursor:pointer;display:grid;place-items:center}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
@@ -237,10 +241,9 @@ dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
 .mine li{padding:4px 8px}
 .mine-play{flex:1;min-width:0;display:flex;align-items:center;gap:10px;text-align:left;background:none;border:0;color:var(--text);cursor:pointer;padding:6px 0;font:inherit}
 .mine-go{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:var(--ink);font-size:12px}
-.tabs button{white-space:nowrap}
-@media (max-width:440px){.top{gap:8px}.tabs button{padding:7px 8px}.logo{font-size:10px}}
+@media (max-width:440px){.top{gap:8px}.logo{font-size:10px}}
 /* very narrow phones: drop the logo (the QA panel is also in My games) so the buttons fit */
-@media (max-width:370px){.top{gap:6px}.logo{display:none}.iconbtn{width:32px;height:32px}}
+@media (max-width:340px){.top{gap:6px}.logo{display:none}.iconbtn{width:32px;height:32px}}
 
 /* console shell: a chunky TV-style frame for the home-console era games */
 .retro.console .device{background:linear-gradient(#3a3d46,#2a2c33);border-radius:16px;padding:8px;box-shadow:inset 0 2px 0 #ffffff14,inset 0 -4px 0 #0006,0 18px 40px #0009}
@@ -255,11 +258,6 @@ dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
 .pads i{width:12px;height:12px;border-radius:50%;background:#555a66;box-shadow:inset 0 -2px 0 #0005}
 .pads i:first-child{background:#c84a4a}
 .slide.console{background:radial-gradient(120% 70% at 50% 35%,#1c2030 0%,var(--ink) 70%)}
-/* four feed tabs: let them squeeze, then scroll, rather than push the icons off screen */
-.tabs{min-width:0;overflow-x:auto;scrollbar-width:none}
-.tabs::-webkit-scrollbar{display:none}
-@media (max-width:440px){.tabs{gap:2px}.tabs button{padding:7px 7px;font-size:11.5px}}
-@media (max-width:400px){.logo{display:none}.top{gap:6px}}
 .retro.console .hud .score{background:#0b0d14cc;color:#f2f4fa;border-radius:6px;font-size:13px;padding:5px 8px;box-shadow:0 2px 8px #0006}
 
 /* streaming: empty-feed card (first download / offline) and the settings sheet */
