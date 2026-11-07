@@ -1,9 +1,9 @@
-// Phone features for games: haptics, tilt, shake, compass, GPS location and microphone.
+// Phone features for games: haptics, tilt, shake, compass, microphone and camera.
+// (Location is api.location() in make(api): see src/geo.js.)
 // Everything degrades gracefully: on web/desktop or when permission is refused, calls are no-ops
 // or return null, so every game must also be playable by touch alone.
 import { Capacitor } from '@capacitor/core';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
-import { Geolocation } from '@capacitor/geolocation';
 
 const native = Capacitor.isNativePlatform();
 
@@ -105,17 +105,6 @@ export function orientation() {
 export function heading() { return headingDeg; }
 /** True when the phone is lying screen-down, false when not, null with no sensor. */
 export function faceDown() { return tiltState.ok ? Math.abs(tiltState.beta) > 120 : null; }
-
-/* ---------- GPS ---------- */
-let locCache = null;
-/** Rough location {lat, lon} or null if unavailable/refused. Cached for the session. */
-export async function location() {
-  if (locCache) return locCache;
-  try {
-    const p = await Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 });
-    return locCache = { lat: p.coords.latitude, lon: p.coords.longitude };
-  } catch { return null; }
-}
 
 /* ---------- microphone ---------- */
 let mic = null;

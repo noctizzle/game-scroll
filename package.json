@@ -27,6 +27,7 @@
     "prune": "vite build --mode bundled && node scripts/prune.cjs",
     "lint:games": "node scripts/game-lint.mjs",
     "catalogue-test": "node scripts/catalogue-test.mjs",
+    "location-test": "vite build --mode bundled && node scripts/location-test.cjs",
     "site": "node scripts/build-site.mjs",
     "store-shots": "vite build --mode bundled && node scripts/store-shots.cjs"
   },
