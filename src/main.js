@@ -30,7 +30,7 @@ const STREAM = remote.enabled;
 const playable = g => STREAM ? remote.def(g) : g;   // null while a streamed game is still downloading
 let booted = false;
 if (STREAM) remote.init(meta => { const g = { likes: 300 + hash(meta.id) % 6000, ...meta }; GAMES.push(g); return g; },
-  added => { if (booted) for (const g of added) if (inPool(g)) queue.splice(Math.random() * (queue.length + 1) | 0, 0, g); });   // new games join this cycle
+  (added, updated) => { if (booted) catalogueChanged(added, updated); });
 
 /* ---------- feed engine ---------- */
 const feed=document.getElementById('feed');
@@ -243,6 +243,18 @@ function rerank(){if(queue.length>1)queue=rankQueue(queue.filter(g=>!isHidden(g.
 function paint(s){s.game.draw(s.ctx);if(s.def.era==='console'){s.ctx.save();consolePost(s.ctx,s.w||s.def.w,s.h||s.def.h);s.ctx.restore()}}
 // Always keep AHEAD games downloaded and ready below the one you're on, so swiping never waits.
 const AHEAD=5;
+// The fresh catalogue arrived after the feed started from the saved one. New games join this cycle.
+// Games whose category changed leave the queue, and the slides waiting below you, of a tab they no longer
+// belong to, and slides waiting below you are rebuilt with any changed details.
+function catalogueChanged(added,updated){
+  for(const g of added)if(inPool(g))queue.splice(Math.random()*(queue.length+1)|0,0,g);
+  if(!updated.length)return;
+  const ids=new Set(updated.map(g=>g.id));
+  queue=queue.filter(g=>!ids.has(g.id)||inPool(g));
+  const i=active?slides.indexOf(active):-1;
+  for(const s of slides.slice(i+1))if(ids.has(s.def.id)){const g=GAMES.find(x=>x.id===s.def.id);io.unobserve(s.el);s.el.remove();slides.splice(slides.indexOf(s),1);if(g&&inPool(g))queue.unshift(g)}
+  topUp();
+}
 function topUp(){const ahead=slides.length-1-(active?slides.indexOf(active):0);if(ahead<AHEAD)addBatch(AHEAD-ahead+1)}
 let waiting=false;
 function addBatch(n=AHEAD+1){
@@ -356,11 +368,13 @@ function boot(){initWallet(GAMES);services.init(GAMES);booted=true;rebuild();req
 // First launch has to fetch the catalogue before there is anything to show.
 function start(){
   if(booted){rebuild();return}
-  if(GAMES.length){boot();return}
+  if(!STREAM){boot();return}
+  if(GAMES.length){
+    // Give the fresh catalogue a moment so the first games already use its categories; don't wait long.
+    let go=()=>{go=()=>{};boot()};remote.refresh().then(()=>go());setTimeout(()=>go(),800);return}
   feedMsg('loading');
   remote.refresh().then(()=>GAMES.length?boot():feedMsg('offline'));
 }
-if(STREAM&&GAMES.length)remote.refresh();
 start();
 // Coming back to the app: look for game updates (cheap: one small catalogue file).
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&remote.enabled)remote.refresh()});
