@@ -266,3 +266,17 @@ Research notes on what made the dual-screen handheld era special, turned into or
 - [ ] Kitchen Steps: chop by slashing, stir by circling, flip by flicking (original recipes)
 - [ ] Stylus Rally: draw racing lines for a kart that follows your ink
 - [ ] Rhythm Tap Squad: tap and slide on beat markers as a team of original cheer characters
+
+### Batch 15: best of the Advance and first 3D-console era, rebuilt for touch
+Picked from the most loved handheld and 32-bit console genres, choosing ones that map cleanly to taps, holds and swipes. All mechanics are original, with no names, characters or art from those games.
+- [x] Net Catch: hold to creep, tap to swing a net at escaped imps that see in cones and tire when they run
+- [x] Shadow Ops: top-down stealth with torch cones blocked by walls, pebble lures and a crate to hide under
+- [x] Crate Dash: into-the-screen jungle runner; swipe lanes, swipe up to jump, tap to spin crates and critters
+- [x] Cube Tide: rolling stone-cube waves on a floating floor; trap and sink grey cubes, let black ones go
+- [x] Ramp Combo: halfpipe session; tap to pump in the green, swipe tricks in the air, land clean to bank
+- [x] Swipe Fighter: one-on-one fighter with jab, heavy, sweep, hop and guard, plus wind-up counters
+- [x] Mansion Night: torch-lit horror corridor; tap to shoot, head shots, six-shot clip, shells and herbs
+- [x] Blitz Bits: four-second micro games back to back that speed up
+
+## Brick-building adventure ideas (next batch) 🧱
+Original takes on the toy-brick adventure games: smash scenery into studs, rebuild piles of bricks into useful things, swap characters for abilities. No brand names, minifigures or licensed characters.
