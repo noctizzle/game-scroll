@@ -75,10 +75,12 @@ function makeSlide(def){
   s.overlay.onclick=e=>{if(Date.now()-s.overAt<550)return;startGame(s)};
   // pointer input
   const pt=e=>{const r=s.canvas.getBoundingClientRect();return[(e.clientX-r.left)/r.width*s.w,(e.clientY-r.top)/r.height*s.h]};
-  let pressed=false;
-  s.canvas.addEventListener('pointerdown',e=>{if(s.state!=='playing')return;pressed=true;lastGameInput=performance.now();try{s.canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();s.game.down&&s.game.down(...pt(e))});
-  s.canvas.addEventListener('pointermove',e=>{if(s.state!=='playing')return;if(pressed)lastGameInput=performance.now();s.game.move&&s.game.move(...pt(e),pressed)});
-  const up=e=>{if(!pressed)return;pressed=false;if(s.state==='playing'&&s.game.up)s.game.up(...pt(e))};
+  // Multi-touch: each finger is tracked by its pointer id, passed to the game as the last argument
+  // (down(x, y, id), move(x, y, pressed, id), up(x, y, id)). One-finger games can ignore it.
+  const held=new Set();
+  s.canvas.addEventListener('pointerdown',e=>{if(s.state!=='playing')return;held.add(e.pointerId);lastGameInput=performance.now();try{s.canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();s.game.down&&s.game.down(...pt(e),e.pointerId)});
+  s.canvas.addEventListener('pointermove',e=>{if(s.state!=='playing')return;const pressed=held.has(e.pointerId);if(pressed)lastGameInput=performance.now();s.game.move&&s.game.move(...pt(e),pressed,e.pointerId)});
+  const up=e=>{if(!held.delete(e.pointerId))return;if(s.state==='playing'&&s.game.up)s.game.up(...pt(e),e.pointerId)};
   s.canvas.addEventListener('pointerup',up);s.canvas.addEventListener('pointercancel',up);
   s.canvas.addEventListener('contextmenu',e=>e.preventDefault());
   el._s=s;

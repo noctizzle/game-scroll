@@ -336,7 +336,7 @@ function bfs(g, S, sx, sy) {
 /* ---------- the game ---------- */
 function make(api) {
   let v, L, lvl, world, spt, flashL, exitL, add, smoke, dust, gunG, guns = {}, holes, holeN, casings, scorchN;
-  let pl, foes, pickups, barrels, doors, score, floorN, t, msg, feed, stick, keys, fireCD, auto, kick, shake, hurtDir, hurtT, hitT, fade, state, stT, pathT, weapon, ammo;
+  let pl, foes, pickups, barrels, doors, score, floorN, t, msg, feed, stick, look, keys, fireCD, auto, kick, shake, hurtDir, hurtT, hitT, fade, state, stT, pathT, weapon, ammo;
 
   function setup() {
     if (v) return;
@@ -410,6 +410,7 @@ function make(api) {
       for (const s of [-1, 1]) { const post = P(G.box, m.frame, alongX ? { sx: .12, sy: WH, sz: .4 } : { sx: .4, sy: WH, sz: .12 }); post.position.set(d.cx + (alongX ? s * (CS / 2 - .06) : 0), WH / 2, d.cz + (alongX ? 0 : s * (CS / 2 - .06))); world.add(post); }
       world.add(slab, top, lamp); d.slab = slab; d.lamp = lamp; doors.push(d);
     }
+    L.doorIx = new Map(doors.map(d => [d.y * S + d.x, d]));
     // lamps: instanced fittings + light shafts
     const N = L.lamps.length, shades = new InstancedMesh(G.shade, m.shade, N), bulbs = new InstancedMesh(G.ball, m.bulb, N), shafts = new InstancedMesh(G.cone, m.shaft, N), mx = new Object3D();
     L.lamps.forEach((l, i) => {
@@ -462,6 +463,7 @@ function make(api) {
     // face the most open direction
     let bestA = 0, bestD = 0; for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4, d = ray(pl.x, pl.z, -Math.sin(a), -Math.cos(a), 30).d; if (d > bestD) { bestD = d; bestA = a; } } pl.a = bestA;
     holes.count = 0; holeN = 0; add.clear(); smoke.clear();
+    v.warmed = false;   // compile any new shaders before this floor's first frame, not mid-fight
     msg = { txt: `FLOOR ${floorN + 1}`, sub: floorN ? 'Find the green lift' : 'Find the green lift · knock out the guards', l: 2.6 };
   }
   function pickupMesh(k) {
@@ -490,18 +492,19 @@ function make(api) {
 
   /* ---------- grid queries ---------- */
   const cellAt = (x, z) => { const i = Math.floor(x / CS), j = Math.floor(z / CS); return i < 0 || j < 0 || i >= L.S || j >= L.S ? 1 : L.g[j * L.S + i]; };
-  const doorAt = (x, z) => { const i = Math.floor(x / CS), j = Math.floor(z / CS); return doors.find(d => d.x === i && d.y === j); };
+  const doorAt = (x, z) => L.doorIx.get(Math.floor(z / CS) * L.S + Math.floor(x / CS));
   function solid(x, z) { const c = cellAt(x, z); if (c === 1 || c === 3 || c === 4) return true; if (c === 2) return doorAt(x, z).open < .85; return false; }
   function sightBlock(x, z) { const c = cellAt(x, z); if (c === 1) return true; if (c === 2) return doorAt(x, z).open < .6; return false; }
-  function ray(x, z, dx, dz, max) {   // marches to the first wall / closed door: { d, x, z, nx, nz }
-    let px = x, pz = z;
-    for (let d = 0; d < max; d += .05) {
-      const nx = x + dx * d, nz = z + dz * d;
-      if (sightBlock(nx, nz)) {
-        const ci = Math.floor(nx / CS) !== Math.floor(px / CS), cj = Math.floor(nz / CS) !== Math.floor(pz / CS);
-        return { d, x: nx, z: nz, nx: ci ? -Math.sign(dx) : 0, nz: cj && !ci ? -Math.sign(dz) : 0 };
-      }
-      px = nx; pz = nz;
+  function ray(x, z, dx, dz, max) {   // grid walk (DDA) to the first wall / closed door: { d, x, z, nx, nz }
+    let i = Math.floor(x / CS), j = Math.floor(z / CS), d = 0, nx = 0, nz = 0;
+    const si = dx > 0 ? 1 : -1, sj = dz > 0 ? 1 : -1, ddx = dx ? Math.abs(CS / dx) : 1e9, ddz = dz ? Math.abs(CS / dz) : 1e9;
+    let tx = dx ? ((dx > 0 ? (i + 1) * CS : i * CS) - x) / dx : 1e9, tz = dz ? ((dz > 0 ? (j + 1) * CS : j * CS) - z) / dz : 1e9;
+    for (let n = 0; n < 64; n++) {
+      if (tx < tz) { d = tx; tx += ddx; i += si; nx = -si; nz = 0; } else { d = tz; tz += ddz; j += sj; nz = -sj; nx = 0; }
+      if (d >= max) break;
+      if (i < 0 || j < 0 || i >= L.S || j >= L.S) break;
+      const c = L.g[j * L.S + i];
+      if (c === 1 || (c === 2 && L.doorIx.get(j * L.S + i).open < .6)) return { d, x: x + dx * d, z: z + dz * d, nx, nz };
     }
     return { d: max, x: x + dx * max, z: z + dz * max, nx: 0, nz: 0 };
   }
@@ -665,11 +668,13 @@ function make(api) {
     if (pl.dead) { pl.dead += dt; fade = Math.min(.85, pl.dead / 1.6); if (pl.dead > 1.8) { state = 'over'; api.over(); } return; }
     // input: drag stick (tank controls) + keys
     let fwd = 0, turn = 0, strafe = 0;
-    if (stick && stick.on) {
+    if (stick) {
       const R = Math.min(W, H) * .14, sx = clamp((stick.x - stick.ax) / R, -1, 1), sy = clamp((stick.y - stick.ay) / R, -1, 1);
       const dz2 = v => Math.abs(v) < .18 ? 0 : (v - Math.sign(v) * .18) / .82;
-      fwd = -dz2(sy); turn = dz2(sx); turn = Math.sign(turn) * Math.abs(turn) ** 1.4;
+      fwd = -dz2(sy);
+      if (look) strafe = dz2(sx); else { turn = dz2(sx); turn = Math.sign(turn) * Math.abs(turn) ** 1.4; }
     }
+    if (look) look.hold = performance.now() - look.t0 > 250 && look.moved < 10;
     if (keys.has('ArrowUp') || keys.has('w')) fwd = 1; if (keys.has('ArrowDown') || keys.has('s')) fwd = -1;
     if (keys.has('ArrowLeft') || keys.has('a')) turn = -1; if (keys.has('ArrowRight') || keys.has('d')) turn = 1;
     if (keys.has('q')) strafe = -1; if (keys.has('e')) strafe = 1;
@@ -690,7 +695,7 @@ function make(api) {
     // firing: automatic when a guard is lined up, plus taps / space
     fireCD -= dt;
     auto = target(.03);
-    if (fireCD <= 0 && ((auto && auto.kind) || keys.has(' ') || (weapon === 'smg' && stick && stick.fire))) fire(false);
+    if (fireCD <= 0 && ((auto && auto.kind) || keys.has(' ') || (look && look.hold))) fire(false);
     // pickups
     for (const p of pickups) {
       if (p.got || Math.hypot(p.x - pl.x, p.z - pl.z) > .8) continue;
@@ -815,13 +820,14 @@ function make(api) {
       c.fillStyle = '#7cc4ff'; c.font = `600 ${8.5 * u}px Rubik, sans-serif`; c.fillText(msg.sub || '', cx, H * .3 + 13 * u); c.globalAlpha = 1;
     }
     // thumb stick
-    if (stick && stick.on) {
+    if (look) { c.strokeStyle = look.hold ? '#ff6a5a90' : '#ffffff40'; c.lineWidth = 2 * u; c.beginPath(); c.arc(look.x, look.y, 16 * u, 0, 7); c.stroke(); }
+    if (stick) {
       const R = Math.min(W, H) * .14; c.strokeStyle = '#ffffff40'; c.lineWidth = 2 * u; c.beginPath(); c.arc(stick.ax, stick.ay, R, 0, 7); c.stroke();
       const kx = stick.ax + clamp(stick.x - stick.ax, -R, R), ky = stick.ay + clamp(stick.y - stick.ay, -R, R);
       c.fillStyle = '#ffffff30'; c.beginPath(); c.arc(kx, ky, R * .42, 0, 7); c.fill(); c.strokeStyle = '#ffffff70'; c.stroke();
     } else if (t < 6 && state === 'play') {
       c.globalAlpha = .7 * Math.min(1, 6 - t); c.fillStyle = '#f2f5fb'; c.font = `600 ${8 * u}px Rubik, sans-serif`;
-      c.fillText('Drag to walk and turn · tap to shoot', cx, H - 42 * u); c.globalAlpha = 1;
+      c.fillText('Drag to walk and turn · tap to shoot · or use two thumbs', cx, H - 42 * u); c.globalAlpha = 1;
     }
     if (fade > 0) { c.fillStyle = pl.dead ? `rgba(40,0,0,${fade})` : `rgba(0,0,0,${fade})`; c.fillRect(0, 0, W, H); }
     c.restore();
@@ -849,7 +855,7 @@ function make(api) {
   let hasSMG;
   return {
     reset() {
-      score = 0; floorN = 0; t = 0; feed = []; stick = null; keys = new Set(); fireCD = 0; auto = null; kick = 0; shake = 0; hurtT = 0; hurtDir = null; hitT = 0; fade = 0;
+      score = 0; floorN = 0; t = 0; feed = []; stick = null; look = null; keys = new Set(); fireCD = 0; auto = null; kick = 0; shake = 0; hurtT = 0; hurtDir = null; hitT = 0; fade = 0;
       state = 'play'; stT = 0; weapon = 'pistol'; ammo = 0; hasSMG = false; pl = null;
       buildFloor(); pl.hp = 100;
     },
@@ -861,12 +867,24 @@ function make(api) {
       v.render(c, W, H);
       hud(c);
     },
-    down(x, y) { stick = { on: true, ax: x, ay: y, x, y, t0: performance.now(), moved: 0, fire: false }; if (weapon === 'smg') stick.holdT = setTimeout(() => { if (stick && stick.on && stick.moved < 6) stick.fire = true; }, 220); },
-    move(x, y, p) { if (!p || !stick) return; stick.moved = Math.max(stick.moved, Math.hypot(x - stick.ax, y - stick.ay)); stick.x = x; stick.y = y; if (stick.moved > 10) stick.fire = false; },
-    up() {
-      if (!stick) return; clearTimeout(stick.holdT);
-      const quick = performance.now() - stick.t0 < 260 && stick.moved < 8;
-      stick = null;
+    // Touch: the first finger is a stick (up/down walks, left/right turns), so it plays with one
+    // thumb. With two thumbs, the finger on the left half moves (left/right strafes) and the finger on
+    // the right half turns by dragging; tap it to shoot, hold it still to keep shooting.
+    down(x, y, id = 0) {
+      const f = { id, ax: x, ay: y, x, y, lx: x, t0: performance.now(), moved: 0, hold: false };
+      if (!stick || (x < W / 2 && stick.ax >= W / 2 && !look)) { if (stick && !look) look = stick; stick = f; }
+      else if (!look) look = f;
+    },
+    move(x, y, p, id = 0) {
+      if (!p) return;
+      const f = stick && stick.id === id ? stick : look && look.id === id ? look : null; if (!f) return;
+      f.moved = Math.max(f.moved, Math.hypot(x - f.ax, y - f.ay)); f.x = x; f.y = y;
+      if (f === look) { pl.a -= (x - f.lx) * Math.PI / W * 1.2; f.lx = x; }
+    },
+    up(x, y, id = 0) {
+      const f = stick && stick.id === id ? stick : look && look.id === id ? look : null; if (!f) return;
+      const quick = performance.now() - f.t0 < 260 && f.moved < 8;
+      if (f === stick) stick = null; else look = null;
       if (quick && state === 'play' && !pl.dead && fireCD <= .15) fire(true);
     },
     get dbg() { return { pl, foes, L, barrels, pickups }; },   // for test scripts
@@ -879,9 +897,9 @@ export default {
   title: 'Bunker Breakout',
   tag: 'Next Gen · Shooter',
   retro: true, era: 'nextgen', pal: 'grape',
-  w: 300, h: 300, maxW: 440, maxH: 420,
+  w: 300, h: 300, maxW: 600, maxH: 420,
   goal: 1500, reward: 25,
-  hint: 'Break out of the Red Bear fortress. Drag to walk and turn. Your gun fires when a guard is in your sights; tap to shoot anything else. Red barrels explode. Find the green lift.',
+  hint: 'Break out of the Red Bear fortress. Drag to walk and turn; your gun fires when a guard is in your sights, tap to shoot anything else. Two thumbs: left moves, right turns, tap or hold it to shoot. Red barrels explode. Find the green lift.',
   traits: ['theme:military', 'genre:fps'],
   make,
 };
