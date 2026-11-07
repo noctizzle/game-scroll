@@ -1,7 +1,9 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
-import { box, ball, glow, shadow } from '../kit/gfx.js';
+import { View, G, part, grp, blob, flat, toon, THREE } from '../kit/toon3d.js';
+const { Group } = THREE;
+const slitOn = toon('#101010'), slitOff = toon('#f86020', { glow: .8 });
 
 // 1944, a grey dawn beach. A machine-gun nest at the top sweeps its fire across the sand; you can
 // see where it's pointing. Tap a cover spot near you to sprint to it, and don't get caught in the
@@ -25,6 +27,31 @@ function make(api) {
     if (lvl >= 2) guns.push({ x: W * .25, a: .5, dir: -1, w: .8, pause: 1 });
     if (lvl >= 4) guns.push({ x: W * .75, a: -.5, dir: 1, w: .8, pause: 2 });
     msg = { txt: `BEACH ${lvl + 1}`, l: 1.5 };
+  }
+  let v3;
+  function view3d() {
+    if (!v3) {
+      v3 = new View({ bg: '#a89a78', sun: [-.6, 1, .3], sunI: 2.1, amb: 1, sky: '#d0d8e0', ground: '#605840' });
+      v3.def('beach', () => grp(part(G.plane, '#c8b890', { line: false }), part(G.plane, '#58687a', { sx: 1, sz: .06, z: .5, y: .2, line: false })));
+      v3.def('bluff', () => grp(part(G.box, '#4a4636', { sy: 16, y: 8 }), ...[-.4, -.15, .2, .42].map(x => part(G.blob, '#3a5030', { s: 7, x: x * 200, y: 16 }))));
+      v3.def('bunker', () => { const slit = part(G.box, '#101010', { sx: 28, sy: 4, sz: 2, y: 9, z: 12.5, line: false }); const g = grp(part(G.box, '#7a7868', { sx: 60, sy: 14, sz: 26, y: 7 }), part(G.box, '#8a8878', { sx: 64, sy: 3, sz: 30, y: 15 }), slit, part(G.cyl, '#303030', { sx: 1.2, sy: 10, sz: 1.2, y: 9, z: 16, rx: Math.PI / 2 })); g.userData.slit = slit; return g; });
+      v3.def('pillbox', () => grp(part(G.cyl, '#6a6858', { sx: 12, sy: 14, sz: 10, y: 7 }), part(G.box, '#101010', { sx: 14, sy: 4, sz: 2, y: 9, z: 9, line: false })));
+      v3.def('wave', () => part(G.box, '#8898a8', { sx: 8, sy: .6, sz: 1.5, line: false }));
+      v3.def('tracer', () => part(G.ball, '#f8e080', { sx: 1.2, sy: 1.2, sz: 3, glow: 1, line: false }));
+      v3.def('boat', () => grp(part(G.box, '#505848', { sx: 36, sy: 6, sz: 16, y: 3 }), part(G.box, '#606a58', { sx: 36, sy: 8, sz: 2, y: 7, z: -8 })));
+      v3.def('ring', () => part(G.hoop, flat('#f8f8f0', .8)));
+      v3.def('hedge', () => grp(...[0, 1, 2].map(k => part(G.box, '#383838', { sx: 2, sy: 2, sz: 20, y: 6, rx: .9, ry: k * Math.PI / 3 })), blob(9, .3)));
+      v3.def('sand', () => grp(...[-1, 0, 1].map(k => part(G.pill, '#8a7a58', { sx: 5, sy: 4, sz: 7, x: k * 7.5, y: 2.5, rz: Math.PI / 2 })), ...[-.5, .5].map(k => part(G.pill, '#a89670', { sx: 4.6, sy: 4, sz: 6.4, x: k * 7.5, y: 6.5, rz: Math.PI / 2 })), blob(13, .3)));
+      v3.def('med', () => grp(part(G.box, '#f8f8f0', { s: 6 }), part(G.box, '#e03030', { sx: 1.4, sy: 4.4, sz: 6.2, line: false }), part(G.box, '#e03030', { sx: 4.4, sy: 1.4, sz: 6.2, line: false })));
+      v3.def('soldier', () => {
+        const g = new Group(), body = new Group(); g.add(body);
+        body.add(part(G.box, '#4a5a30', { sx: 6, sy: 7, sz: 4, y: 7 }), part(G.ball, '#e8c090', { s: 2.4, y: 12.4 }), part(G.ball, '#5a6a3a', { sx: 3, sy: 1.6, sz: 3, y: 13.4 }), part(G.box, '#3a3020', { sx: 1, sy: 1, sz: 9, x: 3, y: 8, z: 2 }));
+        for (const sx of [-1, 1]) body.add(part(G.box, '#3a4a28', { sx: 2.4, sy: 5, sz: 2.4, x: sx * 1.6, y: 2.5 }));
+        g.add(blob(5, .35)); g.userData.body = body; return g;
+      });
+      v3.def('nade', () => part(G.ball, '#3a5028', { s: 3 })).def('blob', () => blob(1, .3));
+    }
+    v3.board(W, H, .66); return v3;
   }
   const half = () => .075 + Math.min(.03, lvl * .005);
   function spot(x, y) { return guns.some(g => { const a = Math.atan2(x - g.x, y - bunkerY); return Math.abs(a - g.a) < half(); }); }
@@ -66,31 +93,29 @@ function make(api) {
       }
     },
     draw(c) {
-      // sea at the bottom, sand, the bluff and the bunker on top
-      const sand = c.createLinearGradient(0, 0, 0, H); sand.addColorStop(0, '#6a6450'); sand.addColorStop(.25, '#a89a78'); sand.addColorStop(1, '#c8b890'); c.fillStyle = sand; c.fillRect(0, 0, W, H);
-      c.fillStyle = '#58687a'; c.fillRect(0, H - 10, W, 10); c.fillStyle = '#8898a8'; for (let x = (t * 10) % 16 - 16; x < W; x += 16) c.fillRect(x, H - 10, 8, 1);
-      c.fillStyle = '#4a4636'; c.fillRect(0, 0, W, 46); box(c, W / 2 - 30, 14, 60, 28, '#7a7868', { r: 4 });
-      c.fillStyle = guns.length ? '#101010' : '#402010'; c.fillRect(W / 2 - 14, 26, 28, 7);
-      for (const g of guns) { if (g.x !== W / 2) { box(c, g.x - 12, 22, 24, 16, '#6a6858', { r: 3 }); c.fillStyle = '#101010'; c.fillRect(g.x - 7, 28, 14, 5); } }
-      // sweeping fire
+      const v = view3d(), S = v.sin; v.frame();
+      v.put('beach', v.at(W / 2, H / 2), { sx: W, sz: H / S });
+      v.put('bluff', v.at(W / 2, 23), { sx: W + 20, sz: 46 / S });
+      v.put('bunker', v.at(W / 2, 28)).userData.slit.material = guns.length ? slitOn : slitOff;
+      for (const g of guns) if (g.x !== W / 2) v.put('pillbox', v.at(g.x, 30));
+      for (let i = 0; i < 8; i++) v.put('wave', v.at(((i * 31 + t * 10) % (W + 20)) - 10, H - 6, .5));
       for (const g of guns) {
         const L = H * 1.3, a0 = g.a - half(), a1 = g.a + half();
-        c.fillStyle = g.pause > 0 ? 'rgba(248,200,80,.12)' : 'rgba(248,80,40,.2)'; c.beginPath(); c.moveTo(g.x, bunkerY); c.lineTo(g.x + Math.sin(a0) * L, bunkerY + Math.cos(a0) * L); c.lineTo(g.x + Math.sin(a1) * L, bunkerY + Math.cos(a1) * L); c.fill();
-        if (g.pause <= 0) { glow(c, g.x, bunkerY, 10 + Math.random() * 4, '#f8c060', .7); c.fillStyle = '#f8e080'; for (let i = 0; i < 6; i++) { const d = ((t * 400 + i * 47) % L); c.fillRect(g.x + Math.sin(g.a) * d, bunkerY + Math.cos(g.a) * d, 2, 2); } }
+        v.fan([[g.x, bunkerY], [g.x + Math.sin(a0) * L, bunkerY + Math.cos(a0) * L], [g.x + Math.sin(a1) * L, bunkerY + Math.cos(a1) * L]], g.pause > 0 ? '#f8c850' : '#f85028', g.pause > 0 ? .14 : .3, 1);
+        if (g.pause <= 0) for (let i = 0; i < 6; i++) { const d = ((t * 400 + i * 47) % L); v.put('tracer', v.at(g.x + Math.sin(g.a) * d, bunkerY + Math.cos(g.a) * d, 4)); }
       }
-      // covers
       const reach = run ? [] : covers.filter(cv => cv !== at && Math.hypot(cv.x - at.x, cv.y - at.y) < 95 && cv.y <= at.y + 4);
       for (const cv of covers) {
-        if (cv.kind === 'start') { c.fillStyle = '#505848'; c.fillRect(cv.x - 18, cv.y - 4, 36, 10); continue; }
-        if (reach.includes(cv)) { c.strokeStyle = '#f8f8f0' + ((t * 3 | 0) % 2 ? 'c0' : '60'); c.beginPath(); c.arc(cv.x, cv.y, 14, 0, 7); c.stroke(); }
-        if (cv.kind === 'hedge') { c.strokeStyle = '#383838'; c.lineWidth = 3; c.beginPath(); c.moveTo(cv.x - 9, cv.y + 5); c.lineTo(cv.x + 9, cv.y - 5); c.moveTo(cv.x + 9, cv.y + 5); c.lineTo(cv.x - 9, cv.y - 5); c.moveTo(cv.x, cv.y - 8); c.lineTo(cv.x, cv.y + 6); c.stroke(); c.lineWidth = 1; }
-        else { shadow(c, cv.x + 2, cv.y + 5, 14, 3); box(c, cv.x - 12, cv.y - 3, 24, 8, '#8a7a58', { r: 3, drop: false }); box(c, cv.x - 10, cv.y - 7, 20, 5, '#a89670', { r: 2, drop: false }); }
-        if (cv.med) { c.fillStyle = '#f8f8f0'; c.fillRect(cv.x + 8, cv.y - 12, 7, 7); c.fillStyle = '#e03030'; c.fillRect(cv.x + 11, cv.y - 11, 1, 5); c.fillRect(cv.x + 9, cv.y - 9, 5, 1); }
+        if (cv.kind === 'start') { v.put('boat', v.at(cv.x, cv.y + 2)); continue; }
+        if (reach.includes(cv)) v.put('ring', v.at(cv.x, cv.y, .6), { s: 14, sz: 14 / S }).children[0].material.opacity = (t * 3 | 0) % 2 ? .9 : .4;
+        v.put(cv.kind, v.at(cv.x, cv.y), { ry: cv.kind === 'hedge' ? cv.x : 0 });
+        if (cv.med) v.put('med', v.at(cv.x + 11, cv.y - 6, 2), { ry: t });
       }
-      // you
-      const x = px(), y = py(); if (!(inv > 0 && (t * 12 | 0) % 2)) { shadow(c, x + 1, y + 1, 5, 2); c.fillStyle = '#4a5a30'; c.fillRect(x - 3, y - 9 + (run ? 0 : 3), 6, run ? 9 : 6); c.fillStyle = '#5a6a3a'; c.beginPath(); c.arc(x, y - 10 + (run ? 0 : 3), 3.5, Math.PI, 0); c.fill(); }
+      const x = px(), y = py();
+      if (!(inv > 0 && (t * 12 | 0) % 2)) { const o = v.put('soldier', v.at(x, y + 2), { ry: Math.PI }); o.userData.body.rotation.x = run ? -.5 : .2; o.userData.body.position.y = run ? 0 : -2; }
+      if (nade) { v.put('nade', v.at(nade.x, nade.y, nade.z)); v.put('blob', v.at(nade.x, nade.y, .3), { s: 3 }); }
+      v.render(c, W, H);
       if (flick) { c.strokeStyle = '#f8f8f080'; c.setLineDash([3, 3]); c.beginPath(); c.moveTo(x, y); const tg = aim(flick); c.lineTo(tg.x, tg.y); c.stroke(); c.setLineDash([]); c.strokeStyle = '#f8e04880'; c.beginPath(); c.arc(tg.x, tg.y, 6, 0, 7); c.stroke(); }
-      if (nade) { c.fillStyle = '#00000040'; c.fillRect(nade.x - 2, nade.y, 4, 2); ball(c, nade.x, nade.y - nade.z, 3, '#3a5028'); }
       for (const p of parts) { if (p.txt) { c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillStyle = p.col; c.fillText(p.txt, p.x, p.y); } else { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); } }
       // HUD
       c.font = '6px "Press Start 2P", monospace'; c.fillStyle = '#1a1a14c0'; c.fillRect(0, 0, W, 11);

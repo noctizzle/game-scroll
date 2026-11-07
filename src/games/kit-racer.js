@@ -2,7 +2,8 @@ import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
 import { backdrop, glow } from '../kit/gfx.js';
-import { brick, stud } from '../kit/bricks.js';
+import { brick, stud, brick3d, stud3d, BRICK } from '../kit/bricks.js';
+import { View, G, part, grp, blob } from '../kit/toon3d.js';
 
 // Build a brick car, then race it. Pick a body in the garage: the zippy Racer, the tough Truck or
 // the grippy Buggy. Drag to steer down the track. Smash brick piles your armour can handle for
@@ -75,19 +76,26 @@ function make(api) {
         if (msg) { c.fillStyle = '#f8f8f0'; c.fillText(msg.txt, W / 2, H - 16); }
         return;
       }
-      const R = road(), off = dist % 32;
-      c.fillStyle = '#48a048'; c.fillRect(0, 0, W, H); c.fillStyle = '#3c903c'; for (let y = -32 + off; y < H; y += 32) { c.fillRect(0, y, R.l, 16); c.fillRect(R.r, y, W - R.r, 16); }
-      c.fillStyle = '#585c64'; c.fillRect(R.l, 0, R.r - R.l, H);
-      for (let y = -32 + off; y < H; y += 32) { c.fillStyle = '#d83a2c'; c.fillRect(R.l - 4, y, 4, 16); c.fillRect(R.r, y, 4, 16); c.fillStyle = '#e8e8e0'; c.fillRect(R.l - 4, y + 16, 4, 16); c.fillRect(R.r, y + 16, 4, 16); c.fillRect(W / 2 - 1, y, 2, 14); }
-      const cpY = carY() - (cpAt(cp + 1) - dist); if (cpY > -10 && cpY < H) { for (let i = 0; i < (R.r - R.l) / 8; i++) { c.fillStyle = i % 2 ? '#202020' : '#f8f8f0'; c.fillRect(R.l + i * 8, cpY, 8, 6); } }
-      for (const o of objs) {
-        if (o.k === 'stud') stud(c, o.x, o.y, o.gold ? 3.5 : 2.5, o.gold ? 'gold' : 'silver', t);
-        else if (o.k === 'pile') { for (let i = 0; i < o.size; i++) brick(c, o.x - o.w / 2 + i * 2, o.y - 4 - i * 5, o.w - i * 4, 5, ['tan', 'grey', 'black', 'black'][o.size - 1], 4); c.fillStyle = car.armour >= o.size ? '#58e070' : '#f86060'; c.fillText(String(o.size), o.x, o.y - 6 - o.size * 5); }
-        else if (o.k === 'car') drawCar(c, o.x, o.y, o.col, 1);
-        else if (o.k === 'oil') { c.fillStyle = '#181820'; c.beginPath(); c.ellipse(o.x, o.y, 9, 5, 0, 0, 7); c.fill(); c.fillStyle = '#383850'; c.fillRect(o.x - 3, o.y - 2, 3, 1); }
+      const R = road(), off = dist % 32, v = view3d(), S = v.sin; v.frame();
+      v.put('road', v.at(W / 2, H / 2), { sx: R.r - R.l, sz: H + 800 });
+      for (let y = -224 + off; y < H + 224; y += 32) {
+        for (const [xx, k] of [[R.l - 2, 0], [R.r + 2, 0]]) { v.put('kerbR', v.at(xx, y + 8), { sz: 16 / S }); v.put('kerbW', v.at(xx, y + 24), { sz: 16 / S }); }
+        v.put('dash', v.at(W / 2, y + 7), { sz: 14 / S });
+        for (const sd of [-1, 1]) v.put((y / 32 | 0) % 2 ? 'bush' : 'cone', v.at(sd < 0 ? R.l * .45 : W - (W - R.r) * .45, y + 16), { ry: y });
       }
-      if (!(hitT > 0 && (t * 14 | 0) % 2)) drawCar(c, x, carY(), BODIES[bodyI].col, 1, car.armour);
-      for (const p of parts) { if (p.txt) { c.fillStyle = '#000'; c.fillText(p.txt, p.x + 1, p.y + 1); c.fillStyle = p.col; c.fillText(p.txt, p.x, p.y); } else { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); } }
+      const cpY = carY() - (cpAt(cp + 1) - dist); if (cpY > -10 && cpY < H + 10) v.put('gate', v.at(W / 2, cpY + 3), { sx: (R.r - R.l) / 100 });
+      for (const o of objs) {
+        if (o.y < -30 || o.y > H + 30) continue;
+        if (o.k === 'stud') v.put(o.gold ? 'gold' : 'silver', v.at(o.x, o.y, 4), { ry: t * 4 + o.x * .1 });
+        else if (o.k === 'pile') v.put('pile' + o.size, v.at(o.x, o.y));
+        else if (o.k === 'car') v.put('car:' + o.col, v.at(o.x, o.y));
+        else if (o.k === 'oil') v.put('oil', v.at(o.x, o.y, .3), { sz: 1 / S });
+      }
+      if (!(hitT > 0 && (t * 14 | 0) % 2)) { const me = v.put('car:' + BODIES[bodyI].col, v.at(x, carY()), { ry: clamp((tx - x) * -.02, -.4, .4) }); me.userData.armour.visible = car.armour >= 3; }
+      v.render(c, W, H);
+      c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
+      for (const o of objs) if (o.k === 'pile' && o.y > -20 && o.y < H) { const [px, py] = v.over(o.x, o.y, o.size * 5 + 6); c.fillStyle = '#000'; c.fillText(String(o.size), px + 1, py + 1); c.fillStyle = car.armour >= o.size ? '#58e070' : '#f86060'; c.fillText(String(o.size), px, py); }
+      for (const p of parts) { const [qx, qy] = v.over(p.x, p.y, 3); if (p.txt) { c.fillStyle = '#000'; c.fillText(p.txt, qx + 1, qy + 1); c.fillStyle = p.col; c.fillText(p.txt, qx, qy); } else { c.fillStyle = p.col; c.fillRect(qx, qy, 2, 2); } }
       c.fillStyle = '#000a'; c.fillRect(0, 0, W, 12);
       c.textAlign = 'left'; c.fillStyle = time < 6 && (t * 4 | 0) % 2 ? '#f86060' : '#f8f8f0'; c.fillText(`${Math.ceil(time)}s`, 4, 9);
       for (let i = 0; i < 3; i++) { c.fillStyle = i < hp ? '#f84858' : '#403848'; c.fillRect(34 + i * 7, 3, 5, 6); }
@@ -98,12 +106,36 @@ function make(api) {
       if (dead) return;
       if (mode === 'garage') { const ch = Math.min(46, (H - 46) / 3 - 4), i = Math.floor((py - 30) / (ch + 4)); if (i >= 0 && i < 3) { bodyI = i; const b = BODIES[i]; car = { speed: b.speed, grip: b.grip, armour: b.armour }; haptic('medium'); sfx(600, .1, 'square', .04, 200); startRace(); } return; }
       if (mode === 'pit') { const i = Math.floor((py - 30) / 34); if (i >= 0 && i < 3) { const k = ['speed', 'grip', 'armour'][i]; if (studs >= cost(k) && car[k] < 6) { studs -= cost(k); car[k]++; haptic('success'); sfx(900, .1, 'square', .04, 300); } else { haptic('error'); sfx(150, .08, 'square', .03); } } else if (i === 3) startRace(); return; }
-      tx = px;
+      tx = steerX(px);
     },
-    move(px, py, p) { if (p && mode === 'race') tx = px; },
+    move(px, py, p) { if (p && mode === 'race') tx = steerX(px); },
     up() {},
     key(k, d) { if (!d) return; if (mode === 'garage' && '123'.includes(k)) self.down(0, 30 + (+k - .5) * (Math.min(46, (H - 40) / 3 - 4) + 4)); else if (mode === 'pit' && k === ' ') startRace(); else if (mode === 'race') { if (k === 'ArrowLeft') tx = x - 30; if (k === 'ArrowRight') tx = x + 30; } },
   };
+  let v3;
+  function view3d() {
+    if (!v3) {
+      v3 = new View({ bg: '#48a048', sun: [-.6, 1, .4], sunI: 2.4, amb: 1 });
+      v3.add(part(G.plane, '#48a048', { sx: 4000, sz: 4000, line: false }));
+      v3.def('road', () => part(G.box, '#585c64', { sy: 1, y: -.4, line: false }));
+      v3.def('kerbR', () => part(G.box, '#d83a2c', { sx: 4, sy: 2, y: 1 })).def('kerbW', () => part(G.box, '#e8e8e0', { sx: 4, sy: 2, y: 1 }));
+      v3.def('dash', () => part(G.box, '#e8e8e0', { sx: 2, sy: .3, line: false }));
+      v3.def('bush', () => grp(brick3d('green', 8, 6, 8, 4), blob(6, .3))).def('cone', () => grp(part(G.cone, '#f07818', { sx: 2.4, sy: 6, sz: 2.4, y: 3 }), part(G.box, '#f07818', { sx: 5, sy: 1, sz: 5, y: .5 })));
+      v3.def('gate', () => { const g = grp(part(G.box, '#383840', { sx: 3, sy: 22, sz: 3, x: -52, y: 11 }), part(G.box, '#383840', { sx: 3, sy: 22, sz: 3, x: 52, y: 11 })); for (let i = 0; i < 12; i++) g.add(part(G.box, i % 2 ? '#202020' : '#f8f8f0', { sx: 104 / 12, sy: 5, sz: 2, x: -52 + (i + .5) * 104 / 12, y: 22 })); for (let i = 0; i < 12; i++) g.add(part(G.box, i % 2 ? '#f8f8f0' : '#202020', { sx: 104 / 12, sy: .4, sz: 6, x: -52 + (i + .5) * 104 / 12, y: .2, line: false })); return g; });
+      v3.def('gold', () => stud3d('gold', 3.5)).def('silver', () => stud3d('silver', 2.6));
+      v3.def('oil', () => grp(part(G.disc, '#181820', { sx: 9, sz: 5, line: false }), part(G.disc, '#383850', { sx: 3, sz: 1.5, x: -2, y: .1, line: false })));
+      for (let n = 1; n <= 4; n++) v3.def('pile' + n, () => { const col = ['tan', 'grey', 'black', 'black'][n - 1], g = grp(blob(10 + n * 3, .3)); for (let i = 0; i < n; i++) { const b = brick3d(col, 10 + n * 4 - i * 4, 5, 8, 4); b.position.y = i * 5; b.rotation.y = i * .3; g.add(b); } return g; });
+      for (const col of ['red', 'blue', 'green', 'yellow', 'orange', 'white', 'black']) v3.def('car:' + col, () => {
+        const g = grp(blob(10, .35), brick3d(col, 12, 4, 18, 0), part(G.box, '#88c8f8', { sx: 9, sy: 3, sz: 5, y: 5.5, z: -2 }), part(G.box, BRICK[col][0], { sx: 10, sy: 1.5, sz: 6, y: 7.6, z: -2 }));
+        for (const sx of [-1, 1]) for (const z of [-5.5, 5.5]) g.add(part(G.cyl, '#181818', { sx: 3, sy: 2.6, sz: 3, x: sx * 7, y: 3, z, rz: Math.PI / 2 }));
+        g.add(part(G.cyl, BRICK[col][0], { sx: 1.3, sy: .9, sz: 1.3, y: 4.4, z: 5 }), part(G.cyl, BRICK[col][0], { sx: 1.3, sy: .9, sz: 1.3, y: 4.4, z: 7.5 }));
+        const armour = brick3d('grey', 15, 3, 3, 4); armour.position.set(0, 1.5, -10); g.add(armour); g.userData.armour = armour; return g;
+      });
+    }
+    v3.board(W, H, .62, 44, 1.2); return v3;
+  }
+  // the road is seen in perspective: turn a finger x into the road x under it at the car's row
+  function steerX(px) { const v = view3d(), [a] = v.over(0, carY()), [b] = v.over(W, carY()); return (px - a) / (b - a) * W; }
   function drawCar(c, cx, cy, col, s, armour = 0) {
     const w = 12 * s, h = 18 * s; c.fillStyle = '#181818'; c.fillRect(cx - w / 2 - 2 * s, cy - h / 2 + 2 * s, 3 * s, 5 * s); c.fillRect(cx + w / 2 - s, cy - h / 2 + 2 * s, 3 * s, 5 * s); c.fillRect(cx - w / 2 - 2 * s, cy + h / 2 - 7 * s, 3 * s, 5 * s); c.fillRect(cx + w / 2 - s, cy + h / 2 - 7 * s, 3 * s, 5 * s);
     brick(c, cx - w / 2, cy - h / 2, w, h, col, 0); c.fillStyle = '#88c8f8'; c.fillRect(cx - w / 2 + 2 * s, cy - h / 2 + 4 * s, w - 4 * s, 4 * s);

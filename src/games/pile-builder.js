@@ -110,7 +110,7 @@ function make(api) {
 }
 
 export default {
-  id: 'pile-builder', title: 'Pile Builder', tag: 'Bricks · Puzzle', retro: true, era: 'console', pal: 'teal', w: 192, h: 144, maxW: 320, maxH: 220, goal: 30,
+  id: 'pile-builder', title: 'Pile Builder', tag: 'Bricks · Puzzle', retro: true, era: 'advance', pal: 'teal', w: 192, h: 144, maxW: 320, maxH: 220, goal: 30,
   hint: 'Your builder walks to the flag on their own and stops at anything in the way. Press and hold the bouncing brick piles to build a bridge, steps, a lever for the gate or a spring over the wall. Tap crates twice to break them open first. Beat the clock; every stage adds time.',
   make,
 };

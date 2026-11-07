@@ -1,7 +1,9 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
-import { ball, glow, shadow, backdrop } from '../kit/gfx.js';
+import { View, G, part, grp, blob, THREE } from '../kit/toon3d.js';
+import { backdrop } from '../kit/gfx.js';
+const { Group } = THREE;
 
 // Weed beetles are marching across your vegetable patch. Tap the glowing dew drops to collect
 // them, tap a card at the top, then tap a square to plant it. Dew Lilies make more dew, Pea Pods
@@ -25,6 +27,40 @@ function make(api) {
     wave++; const n = 2 + wave * 2; spawnQ = [];
     for (let i = 0; i < n; i++) { const r = Math.random(); spawnQ.push(wave > 4 && i === n - 1 ? 'stag' : r < .55 || wave < 2 ? 'beetle' : r < .8 ? (wave > 2 ? 'armour' : 'beetle') : 'hopper'); }
     spawnT = wave === 1 ? 8 : 3; msg = { txt: wave === 1 ? 'PLANT LILIES FIRST!' : `WAVE ${wave}`, l: 1.6 };
+  }
+  let v3;
+  function view3d() {
+    if (!v3) {
+      v3 = new View({ bg: '#4a8a3a', sun: [-.7, 1, .5], sunI: 2.4, amb: 1 });
+      v3.add(part(G.plane, '#4a8a3a', { sx: 3000, sz: 3000, y: -2, line: false }));
+      v3.def('lawnA', () => part(G.box, '#86c65c', { sy: 1.5, y: -.75, line: false })).def('lawnB', () => part(G.box, '#70b04c', { sy: 1.5, y: -.75, line: false }));
+      v3.def('soil', () => part(G.box, '#6a4a2a', { sy: 3, y: -2 }));
+      v3.def('house', () => grp(part(G.box, '#a07040', { y: .5 }), ...[-.4, -.2, 0, .2, .4].map(z => part(G.box, '#c09060', { sx: 1.04, sy: .2, sz: .16, y: 1, z, line: false }))));
+      const gnome = on => () => grp(part(G.cyl, on ? '#3858a0' : '#606070', { sx: 2.4, sy: 3.5, sz: 2.4, y: 1.8 }), part(G.ball, on ? '#f8f0e0' : '#808088', { s: 2.6, y: 4.8 }), part(G.ball, '#f8c8a0', { s: 1.5, y: 5.8, z: 1.2 }), part(G.cone, on ? '#e04040' : '#707078', { sx: 2.4, sy: 6, sz: 2.4, y: 9.5 }));
+      v3.def('gnome', gnome(true)).def('gnomeOff', gnome(false));
+      const flash = g => { const f = part(G.ball, '#ffffff', { s: 9, y: 6, glow: 1, opacity: .6, line: false }); f.visible = false; g.add(f); g.userData.flash = f; return g; };
+      v3.def('lily', () => { const g = grp(part(G.cyl, '#3a9a30', { sx: .6, sy: 5, sz: .6, y: 2.5 }), part(G.ball, '#f89020', { sx: 2.4, sy: 1.4, sz: 2.4, y: 6 })); for (let i = 0; i < 6; i++) g.add(part(G.ball, '#f0d040', { sx: 2.4, sy: .9, sz: 1.5, x: Math.cos(i * 1.05) * 3.5, z: Math.sin(i * 1.05) * 3.5, y: 5.6, ry: -i * 1.05 })); return flash(g); });
+      v3.def('pod', () => { const head = part(G.ball, '#58c050', { sx: 4.5, sy: 4, sz: 4, y: 8 }); head.add(part(G.cyl, '#48a840', { sx: .45, sy: .8, sz: .45, x: 1.1, rz: Math.PI / 2 })); for (const z of [-1, 1]) head.add(part(G.ball, '#14101c', { s: .18, x: .4, y: .35, z: z * .45, line: false })); head.add(part(G.cone, '#3a8a30', { sx: .5, sy: .8, sz: .3, x: -.9, y: .5, rz: .9 })); return flash(grp(part(G.cyl, '#3a9a30', { sx: .8, sy: 6, sz: .8, y: 3 }), part(G.cone, '#3a9a30', { sx: 3, sy: 1, sz: 3, y: .5 }), head)); });
+      v3.def('wall', () => { const g = grp(part(G.box, '#7a5a30', { sx: 12, sy: 14, sz: 9, y: 7 })); for (let i = 0; i < 5; i++) g.add(part(G.cone, '#4a3418', { sx: 1, sy: 3, sz: 1, x: -5 + i * 2.5, y: 14 + (i % 2), rz: (i - 2) * .2 })); return flash(g); });
+      v3.def('pepper', () => flash(grp(part(G.ball, '#e04030', { sx: 5, sy: 7, sz: 5, y: 7 }), part(G.cyl, '#38a038', { sx: .8, sy: 3, sz: .8, y: 15 }), part(G.ball, '#ffffff', { s: 1, x: -1.6, y: 9, z: 4, line: false }))));
+      v3.def('seed', () => part(G.ball, '#90e060', { s: 2.2, glow: .6 }));
+      v3.def('dew', () => grp(part(G.ball, '#80d8ff', { sx: 5, sy: 5.5, sz: 5, glow: .35 }), part(G.ball, '#ffffff', { s: 1.4, x: -1.6, y: 2, z: 3, line: false })));
+      v3.def('blob', () => blob(1, .3));
+      v3.def('picket', () => grp(part(G.box, '#f8f0e0', { sx: 2.2, sy: 7, sz: 1.2, y: 3.5 }), part(G.cone, '#f8f0e0', { sx: 1.1, sy: 1.6, sz: .6, y: 7.8, ry: Math.PI / 4 }), part(G.box, '#e8e0d0', { sx: 6, sy: 1, sz: .8, y: 4.5, z: -.8, line: false })));
+      for (const [i, col] of ['#f8f070', '#f8a0c8', '#ffffff'].entries()) v3.def('flower' + i, () => grp(part(G.cyl, '#3a9030', { sx: .3, sy: 4, sz: .3, y: 2 }), part(G.ball, col, { sx: 2, sy: .8, sz: 2, y: 4.2 }), part(G.ball, '#f0a020', { s: .8, y: 4.6, line: false })));
+      const bug = (col, extra) => () => {
+        const g = new Group(), body = part(G.ball, col, { sx: 7, sy: 4.5, sz: 5.5, y: 5 }), head = part(G.ball, '#2a2030', { s: 3, x: -7, y: 5 });
+        for (const z of [-1, 1]) head.add(part(G.ball, '#f8f040', { s: .35, x: -.7, y: .3, z: z * .5, glow: .6, line: false }));
+        const legs = new Group(); for (let i = -1; i <= 1; i++) for (const z of [-1, 1]) legs.add(part(G.cyl, '#202020', { sx: .5, sy: 4, sz: .5, x: i * 4, y: 2, z: z * 5, rx: z * .7, line: false }));
+        g.add(legs, body, head); if (extra) extra(g); g.userData.legs = legs;
+        const f = part(G.ball, '#ffffff', { sx: 8, sy: 6, sz: 7, y: 5, glow: 1, opacity: .7, line: false }); f.visible = false; g.add(f); g.userData.flash = f; return g;
+      };
+      v3.def('beetle', bug('#6a4a8a', g => g.add(part(G.box, '#4a3060', { sx: .6, sy: 1, sz: 9, y: 9.4, line: false }))));
+      v3.def('armour', bug('#4a5a6a', g => g.add(part(G.ball, '#c0c8d0', { sx: 6, sy: 3, sz: 5, y: 8.5 }))));
+      v3.def('hopper', bug('#5a8a3a', g => { for (const z of [-1, 1]) g.add(part(G.cyl, '#3a6a20', { sx: .8, sy: 9, sz: .8, x: 3, y: 6, z: z * 5, rz: -1 })); }));
+      v3.def('stag', bug('#7a3020', g => { for (const z of [-1, 1]) g.add(part(G.cone, '#3a1810', { sx: 1, sy: 7, sz: 1, x: -11, y: 6, z: z * 2, rz: Math.PI / 2 + z * .3 })); }));
+    }
+    v3.board(W, H, .62); return v3;
   }
   function burst(x, y, col, n = 8) { for (let i = 0; i < n; i++) parts.push({ x, y, vx: rnd(-50, 50), vy: rnd(-60, 10), l: .45, col }); }
   function hitBug(b, d) { b.hp -= d; b.flash = .1; if (b.hp <= 0 && !b.dead) { b.dead = true; kills++; api.score(kills); burst(b.x, b.y, b.col); sfx(300, .08, 'square', .04, -100); } }
@@ -63,32 +99,28 @@ function make(api) {
       for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r][c] && grid[r][c].hit) grid[r][c].hit = Math.max(0, grid[r][c].hit - dt);
     },
     draw(c) {
-      const C = cell(), X = ox(), Y = oy();
-      c.fillStyle = '#4a8a3a'; c.fillRect(0, 0, W, H);
-      for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) { { const gg = c.createLinearGradient(0, Y + r * C, 0, Y + r * C + C); const b = (r + cc) % 2 ? ['#86c65c', '#6aa846'] : ['#76b650', '#5c9a3e']; gg.addColorStop(0, b[0]); gg.addColorStop(1, b[1]); c.fillStyle = gg; c.fillRect(X + cc * C, Y + r * C, C, C); } }
-      // house and gnomes
-      c.fillStyle = '#c8b090'; c.fillRect(0, Y, X - 2, ROWS * C); c.fillStyle = '#a04030'; c.beginPath(); c.moveTo(0, Y); c.lineTo((X - 2) / 2, Y - 10); c.lineTo(X - 2, Y); c.fill();
-      for (let i = 0; i < 3; i++) { const gx = (X - 2) / 2, gy = Y + 14 + i * ((ROWS * C - 20) / 3); c.fillStyle = i < gnomes ? '#e04040' : '#80706080'; c.beginPath(); c.moveTo(gx - 4, gy); c.lineTo(gx, gy - 9); c.lineTo(gx + 4, gy); c.fill(); if (i < gnomes) { c.fillStyle = '#f8f0e0'; c.fillRect(gx - 3, gy, 6, 4); c.fillStyle = '#3858a0'; c.fillRect(gx - 3, gy + 4, 6, 4); } }
-      // plants
+      const C = cell(), X = ox(), Y = oy(), v = view3d(), S = v.sin, k = C / 15; v.frame();
+      for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) v.put((r + cc) % 2 ? 'lawnA' : 'lawnB', v.at(X + (cc + .5) * C, Y + (r + .5) * C), { sx: C, sz: C / S });
+      v.put('soil', v.at(X + COLS * C / 2, Y + ROWS * C / 2), { sx: COLS * C + 4, sz: (ROWS * C + 4) / S });
+      for (let i = 0; i <= COLS * 2; i++) { v.put('picket', v.at(X + i * C / 2, Y - 3)); v.put('picket', v.at(X + i * C / 2, Y + ROWS * C + 3)); }
+      for (let i = 0; i < 10; i++) v.put('flower' + (i % 3), v.at(X + ((i * 37) % (COLS * C)), i % 2 ? Y - 8 : Y + ROWS * C + 8), { ry: i });
+      v.put('house', v.at((X - 2) / 2, Y + ROWS * C / 2), { sx: Math.max(6, X - 4), sy: 3, sz: ROWS * C / S });
+      for (let i = 0; i < 3; i++) v.put(i < gnomes ? 'gnome' : 'gnomeOff', v.at((X - 2) / 2, Y + 14 + i * ((ROWS * C - 20) / 3), 3), { s: 1.1 });
       for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) {
-        const p = grid[r][cc]; if (!p) continue; const x = cx(cc), y = cy(r), s = C / 20;
-        c.fillStyle = p.hit ? '#ffffff' : p.col;
-        if (p.k === 'lily') { for (let i = 0; i < 5; i++) { const a = i * 1.257 + t; c.beginPath(); c.arc(x + Math.cos(a) * 4 * s, y - 2 * s + Math.sin(a) * 4 * s, 3 * s, 0, 7); c.fill(); } c.fillStyle = '#f89020'; c.beginPath(); c.arc(x, y - 2 * s, 2.5 * s, 0, 7); c.fill(); }
-        else if (p.k === 'pod') { c.fillRect(x - 1, y - 2 * s, 2, 8 * s); c.beginPath(); c.ellipse(x + 1 * s, y - 4 * s, 6 * s, 4 * s, 0, 0, 7); c.fill(); c.fillStyle = '#306828'; c.fillRect(x + 5 * s, y - 5 * s, 3 * s, 2 * s); c.fillStyle = '#202020'; c.fillRect(x + 1 * s, y - 6 * s, 1.5 * s, 1.5 * s); }
-        else if (p.k === 'wall') { c.fillRect(x - 6 * s, y - 8 * s, 12 * s, 14 * s); c.fillStyle = '#4a3418'; for (let i = 0; i < 4; i++) c.fillRect(x - 6 * s + i * 3 * s, y - 8 * s + (i % 2) * 5 * s, 2 * s, 2 * s); c.fillStyle = '#ffffff40'; c.fillRect(x - 6 * s, y + 7 * s, 12 * s * p.hp / 40, 1.5); }
-        else { const k = 1 + Math.sin(p.t * 30) * .15 * p.t; c.beginPath(); c.ellipse(x, y, 5 * s * k, 7 * s * k, 0, 0, 7); c.fill(); c.fillStyle = '#38a038'; c.fillRect(x - 1, y - 9 * s, 2, 3 * s); }
+        const p = grid[r][cc]; if (!p) continue; const x = cx(cc), y = cy(r);
+        const sq = p.k === 'pepper' ? 1 + Math.sin(p.t * 30) * .15 * p.t : 1, o = v.put(p.k, v.at(x, y), { s: k * sq, ry: p.k === 'lily' ? t : 0 });
+        if (o.userData.flash) o.userData.flash.visible = !!p.hit;
+        if (p.k === 'wall') o.scale.y = k * (.35 + .65 * p.hp / 40);
       }
-      for (const s of seeds) { glow(c, s.x, cy(s.r) - 4 * C / 20, 5, '#a8f070', .35); ball(c, s.x, cy(s.r) - 4 * C / 20, 2.2, '#90e060'); }
+      for (const sd of seeds) v.put('seed', v.at(sd.x, cy(sd.r), 6 * k));
       for (const b of bugs) {
-        const s = C / 20 * (b.k === 'stag' ? 1.4 : 1), x = b.x, y = b.y + (b.k === 'hopper' && !b.hopped ? -Math.abs(Math.sin(t * 6)) * 3 : 0);
-        shadow(c, x, y + 5 * s, 8 * s, 2.5 * s); { const bc = b.flash > 0 ? '#ffffff' : b.col, bg = c.createRadialGradient(x - 2 * s, y - 2 * s, s, x, y, 8 * s); bg.addColorStop(0, '#ffffff70'); bg.addColorStop(.35, bc); bg.addColorStop(1, '#00000080'); c.fillStyle = bc; c.beginPath(); c.ellipse(x, y, 7 * s, 5 * s, 0, 0, 7); c.fill(); c.fillStyle = bg; c.beginPath(); c.ellipse(x, y, 7 * s, 5 * s, 0, 0, 7); c.fill(); ball(c, x - 6 * s, y - 1 * s, 3 * s, bc, { gloss: .5 }); }
-        c.fillStyle = '#202020'; for (let i = -1; i <= 1; i++) c.fillRect(x + i * 4 * s, y + 4 * s, 1, 3 * s);
-        if (b.k === 'stag' || b.k === 'armour') { c.fillStyle = '#c0c8d0'; c.fillRect(x - 3 * s, y - 5 * s, 8 * s, 2 * s); }
-        if (b.k === 'stag') { c.strokeStyle = '#3a1810'; c.lineWidth = 2; c.beginPath(); c.moveTo(x - 8 * s, y - 2 * s); c.lineTo(x - 13 * s, y - 7 * s); c.moveTo(x - 8 * s, y); c.lineTo(x - 13 * s, y + 3 * s); c.stroke(); c.lineWidth = 1; }
-        c.fillStyle = '#f8f040'; c.fillRect(x - 7 * s, y - 2 * s, 1.5, 1.5);
-        if (b.hp < b.max) { c.fillStyle = '#000a'; c.fillRect(x - 6, y - 9 * s - 3, 12, 2); c.fillStyle = '#f86060'; c.fillRect(x - 6, y - 9 * s - 3, 12 * b.hp / b.max, 2); }
+        const sc = k * (b.k === 'stag' ? 1.4 : 1), hop = b.k === 'hopper' && !b.hopped ? Math.abs(Math.sin(t * 6)) * 4 : 0;
+        const o = v.put(b.k, v.at(b.x, b.y, hop), { s: sc }); o.userData.flash.visible = b.flash > 0;
+        o.userData.legs.rotation.x = Math.sin(t * 16 + b.x) * .3; v.put('blob', v.at(b.x, b.y, .2), { s: 7 * sc });
       }
-      for (const d of dews) { const a = d.l < 2 ? d.l / 2 : 1; c.globalAlpha = a; glow(c, d.x, d.y, 10, '#80d8ff', .4); ball(c, d.x, d.y, 5 + Math.sin(t * 6) * .6, '#80d8ff', { gloss: .9 }); c.globalAlpha = 1; }
+      for (const d of dews) v.put('dew', v.at(d.x, d.y, 3), { s: (d.l < 2 ? d.l / 2 : 1) * (1 + Math.sin(t * 6) * .1), ry: t });
+      v.render(c, W, H);
+      for (const b of bugs) if (b.hp < b.max) { const s2 = k * (b.k === 'stag' ? 1.4 : 1), [bx, by] = v.over(b.x, b.y, 12 * s2); c.fillStyle = '#000a'; c.fillRect(bx - 6, by - 3, 12, 2); c.fillStyle = '#f86060'; c.fillRect(bx - 6, by - 3, 12 * b.hp / b.max, 2); }
       for (const p of parts) { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); }
       // cards
       backdrop(c, 0, 0, W, top - 2, '#4a3620', '#2a1c0e');

@@ -1,7 +1,8 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
-import { box, ball, shadow, glow, backdrop } from '../kit/gfx.js';
+import { View, G, part, grp, blob, flat, THREE } from '../kit/toon3d.js';
+const { Group } = THREE;
 
 // Top-down stealth. Hold to creep toward your finger and reach the exit hatch. Guards patrol with
 // torch cones that walls block; stay in a cone too long and you're caught. Tap anywhere away from
@@ -37,6 +38,35 @@ function make(api) {
     msg = { txt: `ROOM ${room}`, l: 1.2 };
   }
   function clearLine(a, b) { const d = Math.hypot(b.x - a.x, b.y - a.y); for (let s = 0; s < d; s += 3) if (inWall(a.x + (b.x - a.x) * s / d, a.y + (b.y - a.y) * s / d, 5)) return false; return true; }
+  let v3;
+  function legs(g, col, w = 1.6) { const ls = [-1, 1].map(sx => { const l = new Group(); l.position.set(sx * 1.5, 3.4, 0); l.add(part(G.pill, col, { sx: w, sy: 2.4, sz: w, y: -1.9 })); return l; }); g.add(...ls); g.userData.legs = ls; }
+  function view3d() {
+    if (!v3) {
+      v3 = new View({ bg: '#262e38', sun: [-.6, 1, .4], sunI: 2.2, amb: .8, sky: '#a8b8e0', ground: '#303040' });
+      v3.add(part(G.plane, '#2e3844', { sx: 3000, sz: 3000, y: -.3, line: false }));
+      v3.def('tile', () => part(G.plane, '#36414f', { line: false }));
+      v3.def('blob', () => blob(1, .35));
+      v3.def('wall', () => { const g = grp(part(G.box, '#6c7c94', { y: 7, sy: 14 })); g.add(part(G.box, '#8a9ab4', { y: 14.2, sy: .6, sx: .9, sz: .9, line: false })); return g; });
+      v3.def('rim', () => part(G.box, '#4a5868', { sy: 5, y: 2.5 }));
+      v3.def('hatch', () => { const lamp = part(G.ball, '#60ff90', { s: 1.6, y: 4.2, glow: .9 }); const g = grp(part(G.box, '#2fa85a', { sx: 14, sy: 2, sz: 14, y: 1 }), part(G.box, '#183020', { sx: 9, sy: .6, sz: 9, y: 2.1, line: false }), part(G.cyl, '#7dffa8', { sx: .6, sy: 2, sz: .6, y: 2.6 }), lamp); g.userData.lamp = lamp; return g; });
+      v3.def('files', () => grp(part(G.box, '#f0d060', { sx: 7, sy: 1.6, sz: 8, y: 1.2, glow: .25 }), part(G.box, '#ffffff', { sx: 6, sy: .4, sz: 7, y: 2.1, line: false }), blob(4, .3)));
+      v3.def('ripple', () => part(G.hoop, flat('#ffffff', .7, { side: 1 }), { line: false }));
+      v3.def('guard', () => {
+        const g = new Group(); legs(g, '#3a2828');
+        g.add(part(G.pill, '#b03838', { sx: 5.6, sy: 4.4, sz: 4.4, y: 6.6 }), part(G.ball, '#e8c090', { s: 2.9, y: 11 }));
+        const cap = part(G.cyl, '#401818', { sx: 3.1, sy: 1.4, sz: 3.1, y: 12.6 }); cap.add(part(G.box, '#401818', { sx: 1.2, sy: .3, sz: .8, z: .9, y: -.3 })); g.add(cap);
+        g.add(part(G.cyl, '#303030', { sx: .7, sy: 4, sz: .7, x: 2.6, y: 7.5, z: 2.2, rx: Math.PI / 2 }), part(G.ball, '#fff8c0', { s: .9, x: 2.6, y: 7.5, z: 4.3, glow: 1 }));
+        return g;
+      });
+      v3.def('spy', () => {
+        const g = new Group(); legs(g, '#1a2238', 1.5);
+        g.add(part(G.pill, '#4f80f0', { sx: 5, sy: 4, sz: 4, y: 6.2 }), part(G.ball, '#3a5aa0', { s: 2.8, y: 10.2 }), part(G.box, '#1a1a22', { sx: 4.2, sy: 1.2, sz: 1.2, y: 10.6, z: 2.3 }));
+        g.add(part(G.box, '#283868', { sx: 3, sy: 3.4, sz: 1.6, y: 7, z: -2.4 })); return g;
+      });
+      v3.def('crate', () => grp(part(G.box, '#b08850', { s: 12, y: 6 }), part(G.box, '#806030', { sx: 12.4, sy: 1.6, sz: 12.4, y: 6, line: false }), part(G.box, '#806030', { sx: 1.6, sy: 12.4, sz: 12.4, y: 6, line: false }), blob(8, .35)));
+    }
+    v3.board(W, H, 1.0, 34); return v3;
+  }
   function burst(x, y, col) { for (let i = 0; i < 8; i++) parts.push({ x, y, vx: rnd(-40, 40), vy: rnd(-40, 40), l: .4, col }); }
   const self = {
     reset() { room = 1; score = 0; lives = 3; t = 0; hold = null; dead = 0; build(); },
@@ -71,38 +101,47 @@ function make(api) {
       if (seen && (t * 6 | 0) % 2) haptic('tick');
     },
     draw(c) {
-      backdrop(c, 0, 0, W, H, '#2c3540', '#1c2229');
-      c.fillStyle = '#ffffff08'; for (let x = 0; x < W; x += 16) for (let y = top; y < H; y += 16) if (((x + y) / 16) % 2) c.fillRect(x + .5, y + .5, 15, 15);
-      // cones
+      const v = view3d(), S = v.sin;
+      v.frame();
+      for (let x = 0; x < W; x += 16) for (let y = top; y < H; y += 16) if (((x + y) / 16) % 2) v.put('tile', v.at(x + 8, y + 8), { sx: 15.4, sz: 15.4 / S });
+      // torch cones, clipped by walls
       for (const g of guards) {
-        const cg = c.createRadialGradient(g.x, g.y, 2, g.x, g.y, g.range), cc = g.sus > .5 ? '248,64,64' : g.look ? '248,160,64' : '248,240,160';
-        cg.addColorStop(0, `rgba(${cc},.55)`); cg.addColorStop(1, `rgba(${cc},0)`); c.fillStyle = cg;
-        c.beginPath(); c.moveTo(g.x, g.y); const N = 18;
-        for (let i = 0; i <= N; i++) { const a = g.a - g.fov + i / N * g.fov * 2; let r = 4; while (r < g.range && !inWall(g.x + Math.cos(a) * r, g.y + Math.sin(a) * r)) r += 2; c.lineTo(g.x + Math.cos(a) * r, g.y + Math.sin(a) * r); }
-        c.closePath(); c.fill();
+        const pts = [[g.x, g.y]], N = 18;
+        for (let i = 0; i <= N; i++) { const a = g.a - g.fov + i / N * g.fov * 2; let r = 4; while (r < g.range && !inWall(g.x + Math.cos(a) * r, g.y + Math.sin(a) * r)) r += 2; pts.push([g.x + Math.cos(a) * r, g.y + Math.sin(a) * r]); }
+        v.fan(pts, g.sus > .5 ? '#f84040' : g.look ? '#f8a040' : '#f8f0a0', .3 + Math.min(.25, g.sus * .3), 1.2);
       }
-      for (const w of walls) box(c, w.x, w.y, w.w, w.h, '#64748a', { r: 1.5 });
-      c.fillStyle = '#586878'; c.fillRect(0, top, W, 2); c.fillRect(0, H - 2, W, 2); c.fillRect(0, top, 2, H - top); c.fillRect(W - 2, top, 2, H - top);
-      glow(c, exit.x, exit.y, 16 + Math.sin(t * 5) * 2, '#40d870', .5); box(c, exit.x - 7, exit.y - 7, 14, 14, '#2fa85a', { r: 3 }); c.fillStyle = '#183020'; c.fillRect(exit.x - 4, exit.y - 4, 8, 8); c.fillStyle = '#7dffa8'; c.fillRect(exit.x - 1, exit.y - 4, 2, 8);
-      if (!intel.got) { glow(c, intel.x, intel.y, 9, '#f8e070', .35); box(c, intel.x - 3.5, intel.y - 4, 7, 8, '#f0d060', { r: 1 }); c.fillStyle = '#a08030'; c.fillRect(intel.x - 2, intel.y - 2, 5, .8); c.fillRect(intel.x - 2, intel.y, 5, .8); }
-      if (noise) { c.strokeStyle = `rgba(255,255,255,${noise.l})`; c.beginPath(); c.arc(noise.x, noise.y, (1.2 - noise.l) * 40, 0, 7); c.stroke(); }
+      for (const w of walls) v.put('wall', v.at(w.x + w.w / 2, w.y + w.h / 2), { sx: w.w, sy: 1, sz: w.h / S });
+      for (const [x, y, w, h] of [[W / 2, top + 1, W, 2], [W / 2, H - 1, W, 2], [1, (top + H) / 2, 2, H - top], [W - 1, (top + H) / 2, 2, H - top]]) v.put('rim', v.at(x, y), { sx: w, sz: h / S });
+      const ex = v.put('hatch', v.at(exit.x, exit.y)); ex.userData.lamp.scale.setScalar(1 + Math.sin(t * 5) * .15);
+      if (!intel.got) v.put('files', v.at(intel.x, intel.y, 2 + Math.sin(t * 3)), { ry: t * 1.5 });
+      if (noise) v.put('ripple', v.at(noise.x, noise.y, .6), { s: (1.2 - noise.l) * 40, sz: (1.2 - noise.l) * 40 / S });
       for (const g of guards) {
-        shadow(c, g.x + 1, g.y + 3, 6, 3); ball(c, g.x, g.y, 5, '#b03838', { gloss: .4 }); ball(c, g.x + Math.cos(g.a) * 2, g.y + Math.sin(g.a) * 2, 2.6, '#e8c090', { gloss: .3 });
-        if (g.sus > 0) { c.fillStyle = '#000a'; c.fillRect(g.x - 6, g.y - 11, 12, 3); c.fillStyle = g.sus > .6 ? '#f84040' : '#f8c040'; c.fillRect(g.x - 6, g.y - 11, 12 * Math.min(1, g.sus), 3); }
-        if (g.look && !g.sus) { c.fillStyle = '#f8c040'; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText('?', g.x, g.y - 8); }
+        const o = v.put('guard', v.at(g.x, g.y), { ry: Math.PI / 2 - g.a }); o.userData.legs.forEach((l, i) => l.rotation.x = g.wait > 0 ? 0 : Math.sin(t * 10 + i * Math.PI) * .5);
+        v.put('blob', v.at(g.x, g.y, .2), { s: 6 });
       }
-      if (crate) { box(c, pl.x - 6, pl.y - 6, 12, 12, '#b08850', { r: 1.5 }); c.fillStyle = '#806030'; c.fillRect(pl.x - 6, pl.y - .8, 12, 1.6); c.fillRect(pl.x - .8, pl.y - 6, 1.6, 12); }
-      else { shadow(c, pl.x + 1, pl.y + 3, 6, 3); ball(c, pl.x, pl.y, 5, '#3f68c8', { gloss: .5 }); c.fillStyle = '#1a1a22'; c.beginPath(); c.ellipse(pl.x + Math.cos(pl.a) * 2.2, pl.y + Math.sin(pl.a) * 2.2, 2.4, 1.2, pl.a + Math.PI / 2, 0, 7); c.fill(); }
+      if (crate) v.put('crate', v.at(pl.x, pl.y));
+      else {
+        const o = v.put('spy', v.at(pl.x, pl.y), { ry: Math.PI / 2 - pl.a }), walk = hold && hold.walk; o.userData.legs.forEach((l, i) => l.rotation.x = walk ? Math.sin(t * 12 + i * Math.PI) * .6 : 0);
+        v.put('blob', v.at(pl.x, pl.y, .2), { s: 6 });
+      }
+      v.render(c, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
-      for (const p of parts) { if (p.txt) { c.fillStyle = '#000'; c.fillText(p.txt, p.x + 1, p.y + 1); c.fillStyle = p.col; c.fillText(p.txt, p.x, p.y); } }
-      backdrop(c, 0, 0, W, top, '#1a2028', '#0c1014');
-      c.textAlign = 'left'; for (let i = 0; i < 3; i++) { ball(c, 7 + i * 8, 7, 3, i < lives ? '#3878e0' : '#384048', { gloss: .5 }); }
+      for (const g of guards) {
+        const [gx, hy] = v.over(g.x, g.y, 16);
+        if (g.sus > 0) { c.fillStyle = '#000a'; c.fillRect(gx - 6, hy, 12, 3); c.fillStyle = g.sus > .6 ? '#f84040' : '#f8c040'; c.fillRect(gx - 6, hy, 12 * Math.min(1, g.sus), 3); }
+        if (g.look && !g.sus) { c.fillStyle = '#000'; c.fillText('?', gx + 1, hy + 3); c.fillStyle = '#f8c040'; c.fillText('?', gx, hy + 2); }
+      }
+      c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
+      for (const p of parts) { const [px, py] = v.over(p.x, p.y, 4); if (p.txt) { c.fillStyle = '#000'; c.fillText(p.txt, px + 1, py + 1); c.fillStyle = p.col; c.fillText(p.txt, px, py); } }
+      c.fillStyle = '#0c1014e0'; c.fillRect(0, 0, W, top);
+      for (let i = 0; i < 3; i++) { c.fillStyle = '#000'; c.beginPath(); c.arc(7 + i * 8, 7, 3.6, 0, 7); c.fill(); c.fillStyle = i < lives ? '#3878e0' : '#384048'; c.beginPath(); c.arc(7 + i * 8, 7, 2.8, 0, 7); c.fill(); }
+      c.textAlign = 'left';
       c.textAlign = 'right'; c.fillStyle = '#e0e8f0'; c.fillText(`ROOM ${room}`, W - 4, 10);
       if (msg) { c.textAlign = 'center'; c.fillStyle = '#000c'; c.fillRect(0, H / 2 - 10, W, 14); c.fillStyle = caught ? '#f86060' : '#e0e8f0'; c.fillText(msg.txt, W / 2, H / 2); }
       if (t < 7 && !msg && room === 1) { c.textAlign = 'center'; c.fillStyle = '#000a'; c.fillRect(0, H - 30, W, 28); c.fillStyle = '#e0e8f0'; c.fillText('HOLD: SNEAK TO HATCH', W / 2, H - 21); c.fillText('TAP AWAY: PEBBLE', W / 2, H - 13); c.fillText('TAP YOU: CRATE', W / 2, H - 5); }
     },
-    down(x, y) { tapStart = { x, y, t: performance.now() }; hold = { x, y, walk: false, t0: performance.now() }; },
-    move(x, y, p) { if (!p || !hold) return; hold.x = x; hold.y = y; if (Math.hypot(x - tapStart.x, y - tapStart.y) > 8 || performance.now() - hold.t0 > 160) hold.walk = true; },
+    down(x, y) { [x, y] = view3d().pick(x, y); tapStart = { x, y, t: performance.now() }; hold = { x, y, walk: false, t0: performance.now() }; },
+    move(x, y, p) { if (!p || !hold) return; [x, y] = view3d().pick(x, y); hold.x = x; hold.y = y; if (Math.hypot(x - tapStart.x, y - tapStart.y) > 8 || performance.now() - hold.t0 > 160) hold.walk = true; },
     up() {
       const quick = tapStart && performance.now() - tapStart.t < 220 && !(hold && hold.walk); hold = null;
       if (!quick || dead || caught) return;

@@ -76,7 +76,7 @@ function make(api) {
 }
 
 export default {
-  id: 'kit-hunt', title: 'Kit Hunt', tag: 'Bricks · Phone', retro: true, era: 'console', pal: 'lemon', w: 176, h: 192, maxW: 260, maxH: 320, goal: 150,
+  id: 'kit-hunt', title: 'Kit Hunt', tag: 'Bricks · Phone', retro: true, era: 'advance', pal: 'lemon', w: 176, h: 192, maxW: 260, maxH: 320, goal: 150,
   hint: 'Five kit pieces hide in the brick furniture. Hold and drag to sweep the detector: it beeps faster, the bar fills and your phone buzzes harder as you get close. Tap an object to smash it open, but swings are limited. The detector battery only lasts a few seconds per room. Find the number of pieces shown to reach the next room.',
   make,
 };

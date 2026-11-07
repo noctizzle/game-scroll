@@ -44,3 +44,18 @@ export function stud(c, x, y, r, kind = 'silver', t = 0) {
   c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = Math.max(.4, r * .15); c.beginPath(); c.ellipse(x, y, rx * .62, r * .62, 0, 0, 7); c.stroke();
   c.fillStyle = 'rgba(255,255,255,.75)'; c.beginPath(); c.ellipse(x - rx * .35, y - r * .4, rx * .25, r * .2, 0, 0, 7); c.fill();
 }
+
+/* ---------- 3D (Console games render real cel-shaded 3D, see toon3d.js) ---------- */
+import { G, part, grp } from './toon3d.js';
+/** A 3D toy brick sx × sy × sz (world units), studs on top every `pitch` units. Origin at the
+ *  centre of its base. col is a BRICK key or a hex colour. */
+export function brick3d(col, sx, sy, sz, pitch = 8) {
+  const k = BRICK[col] ? BRICK[col][0] : col, g = grp(part(G.box, k, { sx, sy, sz, y: sy / 2 }));
+  if (pitch > 0) {
+    const nx = Math.max(1, Math.round(sx / pitch)), nz = Math.max(1, Math.round(sz / pitch)), r = Math.min(sx / nx, sz / nz) * .3;
+    for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) g.add(part(G.cyl, k, { sx: r, sy: r * .7, sz: r, x: (i + .5) * sx / nx - sx / 2, z: (j + .5) * sz / nz - sz / 2, y: sy + r * .35, line: r >= 2 }));
+  }
+  return g;
+}
+/** A 3D stud coin (spin it with rotation.y). */
+export function stud3d(kind = 'silver', r = 3) { return grp(part(G.cyl, STUD[kind][0], { sx: r, sy: r * .35, sz: r, rx: Math.PI / 2, glow: .2 }), part(G.cyl, STUD[kind][1], { sx: r * .55, sy: r * .4, sz: r * .55, rx: Math.PI / 2, line: false })); }

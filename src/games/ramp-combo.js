@@ -1,7 +1,8 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
-import { backdrop, box, ball, shadow, glow } from '../kit/gfx.js';
+import { View, G as GEO, part, grp, blob, THREE } from '../kit/toon3d.js';
+const { Group, Shape, ExtrudeGeometry, Mesh } = THREE;
 
 // A two-minute halfpipe session. The skater rolls back and forth on their own: tap as they cross
 // the flat bottom (in the green zone) to pump and fly higher. In the air, swipe to throw tricks:
@@ -19,6 +20,37 @@ function make(api) {
     const L = 10, R = W - 10, rw = rampW(), from = side < 0 ? L : R, to = side < 0 ? R : L;
     const x = from + (to - from) * u, d = Math.min(x - L, R - x), y = d < rw ? bottom() - (bottom() - lip()) * Math.pow(1 - d / rw, 2) : bottom();
     return { x, y, a: d < rw ? Math.sign(to - from) * (x < W / 2 ? -1 : 1) * (1 - d / rw) * 1.2 * Math.sign(to - from) : 0 };
+  }
+  let v3, pipeKey, pipe;
+  function buildPipe(v) {
+    if (pipe) { v.scene.remove(pipe); pipe.traverse(o => o.geometry && o.geometry !== GEO.box && o.geometry.dispose()); }
+    const sh = new Shape(), P = (x, y) => v.sv(x, y), rw = rampW(), add = (x, y, f) => { const q = P(x, y); sh[f ? 'moveTo' : 'lineTo'](q[0], q[1]); };
+    add(-40, H + 40, true); add(-40, lip()); add(10, lip());
+    for (let i = 0; i <= 24; i++) { const d = i / 24 * rw; add(10 + d, bottom() - (bottom() - lip()) * Math.pow(1 - d / rw, 2)); }
+    for (let i = 0; i <= 24; i++) { const d = (1 - i / 24) * rw; add(W - 10 - d, bottom() - (bottom() - lip()) * Math.pow(1 - d / rw, 2)); }
+    add(W + 40, lip()); add(W + 40, H + 40);
+    const geo = new ExtrudeGeometry(sh, { depth: 70, bevelEnabled: false, curveSegments: 1 }); geo.translate(0, 0, -50);
+    pipe = new Group(); pipe.add(part(geo, '#d8c8a8'));
+    for (const x of [10, W - 10]) { const q = P(x, lip()); pipe.add(part(GEO.cyl, '#a0a0a8', { sx: 1.4, sy: 70, sz: 1.4, x: q[0], y: q[1] + 1, z: -15, rx: Math.PI / 2 })); }
+    for (let i = 0; i < 6; i++) { const q = P(W * (i + .5) / 6, H * .2); pipe.add(part(GEO.box, '#304a70', { sx: W / 6 - 8, sy: H * .3, sz: 4, x: q[0], y: q[1], z: -80 }), part(GEO.ball, '#f8d060', { s: 3, x: q[0], y: q[1] + H * .17, z: -76, glow: 1, line: false })); }
+    v.add(pipe);
+  }
+  function view3d() {
+    if (!v3) {
+      v3 = new View({ bg: '#1a2a48', sun: [-.4, 1, .7], sunI: 2.3, amb: 1, sky: '#a0c0ff', ground: '#403020' });
+      v3.def('zoneOn', () => part(GEO.box, '#60e070', { sy: 1, sz: 30, glow: .8, line: false })).def('zoneOff', () => part(GEO.box, '#3a8a48', { sy: 1, sz: 30, line: false }));
+      v3.def('blob', () => blob(1, .35));
+      v3.def('skater', () => {
+        const g = new Group(), board = new Group(), body = new Group(), legs = new Group();
+        board.add(part(GEO.box, '#303030', { sx: 15, sy: 1.2, sz: 4.5, y: 1.6 }), part(GEO.box, '#f8f040', { sx: 15.2, sy: .3, sz: 4.7, y: 2.3, line: false }));
+        for (const x of [-5, 5]) for (const z of [-2, 2]) board.add(part(GEO.cyl, '#f0f0f0', { sx: 1, sy: .8, sz: 1, x, y: .7, z, rx: Math.PI / 2, line: false }));
+        for (const sx of [-1, 1]) legs.add(part(GEO.pill, '#2050a0', { sx: 2.4, sy: 8, sz: 2.4, x: sx * 2.2, y: 6.5 }));
+        body.add(legs, part(GEO.box, '#e04848', { sx: 8, sy: 7.5, sz: 5, y: 13.5 }), part(GEO.ball, '#f8c890', { s: 3.4, y: 20 }), part(GEO.ball, '#f8e040', { sx: 3.7, sy: 2.4, sz: 3.7, y: 21.2 }));
+        for (const sx of [-1, 1]) body.add(part(GEO.pill, '#f8c890', { sx: 2, sy: 7, sz: 2, x: sx * 6, y: 13, rz: sx * .9 }));
+        const hand = part(GEO.ball, '#f8c890', { s: 1.6, y: 3 }); g.add(board, body, hand); g.userData = { board, body, legs, hand }; return g;
+      });
+    }
+    v3.side(W, H, 38, 0, H * .35); return v3;
   }
   function bank() {
     if (combo > 0) { const pts = combo * mult; score += pts; api.score(score); parts.push({ txt: mult > 1 ? `${combo} x${mult} = ${pts}` : `+${pts}`, x: W / 2, y: H * .3, l: 1.4, col: mult > 2 ? '#80f8ff' : '#f8e040' }); if (mult > 2) haptic('success'); }
@@ -46,35 +78,24 @@ function make(api) {
       }
     },
     draw(c) {
-      backdrop(c, 0, 0, W, H, '#1a2a48', '#3a5a88');
-      for (let i = 0; i < 8; i++) box(c, i * W / 8 + 4, H * .1, W / 8 - 8, H * .25, '#304a70', { r: 2, drop: false });
-      for (let i = 0; i < 8; i++) glow(c, i * W / 8 + W / 16, H * .1, 16, '#f8d060', .35);
-      // ramp
-      { const g = c.createLinearGradient(0, lip(), 0, H); g.addColorStop(0, '#d8c8a8'); g.addColorStop(1, '#887858'); c.fillStyle = g; } c.beginPath(); c.moveTo(0, H); c.lineTo(0, lip()); c.lineTo(10, lip());
-      const rw = rampW(); for (let i = 0; i <= 20; i++) { const d = i / 20 * rw; c.lineTo(10 + d, bottom() - (bottom() - lip()) * Math.pow(1 - d / rw, 2)); }
-      for (let i = 0; i <= 20; i++) { const d = (1 - i / 20) * rw; c.lineTo(W - 10 - d, bottom() - (bottom() - lip()) * Math.pow(1 - d / rw, 2)); }
-      c.lineTo(W, lip()); c.lineTo(W, H); c.fill();
-      c.fillStyle = '#d0c0a0'; c.fillRect(0, lip() - 2, 12, 3); c.fillRect(W - 12, lip() - 2, 12, 3);
-      c.fillStyle = '#a0a0a8'; c.fillRect(8, lip() - 3, 4, 2); c.fillRect(W - 12, lip() - 3, 4, 2);
-      // pump zone on the flat
+      const v = view3d(); v.frame();
+      const key = W + 'x' + H; if (pipeKey !== key) { pipeKey = key; buildPipe(v); }
       const pz = phase === 'ride' && k > .35 && k < .65;
-      c.fillStyle = pz ? '#60e070' : '#60e07050'; c.fillRect(W * .37, bottom() + 2, W * .26, 3);
-      // skater
+      v.put(pz ? 'zoneOn' : 'zoneOff', v.sv(W / 2, bottom(), 2), { sx: W * .26 });
       let x, y, a = 0;
-      if (phase === 'ride') { const p = ridePos(k); x = p.x; y = p.y; a = 0; }
+      if (phase === 'ride') { const p = ridePos(k); x = p.x; y = p.y; }
       else { const dur = 2 * Math.sqrt(2 * h / G), up = G * dur / 2, z = up * air - G * air * air / 2; x = side > 0 ? W - 14 : 14; y = lip() - z; if (trick && trick.k === 'up') a = trick.t / trick.d * Math.PI * 2; }
-      shadow(c, x, bottom() + 1, 9 * clamp(1 - (bottom() - y) / 120, .3, 1), 2.5, .4);
-      if (bail > 0) { c.fillStyle = '#e04848'; c.fillRect(W / 2 - 8, bottom() - 4, 16, 4); c.fillStyle = '#f8c890'; c.fillRect(W / 2 + 8, bottom() - 5, 4, 4); }
+      // tilt the skater with the curve of the ramp while riding
+      if (phase === 'ride') { const p1 = ridePos(clamp(k - .01, 0, 1)), p2 = ridePos(clamp(k + .01, 0, 1)), dx = p2.x - p1.x; a = Math.atan2(-(p2.y - p1.y) * Math.sign(dx || 1), Math.abs(dx)); }
+      v.put('blob', v.sv(x, bottom(), 0), { s: 9 * clamp(1 - (bottom() - y) / 120, .3, 1) });
+      if (bail > 0) v.put('skater', v.sv(W / 2, bottom() - 2, 0), { rz: Math.PI / 2, ry: .3 });
       else {
-        c.save(); c.translate(x, y); c.rotate(a);
+        const sk = v.put('skater', v.sv(x, y, 0), { rz: a, ry: (side > 0 ? -1 : 1) * .25 }), u = sk.userData;
         const flip = trick && trick.k === 'down' ? trick.t / trick.d : 0, grab = trick && (trick.k === 'left' || trick.k === 'right');
-        c.fillStyle = '#303030'; c.fillRect(-7, -2, 14, 2); c.fillStyle = '#f8f040'; c.fillRect(-7 + 14 * flip * 0, -2 - Math.abs(Math.sin(flip * Math.PI)) * 4, 14, 1);
-        c.fillStyle = '#2050a0'; c.fillRect(-3, grab ? -7 : -9, 2, grab ? 5 : 7); c.fillRect(1, grab ? -7 : -9, 2, grab ? 5 : 7);
-        box(c, -4, grab ? -14 : -16, 8, 7, '#e04848', { r: 2, drop: false });
-        ball(c, 0, grab ? -17 : -19, 3.4, '#f8c890', { gloss: .4 }); c.fillStyle = '#f8e040'; c.beginPath(); c.arc(0, grab ? -18 : -20, 3.5, Math.PI, 0); c.fill();
-        if (grab) { c.fillStyle = '#f8c890'; c.fillRect(trick.k === 'left' ? -7 : 5, -4, 2, 3); }
-        c.restore();
+        u.board.rotation.x = flip * Math.PI * 2; u.body.position.y = grab ? -4 : 0; u.legs.scale.y = grab ? .45 : 1;
+        u.hand.visible = !!grab; u.hand.position.x = trick && trick.k === 'left' ? -6 : 6;
       }
+      v.render(c, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
       for (const p of parts) { c.fillStyle = '#101820'; c.fillText(p.txt, p.x + 1, p.y + 1); c.fillStyle = p.col; c.fillText(p.txt, p.x, p.y); }
       c.fillStyle = '#10182080'; c.fillRect(0, 0, W, 12);

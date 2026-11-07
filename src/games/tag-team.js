@@ -2,7 +2,9 @@ import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
 import { backdrop, glow } from '../kit/gfx.js';
-import { brick, stud } from '../kit/bricks.js';
+import { brick, stud, brick3d, stud3d } from '../kit/bricks.js';
+import { View, G as GEO, part, grp, blob, flat, THREE } from '../kit/toon3d.js';
+const { Group } = THREE;
 
 // Two brick heroes share one run. Swipe down to tag between them. The big BRUISER smashes grey
 // walls and silver crates but jumps low. The little SPARK double-jumps over wide gaps and ducks
@@ -15,6 +17,28 @@ function make(api) {
   let who, p, obs, studsL, cam, genX, dist, studs, hp, t, parts, msg, dead, inv, sw, tagT;
   const gy = () => H - 18;
   const HERO = { big: { jump: 210, jumps: 1, h: 20, w: 12 }, small: { jump: 230, jumps: 2, h: 11, w: 8 } };
+  let v3;
+  function hero(big) {
+    const g = new Group(), legs = [-1, 1].map(sx => { const l = new Group(); l.position.set(sx * (big ? 2.4 : 1.4), big ? 6 : 4, 0); l.add(part(GEO.box, big ? '#383840' : '#2c64c8', { sx: big ? 3.6 : 2, sy: big ? 6 : 4, sz: big ? 3.6 : 2.4, y: big ? -3 : -2 })); return l; });
+    if (big) g.add(...legs, part(GEO.box, '#d83a2c', { sx: 14, sy: 10, sz: 8, y: 11 }), part(GEO.cyl, '#f0c020', { sx: 4, sy: 7, sz: 4, y: 19.5 }), part(GEO.box, '#585868', { sx: 10, sy: 3, sz: 8, y: 23.5 }), part(GEO.box, '#f0c020', { sx: 3, sy: 5, sz: 3, x: 8.5, y: 11 }));
+    else g.add(...legs, part(GEO.box, '#38a040', { sx: 6, sy: 5, sz: 4, y: 6.5 }), part(GEO.cyl, '#f0c020', { sx: 3, sy: 5, sz: 3, y: 11.5 }), part(GEO.cyl, '#f07818', { sx: 3.4, sy: 1.6, sz: 3.4, y: 14 }));
+    const ring = part(GEO.ring, flat('#f0c020', .9), { s: 1, y: big ? 10 : 6 }); ring.visible = false; g.add(ring);
+    g.userData = { legs, ring }; return g;
+  }
+  function view3d() {
+    if (!v3) {
+      v3 = new View({ bg: '#2a1c44', sun: [-.4, .9, .9], sunI: 2.3, amb: .9, sky: '#d0b0ff', ground: '#302040' });
+      v3.add(part(GEO.ball, '#f8e0b0', { s: 22, x: 40, y: 60, z: -200, glow: 1, line: false }));
+      for (let i = 0; i < 3; i++) v3.def('tower' + i, () => { const h = 50 + i * 16, b = brick3d(i % 2 ? 'blue' : 'black', 30, h, 20, 0); for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) b.add(part(GEO.box, '#f0c020', { sx: 3, sy: 4, sz: 1, x: -8 + j * 8, y: 12 + k * 14, z: 10.2, glow: .8, line: false })); return b; });
+      v3.def('ground', () => { const b = brick3d('grey', 16, 30, 30, 8); b.position.y = -30; return grp(b); });
+      v3.def('wall', () => { const g = new Group(); g.add(brick3d('grey', 10, 6, 12, 5)); return g; });
+      v3.def('crate', () => brick3d('white', 14, 14, 14, 7));
+      v3.def('vent', () => grp(brick3d('orange', 36, 30, 20, 8), part(GEO.box, '#505058', { sx: 36, sy: 3, sz: 20, y: -1.5 })));
+      v3.def('silver', () => stud3d('silver', 2.5)).def('gold', () => stud3d('gold', 3.5));
+      v3.def('big', () => hero(true)).def('small', () => hero(false));
+    }
+    v3.side(W, H, 36, 0, H * .25); return v3;
+  }
   function gen(to) {
     const lvl = Math.min(1, dist / 4000);
     while (genX < to) {
@@ -67,27 +91,23 @@ function make(api) {
       api.score(score());
     },
     draw(c) {
-      const ox = -Math.round(cam), g = gy();
-      backdrop(c, 0, 0, W, H, '#1c1430', '#5a3c70'); glow(c, W * .7, H * .2, 50, '#f8e0b0', .3);
-      for (let i = 0; i < 6; i++) { const x = ((i * 70 - cam * .3) % (W + 70) + W + 70) % (W + 70) - 35; brick(c, x, g - 50 - (i % 3) * 14, 30, 50 + (i % 3) * 14, i % 2 ? 'blue' : 'black', 0); c.fillStyle = '#f0c02060'; for (let j = 0; j < 3; j++) c.fillRect(x + 5 + j * 8, g - 40 - (i % 3) * 14, 3, 4); }
-      // ground with gaps
-      let gx = Math.floor(cam / 16) * 16;
-      for (let x = gx; x < cam + W + 16; x += 16) { if (!solidAt(x + 8) && !solidAt(x + 2)) continue; brick(c, x + ox, g, 16, H - g, 'grey', 8); }
+      const ox = -Math.round(cam), g = gy(), v = view3d(); v.frame();
+      for (let i = 0; i < 8; i++) { const x = ((i * 70 - cam * .3) % (W + 140) + W + 140) % (W + 140) - 70; v.put('tower' + (i % 3), v.sv(x, g, -60 - (i % 2) * 20)); }
+      const gx = Math.floor(cam / 16) * 16;
+      for (let x = gx - 32; x < cam + W + 48; x += 16) { if (!solidAt(x + 8) && !solidAt(x + 2)) continue; v.put('ground', v.sv(x + ox + 8, g, 0)); }
       for (const o of obs) {
-        const x = o.x + ox; if (x > W + 20 || x + (o.w || 0) < -20) continue;
-        if ((o.k === 'gap' || o.k === 'pit')) { c.fillStyle = '#100818'; c.fillRect(x + 1, g, o.w - 2, H - g); }
-        if (o.k === 'wall' && !o.broken) for (let i = 0; g - 6 - i * 6 > 6; i++) brick(c, x, g - 6 - i * 6, o.w, 6, 'grey', 5);
-        if (o.k === 'crate' && !o.broken) { brick(c, x, g - o.h, o.w, o.h, 'white', 7); c.fillStyle = '#a0a098'; c.fillRect(x + 2, g - o.h + 6, o.w - 4, 1); }
-        if (o.k === 'vent') { brick(c, x, g - o.h - 30, o.w, 30, 'orange', 8); c.fillStyle = '#505058'; c.fillRect(x, g - o.h - 3, o.w, 3); for (let i = 4; i < o.w; i += 6) c.fillRect(x + i, g - o.h, 1, 3); }
+        const x = o.x + ox; if (x > W + 40 || x + (o.w || 0) < -40) continue;
+        if (o.k === 'wall' && !o.broken) v.put('wall', v.sv(x + o.w / 2, g, 0), { sy: (g - 6) / 6 });
+        if (o.k === 'crate' && !o.broken) v.put('crate', v.sv(x + o.w / 2, g, 0));
+        if (o.k === 'vent') v.put('vent', v.sv(x + o.w / 2, g - o.h, 0), { sx: o.w / 36 });
       }
-      for (const s of studsL) stud(c, s.x + ox, s.y, s.gold ? 3.5 : 2.5, s.gold ? 'gold' : 'silver', t);
-      // hero
+      for (const st of studsL) { const x = st.x + ox; if (x > -10 && x < W + 10) v.put(st.gold ? 'gold' : 'silver', v.sv(x, st.y, 0), { ry: t * 4 + st.x * .1 }); }
       if (!(inv > 0 && (t * 14 | 0) % 2)) {
-        const x = Math.round(p.x + ox), y = Math.round(p.y), run = p.ground ? (t * 10 | 0) % 2 : 0;
-        if (tagT > 0) { c.strokeStyle = '#f0c020'; c.beginPath(); c.arc(x, y - 10, 14 * (1 - tagT / .3) + 4, 0, 7); c.stroke(); }
-        if (who === 'big') { c.fillStyle = '#383840'; c.fillRect(x - 5, y - 6, 4, 6 - run * 2); c.fillRect(x + 1, y - 6, 4, 4 + run * 2); c.fillStyle = '#d83a2c'; c.fillRect(x - 7, y - 16, 14, 10); c.fillStyle = '#f0c020'; c.fillRect(x - 4, y - 22, 8, 7); c.fillRect(x + 6, y - 15, 3, 5); c.fillStyle = '#202020'; c.fillRect(x, y - 20, 1, 2); c.fillRect(x + 2, y - 20, 1, 2); c.fillStyle = '#585868'; c.fillRect(x - 5, y - 24, 10, 3); }
-        else { c.fillStyle = '#2c64c8'; c.fillRect(x - 3, y - 4, 2, 4 - run); c.fillRect(x + 1, y - 4, 2, 3 + run); c.fillStyle = '#38a040'; c.fillRect(x - 3, y - 8, 6, 5); c.fillStyle = '#f0c020'; c.fillRect(x - 3, y - 12, 6, 5); c.fillStyle = '#202020'; c.fillRect(x, y - 11, 1, 2); c.fillRect(x + 2, y - 11, 1, 2); c.fillStyle = '#f07818'; c.fillRect(x - 4, y - 13, 8, 2); }
+        const h = v.put(who, v.sv(p.x + ox, p.y, 0), { ry: Math.PI / 2 }), run = p.ground;
+        h.userData.legs.forEach((l, i) => l.rotation.x = run ? Math.sin(t * 18 + i * Math.PI) * .7 : -.5 + i);
+        h.userData.ring.visible = tagT > 0; if (tagT > 0) h.userData.ring.scale.setScalar(14 * (1 - tagT / .3) + 4);
       }
+      v.render(c, W, H);
       for (const q of parts) { c.fillStyle = q.col; c.fillRect(q.x + ox, q.y, 2, 2); }
       c.font = '6px "Press Start 2P", monospace'; c.fillStyle = '#00000080'; c.fillRect(0, 0, W, 12);
       c.textAlign = 'left'; for (let i = 0; i < 3; i++) { c.fillStyle = i < hp ? '#f84858' : '#403848'; c.fillRect(4 + i * 8, 3, 6, 6); }

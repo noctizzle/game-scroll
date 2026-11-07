@@ -1,7 +1,9 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
-import { backdrop, box, ball, shadow, glow } from '../kit/gfx.js';
+import { box } from '../kit/gfx.js';
+import { View, G as GEO, part, grp, toon, THREE } from '../kit/toon3d.js';
+const { Group, Mesh, BufferGeometry, BufferAttribute } = THREE;
 
 // Turn-based artillery between two squads of battle spuds on hills you can blow apart. On your
 // turn, hold the arrows to shuffle along, tap the weapon to switch, then drag back from your spud
@@ -22,6 +24,44 @@ function make(api) {
   function genTerrain() {
     hgt = new Float32Array(W); const a = rnd(0, 6), b = rnd(0, 6), base = H * .62;
     for (let x = 0; x < W; x++) hgt[x] = base - Math.sin(x / W * Math.PI * 2 + a) * H * .14 - Math.sin(x / W * Math.PI * 5 + b) * H * .07 - Math.sin(x / W * Math.PI) * H * .1;
+  }
+  // 3D: the hills are a strip mesh rebuilt from the height map every frame (it changes with every blast)
+  let v3, hill;
+  const STEP = 2, DEP = 26;
+  function land(v) {
+    const n = Math.ceil(W / STEP) + 1, need = n * 18 * 3;
+    if (!hill || hill.front.geometry.attributes.position.array.length < need) {
+      if (hill) { v.scene.remove(hill.front, hill.top); }
+      const mk = col => { const g = new BufferGeometry(); g.setAttribute('position', new BufferAttribute(new Float32Array(need), 3)); const m = new Mesh(g, toon(col)); m.frustumCulled = false; v.scene.add(m); return m; };
+      hill = { front: mk('#8a6844'), top: mk('#58b048') };
+    }
+    const F = hill.front.geometry.attributes.position.array, T = hill.top.geometry.attributes.position.array; let f = 0, q = 0;
+    const tri = (A, a, b, cc) => { A.set(a, A === F ? f : q); A.set(b, (A === F ? f : q) + 3); A.set(cc, (A === F ? f : q) + 6); if (A === F) f += 9; else q += 9; };
+    for (let i = 0; i < n - 1; i++) {
+      const x0 = i * STEP, x1 = Math.min(W - 1, x0 + STEP), y0 = ground(x0), y1 = ground(x1); if (y0 >= sea() + 6 && y1 >= sea() + 6) continue;
+      const a0 = v.sv(x0, y0, DEP / 2), a1 = v.sv(x1, y1, DEP / 2), b0 = v.sv(x0, H + 20, DEP / 2), b1 = v.sv(x1, H + 20, DEP / 2), c0 = v.sv(x0, y0, -DEP / 2), c1 = v.sv(x1, y1, -DEP / 2);
+      tri(F, a0, b0, b1); tri(F, a0, b1, a1); tri(T, c0, a0, a1); tri(T, c0, a1, c1);
+    }
+    for (const [m, k] of [[hill.front, f], [hill.top, q]]) { m.geometry.setDrawRange(0, k / 3); m.geometry.attributes.position.needsUpdate = true; m.geometry.computeVertexNormals(); }
+  }
+  function view3d() {
+    if (!v3) {
+      v3 = new View({ bg: '#f8c890', sun: [-.3, .9, .9], sunI: 2.2, amb: 1.1, sky: '#ffe0b0', ground: '#604020' });
+      v3.add(part(GEO.ball, '#f89860', { s: 30, x: 60, y: 30, z: -400, glow: 1, line: false }));
+      for (let i = 0; i < 7; i++) v3.add(part(GEO.ball, '#c09070', { sx: 70, sy: 30 + (i % 3) * 12, sz: 20, x: -220 + i * 75, y: -40, z: -300, line: false }));
+      v3.def('sea', () => part(GEO.box, '#3878c8', { sy: 60, sz: 120, z: -20, opacity: .92 }));
+      v3.def('wave', () => part(GEO.box, '#90c8f8', { sx: 5, sy: .6, sz: 2, line: false }));
+      const spud = col => () => {
+        const g = grp(part(GEO.ball, '#d8a868', { sx: 5, sy: 6.2, sz: 5, y: 6 }), part(GEO.ball, col, { sx: 5.4, sy: 2.6, sz: 5.4, y: 10.5 }), part(GEO.box, col, { sx: 7, sy: 1, sz: 7, y: 10, line: false }));
+        for (const sx of [-1, 1]) g.add(part(GEO.ball, '#202020', { s: .7, x: sx * 1.6, y: 7.5, z: 4.6, line: false }));
+        g.add(part(GEO.ball, '#a07838', { s: .5, x: 2, y: 4, z: 4.6, line: false }));
+        const arrow = part(GEO.cone, '#f8f8f0', { sx: 2.4, sy: 4, sz: 2.4, y: 20, rx: Math.PI }); g.add(arrow); g.userData.arrow = arrow; return g;
+      };
+      v3.def('spudB', spud('#4880e0')).def('spudR', spud('#e05848'));
+      v3.def('shell', () => grp(part(GEO.pill, '#505060', { sx: 2.4, sy: 6, sz: 2.4, rz: -Math.PI / 2 }), part(GEO.cone, '#e04040', { sx: 1.3, sy: 2, sz: 1.3, x: 4, rz: -Math.PI / 2 })));
+      v3.def('nade', () => grp(part(GEO.ball, '#487838', { s: 2.6 }), part(GEO.cyl, '#303030', { sx: .8, sy: 1.4, sz: .8, y: 2.6 })));
+    }
+    v3.side(W, H, 34, 0, H * .3); return v3;
   }
   const ground = x => hgt[clamp(Math.round(x), 0, W - 1)];
   function newRound() {
@@ -112,24 +152,21 @@ function make(api) {
       } else if (phase === 'settle') { settleT -= dt; const m = settle(dt); if (!m && settleT <= 0) nextTurn(); }
     },
     draw(c) {
-      const sky = c.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#f8a868'); sky.addColorStop(1, '#f8e0a8'); c.fillStyle = sky; c.fillRect(0, 0, W, H);
-      glow(c, W * .75, H * .3, 40, '#f8c070', .6); ball(c, W * .75, H * .3, 16, '#f89860', { gloss: 0 });
-      const dirt = c.createLinearGradient(0, H * .3, 0, H); dirt.addColorStop(0, '#8a6844'); dirt.addColorStop(1, '#3a2818');
-      for (let x = 0; x < W; x++) { const y = hgt[x]; if (y >= sea()) continue; c.fillStyle = dirt; c.fillRect(x, y, 1, H - y); c.fillStyle = '#58b048'; c.fillRect(x, y, 1, 3); c.fillStyle = '#90e070'; c.fillRect(x, y, 1, 1); if ((x * 7 + (y | 0)) % 11 === 0) { c.fillStyle = '#5a4028'; c.fillRect(x, y + 8 + (x % 5) * 3, 1, 2); } }
-      backdrop(c, 0, sea(), W, H - sea(), '#4888d8', '#183868'); c.fillStyle = '#78b0f0'; for (let x = 0; x < W; x += 8) c.fillRect(x + (t * 10 % 8), sea(), 4, 1);
-      // units
+      const v = view3d(); v.frame(); land(v);
+      v.put('sea', v.sv(W / 2, sea() + 30, 0), { sx: W + 200 });
+      for (let i = 0; i < 12; i++) v.put('wave', v.sv(((i * 29 + t * 10) % (W + 40)) - 20, sea() - .5, 10 - (i % 3) * 8));
       const cur = (phase === 'aim' || phase === 'ai') ? active() : null;
       for (const u of units) {
-        if (u.dead) continue; const x = Math.round(u.x), y = Math.round(u.y);
-        shadow(c, x, y, 6, 2, .35); { const g = c.createRadialGradient(x - 2, y - 8, 1, x, y - 5, 7); g.addColorStop(0, '#f0c888'); g.addColorStop(1, '#8a6030'); c.fillStyle = g; } c.beginPath(); c.ellipse(x, y - 5, 5, 6, 0, 0, 7); c.fill(); c.fillStyle = '#a07838'; c.fillRect(x - 2, y - 3, 1, 1); c.fillRect(x + 2, y - 7, 1, 1);
-        box(c, x - 5, y - 12, 10, 3, u.team ? '#e05848' : '#4880e0', { r: 1, drop: false }); box(c, x - 3, y - 14.5, 6, 3, u.team ? '#e05848' : '#4880e0', { r: 1.5, drop: false });
-        c.fillStyle = '#202020'; c.fillRect(x + u.face * 2 - 1, y - 8, 1, 2); c.fillRect(x + u.face * 2 + 1 * u.face, y - 8, 1, 2);
-        c.fillStyle = '#000a'; c.fillRect(x - 8, y - 20, 16, 4); c.fillStyle = u.team ? '#f86060' : '#80c0ff'; c.fillRect(x - 7, y - 19, 14 * Math.max(0, u.hp) / 100, 2);
-        if (u === cur && (t * 3 | 0) % 2) { c.fillStyle = '#f8f8f0'; c.beginPath(); c.moveTo(x, y - 22); c.lineTo(x - 3, y - 27); c.lineTo(x + 3, y - 27); c.fill(); }
+        if (u.dead) continue;
+        const o = v.put(u.team ? 'spudR' : 'spudB', v.sv(u.x, u.y, 0), { ry: u.face > 0 ? .5 : -.5 }); o.userData.arrow.visible = u === cur && (t * 3 | 0) % 2 === 0;
+        o.userData.arrow.rotation.y = t * 3;
       }
+      if (shot) for (const sh of shot) v.put(sh.w.bounce ? 'nade' : 'shell', v.sv(sh.x, sh.y, 0), { s: sh.w.n === 'BIT' ? .6 : 1, rz: Math.atan2(-sh.vy, sh.vx) });
+      v.render(c, W, H);
+      for (const u of units) { if (u.dead) continue; c.fillStyle = '#000a'; c.fillRect(u.x - 8, u.y - 22, 16, 4); c.fillStyle = u.team ? '#f86060' : '#80c0ff'; c.fillRect(u.x - 7, u.y - 21, 14 * Math.max(0, u.hp) / 100, 2); }
       // aim line
       if (aim && cur) { const steps = 14; c.fillStyle = '#ffffffb0'; let x = cur.x, y = cur.y - 6, vx = Math.cos(aim.ang) * aim.pow * POWER, vy = Math.sin(aim.ang) * aim.pow * POWER; for (let i = 0; i < steps; i++) { for (let k = 0; k < 4; k++) { vx += wind * 40 * WEAPONS[weapon].wind / 60; vy += G / 60; x += vx / 60; y += vy / 60; } c.fillRect(x - 1, y - 1, 2, 2); } }
-      if (shot) for (const s of shot) { ball(c, s.x, s.y, s.w.n === 'BIT' ? 1.5 : 2.5, s.w.bounce ? '#487838' : '#505060', { gloss: .6 }); if (!s.w.bounce) { c.fillStyle = '#f8a02080'; c.fillRect(s.x - s.vx * .02 - 1, s.y - s.vy * .02 - 1, 2, 2); } else if (s.w.fuse) { c.fillStyle = '#f8f8f0'; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(String(Math.ceil(s.w.fuse - s.t)), s.x, s.y - 5); } }
+      if (shot) for (const s of shot) { if (!s.w.bounce) { c.fillStyle = '#f8a02080'; c.fillRect(s.x - s.vx * .02 - 1, s.y - s.vy * .02 - 1, 2, 2); } else if (s.w.fuse) { c.fillStyle = '#f8f8f0'; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(String(Math.ceil(s.w.fuse - s.t)), s.x, s.y - 5); } }
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
       for (const p of parts) { if (p.txt) { c.fillStyle = '#000'; c.fillText(p.txt, p.x + 1, p.y + 1); c.fillStyle = p.col; c.fillText(p.txt, p.x, p.y); } else { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); } }
       // HUD: wind, timer, weapon, walk buttons

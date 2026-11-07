@@ -2,7 +2,8 @@ import { clamp } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
 import { backdrop, glow } from '../kit/gfx.js';
-import { brick, BRICK_KEYS } from '../kit/bricks.js';
+import { brick, brick3d, BRICK_KEYS } from '../kit/bricks.js';
+import { View, G, part, grp, flat } from '../kit/toon3d.js';
 
 // Build the model on the blueprint. A brick slides back and forth along the top: tap to drop it.
 // It falls straight down and lands on whatever is below. Fill the dotted outline: every cell inside
@@ -30,6 +31,19 @@ function make(api) {
     grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null)); used = 0;
     budget = plan.flat().filter(Boolean).length; speed = 3.6 + Math.min(4, plans * .4); result = null; next();
     msg = { txt: `PLAN ${plans + 1}`, l: 1 };
+  }
+  let v3;
+  function view3d() {
+    if (!v3) {
+      v3 = new View({ bg: '#1c3c68', sun: [-.5, .9, .8], sunI: 2.4, amb: 1, sky: '#c0d8ff', ground: '#203050' });
+      v3.add(part(G.box, '#2a5288', { sx: 2000, sy: 2000, sz: 2, z: -60, line: false }));
+      for (let i = -10; i <= 10; i++) { v3.add(part(G.box, '#30588c', { sx: .6, sy: 2000, sz: 1, x: i * 16, z: -58.5, line: false })); v3.add(part(G.box, '#30588c', { sx: 2000, sy: .6, sz: 1, y: i * 16, z: -58.5, line: false })); }
+      v3.def('ghost', () => part(G.box, flat('#a8d0ff', .18)));
+      v3.def('bad', () => part(G.box, flat('#f84040', .35)));
+      v3.def('aim', () => part(G.box, flat('#ffffff', .15)));
+      v3.def('base', () => part(G.box, '#8c9098'));
+    }
+    v3.side(W, H, 34, 0, H * .45); return v3;
   }
   function need(c, r) { return plan[ROWS - 1 - r][c]; }
   function fits(w) { for (let c0 = 0; c0 + w <= COLS; c0++) { const r = landRow(c0, w); if (r < ROWS && [...Array(w).keys()].every(i => need(c0 + i, r) && landRow(c0 + i, 1) === r)) return true; } return false; }
@@ -66,15 +80,18 @@ function make(api) {
       x += dir * speed * dt; if (x + cur.w > COLS) { x = COLS - cur.w; dir = -1; } if (x < 0) { x = 0; dir = 1; }
     },
     draw(c) {
-      const C = cell(), X = ox(), F = floorY();
-      backdrop(c, 0, 0, W, H, '#2a5288', '#142a4a'); glow(c, W / 2, H * .3, W * .7, '#80b8ff', .12);
-      c.strokeStyle = '#30588c'; c.lineWidth = 1; for (let i = 0; i <= COLS; i++) { c.beginPath(); c.moveTo(X + i * C + .5, 14); c.lineTo(X + i * C + .5, F); c.stroke(); } for (let y = F; y > 14; y -= C) { c.beginPath(); c.moveTo(X, y + .5); c.lineTo(X + COLS * C, y + .5); c.stroke(); }
-      for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) if (need(cc, r)) { c.fillStyle = '#ffffff18'; c.fillRect(X + cc * C + 1, F - (r + 1) * C + 1, C - 2, C - 2); c.strokeStyle = '#a8d0ff'; c.setLineDash([2, 2]); c.strokeRect(X + cc * C + 1.5, F - (r + 1) * C + 1.5, C - 3, C - 3); c.setLineDash([]); }
-      brick(c, X - 4, F, COLS * C + 8, 8, 'grey', C / 2);
-      for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) if (grid[r][cc]) { brick(c, X + cc * C, F - (r + 1) * C, C, C, grid[r][cc], C / 2); if (!need(cc, r)) { c.fillStyle = '#f8404070'; c.fillRect(X + cc * C, F - (r + 1) * C, C - 1, C - 1); } }
+      const C = cell(), X = ox(), F = floorY(), v = view3d(), D = C * .9; v.frame();
+      const B = (key, col, w, x, y, extra) => { if (!v.kinds.has(key)) v.def(key, () => brick3d(col, w * C, C, D, C / 2)); return v.put(key, v.sv(x, y, 0), extra); };
+      for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) if (need(cc, r) && !grid[r][cc]) v.put('ghost', v.sv(X + (cc + .5) * C, F - (r + .5) * C, 0), { s: C * .92, sz: D * .92 });
+      v.put('base', v.sv(W / 2, F, 0), { sx: COLS * C + 8, sy: 8, sz: D + 8 });
+      for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) if (grid[r][cc]) { B('b1' + grid[r][cc] + C, grid[r][cc], 1, X + (cc + .5) * C, F - r * C); if (!need(cc, r)) v.put('bad', v.sv(X + (cc + .5) * C, F - (r + .5) * C, 0), { s: C * 1.02, sz: D * 1.02 }); }
       const topY = F - (ROWS + 2) * C;
-      if (drop) brick(c, X + drop.c * C, F - (drop.y + 1) * C, drop.w * C, C, drop.col, C / 2);
-      else if (!result && !dead) { brick(c, X + x * C, topY, cur.w * C, C, cur.col, C / 2); const lc = clamp(Math.round(x), 0, COLS - cur.w), lr = landRow(lc, cur.w); c.fillStyle = '#ffffff20'; c.fillRect(X + lc * C, F - (lr + 1) * C, cur.w * C, C); }
+      if (drop) B('b' + drop.w + drop.col + C, drop.col, drop.w, X + (drop.c + drop.w / 2) * C, F - drop.y * C);
+      else if (!result && !dead) {
+        B('b' + cur.w + cur.col + C, cur.col, cur.w, X + (x + cur.w / 2) * C, topY + C);
+        const lc = clamp(Math.round(x), 0, COLS - cur.w), lr = landRow(lc, cur.w); v.put('aim', v.sv(X + (lc + cur.w / 2) * C, F - (lr + .5) * C, 0), { sx: cur.w * C, sy: C, sz: D });
+      }
+      v.render(c, W, H);
       for (const p of parts) { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); }
       c.font = '6px "Press Start 2P", monospace'; c.fillStyle = '#102038'; c.fillRect(0, 0, W, 13);
       c.textAlign = 'left'; for (let i = 0; i < 3; i++) { c.fillStyle = i < lives ? '#f0c020' : '#304060'; c.fillRect(4 + i * 8, 4, 6, 5); }

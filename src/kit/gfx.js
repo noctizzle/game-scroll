@@ -1,3 +1,5 @@
+// NOTE: Console games now render real 3D (see src/kit/toon3d.js and docs/console-3d.md); these 2D
+// helpers remain for the post() lighting pass and any 2D overlays.
 // Console-era graphics kit. Console games render at full device resolution (not chunky pixels),
 // so these helpers give them the shaded, lit, "32-bit console" look that sets them apart from the
 // flat 4-colour Pocket games: gradients, highlights, soft shadows, glossy spheres and a lighting pass.
