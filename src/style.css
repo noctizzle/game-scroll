@@ -351,3 +351,14 @@ dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
 .set-link a{color:var(--accent);text-decoration:none;font-weight:600}
 .set-made{margin:4px 0 0;padding:16px 16px 18px;border-top:1px solid #ffffff10;text-align:center;font:400 10px/1.6 var(--f-pixel);color:var(--muted);letter-spacing:.06em}
 .set-made b{color:var(--accent);font-weight:400}
+
+/* AR · 3D shell: the Next Gen frame in a lens-teal accent, for games that sit in your real room */
+.slide.ar{background:radial-gradient(120% 70% at 50% 30%,#0d2c2a 0%,#06100f 72%)}
+.retro.ar .screen{box-shadow:0 0 0 1px #19e3b155,0 0 18px #19e3b133}
+.retro.ar .led{background:#19e3b1;box-shadow:0 0 6px #19e3b1}
+.retro.ar.playing .led{background:#8affdc;box-shadow:0 0 10px #19e3b1,0 0 3px #fff}
+.retro.ar .bezel-bottom .slot{background:linear-gradient(90deg,#0000,#19e3b1,#0000);box-shadow:0 0 8px #19e3b188}
+.retro.ar .pads i:first-child{background:#19e3b1;box-shadow:0 0 6px #19e3b1}
+.retro.ar .tag,.retro.ar .ov-win{background:linear-gradient(90deg,#19e3b1,#2a8cff);color:#04110e}
+.retro.ar .ov-k,.retro.ar .ov-best,.retro.ar .chip span,.retro.ar .shop-k{color:#8affdc}
+.retro.ar .play{box-shadow:0 0 0 4px #19e3b144,0 0 24px #19e3b166}

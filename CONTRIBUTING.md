@@ -9,7 +9,7 @@ This guide covers everything you need:
 1. [The rules](#the-rules)
 2. [Quick start](#quick-start)
 3. [How a game file works](#how-a-game-file-works)
-4. [Choosing a style](#choosing-a-style): Phone, Dot matrix, Color, Advance, Classic Console or Next Gen Console
+4. [Choosing a style](#choosing-a-style): Phone, Dot matrix, Color, Advance, Classic Console, Next Gen Console or AR · 3D
 5. [Palettes and shells](#palettes-and-shells)
 6. [Screen sizes, foldables and fluid games](#screen-sizes-foldables-and-fluid-games)
 7. [Sound, haptics and phone sensors](#sound-haptics-and-phone-sensors)
@@ -170,6 +170,7 @@ game-over screens, which feed tab it appears in and how it is scaled.
 | **Advance (Pocket)** | `retro: true, era: 'advance', pal: 'grape'` | `Advance ·` | `176 x 176` to `192 x 160` | Wider handheld, chunky pixels, rich colours, sprites, parallax. |
 | **Classic · Console (3D)** | `retro: true, era: 'console', pal: 'grape'` | `Console ·` | `192 x 160` (fluid up to ~300 x 240) | TV frame, real-time 3D, cel-shaded with ink outlines, sharp hi-res HUD. |
 | **Next Gen · Console (HD 3D)** | `retro: true, era: 'nextgen', pal: 'grape'` | `Next Gen ·` | `300 x 300` (fluid up to ~600 x 420, so landscape foldables are filled edge to edge) | Slim glossy console, modern HD 3D: PBR materials, shadows, bloom, AO, particles. |
+| **AR · 3D** | `retro: true, era: 'ar', pal: 'grape'` | `AR ·` | `300 x 460` (fluid up to ~600 x 680) | 3D objects in the player's real room: camera picture behind, gyro to look around. |
 
 How each style looks in the app, start screen and in play:
 
@@ -260,6 +261,15 @@ kit, the quality tiers and performance rules. Like Console games, they share one
 never create your own. Run `npm run sweep` on Next Gen games too. These appear under
 **Next Gen · Console**.
 
+### AR · 3D
+
+3D games that happen in the player's real room. The back camera is the background and the phone's
+gyro turns the view, so objects stay put while the player turns and tilts the phone to find them
+(look-around AR; walking isn't tracked). They use `src/kit/ar3d.js` on top of the Next Gen
+renderer, with real-time shadows cast onto the real floor. Every AR game must also play with no
+camera (a virtual room is drawn instead) and with no gyro (drag to look). Read
+[`docs/ar-3d.md`](docs/ar-3d.md) for the kit, sizes and testing. These appear under **AR · 3D**.
+
 ## Palettes and shells
 
 For retro styles, `pal` sets the handheld shell colour, the start and game-over screen colours, and
@@ -310,10 +320,10 @@ Import shared helpers only from these modules; the app provides them to streamed
 - `src/sfx.js`: `sfx(freq, duration, type, volume, slide)` makes short synth sounds. Respects mute.
 - `src/kit/device.js`: `haptic('light' | 'tick' | 'success' | 'warning' ...)`, `buzz()` patterns,
   `tilt()`, `onShake(cb)`, `heading()` (compass), `faceDown()`, `location()` (GPS), `startMic()`,
-  `startCamera()`.
+  `startCamera()`, `orientation()` (raw gyro, used by the AR kit).
 - `src/util.js`: `clamp`, `rnd`, `pix`, `disc`, `flickTracker`, `hash`, `fmt`, `store`.
 - `src/palettes.js`: `PAL`, `SHELL`, `C16`.
-- `src/kit/gfx.js` (2D shading helpers), `src/kit/toon3d.js` (Classic Console 3D), `src/kit/hd3d.js` (Next Gen Console HD 3D), `src/kit/bricks.js` (toy bricks).
+- `src/kit/gfx.js` (2D shading helpers), `src/kit/toon3d.js` (Classic Console 3D), `src/kit/hd3d.js` (Next Gen Console HD 3D), `src/kit/ar3d.js` (AR · 3D: camera + gyro), `src/kit/bricks.js` (toy bricks).
 
 Sensors return `null` or do nothing on desktop, in the browser, or when the player says no to a
 permission, so **every sensor game needs a touch fallback** (for example drag instead of tilt, tap

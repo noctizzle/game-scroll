@@ -51,13 +51,14 @@ async function onGesture() {
 addEventListener('pointerup', onGesture, true);
 
 /* ---------- motion sensors: tilt, shake, compass ---------- */
-const tiltState = { x: 0, y: 0, ok: false, base: null };
+const tiltState = { x: 0, y: 0, ok: false, base: null }, raw = { alpha: null, beta: 0, gamma: 0, t: 0 };
 let headingDeg = null, lastAcc = null; const shakeCbs = new Set(); let lastShake = 0, sensorsOn = false;
 function startSensors() {
   if (sensorsOn) return; sensorsOn = true;
   addEventListener('deviceorientation', e => {
     if (e.beta == null) return;
     tiltState.beta = e.beta;
+    if (e.alpha != null) { raw.alpha = e.alpha; raw.beta = e.beta; raw.gamma = e.gamma; raw.t = performance.now(); }
     // Use landscape-aware axes so tilt feels right when the phone or an unfolded foldable is sideways.
     const ang = (screen.orientation?.angle ?? window.orientation ?? 0) | 0;
     let x = e.gamma, y = e.beta;
@@ -88,6 +89,12 @@ export function tilt() { return tiltState.ok ? { x: tiltState.x, y: tiltState.y 
 export function calibrateTilt() { tiltState.base = null; }
 /** Subscribe to shakes; returns an unsubscribe function. */
 export function onShake(cb) { shakeCbs.add(cb); return () => shakeCbs.delete(cb); }
+/** Raw phone orientation for AR (src/kit/ar3d.js): { alpha, beta, gamma } in degrees plus the screen
+ *  rotation, or null when there is no live gyro reading. */
+export function orientation() {
+  if (raw.alpha == null || performance.now() - raw.t > 1500) return null;
+  return { alpha: raw.alpha, beta: raw.beta, gamma: raw.gamma, screen: (screen.orientation?.angle ?? window.orientation ?? 0) | 0 };
+}
 /** Compass heading in degrees (0 = north), or null. */
 export function heading() { return headingDeg; }
 /** True when the phone is lying screen-down, false when not, null with no sensor. */

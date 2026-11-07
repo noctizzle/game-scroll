@@ -300,3 +300,15 @@ Original takes on the toy-brick adventure games: smash scenery into studs, rebui
 - [x] Blob Ball: one-on-one slime football against quicker and quicker rivals
 - [x] Suit Ops: jungle shooter with ARMOR, CLOAK, SPEED and POWER suit modes (Console)
 - [x] Front Line: WW2 beach assault, dash between cover past the MG sweep, grenade the bunker (Console)
+
+## AR · 3D (camera + gyro, 2026-11-07) 📷
+
+3D games that sit in your real room: the camera picture is the background and the phone's gyro turns the view (kit: `src/kit/ar3d.js`, docs: [ar-3d.md](ar-3d.md)).
+
+- [x] Saucer Swarm 📷 — chrome saucers circle your room and close in; turn to aim, tap to zap
+- [x] Bin Flick 📷 — flick paper balls into a bin on your real floor; wind, swishes, the bin moves round you
+- [x] Hoop Drone 📷 — a drone flies where you point the phone; thread it through hoops against the clock
+- [ ] Desk Pet 📷 — a little creature lives on your floor; throw it snacks, it fetches and does tricks
+- [ ] Ghost Lantern 📷 — ghosts hide around you; sweep the phone like a torch to find and trap them
+- [ ] Tower Toss 📷 — stack wobbly blocks into a tower on your floor, walk the phone round to check the lean
+- [ ] Bubble Garden 📷 — bubbles float up from your floor; pop them in colour order by pointing

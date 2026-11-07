@@ -85,7 +85,7 @@ function renderer() {
   if (R || broken) return R;
   try {
     const cv = document.createElement('canvas');
-    R = new WebGLRenderer({ canvas: cv, antialias: false, preserveDrawingBuffer: true, powerPreference: 'high-performance', stencil: false });
+    R = new WebGLRenderer({ canvas: cv, alpha: true, antialias: false, preserveDrawingBuffer: true, powerPreference: 'high-performance', stencil: false });
     R.setPixelRatio(1); R.outputColorSpace = SRGBColorSpace;
     R.toneMapping = ACESFilmicToneMapping; R.toneMappingExposure = 1;
     R.shadowMap.enabled = true; R.shadowMap.type = PCFSoftShadowMap;
@@ -134,6 +134,23 @@ function chain(r, w, h) {
     comp.setSize(w, h); comp.cw = w; comp.ch = h;
   }
   return comp;
+}
+
+// See-through chain for AR games (src/kit/ar3d.js): the camera picture is drawn first, so the 3D
+// frame keeps a transparent background. Just the scene (with MSAA) and tone mapping: bloom and the
+// colour grade would also tint the real world behind it.
+let arComp = null, arKey = '';
+function seeThrough(r, w, h) {
+  const T = tier();
+  if (arComp && arKey !== T.msaa) { arKey = T.msaa; for (const rt of [arComp.renderTarget1, arComp.renderTarget2]) { rt.dispose(); rt.samples = T.msaa; } }
+  if (!arComp) {
+    arKey = T.msaa;
+    arComp = new EffectComposer(r, new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: T.msaa }));
+    P.arRender = new RenderPass(new Scene(), new PerspectiveCamera(), null, new Color(0), 0);
+    arComp.addPass(P.arRender); arComp.addPass(new OutputPass());
+    arComp.setSize(w, h); arComp.cw = w; arComp.ch = h;
+  }
+  return arComp;
 }
 
 /* ---------- materials and procedural textures ---------- */
@@ -292,7 +309,7 @@ export class HDView {
   render(c, w = this.W, h = this.H) {
     this.fit(w, h);
     const r = renderer();
-    if (!r) { c.fillStyle = '#' + this.scene.background.getHexString(); c.fillRect(0, 0, w, h); c.fillStyle = '#fff'; c.font = '600 12px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('This device cannot show 3D', w / 2, h / 2); return; }
+    if (!r) { c.fillStyle = this.scene.background ? '#' + this.scene.background.getHexString() : '#0b0f14'; c.fillRect(0, 0, w, h); c.fillStyle = '#fff'; c.font = '600 12px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('This device cannot show 3D', w / 2, h / 2); return; }
     // adaptive quality: first resolution, then tier
     const now = performance.now(), gap = now - (Q.lastT || now); Q.lastT = now; adapt(gap);
     const T = tier();
@@ -300,15 +317,18 @@ export class HDView {
     let pw = c.canvas.width, ph = c.canvas.height; const q = Math.min(1, Math.sqrt(T.px / (pw * ph))) * HD.res;
     pw = Math.max(16, Math.round(pw * q)); ph = Math.max(16, Math.round(ph * q));
     const cv = r.domElement; if (cv.width !== pw || cv.height !== ph) r.setSize(pw, ph, false);
-    const cp = chain(r, pw, ph); if (cp.cw !== pw || cp.ch !== ph) { cp.setSize(pw, ph); cp.cw = pw; cp.ch = ph; }
+    const cp = this.clearBg ? seeThrough(r, pw, ph) : chain(r, pw, ph); if (cp.cw !== pw || cp.ch !== ph) { cp.setSize(pw, ph); cp.cw = pw; cp.ch = ph; }
     r.shadowMap.enabled = T.shadow > 0;
     this.scene.environment = envTex; this.scene.environmentIntensity = this.envI;
     r.toneMappingExposure = this.exposure;
-    P.render.scene = P.ao.scene = this.scene; P.render.camera = P.ao.camera = this.cam;
+    if (this.clearBg) { P.arRender.scene = this.scene; P.arRender.camera = this.cam; } else { P.render.scene = P.ao.scene = this.scene; P.render.camera = P.ao.camera = this.cam; }
     for (const p of this.parts) p.mat.uniforms.scale.value = ph / (2 * Math.tan(this.cam.fov * Math.PI / 360));
-    P.ao.enabled = T.ao; P.bloom.strength = this.bloom;
-    P.bloom.resolution.set(pw * T.bloom, ph * T.bloom);
-    this.t += 1 / 60; P.grade.uniforms.t.value = this.t % 10; P.grade.uniforms.hurt.value = this.hurt; P.grade.uniforms.px.value.set(1 / pw, 1 / ph);
+    this.t += 1 / 60;
+    if (!this.clearBg) {
+      P.ao.enabled = T.ao; P.bloom.strength = this.bloom;
+      P.bloom.resolution.set(pw * T.bloom, ph * T.bloom);
+      P.grade.uniforms.t.value = this.t % 10; P.grade.uniforms.hurt.value = this.hurt; P.grade.uniforms.px.value.set(1 / pw, 1 / ph);
+    }
     if (!this.warmed) this.warm();
     r.info.autoReset = false; r.info.reset();
     cp.render();
