@@ -9,3 +9,6 @@ dist-games
 
 # Catalogue signing key (scripts/sign-catalogue.mjs --new-key). Never commit it.
 catalogue-signing-key.pem
+
+# Website build (scripts/build-site.mjs)
+dist-site

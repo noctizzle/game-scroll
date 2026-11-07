@@ -1,0 +1,38 @@
+name: Game idea
+description: Suggest a mini game for the feed (no coding needed)
+title: "Game idea: "
+labels: ["game idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Game Scroll aims for 1,000 games that each play differently, so tell us what makes this one new.
+        Please keep it original: a genre or mechanic is fine, a copy of a specific existing game (its name, characters or levels) isn't.
+  - type: textarea
+    id: play
+    attributes:
+      label: How does it play?
+      description: A few sentences. What do you tap, drag, tilt or shout? How do you win or lose?
+    validations:
+      required: true
+  - type: dropdown
+    id: style
+    attributes:
+      label: Style
+      options: ["Casual (modern phone game)", "Pocket (dot matrix)", "Color (colour handheld)", "Advance (wide handheld)", "Classic Console (3D)", "Next Gen (HD 3D)", "Not sure"]
+    validations:
+      required: true
+  - type: textarea
+    id: new
+    attributes:
+      label: What makes it different from the games already in the feed?
+  - type: checkboxes
+    id: phone
+    attributes:
+      label: Phone features it could use (optional)
+      options:
+        - label: Tilt or shake
+        - label: Microphone
+        - label: Camera
+        - label: GPS / walking
+        - label: Haptics

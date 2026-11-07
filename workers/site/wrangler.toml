@@ -1,0 +1,24 @@
+# game-scroll.com: the website (landing page, maker guide, privacy, help).
+# A Worker that serves the static files built by scripts/build-site.mjs into dist-site/.
+# Deployed by .github/workflows/site.yml, or by hand from the repo root:
+#   node scripts/build-site.mjs && cd workers/site && npx wrangler deploy
+name = "game-scroll-site"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = false
+preview_urls = false
+
+# Cloudflare makes the DNS records for these. If the deploy says a record already exists, delete
+# the old A/AAAA/CNAME record for that name in the dashboard (DNS -> Records) and run it again.
+routes = [
+  { pattern = "game-scroll.com", custom_domain = true },
+  { pattern = "www.game-scroll.com", custom_domain = true },
+]
+
+[assets]
+directory = "../../dist-site"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
+# Run the Worker first so www.game-scroll.com can redirect (static files are served by env.ASSETS).
+run_worker_first = true

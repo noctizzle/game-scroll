@@ -4,7 +4,7 @@ Game Scroll is a vertical feed of quick mini games: swipe up for the next one, t
 add a game by opening a pull request. Once it is merged, your game streams to every player's app
 within minutes. No app update is needed.
 
-This guide covers everything you need:
+There is a friendlier walkthrough at **https://game-scroll.com/make/**. This guide covers everything in detail:
 
 1. [The rules](#the-rules)
 2. [Quick start](#quick-start)

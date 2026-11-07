@@ -25,7 +25,9 @@
     "icons": "node scripts/icons.cjs",
     "prune": "vite build --mode bundled && node scripts/prune.cjs",
     "lint:games": "node scripts/game-lint.mjs",
-    "catalogue-test": "node scripts/catalogue-test.mjs"
+    "catalogue-test": "node scripts/catalogue-test.mjs",
+    "site": "node scripts/build-site.mjs",
+    "store-shots": "vite build --mode bundled && node scripts/store-shots.cjs"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.6.0",

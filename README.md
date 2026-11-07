@@ -32,6 +32,11 @@ There is no paid Apple Developer account yet, so the `iOS IPA (unsigned)` workfl
 
 Every push to `main` also builds the web app and publishes it to https://robthewizzuk.github.io/game-scroll/ (`.github/workflows/web-pages.yml`). One-time setup: Settings > Pages > Source: **GitHub Actions**. GitHub only serves Pages from a private repo on a paid plan (Pro); on the free plan the repo has to be public. Phone sensors that need a native plugin fall back to touch controls in the browser.
 
+## Website and store listings
+
+- `site/` is the website at https://game-scroll.com: landing page, a friendly [maker guide](https://game-scroll.com/make/), privacy policy and help. `npm run site` builds it into `dist-site/`; `.github/workflows/site.yml` deploys it on every push to `main` as a Cloudflare Worker (`workers/site`).
+- `store/` has the App Store and Google Play listing texts, policy answers and screenshots. `npm run store-shots` remakes the screenshots from real games; `node scripts/check-listings.mjs` checks the text lengths.
+
 ## Adding a game
 
 Anyone can add a game with a pull request: see **[CONTRIBUTING.md](CONTRIBUTING.md)** for the rules, the game API, the five styles (Phone, Dot matrix, Color, Advance, Console 3D) with screenshots, palettes, fluid sizes and how to test.

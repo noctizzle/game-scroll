@@ -1,0 +1,61 @@
+# Deploys the website at https://game-scroll.com (landing page, maker guide, privacy, help):
+# builds site/ plus the game list from src/games with scripts/build-site.mjs, then publishes it
+# as the Cloudflare Worker in workers/site.
+#
+# One-time setup: the CLOUDFLARE_API_TOKEN repository secret (the same one hearts-worker.yml uses)
+# needs "Workers Scripts: Edit" on the account and "Workers Routes: Edit" + "Zone: Read" on the
+# game-scroll.com zone. The hearts backend already needs exactly these, so nothing should change.
+# If the first deploy says a DNS record already exists for game-scroll.com or www, delete that
+# record in the Cloudflare dashboard (DNS -> Records) and run this workflow again.
+name: Website (game-scroll.com)
+
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', 'src/games/**', 'docs/contributing/**', 'public/icons/**', 'scripts/build-site.mjs', 'workers/site/**', '.github/workflows/site.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site
+  cancel-in-progress: true
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: 4d04f07305a8d0b2efd5221d16d92e35
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            workers/site/package-lock.json
+
+      - name: Build the site
+        run: npm ci && node scripts/build-site.mjs
+
+      - name: Check the token is set
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Add the CLOUDFLARE_API_TOKEN repository secret (see the top of this file)."; exit 1
+          fi
+
+      - name: Deploy
+        working-directory: workers/site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          npm ci
+          npx wrangler deploy
+          echo "Website deployed to https://game-scroll.com" | tee -a "$GITHUB_STEP_SUMMARY"
