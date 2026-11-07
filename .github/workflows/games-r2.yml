@@ -94,8 +94,8 @@ jobs:
           f=$(ls dist-games/games | head -1)
           for i in 1 2 3; do
             echo "--- request $i: games/$f"
-            curl -sSI "$PUBLIC_URL/games/$f" | grep -iE '^(HTTP|cache-control|cf-cache-status|age|cf-ray|content-type|etag|last-modified)' || true
+            curl -sS -D - -o /dev/null "$PUBLIC_URL/games/$f" | grep -iE '^(HTTP|cache-control|cf-cache-status|age|cf-ray|content-type|etag|last-modified)' || true
             sleep 2
           done
           echo "--- manifest.json"
-          curl -sSI "$PUBLIC_URL/manifest.json" | grep -iE '^(HTTP|cache-control|cf-cache-status|age)' || true
+          curl -sS -D - -o /dev/null "$PUBLIC_URL/manifest.json" | grep -iE '^(HTTP|cache-control|cf-cache-status|age)' || true
