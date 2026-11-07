@@ -92,7 +92,7 @@ function make(api) {
     },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      if (!v) return; v.live(); t += dt; msgT -= dt;
+      if (!v) return; v.live(); if (v.calibrating) return;   // floor calibration open: pause t += dt; msgT -= dt;
       if (flight) {
         const F = flight, steps = 4, h = dt / steps;
         for (let k = 0; k < steps && !F.done; k++) {
@@ -132,6 +132,7 @@ function make(api) {
     draw(c) {
       if (!v) { setup(); this.reset(); }
       v.look(1 / 60);
+      held.visible = !flight && !v.calibrating;
       held.rotation.y = t * .6; held.position.y = -.16 + (flick ? Math.min(.04, (flick.y0 - flick.y) / H * .1) : 0);
       v.draw(c, W, H);
       v.pointers(c, W, H, [{ p: vtmp.set(bx, FLOOR + BH / 2, bz), col: '#8affdc' }]);
@@ -148,9 +149,10 @@ function make(api) {
       c.restore();
       arNote(c, v, W, H);
     },
-    down(x, y, id) { if (flight || flick) return; flick = { x0: x, y0: y, x, y, id, t: performance.now() }; },
-    move(x, y, pressed, id) { if (flick && flick.id === id) { flick.x = x; flick.y = y; } },
+    down(x, y, id) { if (v?.input?.('down', x, y, id)) return; if (flight || flick) return; flick = { x0: x, y0: y, x, y, id, t: performance.now() }; },
+    move(x, y, pressed, id) { if (v?.input?.('move', x, y, id, pressed)) return; if (flick && flick.id === id) { flick.x = x; flick.y = y; } },
     up(x, y, id) {
+      if (v?.input?.('up', x, y, id)) return;
       if (!flick || flick.id !== id) return;
       const dx = x - flick.x0, dy = y - flick.y0, ms = performance.now() - flick.t; flick = null;
       if (dy < -25 && ms < 1500 && !flight) throwBall(dx, -dy, ms);
