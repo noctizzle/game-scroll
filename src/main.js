@@ -17,12 +17,17 @@ import { services } from './kit/services.js';
 import { initWallet, toast, shopHTML, bindShop } from './kit/wallet-ui.js';
 
 import { haptic } from './kit/device.js';
+import { remote } from './remote.js';
 
 /* ---------- catalogue: every file in src/games/ is one game ---------- */
 const modules = import.meta.glob('./games/*.js', { eager: true });
 const GAMES = Object.values(modules).map(m => m.default)
   .filter(g => g && g.id && g.make)
   .map(g => ({ likes: 300 + hash(g.id) % 6000, ...g }));
+// Games can also stream in from the game host (src/remote.js): updated versions replace the built-in
+// copy, and new ones join the feed. They're added to GAMES as metadata and downloaded just before they're due.
+remote.init(GAMES, meta => { const g = { likes: 300 + hash(meta.id) % 6000, ...meta }; GAMES.push(g); return g; },
+  added => { for (const g of added) if (inPool(g)) queue.splice(Math.random() * (queue.length + 1) | 0, 0, g); });   // new games join this cycle
 
 /* ---------- feed engine ---------- */
 const feed=document.getElementById('feed');
@@ -211,25 +216,36 @@ function fit(s){
 
 // Shuffled queue over the whole catalogue; the feed pulls a few at a time so 1000 games never means 1000 slides in the DOM.
 let queue=[];
+function inPool(g){return (filter.startsWith('id:')||!isHidden(g.id))&&(filter==='all'||(filter.startsWith('id:')?g.id===filter.slice(3):filter==='pocket'?g.retro&&g.era!=='console':filter==='console'?g.era==='console':!g.retro))}
 function pickDefs(n=6){
-  let pool=GAMES.filter(g=>filter.startsWith('id:')||!isHidden(g.id)).filter(g=>filter==='all'||(filter.startsWith('id:')?g.id===filter.slice(3):filter==='pocket'?g.retro&&g.era!=='console':filter==='console'?g.era==='console':!g.retro));
+  let pool=GAMES.filter(inPool);
   if(!pool.length)pool=GAMES;
-  const out=[];
-  while(out.length<n&&pool.length){
+  const out=[],later=[];let tries=pool.length*2+n;
+  while(out.length<n&&pool.length&&tries-->0){
     if(!queue.length){queue=rankQueue(pool,GAMES);if(queue.length>1&&queue[0].id===lastId)queue.push(queue.shift())}
-    const d=queue.shift();out.push(d);lastId=d.id;
+    const q=queue.shift(),d=remote.def(q);
+    if(!d){if(remote.has(q.id))later.push(q);continue}   // streamed game still downloading: it goes in the next batch
+    out.push(d);lastId=d.id;
     if(pool.length<n&&out.length>=pool.length)break;
   }
+  queue.unshift(...later);
+  remote.prefetch(queue.slice(0,8));   // download the next few now so they're ready by the time you swipe to them
   return out;
 }
 // After a heart or Meh, re-rank the games still waiting in this cycle so similar ones come sooner.
 function rerank(){if(queue.length>1)queue=rankQueue(queue.filter(g=>!isHidden(g.id)),GAMES)}
 function paint(s){s.game.draw(s.ctx);if(s.def.era==='console'){s.ctx.save();consolePost(s.ctx,s.w||s.def.w,s.h||s.def.h);s.ctx.restore()}}
-function addBatch(){for(const d of pickDefs()){const s=makeSlide(d);feed.appendChild(s.el);slides.push(s);fit(s);paint(s);io.observe(s.el)}}
+function addBatch(){
+  const defs=pickDefs();
+  for(const d of defs){const s=makeSlide(d);feed.appendChild(s.el);slides.push(s);fit(s);paint(s);io.observe(s.el)}
+  // Nothing ready yet (only streamed games left and still downloading): try again once they arrive.
+  if(!defs.length&&queue.some(g=>remote.has(g.id))){const gen=built;Promise.all(queue.slice(0,6).map(g=>remote.load(g.id))).then(()=>{if(gen!==built)return;addBatch();if(!active&&slides[0])setActive(slides[0])})}
+}
 
 // Play a chosen game now: slot it in right after the current game and scroll to it.
 function playNow(id){
-  const def=GAMES.find(g=>g.id===id);if(!def)return;
+  const g=GAMES.find(x=>x.id===id);if(!g)return;
+  const def=remote.def(g);if(!def){remote.load(id).then(d=>{if(d)playNow(id)});return}
   const i=active?slides.indexOf(active):-1;if(active&&active.state==='playing')resetSlide(active);feed.classList.remove('locked');
   const s=makeSlide(def),next=slides[i+1];feed.insertBefore(s.el,next?next.el:null);slides.splice(i+1,0,s);fit(s);paint(s);io.observe(s.el);
   requestAnimationFrame(()=>s.el.scrollIntoView({behavior:'auto'}));
@@ -241,8 +257,9 @@ function setActive(s){
   if(slides.indexOf(s)>=slides.length-3)addBatch();
 }
 
+let built=0;
 function rebuild(){
-  slides.forEach(s=>io.unobserve(s.el));feed.innerHTML='';slides=[];active=null;lastId=null;queue=[];feed.scrollTop=0;addBatch();setActive(slides[0]);
+  built++;slides.forEach(s=>io.unobserve(s.el));feed.innerHTML='';slides=[];active=null;lastId=null;queue=[];feed.scrollTop=0;addBatch();if(slides[0])setActive(slides[0]);
 }
 
 let resizeAt=0;
@@ -292,6 +309,8 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{if(filter===
 
 function boot(){initWallet(GAMES);services.init(GAMES);rebuild();requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
 boot();
+// Coming back to the app: look for game updates (cheap: one small catalogue file).
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&remote.enabled)remote.refresh()});
 
 // Test hook used by scripts/smoke.cjs
-window.__gs={GAMES,progress,api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};
+window.__gs={GAMES,remote,progress,api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),only(id){filter='id:'+id;rebuild()}};
