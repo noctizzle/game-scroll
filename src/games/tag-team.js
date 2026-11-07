@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { backdrop, glow } from '../kit/gfx.js';
 import { brick, stud } from '../kit/bricks.js';
 
 // Two brick heroes share one run. Swipe down to tag between them. The big BRUISER smashes grey
@@ -67,7 +68,7 @@ function make(api) {
     },
     draw(c) {
       const ox = -Math.round(cam), g = gy();
-      c.fillStyle = '#382850'; c.fillRect(0, 0, W, H);
+      backdrop(c, 0, 0, W, H, '#1c1430', '#5a3c70'); glow(c, W * .7, H * .2, 50, '#f8e0b0', .3);
       for (let i = 0; i < 6; i++) { const x = ((i * 70 - cam * .3) % (W + 70) + W + 70) % (W + 70) - 35; brick(c, x, g - 50 - (i % 3) * 14, 30, 50 + (i % 3) * 14, i % 2 ? 'blue' : 'black', 0); c.fillStyle = '#f0c02060'; for (let j = 0; j < 3; j++) c.fillRect(x + 5 + j * 8, g - 40 - (i % 3) * 14, 3, 4); }
       // ground with gaps
       let gx = Math.floor(cam / 16) * 16;

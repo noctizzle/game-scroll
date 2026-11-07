@@ -59,6 +59,7 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .modern .screen{border-radius:22px;box-shadow:0 0 0 1px #ffffff14,0 18px 50px #0009}
 canvas{display:block;width:100%;height:100%;touch-action:pan-y}
 .retro canvas{image-rendering:pixelated;image-rendering:crisp-edges}
+.retro canvas.hires{image-rendering:auto}
 .slide.playing canvas{touch-action:none}
 /* while playing the feed is locked; let pointer events through so a swipe outside the screen still changes game (main.js) */
 #feed.locked .slide{touch-action:none}
@@ -244,7 +245,7 @@ dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
 /* console shell: a chunky TV-style frame for the home-console era games */
 .retro.console .device{background:linear-gradient(#3a3d46,#2a2c33);border-radius:16px;padding:8px;box-shadow:inset 0 2px 0 #ffffff14,inset 0 -4px 0 #0006,0 18px 40px #0009}
 .retro.console .screen{border:6px solid #111216;border-radius:14px;box-shadow:inset 0 0 0 1px #ffffff10}
-.retro.console .screen::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:8px;background:repeating-linear-gradient(#0000 0 2px,#0000001a 2px 3px),radial-gradient(120% 90% at 50% 50%,#0000 60%,#0006 100%)}
+.retro.console .screen::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:8px;background:linear-gradient(160deg,#ffffff14 0%,#0000 35%),radial-gradient(120% 90% at 50% 50%,#0000 70%,#0005 100%)}
 .retro.console .bezel-top{color:#9aa0ae;font-style:normal;letter-spacing:.3em}
 .retro.console .bezel-top .era{color:#e8ecf4}
 .retro.console .led{background:#3a7a4a}
@@ -259,3 +260,4 @@ dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
 .tabs::-webkit-scrollbar{display:none}
 @media (max-width:440px){.tabs{gap:2px}.tabs button{padding:7px 7px;font-size:11.5px}}
 @media (max-width:400px){.logo{display:none}.top{gap:6px}}
+.retro.console .hud .score{background:#0b0d14cc;color:#f2f4fa;border-radius:6px;font-size:13px;padding:5px 8px;box-shadow:0 2px 8px #0006}

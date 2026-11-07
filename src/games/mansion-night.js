@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { box, ball, shadow, glow, shade } from '../kit/gfx.js';
 
 // Survival horror in a dark old house. Drag to sweep your torch beam, tap to fire where you
 // tap. Head shots do double damage. Your pistol holds six shots: swipe down to reload, and keep an
@@ -54,28 +55,28 @@ function make(api) {
       c.fillStyle = '#0c0a10'; c.fillRect(0, 0, W, H);
       // corridor
       const fl = proj(-1, 1.2), fr = proj(1, 1.2), nl = proj(-1, 0), nr = proj(1, 0);
-      c.fillStyle = '#2a2020'; c.beginPath(); c.moveTo(fl.x, fl.y); c.lineTo(fr.x, fr.y); c.lineTo(W, H); c.lineTo(0, H); c.fill();
-      c.fillStyle = '#201828'; c.beginPath(); c.moveTo(0, 0); c.lineTo(fl.x, fl.y - (fl.y - hor()) - 40 * fl.s); c.lineTo(fl.x, fl.y); c.lineTo(0, H); c.fill(); c.beginPath(); c.moveTo(W, 0); c.lineTo(fr.x, fr.y - (fr.y - hor()) - 40 * fr.s); c.lineTo(fr.x, fr.y); c.lineTo(W, H); c.fill();
+      { const g = c.createLinearGradient(0, fl.y, 0, H); g.addColorStop(0, '#1a1414'); g.addColorStop(1, '#4a3430'); c.fillStyle = g; } c.beginPath(); c.moveTo(fl.x, fl.y); c.lineTo(fr.x, fr.y); c.lineTo(W, H); c.lineTo(0, H); c.fill();
+      { const g = c.createLinearGradient(0, 0, W, 0); g.addColorStop(0, '#30243c'); g.addColorStop(.5, '#120c18'); g.addColorStop(1, '#30243c'); c.fillStyle = g; } c.beginPath(); c.moveTo(0, 0); c.lineTo(fl.x, fl.y - (fl.y - hor()) - 40 * fl.s); c.lineTo(fl.x, fl.y); c.lineTo(0, H); c.fill(); c.beginPath(); c.moveTo(W, 0); c.lineTo(fr.x, fr.y - (fr.y - hor()) - 40 * fr.s); c.lineTo(fr.x, fr.y); c.lineTo(W, H); c.fill();
       c.fillStyle = '#181020'; c.fillRect(fl.x, hor() - 40 * fl.s - 20, fr.x - fl.x, fl.y - hor() + 40 * fl.s + 20);
-      c.fillStyle = doorT > 0 ? '#c8a060' : '#3a2818'; const dp = proj(0, 1.2); c.fillRect(dp.x - 10 * dp.s * 1.5, dp.y - 34 * dp.s * 1.5, 20 * dp.s * 1.5, 34 * dp.s * 1.5);
+      const dp = proj(0, 1.2); box(c, dp.x - 10 * dp.s * 1.5, dp.y - 34 * dp.s * 1.5, 20 * dp.s * 1.5, 34 * dp.s * 1.5, doorT > 0 ? '#c8a060' : '#4a3020', { r: 1, drop: false }); if (doorT > 0) glow(c, dp.x, dp.y - 17 * dp.s * 1.5, 30 * dp.s * 1.5, '#f8d080', .5);
       for (let z = 0; z < 1.2; z += .2) { const a = proj(-1, z), b = proj(1, z); c.fillStyle = '#3a2a28'; c.fillRect(a.x, a.y, b.x - a.x, 1); }
       // items
-      for (const it of items) { const p = proj(it.x, it.z), s = p.s * 14; if (it.k === 'ammo') { c.fillStyle = '#806838'; c.fillRect(p.x - s / 2, p.y - s * .6, s, s * .6); c.fillStyle = '#d8b860'; c.fillRect(p.x - s / 2, p.y - s * .6, s, s * .15); } else { c.fillStyle = '#40a040'; c.beginPath(); c.arc(p.x, p.y - s * .4, s * .4, 0, 7); c.fill(); c.fillStyle = '#80e080'; c.fillRect(p.x - 1, p.y - s * .8, 2, s * .4); } }
+      for (const it of items) { const p = proj(it.x, it.z), s = p.s * 14; shadow(c, p.x, p.y, s * .6, s * .18, .4); if (it.k === 'ammo') { box(c, p.x - s / 2, p.y - s * .6, s, s * .6, '#806838', { r: s * .08, drop: false }); c.fillStyle = '#d8b860'; c.fillRect(p.x - s / 2, p.y - s * .6, s, s * .15); } else { ball(c, p.x, p.y - s * .4, s * .4, '#40a040'); c.fillStyle = '#c0f0c0'; c.fillRect(p.x - 1, p.y - s * .8, 2, s * .4); } }
       // creatures, far first
       for (const f of [...foes].sort((a, b) => b.z - a.z)) {
         const p = proj(f.x, f.z), s = p.s * 2.6, w = f.w * s, h = f.h * s, sway = Math.sin(t * 3 + f.ph) * 2 * s, al = f.dead ? 1 - f.dead / .6 : 1;
-        c.globalAlpha = al; c.fillStyle = f.flash > 0 ? '#f8f8f8' : f.col;
+        c.globalAlpha = al; shadow(c, p.x, p.y, w * .7, w * .18, .5); { const g = c.createLinearGradient(p.x - w, 0, p.x + w, 0), base = f.flash > 0 ? '#f8f8f8' : f.col; g.addColorStop(0, shade(base, .25)); g.addColorStop(1, shade(base, -.45)); c.fillStyle = g; }
         if (f.low) { c.fillRect(p.x - w / 2, p.y - h, w, h); c.fillRect(p.x - w / 2 - 3 * s, p.y - 3 * s, 3 * s, 3 * s); c.fillStyle = '#f8e040'; c.fillRect(p.x - w / 2 + 2 * s, p.y - h + 2 * s, 2 * s, 2 * s); }
         else if (f.k === 'hound') { c.fillRect(p.x - w / 2, p.y - h, w, h * .6); c.fillRect(p.x - w / 2 - 4 * s, p.y - h - 3 * s, 6 * s, 6 * s); c.fillRect(p.x - w / 2, p.y - h * .4, 2 * s, h * .4); c.fillRect(p.x + w / 2 - 2 * s, p.y - h * .4, 2 * s, h * .4); c.fillStyle = '#f84040'; c.fillRect(p.x - w / 2 - 3 * s, p.y - h - 2 * s, 1.5 * s, 1.5 * s); }
         else { c.fillRect(p.x - w / 2 + sway, p.y - h, w, h * .75); c.fillRect(p.x - w * .35, p.y - h * .25, w * .25, h * .25); c.fillRect(p.x + w * .1, p.y - h * .25, w * .25, h * .25);
           c.fillRect(p.x - w * .3 + sway, p.y - h - w * .55, w * .6, w * .6); c.fillRect(p.x - w / 2 - 3 * s + sway, p.y - h * .85, 3 * s, h * .4); c.fillRect(p.x + w / 2 + sway, p.y - h * .85, 3 * s, h * .4);
-          c.fillStyle = '#f8e040'; c.fillRect(p.x - w * .2 + sway, p.y - h - w * .35, 1.5 * s, 1.5 * s); c.fillRect(p.x + w * .08 + sway, p.y - h - w * .35, 1.5 * s, 1.5 * s); }
+          c.fillStyle = '#f8e040'; c.fillRect(p.x - w * .2 + sway, p.y - h - w * .35, 1.5 * s, 1.5 * s); c.fillRect(p.x + w * .08 + sway, p.y - h - w * .35, 1.5 * s, 1.5 * s); glow(c, p.x + sway, p.y - h - w * .3, w * .5, '#f8e040', .25); }
         c.globalAlpha = 1;
       }
       // darkness with a torch beam
       const r = Math.max(W, H) * .22, g = c.createRadialGradient(light.x, light.y, r * .3, light.x, light.y, r * 1.3);
       g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.6, 'rgba(0,0,0,.6)'); g.addColorStop(1, 'rgba(0,0,0,.93)'); c.fillStyle = g; c.fillRect(0, 0, W, H);
-      if (flash > 0) { c.fillStyle = '#f8e0a040'; c.fillRect(0, 0, W, H); }
+      glow(c, light.x, light.y, r * .9, '#f8e0b0', .12); if (flash > 0) { c.fillStyle = '#f8e0a040'; c.fillRect(0, 0, W, H); glow(c, light.x, light.y, r, '#f8d080', .6); }
       if (hurtT > 0) { c.fillStyle = `rgba(200,0,0,${hurtT})`; c.fillRect(0, 0, W, H); }
       c.strokeStyle = '#f8f8f080'; c.lineWidth = 1; c.beginPath(); c.moveTo(light.x - 4, light.y); c.lineTo(light.x + 4, light.y); c.moveTo(light.x, light.y - 4); c.lineTo(light.x, light.y + 4); c.stroke();
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';

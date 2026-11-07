@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { box, ball, glow, backdrop, shade } from '../kit/gfx.js';
 
 // A tuxedoed secret agent is pinned behind a marble counter at a villain's gala. Hold to lean out
 // and aim; your silenced pistol fires whenever the sights cross a henchman. Let go to duck back
@@ -48,27 +49,27 @@ function make(api) {
     },
     draw(c) {
       const pal = [['#3a1c2c', '#5a2c40', '#c8a050'], ['#1c2a3a', '#2c4058', '#a0b0c0'], ['#101830', '#202c50', '#f8d070']][scene];
-      c.fillStyle = pal[0]; c.fillRect(0, 0, W, H);
-      if (scene === 2) { c.fillStyle = '#f8f0c0'; for (let i = 0; i < 20; i++) c.fillRect((i * 37) % W, (i * 23) % (H * .3), 1, 1); c.fillStyle = '#304068'; for (let i = 0; i < 6; i++) c.fillRect(i * W / 6, H * .22 - (i % 3) * 8, W / 6 - 4, H); }
-      c.fillStyle = pal[1]; for (const [sx, sy] of SPOTS) c.fillRect(sx * W - 12, sy * H - 22, 24, 30);
-      c.fillStyle = pal[2]; for (const [sx, sy] of SPOTS) c.fillRect(sx * W - 13, sy * H + 6, 26, 3);
-      if (scene === 0) { c.fillStyle = '#f8e8a0'; for (let i = 0; i < 3; i++) { c.beginPath(); c.arc(W * (.25 + i * .25), 8, 5, 0, 7); c.fill(); } }
+      backdrop(c, 0, 0, W, H, shade(pal[0], .18), shade(pal[0], -.35));
+      if (scene === 2) { c.fillStyle = '#f8f0c0'; for (let i = 0; i < 20; i++) c.fillRect((i * 37) % W, (i * 23) % (H * .3), 1, 1); for (let i = 0; i < 6; i++) box(c, i * W / 6, H * .22 - (i % 3) * 8, W / 6 - 4, H, '#304068', { r: 1, drop: false }); }
+      for (const [sx, sy] of SPOTS) { box(c, sx * W - 12, sy * H - 22, 24, 30, pal[1], { r: 2 }); c.fillStyle = '#0005'; c.fillRect(sx * W - 10, sy * H - 20, 20, 26); }
+      for (const [sx, sy] of SPOTS) box(c, sx * W - 13, sy * H + 6, 26, 3, pal[2], { r: 1 });
+      if (scene === 0) { for (let i = 0; i < 3; i++) { glow(c, W * (.25 + i * .25), 8, 22, '#f8e8a0', .35); ball(c, W * (.25 + i * .25), 8, 5, '#f8e8a0'); } }
       for (const f of foes) {
         const x = Math.round(f.x), y = Math.round(f.y), u = clamp(f.up, 0, 1);
         c.save(); c.beginPath(); c.rect(x - 14, y - 26, 28, 32); c.clip();
         const by = y + 6 - u * 30;
-        c.fillStyle = f.flash > 0 ? '#ffffff' : f.guest ? '#f0f0e8' : '#202028'; c.fillRect(x - 6, by + 8, 12, 16);
+        box(c, x - 6, by + 8, 12, 16, f.flash > 0 ? '#ffffff' : f.guest ? '#f0f0e8' : '#2a2a34', { r: 2.5, drop: false });
         c.fillStyle = f.guest ? '#e0a0c0' : '#f8f8f0'; c.fillRect(x - 2, by + 8, 4, 6); if (!f.guest) { c.fillStyle = '#c02030'; c.fillRect(x - 1, by + 9, 2, 2); }
-        c.fillStyle = '#e8b890'; c.fillRect(x - 4, by, 8, 8); c.fillStyle = f.guest ? '#c09030' : '#303030'; c.fillRect(x - 4, by - 1, 8, 3);
+        ball(c, x, by + 4, 4.2, '#e8b890', { gloss: .3 }); c.fillStyle = f.guest ? '#c09030' : '#303030'; c.beginPath(); c.ellipse(x, by + 1, 4.4, 2.4, 0, Math.PI, 0); c.fill();
         if (!f.guest && f.st === 'aim' && f.t > f.aimT - warn() && !f.stun) { c.fillStyle = (t * 16 | 0) % 2 ? '#f84040' : '#f8f040'; c.fillRect(x + 6, by + 12, 6, 2); }
         if (f.stun > 0) { c.fillStyle = '#80e0ff'; c.fillRect(x - 6 + (t * 30 % 12), by - 4, 2, 2); }
         c.restore();
       }
       // counter (cover) and agent
-      c.fillStyle = '#e8e0d0'; c.fillRect(0, H - 30, W, 30); c.fillStyle = '#c8c0b0'; c.fillRect(0, H - 30, W, 3); c.fillStyle = '#a8a090'; for (let i = 0; i < W; i += 24) c.fillRect(i, H - 26, 1, 26);
+      box(c, -2, H - 30, W + 4, 32, '#d8cfbc', { r: 2 }); c.fillStyle = '#0000001c'; for (let i = 0; i < W; i += 24) c.fillRect(i, H - 26, 1, 26);
       const ax = W * .5, ay = out ? H - 44 : H - 26;
-      c.fillStyle = '#18181c'; c.fillRect(ax - 7, ay + 4, 14, 14); c.fillStyle = '#f8f8f0'; c.fillRect(ax - 2, ay + 4, 4, 6); c.fillStyle = '#18181c'; c.fillRect(ax - 1, ay + 5, 2, 2);
-      c.fillStyle = '#e8b890'; c.fillRect(ax - 4, ay - 4, 8, 8); c.fillStyle = '#382418'; c.fillRect(ax - 4, ay - 5, 8, 3);
+      box(c, ax - 7, ay + 4, 14, 14, '#24242c', { r: 3, drop: false }); c.fillStyle = '#f8f8f0'; c.fillRect(ax - 2, ay + 4, 4, 6); c.fillStyle = '#18181c'; c.fillRect(ax - 1, ay + 5, 2, 2);
+      ball(c, ax, ay, 4.4, '#e8b890', { gloss: .3 }); c.fillStyle = '#382418'; c.beginPath(); c.ellipse(ax, ay - 2.5, 4.6, 2.6, 0, Math.PI, 0); c.fill();
       if (out) { c.strokeStyle = '#18181c'; c.lineWidth = 2; c.beginPath(); c.moveTo(ax + 4, ay + 8); c.lineTo(ax + (aimX - ax) * .12, ay + (aimY - ay) * .12); c.stroke(); c.lineWidth = 1; }
       // sights
       if (out) { c.strokeStyle = '#f8f8f0c0'; c.beginPath(); c.arc(aimX, aimY, 6, 0, 7); c.moveTo(aimX - 9, aimY); c.lineTo(aimX - 3, aimY); c.moveTo(aimX + 3, aimY); c.lineTo(aimX + 9, aimY); c.moveTo(aimX, aimY - 9); c.lineTo(aimX, aimY - 3); c.moveTo(aimX, aimY + 3); c.lineTo(aimX, aimY + 9); c.stroke(); }

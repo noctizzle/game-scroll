@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { ball, glow, shadow, backdrop } from '../kit/gfx.js';
 
 // Weed beetles are marching across your vegetable patch. Tap the glowing dew drops to collect
 // them, tap a card at the top, then tap a square to plant it. Dew Lilies make more dew, Pea Pods
@@ -64,7 +65,7 @@ function make(api) {
     draw(c) {
       const C = cell(), X = ox(), Y = oy();
       c.fillStyle = '#4a8a3a'; c.fillRect(0, 0, W, H);
-      for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) { c.fillStyle = (r + cc) % 2 ? '#78b850' : '#68a848'; c.fillRect(X + cc * C, Y + r * C, C, C); }
+      for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) { { const gg = c.createLinearGradient(0, Y + r * C, 0, Y + r * C + C); const b = (r + cc) % 2 ? ['#86c65c', '#6aa846'] : ['#76b650', '#5c9a3e']; gg.addColorStop(0, b[0]); gg.addColorStop(1, b[1]); c.fillStyle = gg; c.fillRect(X + cc * C, Y + r * C, C, C); } }
       // house and gnomes
       c.fillStyle = '#c8b090'; c.fillRect(0, Y, X - 2, ROWS * C); c.fillStyle = '#a04030'; c.beginPath(); c.moveTo(0, Y); c.lineTo((X - 2) / 2, Y - 10); c.lineTo(X - 2, Y); c.fill();
       for (let i = 0; i < 3; i++) { const gx = (X - 2) / 2, gy = Y + 14 + i * ((ROWS * C - 20) / 3); c.fillStyle = i < gnomes ? '#e04040' : '#80706080'; c.beginPath(); c.moveTo(gx - 4, gy); c.lineTo(gx, gy - 9); c.lineTo(gx + 4, gy); c.fill(); if (i < gnomes) { c.fillStyle = '#f8f0e0'; c.fillRect(gx - 3, gy, 6, 4); c.fillStyle = '#3858a0'; c.fillRect(gx - 3, gy + 4, 6, 4); } }
@@ -77,20 +78,20 @@ function make(api) {
         else if (p.k === 'wall') { c.fillRect(x - 6 * s, y - 8 * s, 12 * s, 14 * s); c.fillStyle = '#4a3418'; for (let i = 0; i < 4; i++) c.fillRect(x - 6 * s + i * 3 * s, y - 8 * s + (i % 2) * 5 * s, 2 * s, 2 * s); c.fillStyle = '#ffffff40'; c.fillRect(x - 6 * s, y + 7 * s, 12 * s * p.hp / 40, 1.5); }
         else { const k = 1 + Math.sin(p.t * 30) * .15 * p.t; c.beginPath(); c.ellipse(x, y, 5 * s * k, 7 * s * k, 0, 0, 7); c.fill(); c.fillStyle = '#38a038'; c.fillRect(x - 1, y - 9 * s, 2, 3 * s); }
       }
-      for (const s of seeds) { c.fillStyle = '#90e060'; c.beginPath(); c.arc(s.x, cy(s.r) - 4 * C / 20, 2, 0, 7); c.fill(); }
+      for (const s of seeds) { glow(c, s.x, cy(s.r) - 4 * C / 20, 5, '#a8f070', .35); ball(c, s.x, cy(s.r) - 4 * C / 20, 2.2, '#90e060'); }
       for (const b of bugs) {
         const s = C / 20 * (b.k === 'stag' ? 1.4 : 1), x = b.x, y = b.y + (b.k === 'hopper' && !b.hopped ? -Math.abs(Math.sin(t * 6)) * 3 : 0);
-        c.fillStyle = b.flash > 0 ? '#ffffff' : b.col; c.beginPath(); c.ellipse(x, y, 7 * s, 5 * s, 0, 0, 7); c.fill(); c.beginPath(); c.arc(x - 6 * s, y - 1 * s, 3 * s, 0, 7); c.fill();
+        shadow(c, x, y + 5 * s, 8 * s, 2.5 * s); { const bc = b.flash > 0 ? '#ffffff' : b.col, bg = c.createRadialGradient(x - 2 * s, y - 2 * s, s, x, y, 8 * s); bg.addColorStop(0, '#ffffff70'); bg.addColorStop(.35, bc); bg.addColorStop(1, '#00000080'); c.fillStyle = bc; c.beginPath(); c.ellipse(x, y, 7 * s, 5 * s, 0, 0, 7); c.fill(); c.fillStyle = bg; c.beginPath(); c.ellipse(x, y, 7 * s, 5 * s, 0, 0, 7); c.fill(); ball(c, x - 6 * s, y - 1 * s, 3 * s, bc, { gloss: .5 }); }
         c.fillStyle = '#202020'; for (let i = -1; i <= 1; i++) c.fillRect(x + i * 4 * s, y + 4 * s, 1, 3 * s);
         if (b.k === 'stag' || b.k === 'armour') { c.fillStyle = '#c0c8d0'; c.fillRect(x - 3 * s, y - 5 * s, 8 * s, 2 * s); }
         if (b.k === 'stag') { c.strokeStyle = '#3a1810'; c.lineWidth = 2; c.beginPath(); c.moveTo(x - 8 * s, y - 2 * s); c.lineTo(x - 13 * s, y - 7 * s); c.moveTo(x - 8 * s, y); c.lineTo(x - 13 * s, y + 3 * s); c.stroke(); c.lineWidth = 1; }
         c.fillStyle = '#f8f040'; c.fillRect(x - 7 * s, y - 2 * s, 1.5, 1.5);
         if (b.hp < b.max) { c.fillStyle = '#000a'; c.fillRect(x - 6, y - 9 * s - 3, 12, 2); c.fillStyle = '#f86060'; c.fillRect(x - 6, y - 9 * s - 3, 12 * b.hp / b.max, 2); }
       }
-      for (const d of dews) { const a = d.l < 2 ? d.l / 2 : 1; c.globalAlpha = a; c.fillStyle = '#80d8ff'; c.beginPath(); c.arc(d.x, d.y, 5 + Math.sin(t * 6) * .6, 0, 7); c.fill(); c.fillStyle = '#e0f8ff'; c.fillRect(d.x - 2, d.y - 3, 2, 2); c.globalAlpha = 1; }
+      for (const d of dews) { const a = d.l < 2 ? d.l / 2 : 1; c.globalAlpha = a; glow(c, d.x, d.y, 10, '#80d8ff', .4); ball(c, d.x, d.y, 5 + Math.sin(t * 6) * .6, '#80d8ff', { gloss: .9 }); c.globalAlpha = 1; }
       for (const p of parts) { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); }
       // cards
-      c.fillStyle = '#3a2a18'; c.fillRect(0, 0, W, top - 2);
+      backdrop(c, 0, 0, W, top - 2, '#4a3620', '#2a1c0e');
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = '#80d8ff'; c.fillText(`◆${dew}`, 4, 15);
       const cw = Math.min(44, (W - 44) / 4 - 3);
       PLANTS.forEach((p, i) => { const x = 40 + i * (cw + 3), can = dew >= p.cost && cds[i] <= 0; c.fillStyle = sel === i ? '#f8e8b0' : can ? '#c8b088' : '#6a5a48'; c.fillRect(x, 3, cw, top - 8); c.fillStyle = p.col; c.beginPath(); c.arc(x + 7, 12, 4, 0, 7); c.fill(); c.fillStyle = '#2a1a08'; c.textAlign = 'left'; c.fillText(String(p.cost), x + 13, 11); c.fillText(p.n, x + 13, 19); if (cds[i] > 0) { c.fillStyle = '#0008'; c.fillRect(x, 3, cw, (top - 8) * cds[i] / p.cd); } });

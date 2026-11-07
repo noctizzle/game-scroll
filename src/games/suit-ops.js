@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { backdrop, box, ball, shadow, glow } from '../kit/gfx.js';
 
 // Fight up through an island jungle in a power suit and reach the chopper. Drag anywhere to walk;
 // the suit fires on its own at the nearest guard. Four suit modes share one energy bar: ARMOR soaks
@@ -89,22 +90,22 @@ function make(api) {
       bolts = bolts.filter(b => b.l > 0);
     },
     draw(c) {
-      c.fillStyle = '#2c4a24'; c.fillRect(0, 0, W, H);
+      backdrop(c, 0, 0, W, H, '#3a5c2e', '#22401c');
       c.save(); c.translate(0, -cam);
       c.fillStyle = '#365a2c'; for (let y = Math.floor(cam / 40) * 40; y < cam + H; y += 40) for (let x = (y / 40 % 2) * 20; x < W; x += 40) c.fillRect(x, y, 14, 3);
       // landing pad
-      c.fillStyle = '#707860'; c.fillRect(W / 2 - 30, 8, 60, 36); c.fillStyle = '#f8f8f0'; c.font = '8px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText('H', W / 2, 31);
+      box(c, W / 2 - 30, 8, 60, 36, '#707860', { r: 4 }); c.fillStyle = '#f8f8f0'; c.font = '8px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText('H', W / 2, 31);
       const rot = t * 18; c.strokeStyle = '#202820'; c.lineWidth = 2; c.beginPath(); c.moveTo(W / 2 + Math.cos(rot) * 26, 26 + Math.sin(rot) * 8); c.lineTo(W / 2 - Math.cos(rot) * 26, 26 - Math.sin(rot) * 8); c.stroke(); c.lineWidth = 1;
-      for (const f of foes) { if (f.y < cam - 20 || f.y > cam + H + 20) continue; c.fillStyle = f.flash ? '#f8f8f8' : f.kind === 'heavy' ? '#806048' : f.kind === 'nest' ? '#686860' : '#a07848'; if (f.kind === 'nest') { c.fillRect(f.x - 8, f.y - 6, 16, 12); c.fillStyle = '#404038'; c.fillRect(f.x - 2, f.y - 9, 4, 6); } else { c.beginPath(); c.arc(f.x, f.y, f.kind === 'heavy' ? 7 : 5, 0, 7); c.fill(); }
+      for (const f of foes) { if (f.y < cam - 20 || f.y > cam + H + 20) continue; const fc = f.flash ? '#f8f8f8' : f.kind === 'heavy' ? '#806048' : f.kind === 'nest' ? '#686860' : '#a07848'; shadow(c, f.x + 2, f.y + 6, 9, 3, .35); if (f.kind === 'nest') { box(c, f.x - 8, f.y - 6, 16, 12, fc, { r: 2 }); box(c, f.x - 2, f.y - 9, 4, 6, '#404038', { r: 1, drop: false }); } else ball(c, f.x, f.y, f.kind === 'heavy' ? 7 : 5, fc);
         if (f.alert > 0 && mode !== 1) { c.fillStyle = '#f84040'; c.fillText('!', f.x, f.y - 9); } if (f.hp < f.max) { c.fillStyle = '#300'; c.fillRect(f.x - 7, f.y + 8, 14, 2); c.fillStyle = '#f84040'; c.fillRect(f.x - 7, f.y + 8, 14 * f.hp / f.max, 2); } }
-      for (const s of shots) { c.fillStyle = s.pierce ? '#f87858' : '#f8f8a0'; c.fillRect(s.x - 1, s.y - 1, s.pierce ? 3 : 2, s.pierce ? 3 : 2); }
-      for (const b of bolts) { c.fillStyle = '#f84040'; c.beginPath(); c.arc(b.x, b.y, 2.5, 0, 7); c.fill(); }
+      for (const s of shots) { glow(c, s.x, s.y, s.pierce ? 6 : 4, s.pierce ? '#f87858' : '#f8f8a0', .7); c.fillStyle = s.pierce ? '#f87858' : '#f8f8a0'; c.fillRect(s.x - 1, s.y - 1, s.pierce ? 3 : 2, s.pierce ? 3 : 2); }
+      for (const b of bolts) { glow(c, b.x, b.y, 7, '#f84040', .6); ball(c, b.x, b.y, 2.5, '#f84040', { gloss: .5 }); }
       // you
       const m = MODES[mode]; c.globalAlpha = mode === 1 ? .35 + Math.sin(t * 8) * .1 : 1;
-      c.fillStyle = '#283038'; c.beginPath(); c.arc(p.x, p.y, 6, 0, 7); c.fill(); c.strokeStyle = m.col; c.lineWidth = 2; c.beginPath(); c.arc(p.x, p.y, 6, 0, 7); c.stroke(); c.lineWidth = 1;
+      shadow(c, p.x + 2, p.y + 6, 8, 3, .4); ball(c, p.x, p.y, 6, '#384858'); c.strokeStyle = m.col; c.lineWidth = 2; c.beginPath(); c.arc(p.x, p.y, 6, 0, 7); c.stroke(); c.lineWidth = 1;
       if (mode === 2 && stick) { c.fillStyle = '#f8d04860'; c.fillRect(p.x - Math.cos(stick.a) * 12 - 2, p.y - Math.sin(stick.a) * 12 - 2, 4, 4); }
       c.globalAlpha = 1;
-      for (const tr of trees) { if (tr.y < cam - 20 || tr.y > cam + H + 20) continue; c.fillStyle = '#1c3818'; c.beginPath(); c.arc(tr.x + 2, tr.y + 3, tr.r, 0, 7); c.fill(); c.fillStyle = '#3c7a30'; c.beginPath(); c.arc(tr.x, tr.y, tr.r, 0, 7); c.fill(); c.fillStyle = '#4c9040'; c.beginPath(); c.arc(tr.x - tr.r * .3, tr.y - tr.r * .3, tr.r * .5, 0, 7); c.fill(); }
+      for (const tr of trees) { if (tr.y < cam - 20 || tr.y > cam + H + 20) continue; shadow(c, tr.x + 4, tr.y + 5, tr.r * 1.2, tr.r * .8, .45); ball(c, tr.x, tr.y, tr.r, '#3c7a30', { gloss: .15 }); ball(c, tr.x - tr.r * .3, tr.y - tr.r * .3, tr.r * .5, '#4c9a40', { gloss: .2 }); }
       for (const q of parts) { if (q.txt) { c.font = '6px "Press Start 2P", monospace'; c.fillStyle = '#f8e048'; c.fillText(q.txt, q.x, q.y); } else { c.fillStyle = q.col; c.fillRect(q.x, q.y, 2, 2); } }
       c.restore();
       if (stick) { c.strokeStyle = '#ffffff50'; c.beginPath(); c.arc(stick.x, stick.y, 22, 0, 7); c.stroke(); c.fillStyle = '#ffffff50'; c.beginPath(); c.arc(stick.x + Math.cos(stick.a) * stick.m * 22, stick.y + Math.sin(stick.a) * stick.m * 22, 7, 0, 7); c.fill(); }
@@ -115,7 +116,7 @@ function make(api) {
       c.fillStyle = '#f8f8f0'; c.fillText(`EN`, W - 78, 9); c.fillStyle = '#202840'; c.fillRect(W - 63, 3, 32, 6); c.fillStyle = m.col; c.fillRect(W - 63, 3, 32 * clamp(energy, 0, 100) / 100, 6);
       c.textAlign = 'right'; c.fillStyle = '#f8c060'; c.fillText(String(score), W - 3, 9);
       const bw = W / 4; c.fillStyle = '#101810'; c.fillRect(0, H - barH, W, barH);
-      MODES.forEach((md, i) => { const x = i * bw; c.fillStyle = i === mode ? md.col : '#283028'; c.fillRect(x + 2, H - barH + 3, bw - 4, barH - 6); c.fillStyle = i === mode ? '#101810' : md.col; c.textAlign = 'center'; c.fillText(md.k, x + bw / 2, H - barH / 2 + 3); });
+      MODES.forEach((md, i) => { const x = i * bw; box(c, x + 2, H - barH + 3, bw - 4, barH - 6, i === mode ? md.col : '#283028', { r: 4, drop: false }); c.fillStyle = i === mode ? '#101810' : md.col; c.textAlign = 'center'; c.fillText(md.k, x + bw / 2, H - barH / 2 + 3); });
       if (msg) { c.textAlign = 'center'; c.fillStyle = '#000b'; c.fillRect(0, H * .4 - 9, W, 13); c.fillStyle = dead ? '#f86060' : '#f8e048'; c.fillText(msg.txt, W / 2, H * .4); }
       if (t < 6 && stage === 0 && !msg) { c.textAlign = 'center'; c.fillStyle = '#000a'; c.fillRect(0, H - barH - 24, W, 22); c.fillStyle = '#f8f8f0'; c.fillText('DRAG TO MOVE, SUIT FIRES ITSELF', W / 2, H - barH - 15); c.fillText('TAP A MODE BELOW', W / 2, H - barH - 6); }
     },

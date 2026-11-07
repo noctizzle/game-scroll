@@ -1,6 +1,7 @@
 import { clamp } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { box, backdrop } from '../kit/gfx.js';
 
 // Waves of stone cubes tumble down a floating floor toward the edge. Tap a tile to set a trap,
 // then tap it again when a cube is on it to sink the cube. Grey cubes must be caught: every few
@@ -48,10 +49,10 @@ function make(api) {
     },
     draw(c) {
       const T = tile(), X = ox(), Y = oy();
-      c.fillStyle = '#181828'; c.fillRect(0, 0, W, H);
+      backdrop(c, 0, 0, W, H, '#232342', '#0c0c18');
       for (let i = 0; i < 30; i++) { c.fillStyle = i % 3 ? '#303050' : '#5050a0'; c.fillRect((i * 61) % W, (i * 43 + t * 4) % H, 1, 1); }
       // floor
-      for (let r = 0; r < rows; r++) for (let cc = 0; cc < cols; cc++) { c.fillStyle = (r + cc) % 2 ? '#7880a8' : '#8890b8'; c.fillRect(X + cc * T, Y + r * T, T - 1, T - 1); }
+      for (let r = 0; r < rows; r++) for (let cc = 0; cc < cols; cc++) { box(c, X + cc * T + .5, Y + r * T + .5, T - 1, T - 1, (r + cc) % 2 ? '#7880a8' : '#8890b8', { r: 1.5, drop: false }); }
       c.fillStyle = '#4a5078'; c.fillRect(X, Y + rows * T, cols * T, 5);
       for (const f of fallRows) { c.globalAlpha = f.l; c.fillStyle = '#7880a8'; c.fillRect(X, Y + f.r * T + (1 - f.l) * 60, cols * T, T - 1); c.globalAlpha = 1; }
       if (big) { c.fillStyle = (t * 6 | 0) % 2 ? '#60e07080' : '#60e07040'; c.fillRect(X + (big.c - 1) * T, Y + (big.r - 1) * T, T * 3, T * 3); c.save(); c.beginPath(); c.rect(X, Y, cols * T, rows * T); c.clip(); c.strokeStyle = '#60e070'; c.lineWidth = 2; c.strokeRect(X + (big.c - 1) * T + 1, Y + (big.r - 1) * T + 1, T * 3 - 2, T * 3 - 2); c.restore(); }
@@ -62,9 +63,9 @@ function make(api) {
       for (const q of [...cubes].sort((a, b) => a.r - b.r)) {
         const sk = q.sink ? q.sink / .5 : 0, ty = q.sink ? 0 : tumble, x = X + q.c * T, y = Y + (q.r + ty) * T - Math.sin(ty * Math.PI) * T * .3, s = T - 1, inset = sk * s / 2;
         const col = q.k === 'black' ? ['#303040', '#505068', '#181820'] : q.k === 'green' ? ['#40b050', '#80e888', '#207028'] : ['#b0b0c0', '#d8d8e8', '#787888'];
+        c.fillStyle = 'rgba(0,0,0,.3)'; c.fillRect(x + inset + 2, y + inset + 2, s - inset * 2, s - inset * 2);
         c.fillStyle = col[2]; c.fillRect(x + inset, y + inset - 4 * (1 - sk), s - inset * 2, s - inset * 2 + 4 * (1 - sk));
-        c.fillStyle = col[0]; c.fillRect(x + inset, y + inset - 4 * (1 - sk), s - inset * 2, s - inset * 2);
-        c.fillStyle = col[1]; c.fillRect(x + inset, y + inset - 4 * (1 - sk), s - inset * 2, 2);
+        box(c, x + inset, y + inset - 4 * (1 - sk), s - inset * 2, s - inset * 2, col[0], { r: 1.5, drop: false });
         if (q.k === 'black' && !sk) { c.fillStyle = '#f84040'; c.fillRect(x + s / 2 - 1, y + s / 2 - 6, 2, 5); c.fillRect(x + s / 2 - 1, y + s / 2 + 1 - 2, 2, 2); }
       }
       c.restore();

@@ -1,6 +1,7 @@
 import { clamp } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { backdrop, glow } from '../kit/gfx.js';
 import { brick, BRICK_KEYS } from '../kit/bricks.js';
 
 // Build the model on the blueprint. A brick slides back and forth along the top: tap to drop it.
@@ -66,7 +67,7 @@ function make(api) {
     },
     draw(c) {
       const C = cell(), X = ox(), F = floorY();
-      c.fillStyle = '#20406c'; c.fillRect(0, 0, W, H);
+      backdrop(c, 0, 0, W, H, '#2a5288', '#142a4a'); glow(c, W / 2, H * .3, W * .7, '#80b8ff', .12);
       c.strokeStyle = '#30588c'; c.lineWidth = 1; for (let i = 0; i <= COLS; i++) { c.beginPath(); c.moveTo(X + i * C + .5, 14); c.lineTo(X + i * C + .5, F); c.stroke(); } for (let y = F; y > 14; y -= C) { c.beginPath(); c.moveTo(X, y + .5); c.lineTo(X + COLS * C, y + .5); c.stroke(); }
       for (let r = 0; r < ROWS; r++) for (let cc = 0; cc < COLS; cc++) if (need(cc, r)) { c.fillStyle = '#ffffff18'; c.fillRect(X + cc * C + 1, F - (r + 1) * C + 1, C - 2, C - 2); c.strokeStyle = '#a8d0ff'; c.setLineDash([2, 2]); c.strokeRect(X + cc * C + 1.5, F - (r + 1) * C + 1.5, C - 3, C - 3); c.setLineDash([]); }
       brick(c, X - 4, F, COLS * C + 8, 8, 'grey', C / 2);

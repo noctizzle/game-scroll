@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { backdrop, box, ball, shadow, glow } from '../kit/gfx.js';
 
 // A two-minute halfpipe session. The skater rolls back and forth on their own: tap as they cross
 // the flat bottom (in the green zone) to pump and fly higher. In the air, swipe to throw tricks:
@@ -45,11 +46,11 @@ function make(api) {
       }
     },
     draw(c) {
-      c.fillStyle = '#284060'; c.fillRect(0, 0, W, H);
-      c.fillStyle = '#304a70'; for (let i = 0; i < 8; i++) c.fillRect(i * W / 8 + 4, H * .1, W / 8 - 8, H * .25);
-      c.fillStyle = '#f8d06030'; for (let i = 0; i < 8; i++) c.fillRect(i * W / 8 + 6, H * .12, 4, 4);
+      backdrop(c, 0, 0, W, H, '#1a2a48', '#3a5a88');
+      for (let i = 0; i < 8; i++) box(c, i * W / 8 + 4, H * .1, W / 8 - 8, H * .25, '#304a70', { r: 2, drop: false });
+      for (let i = 0; i < 8; i++) glow(c, i * W / 8 + W / 16, H * .1, 16, '#f8d060', .35);
       // ramp
-      c.fillStyle = '#b8a888'; c.beginPath(); c.moveTo(0, H); c.lineTo(0, lip()); c.lineTo(10, lip());
+      { const g = c.createLinearGradient(0, lip(), 0, H); g.addColorStop(0, '#d8c8a8'); g.addColorStop(1, '#887858'); c.fillStyle = g; } c.beginPath(); c.moveTo(0, H); c.lineTo(0, lip()); c.lineTo(10, lip());
       const rw = rampW(); for (let i = 0; i <= 20; i++) { const d = i / 20 * rw; c.lineTo(10 + d, bottom() - (bottom() - lip()) * Math.pow(1 - d / rw, 2)); }
       for (let i = 0; i <= 20; i++) { const d = (1 - i / 20) * rw; c.lineTo(W - 10 - d, bottom() - (bottom() - lip()) * Math.pow(1 - d / rw, 2)); }
       c.lineTo(W, lip()); c.lineTo(W, H); c.fill();
@@ -62,14 +63,15 @@ function make(api) {
       let x, y, a = 0;
       if (phase === 'ride') { const p = ridePos(k); x = p.x; y = p.y; a = 0; }
       else { const dur = 2 * Math.sqrt(2 * h / G), up = G * dur / 2, z = up * air - G * air * air / 2; x = side > 0 ? W - 14 : 14; y = lip() - z; if (trick && trick.k === 'up') a = trick.t / trick.d * Math.PI * 2; }
+      shadow(c, x, bottom() + 1, 9 * clamp(1 - (bottom() - y) / 120, .3, 1), 2.5, .4);
       if (bail > 0) { c.fillStyle = '#e04848'; c.fillRect(W / 2 - 8, bottom() - 4, 16, 4); c.fillStyle = '#f8c890'; c.fillRect(W / 2 + 8, bottom() - 5, 4, 4); }
       else {
         c.save(); c.translate(x, y); c.rotate(a);
         const flip = trick && trick.k === 'down' ? trick.t / trick.d : 0, grab = trick && (trick.k === 'left' || trick.k === 'right');
         c.fillStyle = '#303030'; c.fillRect(-7, -2, 14, 2); c.fillStyle = '#f8f040'; c.fillRect(-7 + 14 * flip * 0, -2 - Math.abs(Math.sin(flip * Math.PI)) * 4, 14, 1);
         c.fillStyle = '#2050a0'; c.fillRect(-3, grab ? -7 : -9, 2, grab ? 5 : 7); c.fillRect(1, grab ? -7 : -9, 2, grab ? 5 : 7);
-        c.fillStyle = '#e04848'; c.fillRect(-4, grab ? -14 : -16, 8, 7);
-        c.fillStyle = '#f8c890'; c.fillRect(-3, grab ? -19 : -21, 6, 5); c.fillStyle = '#f8e040'; c.fillRect(-3, grab ? -20 : -22, 6, 2);
+        box(c, -4, grab ? -14 : -16, 8, 7, '#e04848', { r: 2, drop: false });
+        ball(c, 0, grab ? -17 : -19, 3.4, '#f8c890', { gloss: .4 }); c.fillStyle = '#f8e040'; c.beginPath(); c.arc(0, grab ? -18 : -20, 3.5, Math.PI, 0); c.fill();
         if (grab) { c.fillStyle = '#f8c890'; c.fillRect(trick.k === 'left' ? -7 : 5, -4, 2, 3); }
         c.restore();
       }

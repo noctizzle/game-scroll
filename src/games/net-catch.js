@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { backdrop, ball, shadow } from '../kit/gfx.js';
 
 // Cheeky imps have escaped into the park. Hold to walk toward your finger, tap to swing your net
 // toward the spot you tapped. Imps doze, wander and peek around; get too close or too loud and
@@ -53,15 +54,14 @@ function make(api) {
       if (!imps.length) { stage++; haptic('success'); sfx(880, .4, 'square', .05, 500); time += 3; build(); }
     },
     draw(c) {
-      c.fillStyle = '#58b848'; c.fillRect(0, 0, W, H);
-      c.fillStyle = '#68c858'; for (let i = 0; i < 40; i++) c.fillRect((i * 53) % W, (i * 37) % H, 2, 3);
-      c.fillStyle = '#c8b070'; c.beginPath(); c.ellipse(W / 2, H - 14, W * .35, 10, 0, 0, 7); c.fill();
-      for (const k of rocks) { if (k.bush) { c.fillStyle = '#287828'; c.beginPath(); c.arc(k.x, k.y, k.r, 0, 7); c.fill(); c.fillStyle = '#389838'; c.beginPath(); c.arc(k.x - k.r * .3, k.y - k.r * .3, k.r * .55, 0, 7); c.fill(); } else { c.fillStyle = '#808890'; c.beginPath(); c.arc(k.x, k.y, k.r, 0, 7); c.fill(); c.fillStyle = '#a8b0b8'; c.fillRect(k.x - k.r * .5, k.y - k.r * .5, k.r * .5, 2); } }
+      backdrop(c, 0, 0, W, H, '#6cc85a', '#3c9038');
+      for (let i = 0; i < 60; i++) { const gx = (i * 53) % W, gy = (i * 37) % H; c.fillStyle = i % 3 ? '#7ad86640' : '#2a702a40'; c.beginPath(); c.ellipse(gx, gy, 3, 1.5, 0, 0, 7); c.fill(); }
+      { const g = c.createRadialGradient(W / 2, H - 16, 2, W / 2, H - 14, W * .35); g.addColorStop(0, '#e0c888'); g.addColorStop(1, '#b09858'); c.fillStyle = g; } c.beginPath(); c.ellipse(W / 2, H - 14, W * .35, 10, 0, 0, 7); c.fill();
+      for (const k of rocks) { shadow(c, k.x + 2, k.y + k.r * .8, k.r * 1.1, k.r * .4, .35); if (k.bush) { ball(c, k.x, k.y, k.r, '#2e8a2e', { gloss: .15 }); ball(c, k.x - k.r * .35, k.y - k.r * .3, k.r * .55, '#40a840', { gloss: .2 }); ball(c, k.x + k.r * .4, k.y - k.r * .1, k.r * .45, '#389838', { gloss: .15 }); } else ball(c, k.x, k.y, k.r, '#8890a0', { gloss: .4 }); }
       for (const m of imps) {
         const x = Math.round(m.x), y = Math.round(m.y), s = m.gone ? 1 - m.gone * 2 : 1;
         if (m.st !== 'doze' && !m.gone) { c.fillStyle = '#ffffff20'; c.beginPath(); c.moveTo(x, y); c.arc(x, y, 22 + 24, m.look - .9, m.look + .9); c.fill(); }
-        c.fillStyle = m.fast ? '#e05050' : '#a860d8'; c.beginPath(); c.arc(x, y, 5 * s, 0, 7); c.fill();
-        c.fillRect(x - 5 * s, y - 6 * s, 2, 3); c.fillRect(x + 3 * s, y - 6 * s, 2, 3);
+        shadow(c, x, y + 5 * s, 6 * s, 2 * s, .35); c.fillStyle = m.fast ? '#b03030' : '#7840a8'; c.fillRect(x - 5 * s, y - 6 * s, 2, 3); c.fillRect(x + 3 * s, y - 6 * s, 2, 3); ball(c, x, y, Math.max(.5, 5 * s), m.fast ? '#e05050' : '#a860d8', { gloss: .5 });
         c.fillStyle = '#f8f8f0'; if (m.st === 'doze') { c.fillRect(x - 3, y - 1, 2, 1); c.fillRect(x + 1, y - 1, 2, 1); c.fillStyle = '#ffffff'; c.font = '6px "Press Start 2P", monospace'; c.fillText('z', x + 5, y - 6 - (t * 4 % 4)); }
         else { const ex = Math.cos(m.look), ey = Math.sin(m.look); c.fillRect(x - 3 + ex, y - 2 + ey, 2, 2); c.fillRect(x + 1 + ex, y - 2 + ey, 2, 2); }
         if (m.st === 'tired') { c.fillStyle = '#80c8ff'; c.fillRect(x + 5, y - 7 + (t * 8 | 0) % 3, 1, 2); }
@@ -69,7 +69,7 @@ function make(api) {
       }
       // keeper and net
       const x = Math.round(pl.x), y = Math.round(pl.y);
-      c.fillStyle = '#20384c'; c.beginPath(); c.arc(x, y, 6, 0, 7); c.fill(); c.fillStyle = '#f8c890'; c.beginPath(); c.arc(x, y - 1, 4, 0, 7); c.fill(); c.fillStyle = '#e8a020'; c.fillRect(x - 4, y - 5, 8, 2);
+      shadow(c, x, y + 6, 7, 2.5, .4); ball(c, x, y, 6, '#28485c', { gloss: .3 }); ball(c, x, y - 1, 4, '#f8c890', { gloss: .4 }); c.fillStyle = '#e8a020'; c.fillRect(x - 4, y - 5, 8, 2);
       const na = swing > 0 ? pl.a - ARC + (1 - swing / .22) * ARC * 2 : pl.a + .7, nx = x + Math.cos(na) * (swing > 0 ? NET - 4 : 9), ny = y + Math.sin(na) * (swing > 0 ? NET - 4 : 9);
       c.strokeStyle = '#a07040'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(x, y); c.lineTo(nx, ny); c.stroke();
       c.strokeStyle = '#f8f8f0'; c.lineWidth = 1; c.beginPath(); c.arc(nx + Math.cos(na) * 4, ny + Math.sin(na) * 4, 4, 0, 7); c.stroke();

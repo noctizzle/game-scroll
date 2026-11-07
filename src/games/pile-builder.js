@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { backdrop, glow } from '../kit/gfx.js';
 import { brick, stud, BRICK_KEYS } from '../kit/bricks.js';
 
 // A little builder walks right toward the flag, stopping at anything in the way. Press and hold a
@@ -63,7 +64,7 @@ function make(api) {
       let x0 = 0, lift = 0;
       const seg = (a, b, lf) => { for (let x = a; x < b; x += 16) brick(c, x, g() - lf, Math.min(16, b - x), H - g() + lf, 'green', 8); };
       for (const o of obs) {
-        if (o.k === 'gap') { seg(x0, o.x - 12, lift); x0 = o.x + 12; c.fillStyle = '#183048'; c.fillRect(o.x - 12, g() - lift + 4, 24, H); if (o.built) brick(c, o.x - 13, g() - lift, 26, 4, o.cols[0], 4); }
+        if (o.k === 'gap') { seg(x0, o.x - 12, lift); x0 = o.x + 12; backdrop(c, o.x - 12, g() - lift + 4, 24, H, '#183048', '#04080c'); if (o.built) brick(c, o.x - 13, g() - lift, 26, 4, o.cols[0], 4); }
         else if (o.k === 'step') { seg(x0, o.x, lift); x0 = o.x; lift = o.top; if (o.built) { for (let i = 0; i < 3; i++) brick(c, o.x - 9 + i * 3, g() - o.base - (i + 1) * 5 + 1, 9 - i * 3, (i + 1) * 5, o.cols[i], 3); } }
       }
       seg(x0, W, lift);

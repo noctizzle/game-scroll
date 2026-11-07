@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { backdrop, box, ball, shadow, glow } from '../kit/gfx.js';
 
 // Turn-based artillery between two squads of battle spuds on hills you can blow apart. On your
 // turn, hold the arrows to shuffle along, tap the weapon to switch, then drag back from your spud
@@ -112,22 +113,23 @@ function make(api) {
     },
     draw(c) {
       const sky = c.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#f8a868'); sky.addColorStop(1, '#f8e0a8'); c.fillStyle = sky; c.fillRect(0, 0, W, H);
-      c.fillStyle = '#e8906880'; c.beginPath(); c.arc(W * .75, H * .3, 18, 0, 7); c.fill();
-      for (let x = 0; x < W; x++) { const y = hgt[x]; if (y >= sea()) continue; c.fillStyle = '#7a5838'; c.fillRect(x, y, 1, H - y); c.fillStyle = '#58b048'; c.fillRect(x, y, 1, 3); if ((x * 7 + (y | 0)) % 11 === 0) { c.fillStyle = '#5a4028'; c.fillRect(x, y + 8 + (x % 5) * 3, 1, 2); } }
-      c.fillStyle = '#3878c8'; c.fillRect(0, sea(), W, H - sea()); c.fillStyle = '#78b0f0'; for (let x = 0; x < W; x += 8) c.fillRect(x + (t * 10 % 8), sea(), 4, 1);
+      glow(c, W * .75, H * .3, 40, '#f8c070', .6); ball(c, W * .75, H * .3, 16, '#f89860', { gloss: 0 });
+      const dirt = c.createLinearGradient(0, H * .3, 0, H); dirt.addColorStop(0, '#8a6844'); dirt.addColorStop(1, '#3a2818');
+      for (let x = 0; x < W; x++) { const y = hgt[x]; if (y >= sea()) continue; c.fillStyle = dirt; c.fillRect(x, y, 1, H - y); c.fillStyle = '#58b048'; c.fillRect(x, y, 1, 3); c.fillStyle = '#90e070'; c.fillRect(x, y, 1, 1); if ((x * 7 + (y | 0)) % 11 === 0) { c.fillStyle = '#5a4028'; c.fillRect(x, y + 8 + (x % 5) * 3, 1, 2); } }
+      backdrop(c, 0, sea(), W, H - sea(), '#4888d8', '#183868'); c.fillStyle = '#78b0f0'; for (let x = 0; x < W; x += 8) c.fillRect(x + (t * 10 % 8), sea(), 4, 1);
       // units
       const cur = (phase === 'aim' || phase === 'ai') ? active() : null;
       for (const u of units) {
         if (u.dead) continue; const x = Math.round(u.x), y = Math.round(u.y);
-        c.fillStyle = '#c89858'; c.beginPath(); c.ellipse(x, y - 5, 5, 6, 0, 0, 7); c.fill(); c.fillStyle = '#a07838'; c.fillRect(x - 2, y - 3, 1, 1); c.fillRect(x + 2, y - 7, 1, 1);
-        c.fillStyle = u.team ? '#e05848' : '#4880e0'; c.fillRect(x - 5, y - 12, 10, 3); c.fillRect(x - 3, y - 14, 6, 2);
+        shadow(c, x, y, 6, 2, .35); { const g = c.createRadialGradient(x - 2, y - 8, 1, x, y - 5, 7); g.addColorStop(0, '#f0c888'); g.addColorStop(1, '#8a6030'); c.fillStyle = g; } c.beginPath(); c.ellipse(x, y - 5, 5, 6, 0, 0, 7); c.fill(); c.fillStyle = '#a07838'; c.fillRect(x - 2, y - 3, 1, 1); c.fillRect(x + 2, y - 7, 1, 1);
+        box(c, x - 5, y - 12, 10, 3, u.team ? '#e05848' : '#4880e0', { r: 1, drop: false }); box(c, x - 3, y - 14.5, 6, 3, u.team ? '#e05848' : '#4880e0', { r: 1.5, drop: false });
         c.fillStyle = '#202020'; c.fillRect(x + u.face * 2 - 1, y - 8, 1, 2); c.fillRect(x + u.face * 2 + 1 * u.face, y - 8, 1, 2);
         c.fillStyle = '#000a'; c.fillRect(x - 8, y - 20, 16, 4); c.fillStyle = u.team ? '#f86060' : '#80c0ff'; c.fillRect(x - 7, y - 19, 14 * Math.max(0, u.hp) / 100, 2);
         if (u === cur && (t * 3 | 0) % 2) { c.fillStyle = '#f8f8f0'; c.beginPath(); c.moveTo(x, y - 22); c.lineTo(x - 3, y - 27); c.lineTo(x + 3, y - 27); c.fill(); }
       }
       // aim line
       if (aim && cur) { const steps = 14; c.fillStyle = '#ffffffb0'; let x = cur.x, y = cur.y - 6, vx = Math.cos(aim.ang) * aim.pow * POWER, vy = Math.sin(aim.ang) * aim.pow * POWER; for (let i = 0; i < steps; i++) { for (let k = 0; k < 4; k++) { vx += wind * 40 * WEAPONS[weapon].wind / 60; vy += G / 60; x += vx / 60; y += vy / 60; } c.fillRect(x - 1, y - 1, 2, 2); } }
-      if (shot) for (const s of shot) { c.fillStyle = s.w.bounce ? '#385828' : '#383840'; c.beginPath(); c.arc(s.x, s.y, s.w.n === 'BIT' ? 1.5 : 2.5, 0, 7); c.fill(); if (!s.w.bounce) { c.fillStyle = '#f8a02080'; c.fillRect(s.x - s.vx * .02 - 1, s.y - s.vy * .02 - 1, 2, 2); } else if (s.w.fuse) { c.fillStyle = '#f8f8f0'; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(String(Math.ceil(s.w.fuse - s.t)), s.x, s.y - 5); } }
+      if (shot) for (const s of shot) { ball(c, s.x, s.y, s.w.n === 'BIT' ? 1.5 : 2.5, s.w.bounce ? '#487838' : '#505060', { gloss: .6 }); if (!s.w.bounce) { c.fillStyle = '#f8a02080'; c.fillRect(s.x - s.vx * .02 - 1, s.y - s.vy * .02 - 1, 2, 2); } else if (s.w.fuse) { c.fillStyle = '#f8f8f0'; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(String(Math.ceil(s.w.fuse - s.t)), s.x, s.y - 5); } }
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
       for (const p of parts) { if (p.txt) { c.fillStyle = '#000'; c.fillText(p.txt, p.x + 1, p.y + 1); c.fillStyle = p.col; c.fillText(p.txt, p.x, p.y); } else { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); } }
       // HUD: wind, timer, weapon, walk buttons
@@ -137,7 +139,7 @@ function make(api) {
       c.textAlign = 'right'; c.fillStyle = '#f8e040'; c.fillText(`R${round}`, W - 4, 9);
       if (phase === 'aim') {
         const bh = 18, by = H - bh - 2; c.globalAlpha = .85;
-        c.fillStyle = '#283040'; c.fillRect(2, by, 22, bh); c.fillRect(26, by, 22, bh); c.fillRect(W - 58, by, 56, bh); c.globalAlpha = 1;
+        box(c, 2, by, 22, bh, '#384860', { r: 4 }); box(c, 26, by, 22, bh, '#384860', { r: 4 }); box(c, W - 58, by, 56, bh, '#384860', { r: 4 }); c.globalAlpha = 1;
         c.fillStyle = '#f8f8f0'; c.textAlign = 'center'; c.fillText('◀', 13, by + 12); c.fillText('▶', 37, by + 12); c.fillText(WEAPONS[weapon].n, W - 30, by + 12);
       }
       if (msg) { c.textAlign = 'center'; c.fillStyle = '#000a'; c.fillRect(0, H * .3 - 9, W, 13); c.fillStyle = dead ? '#f86060' : '#f8e040'; c.fillText(msg.txt, W / 2, H * .3); }

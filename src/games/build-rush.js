@@ -1,6 +1,7 @@
 import { rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { backdrop } from '../kit/gfx.js';
 import { brick, BRICK_KEYS } from '../kit/bricks.js';
 
 // Speed-build from the instruction booklet. The booklet shows the model and flashes the next
@@ -43,9 +44,9 @@ function make(api) {
     },
     draw(c) {
       const C = cell(), bookW = 10 * C + 16, bx = (W - bookW) / 2, by = 18, bookH = 8 * C;
-      c.fillStyle = '#f0e8d8'; c.fillRect(0, 0, W, H);
+      backdrop(c, 0, 0, W, H, '#f6efe2', '#ddd2bd');
       // booklet page
-      c.fillStyle = '#ffffff'; c.fillRect(bx, by, bookW, bookH + 14); c.strokeStyle = '#c0b8a8'; c.strokeRect(bx + .5, by + .5, bookW - 1, bookH + 13);
+      c.fillStyle = '#0000002a'; c.fillRect(bx + 2, by + 3, bookW, bookH + 14); backdrop(c, bx, by, bookW, bookH + 14, '#ffffff', '#f2eee6'); c.strokeStyle = '#c0b8a8'; c.strokeRect(bx + .5, by + .5, bookW - 1, bookH + 13);
       c.fillStyle = '#2c64c8'; c.beginPath(); c.arc(bx + 10, by + 10, 7, 0, 7); c.fill(); c.fillStyle = '#ffffff'; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(String(step + 1), bx + 10, by + 13);
       const mx = bx + 8 + C, base = by + bookH + 8;
       model.forEach((b, i) => {
@@ -57,9 +58,9 @@ function make(api) {
       // callout box for the next brick
       const need = model[step], cx = bx + bookW - 8 - 4 * C - 6; c.fillStyle = '#f8f0c0'; c.fillRect(cx, by + 4, 4 * C + 8, C + 12); c.strokeStyle = '#c0a840'; c.strokeRect(cx + .5, by + 4.5, 4 * C + 7, C + 11); brick(c, cx + 4, by + 10, need.w * C, C, need.col, C); c.fillStyle = '#202020'; c.textAlign = 'left'; c.fillText(`1x${need.w}`, cx + 4 + need.w * C + 2, by + 10 + C);
       // tray
-      const sl = slots(), trayTop = sl.reduce((m, s) => Math.min(m, s.y), H) - 6; c.fillStyle = '#5a6070'; c.fillRect(0, trayTop, W, H - trayTop); c.fillStyle = '#484e5c'; c.fillRect(0, trayTop, W, 3);
+      const sl = slots(), trayTop = sl.reduce((m, s) => Math.min(m, s.y), H) - 6; backdrop(c, 0, trayTop, W, H - trayTop, '#6a7182', '#3c414e'); c.fillStyle = '#ffffff30'; c.fillRect(0, trayTop, W, 1);
       const sx = shake > 0 ? Math.sin(shake * 80) * 2 : 0;
-      for (const s of sl) { c.fillStyle = '#404654'; c.fillRect(s.x + 2 + sx, s.y + 2, s.w2 - 4, s.h2 - 4); const bw = s.w * C; brick(c, s.x + (s.w2 - bw) / 2 + sx, s.y + (s.h2 - C) / 2 + 2, bw, C, s.col, C); }
+      for (const s of sl) { backdrop(c, s.x + 2 + sx, s.y + 2, s.w2 - 4, s.h2 - 4, '#2e333e', '#474d5c'); const bw = s.w * C; brick(c, s.x + (s.w2 - bw) / 2 + sx, s.y + (s.h2 - C) / 2 + 2, bw, C, s.col, C); }
       if (flyer) { const k = flyer.k, x = flyer.x0 + (flyer.x1 - flyer.x0) * k, y = flyer.y0 + (flyer.y1 - flyer.y0) * k - Math.sin(k * Math.PI) * 30; brick(c, x, y, flyer.w * C, C, flyer.col, C); }
       for (const p of parts) { if (p.txt) { c.fillStyle = p.col; c.textAlign = 'center'; c.fillText(p.txt, p.x, p.y); } else { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); } }
       c.fillStyle = '#383c48'; c.fillRect(0, 0, W, 13); c.textAlign = 'left'; c.fillStyle = time < 6 && (t * 4 | 0) % 2 ? '#f86060' : '#f8f8f0'; c.fillText(`${Math.ceil(time)}s`, 4, 10);

@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { backdrop, glow } from '../kit/gfx.js';
 import { brick, stud, BRICK_KEYS } from '../kit/bricks.js';
 
 // Smash the brick-built town square into studs. Hold to walk toward your finger, tap to whack the
@@ -72,9 +73,9 @@ function make(api) {
       if (!cleared && !things.length && !studs.length && !bots.length) { for (let i = 0; i < 6; i++) { const K = KINDS[Math.random() * 5 | 0], p = free(K.w, K.h); if (p) things.push({ ...K, ...p, hit: 0, col: K.col, wob: 0 }); } msg = { txt: 'MORE TO SMASH!', l: 1 }; }
     },
     draw(c) {
-      c.fillStyle = '#a8b0a0'; c.fillRect(0, 0, W, H);
-      c.fillStyle = '#b8c0b0'; for (let x = 0; x < W; x += 16) for (let y = top; y < H; y += 16) if (((x + y) / 16) % 2) c.fillRect(x, y, 16, 16);
-      c.fillStyle = '#98a090'; for (let x = 4; x < W; x += 8) for (let y = top + 4; y < H; y += 8) c.fillRect(x, y, 2, 2);
+      backdrop(c, 0, 0, W, H, '#c0c8b8', '#88907e');
+      c.fillStyle = '#ffffff18'; for (let x = 0; x < W; x += 16) for (let y = top; y < H; y += 16) if (((x + y) / 16) % 2) c.fillRect(x, y, 16, 16);
+      c.fillStyle = '#00000018'; for (let x = 4; x < W; x += 8) for (let y = top + 4; y < H; y += 8) c.fillRect(x, y, 2, 2);
       for (const o of [...things].sort((a, b) => a.y + a.h - b.y - b.h)) {
         const wx = o.wob > 0 ? Math.sin(o.wob * 60) * 1.5 : 0, x = Math.round(o.x + wx), y = Math.round(o.y);
         c.fillStyle = '#00000025'; c.fillRect(x + 2, y + o.h - 2, o.w, 4);

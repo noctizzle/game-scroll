@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { ball, glow, backdrop } from '../kit/gfx.js';
 import { brick, stud, BRICK_KEYS } from '../kit/bricks.js';
 
 // A giant brick robot stomps along the ceiling, dropping bricks on you. Drag to dodge (watch the
@@ -46,7 +47,7 @@ function make(api) {
       if (b.hp <= 0) { beaten++; score += 25; api.score(score); haptic('success'); sfx(880, .6, 'square', .05, 600); burst(b.x, bossY(), '#f0c020', 30); hp = Math.min(3, hp + 1); newBoss(); }
     },
     draw(c) {
-      c.fillStyle = '#281c38'; c.fillRect(0, 0, W, H);
+      backdrop(c, 0, 0, W, H, '#3a2a52', '#140e20');
       for (let i = 0; i < W; i += 16) brick(c, i, 0, 16, 12, 'black', 0);
       c.fillStyle = '#585c64'; c.fillRect(0, 12, W, 2);
       // boss
@@ -54,8 +55,8 @@ function make(api) {
       c.fillStyle = '#383840'; c.fillRect(bx - 2, 12, 4, by - 12);
       if (!(b.hit > 0 && (t * 20 | 0) % 2)) {
         brick(c, bx - 24, by, 48, 14, b.col, 8); brick(c, bx - 18, by + 14, 36, 8, 'grey', 6);
-        c.fillStyle = b.core ? ((t * 10 | 0) % 2 ? '#f8e040' : '#f8a020') : '#404048'; c.beginPath(); c.arc(bx, by + 7, 5, 0, 7); c.fill();
-        c.fillStyle = '#f84040'; c.fillRect(bx - 16, by + 4, 4, 3); c.fillRect(bx + 12, by + 4, 4, 3);
+        if (b.core) glow(c, bx, by + 7, 14 + Math.sin(t * 12) * 3, '#f8c040', .6); ball(c, bx, by + 7, 5, b.core ? ((t * 10 | 0) % 2 ? '#f8e040' : '#f8a020') : '#404048');
+        glow(c, bx - 14, by + 5.5, 6, '#ff4040', .5); glow(c, bx + 14, by + 5.5, 6, '#ff4040', .5); c.fillStyle = '#ff5050'; c.fillRect(bx - 16, by + 4, 4, 3); c.fillRect(bx + 12, by + 4, 4, 3);
         c.fillStyle = '#585c64'; c.fillRect(bx - 22, by + 22, 6, 6); c.fillRect(bx + 16, by + 22, 6, 6);
       }
       for (let i = 0; i < b.max; i++) { c.fillStyle = i < b.hp ? '#f84040' : '#403848'; c.fillRect(W / 2 - b.max * 5 + i * 10, 3, 8, 5); }
@@ -65,7 +66,7 @@ function make(api) {
       for (let i = 0; i < W; i += 16) brick(c, i, fy(), 16, H - fy(), 'grey', 8);
       for (const p of piles) { for (let i = 0; i < p.n; i++) brick(c, p.x - 7 + (i % 2) * 3, fy() - 4 - i * 4, 10, 4, p.col, 4); if (p.prog > 0) { c.fillStyle = '#00000080'; c.fillRect(p.x - 10, fy() - 26, 20, 3); c.fillStyle = '#f0c020'; c.fillRect(p.x - 10, fy() - 26, 20 * p.prog, 3); } }
       for (const l of launchers) { brick(c, l.x - 7, fy() - 6, 14, 6, 'orange', 4); c.fillStyle = '#585c64'; c.fillRect(l.x - 2, fy() - 16, 4, 10); c.fillStyle = '#f0c020'; c.fillRect(l.x - 3, fy() - 18, 6, 3); }
-      for (const s of shots) { c.fillStyle = '#f8e040'; c.fillRect(s.x - 2, s.y - 4, 4, 8); c.fillStyle = '#fff8c0'; c.fillRect(s.x - 1, s.y - 4, 2, 3); }
+      for (const s of shots) { glow(c, s.x, s.y, 8, '#f8e040', .45); c.fillStyle = '#f8e040'; c.fillRect(s.x - 2, s.y - 4, 4, 8); c.fillStyle = '#fff8c0'; c.fillRect(s.x - 1, s.y - 4, 2, 3); }
       // hero
       if (!(inv > 0 && (t * 14 | 0) % 2)) { const x = Math.round(px), y = fy(); c.fillStyle = '#2c64c8'; c.fillRect(x - 3, y - 5, 2, 5); c.fillRect(x + 1, y - 5, 2, 5); c.fillStyle = '#f0c020'; c.fillRect(x - 4, y - 11, 8, 6); c.fillRect(x - 3, y - 17, 6, 6); c.fillStyle = '#202020'; c.fillRect(x - 1, y - 15, 1, 2); c.fillRect(x + 1, y - 15, 1, 2); c.fillStyle = '#f07818'; c.fillRect(x - 4, y - 19, 8, 3); }
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';

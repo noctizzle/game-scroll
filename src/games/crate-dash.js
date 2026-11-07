@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { box, ball, glow, shadow } from '../kit/gfx.js';
 
 // Run into the screen down a jungle path. Swipe left or right to change lanes, swipe up to jump,
 // tap to spin. Spin through wooden crates and critters to smash them for gems, jump the logs and
@@ -65,7 +66,7 @@ function make(api) {
       const hz = hor();
       const sky = c.createLinearGradient(0, 0, 0, hz); sky.addColorStop(0, '#2888d8'); sky.addColorStop(1, '#a8e0f8'); c.fillStyle = sky; c.fillRect(0, 0, W, hz);
       c.fillStyle = '#287838'; for (let i = 0; i < 9; i++) { const x = (i * 37 + 10) % W; c.beginPath(); c.arc(x, hz, 14 + (i % 3) * 6, Math.PI, 0); c.fill(); }
-      c.fillStyle = '#3c9c3c'; c.fillRect(0, hz, W, H - hz);
+      { const gg = c.createLinearGradient(0, hz, 0, H); gg.addColorStop(0, '#2f8a34'); gg.addColorStop(1, '#4cb048'); c.fillStyle = gg; c.fillRect(0, hz, W, H - hz); }
       // path with scrolling stripes
       const a = proj(-1.6, FAR), b = proj(1.6, FAR), cc = proj(-1.6, 0), d = proj(1.6, 0);
       c.fillStyle = '#c8a060'; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.lineTo(d.x + 30, H); c.lineTo(cc.x - 30, H); c.fill();
@@ -76,11 +77,11 @@ function make(api) {
         if (o.z > FAR) continue;
         if (o.k === 'pit') { const n = proj(o.lane - .5, Math.max(0, o.z)), m = proj(o.lane + .5, Math.max(0, o.z)), f1 = proj(o.lane - .5, Math.max(0, o.z + o.len)), f2 = proj(o.lane + .5, Math.max(0, o.z + o.len)); if (o.z + o.len < 0) continue; c.fillStyle = '#181008'; c.beginPath(); c.moveTo(n.x, n.y); c.lineTo(m.x, m.y); c.lineTo(f2.x, f2.y); c.lineTo(f1.x, f1.y); c.fill(); continue; }
         const p = proj(o.lane, Math.max(o.z, -.4), o.y || 0), s = p.s * 18;
-        if (o.k === 'gem') { c.fillStyle = '#f84890'; c.beginPath(); c.moveTo(p.x, p.y - s * .9); c.lineTo(p.x + s * .3, p.y - s * .55); c.lineTo(p.x, p.y - s * .2); c.lineTo(p.x - s * .3, p.y - s * .55); c.fill(); c.fillStyle = '#ffc0e0'; c.fillRect(p.x - s * .1, p.y - s * .75, s * .12, s * .12); }
+        if (o.k === 'gem') { glow(c, p.x, p.y - s * .55, s * .8, '#f84890', .45); c.fillStyle = '#f84890'; c.beginPath(); c.moveTo(p.x, p.y - s * .9); c.lineTo(p.x + s * .3, p.y - s * .55); c.lineTo(p.x, p.y - s * .2); c.lineTo(p.x - s * .3, p.y - s * .55); c.fill(); c.fillStyle = '#ffc0e0'; c.fillRect(p.x - s * .1, p.y - s * .75, s * .12, s * .12); }
         else if (o.k === 'log') { const l = proj(-1.5, Math.max(o.z, 0)), r = proj(1.5, Math.max(o.z, 0)); c.fillStyle = '#804820'; c.fillRect(l.x, l.y - s * .4, r.x - l.x, s * .4); c.fillStyle = '#a06830'; c.fillRect(l.x, l.y - s * .4, r.x - l.x, s * .1); }
-        else if (o.k === 'critter') { const hop = Math.abs(Math.sin(t * 6 + o.ph)) * s * .2; c.fillStyle = '#48a048'; c.beginPath(); c.arc(p.x, p.y - s * .3 - hop, s * .3, 0, 7); c.fill(); c.fillStyle = '#f8f8f0'; c.fillRect(p.x - s * .18, p.y - s * .45 - hop, s * .12, s * .12); c.fillRect(p.x + s * .06, p.y - s * .45 - hop, s * .12, s * .12); }
+        else if (o.k === 'critter') { const hop = Math.abs(Math.sin(t * 6 + o.ph)) * s * .2; shadow(c, p.x, p.y, s * .3, s * .1); ball(c, p.x, p.y - s * .3 - hop, s * .3, '#48a048'); c.fillStyle = '#f8f8f0'; c.fillRect(p.x - s * .18, p.y - s * .45 - hop, s * .12, s * .12); c.fillRect(p.x + s * .06, p.y - s * .45 - hop, s * .12, s * .12); }
         else { const col = o.k === 'boom' ? ['#d83020', '#f86048', '#801810'] : o.k === 'bouncy' ? ['#3878d8', '#78a8f8', '#183878'] : ['#c88840', '#e8b060', '#805020'];
-          c.fillStyle = col[0]; c.fillRect(p.x - s * .4, p.y - s * .8, s * .8, s * .8); c.fillStyle = col[1]; c.fillRect(p.x - s * .4, p.y - s * .8, s * .8, s * .1); c.fillStyle = col[2]; c.fillRect(p.x - s * .4, p.y - s * .45, s * .8, s * .08); c.fillRect(p.x - s * .04, p.y - s * .8, s * .08, s * .8);
+          shadow(c, p.x, p.y, s * .55, s * .16); box(c, p.x - s * .4, p.y - s * .8, s * .8, s * .8, col[0], { r: s * .06, drop: false }); c.fillStyle = col[2]; c.fillRect(p.x - s * .4, p.y - s * .45, s * .8, s * .08); c.fillRect(p.x - s * .04, p.y - s * .8, s * .08, s * .8);
           if (o.k === 'boom') { c.fillStyle = '#f8f040'; c.font = `${Math.max(4, s * .35 | 0)}px "Press Start 2P", monospace`; c.textAlign = 'center'; c.fillText('!', p.x, p.y - s * .25); }
           if (o.k === 'bouncy') { c.fillStyle = '#f8f8f0'; c.fillRect(p.x - s * .2, p.y - s * .7, s * .4, s * .08); } }
       }

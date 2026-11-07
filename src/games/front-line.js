@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { box, ball, glow, shadow } from '../kit/gfx.js';
 
 // 1944, a grey dawn beach. A machine-gun nest at the top sweeps its fire across the sand; you can
 // see where it's pointing. Tap a cover spot near you to sprint to it, and don't get caught in the
@@ -68,14 +69,14 @@ function make(api) {
       // sea at the bottom, sand, the bluff and the bunker on top
       const sand = c.createLinearGradient(0, 0, 0, H); sand.addColorStop(0, '#6a6450'); sand.addColorStop(.25, '#a89a78'); sand.addColorStop(1, '#c8b890'); c.fillStyle = sand; c.fillRect(0, 0, W, H);
       c.fillStyle = '#58687a'; c.fillRect(0, H - 10, W, 10); c.fillStyle = '#8898a8'; for (let x = (t * 10) % 16 - 16; x < W; x += 16) c.fillRect(x, H - 10, 8, 1);
-      c.fillStyle = '#4a4636'; c.fillRect(0, 0, W, 46); c.fillStyle = '#7a7868'; c.fillRect(W / 2 - 30, 14, 60, 28); c.fillStyle = '#5a5848'; c.fillRect(W / 2 - 30, 14, 60, 4);
+      c.fillStyle = '#4a4636'; c.fillRect(0, 0, W, 46); box(c, W / 2 - 30, 14, 60, 28, '#7a7868', { r: 4 });
       c.fillStyle = guns.length ? '#101010' : '#402010'; c.fillRect(W / 2 - 14, 26, 28, 7);
-      for (const g of guns) { if (g.x !== W / 2) { c.fillStyle = '#6a6858'; c.fillRect(g.x - 12, 22, 24, 16); c.fillStyle = '#101010'; c.fillRect(g.x - 7, 28, 14, 5); } }
+      for (const g of guns) { if (g.x !== W / 2) { box(c, g.x - 12, 22, 24, 16, '#6a6858', { r: 3 }); c.fillStyle = '#101010'; c.fillRect(g.x - 7, 28, 14, 5); } }
       // sweeping fire
       for (const g of guns) {
         const L = H * 1.3, a0 = g.a - half(), a1 = g.a + half();
         c.fillStyle = g.pause > 0 ? 'rgba(248,200,80,.12)' : 'rgba(248,80,40,.2)'; c.beginPath(); c.moveTo(g.x, bunkerY); c.lineTo(g.x + Math.sin(a0) * L, bunkerY + Math.cos(a0) * L); c.lineTo(g.x + Math.sin(a1) * L, bunkerY + Math.cos(a1) * L); c.fill();
-        if (g.pause <= 0) { c.fillStyle = '#f8e080'; for (let i = 0; i < 6; i++) { const d = ((t * 400 + i * 47) % L); c.fillRect(g.x + Math.sin(g.a) * d, bunkerY + Math.cos(g.a) * d, 2, 2); } }
+        if (g.pause <= 0) { glow(c, g.x, bunkerY, 10 + Math.random() * 4, '#f8c060', .7); c.fillStyle = '#f8e080'; for (let i = 0; i < 6; i++) { const d = ((t * 400 + i * 47) % L); c.fillRect(g.x + Math.sin(g.a) * d, bunkerY + Math.cos(g.a) * d, 2, 2); } }
       }
       // covers
       const reach = run ? [] : covers.filter(cv => cv !== at && Math.hypot(cv.x - at.x, cv.y - at.y) < 95 && cv.y <= at.y + 4);
@@ -83,13 +84,13 @@ function make(api) {
         if (cv.kind === 'start') { c.fillStyle = '#505848'; c.fillRect(cv.x - 18, cv.y - 4, 36, 10); continue; }
         if (reach.includes(cv)) { c.strokeStyle = '#f8f8f0' + ((t * 3 | 0) % 2 ? 'c0' : '60'); c.beginPath(); c.arc(cv.x, cv.y, 14, 0, 7); c.stroke(); }
         if (cv.kind === 'hedge') { c.strokeStyle = '#383838'; c.lineWidth = 3; c.beginPath(); c.moveTo(cv.x - 9, cv.y + 5); c.lineTo(cv.x + 9, cv.y - 5); c.moveTo(cv.x + 9, cv.y + 5); c.lineTo(cv.x - 9, cv.y - 5); c.moveTo(cv.x, cv.y - 8); c.lineTo(cv.x, cv.y + 6); c.stroke(); c.lineWidth = 1; }
-        else { c.fillStyle = '#8a7a58'; c.fillRect(cv.x - 12, cv.y - 3, 24, 8); c.fillStyle = '#9c8c68'; c.fillRect(cv.x - 10, cv.y - 7, 20, 5); }
+        else { shadow(c, cv.x + 2, cv.y + 5, 14, 3); box(c, cv.x - 12, cv.y - 3, 24, 8, '#8a7a58', { r: 3, drop: false }); box(c, cv.x - 10, cv.y - 7, 20, 5, '#a89670', { r: 2, drop: false }); }
         if (cv.med) { c.fillStyle = '#f8f8f0'; c.fillRect(cv.x + 8, cv.y - 12, 7, 7); c.fillStyle = '#e03030'; c.fillRect(cv.x + 11, cv.y - 11, 1, 5); c.fillRect(cv.x + 9, cv.y - 9, 5, 1); }
       }
       // you
-      const x = px(), y = py(); if (!(inv > 0 && (t * 12 | 0) % 2)) { c.fillStyle = '#4a5a30'; c.fillRect(x - 3, y - 9 + (run ? 0 : 3), 6, run ? 9 : 6); c.fillStyle = '#5a6a3a'; c.beginPath(); c.arc(x, y - 10 + (run ? 0 : 3), 3.5, Math.PI, 0); c.fill(); }
+      const x = px(), y = py(); if (!(inv > 0 && (t * 12 | 0) % 2)) { shadow(c, x + 1, y + 1, 5, 2); c.fillStyle = '#4a5a30'; c.fillRect(x - 3, y - 9 + (run ? 0 : 3), 6, run ? 9 : 6); c.fillStyle = '#5a6a3a'; c.beginPath(); c.arc(x, y - 10 + (run ? 0 : 3), 3.5, Math.PI, 0); c.fill(); }
       if (flick) { c.strokeStyle = '#f8f8f080'; c.setLineDash([3, 3]); c.beginPath(); c.moveTo(x, y); const tg = aim(flick); c.lineTo(tg.x, tg.y); c.stroke(); c.setLineDash([]); c.strokeStyle = '#f8e04880'; c.beginPath(); c.arc(tg.x, tg.y, 6, 0, 7); c.stroke(); }
-      if (nade) { c.fillStyle = '#00000040'; c.fillRect(nade.x - 2, nade.y, 4, 2); c.fillStyle = '#304020'; c.beginPath(); c.arc(nade.x, nade.y - nade.z, 3, 0, 7); c.fill(); }
+      if (nade) { c.fillStyle = '#00000040'; c.fillRect(nade.x - 2, nade.y, 4, 2); ball(c, nade.x, nade.y - nade.z, 3, '#3a5028'); }
       for (const p of parts) { if (p.txt) { c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillStyle = p.col; c.fillText(p.txt, p.x, p.y); } else { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); } }
       // HUD
       c.font = '6px "Press Start 2P", monospace'; c.fillStyle = '#1a1a14c0'; c.fillRect(0, 0, W, 11);

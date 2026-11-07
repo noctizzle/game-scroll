@@ -10,6 +10,7 @@ import { PAL, SHELL } from './palettes.js';
 import { isHidden, setRating, rating, logRound, toast as qaToast, openPanel } from './qa.js';
 import { rankQueue } from './recommend.js';
 import { openMyGames } from './mygames.js';
+import { post as consolePost } from './kit/gfx.js';
 import { progress } from './kit/progress.js';
 import { checkTrophies } from './kit/trophies.js';
 import { services } from './kit/services.js';
@@ -201,9 +202,11 @@ function fit(s){
   const w=grow(d.w,d.maxW,aw),h=grow(d.h,d.maxH,ah);
   if(w!==s.w||h!==s.h){s.w=w;s.h=h;s.game.resize&&s.game.resize(w,h)}
   s.screen.style.width=Math.round(w*sc)+'px';s.screen.style.height=Math.round(h*sc)+'px';
-  if(d.retro){s.canvas.width=w;s.canvas.height=h;s.ctx.setTransform(1,0,0,1,0,0)}
+  // Pocket games draw chunky pixels; Console games render at full device resolution, smoothed and lit.
+  const pixel=d.retro&&d.era!=='console';
+  if(pixel){s.canvas.width=w;s.canvas.height=h;s.ctx.setTransform(1,0,0,1,0,0)}
   else{const k=sc*Math.min(2.5,window.devicePixelRatio||1);s.canvas.width=Math.round(w*k);s.canvas.height=Math.round(h*k);s.ctx.setTransform(k,0,0,k,0,0)}
-  s.ctx.imageSmoothingEnabled=!d.retro;s.dirty=true;
+  s.ctx.imageSmoothingEnabled=!pixel;s.canvas.classList.toggle('hires',!pixel);s.dirty=true;
 }
 
 // Shuffled queue over the whole catalogue; the feed pulls a few at a time so 1000 games never means 1000 slides in the DOM.
@@ -221,13 +224,14 @@ function pickDefs(n=6){
 }
 // After a heart or Meh, re-rank the games still waiting in this cycle so similar ones come sooner.
 function rerank(){if(queue.length>1)queue=rankQueue(queue.filter(g=>!isHidden(g.id)),GAMES)}
-function addBatch(){for(const d of pickDefs()){const s=makeSlide(d);feed.appendChild(s.el);slides.push(s);fit(s);s.game.draw(s.ctx);io.observe(s.el)}}
+function paint(s){s.game.draw(s.ctx);if(s.def.era==='console'){s.ctx.save();consolePost(s.ctx,s.w||s.def.w,s.h||s.def.h);s.ctx.restore()}}
+function addBatch(){for(const d of pickDefs()){const s=makeSlide(d);feed.appendChild(s.el);slides.push(s);fit(s);paint(s);io.observe(s.el)}}
 
 // Play a chosen game now: slot it in right after the current game and scroll to it.
 function playNow(id){
   const def=GAMES.find(g=>g.id===id);if(!def)return;
   const i=active?slides.indexOf(active):-1;if(active&&active.state==='playing')resetSlide(active);feed.classList.remove('locked');
-  const s=makeSlide(def),next=slides[i+1];feed.insertBefore(s.el,next?next.el:null);slides.splice(i+1,0,s);fit(s);s.game.draw(s.ctx);io.observe(s.el);
+  const s=makeSlide(def),next=slides[i+1];feed.insertBefore(s.el,next?next.el:null);slides.splice(i+1,0,s);fit(s);paint(s);io.observe(s.el);
   requestAnimationFrame(()=>s.el.scrollIntoView({behavior:'auto'}));
 }
 function setActive(s){
@@ -250,7 +254,7 @@ function frame(now){
   const s=active;
   if(s){
     if(s.state==='playing'&&!s.paused)s.game.update(dt);else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
-    if(s.state!=='ready'||s.dirty){s.game.draw(s.ctx);s.dirty=false}
+    if(s.state!=='ready'||s.dirty){paint(s);s.dirty=false}
   }
   requestAnimationFrame(frame);
 }

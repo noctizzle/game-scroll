@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { backdrop, box, shadow, glow } from '../kit/gfx.js';
 import { brick, stud, BRICK_KEYS } from '../kit/bricks.js';
 
 // Five kit pieces are hidden inside the brick furniture in this room. Hold and drag your finger
@@ -40,16 +41,17 @@ function make(api) {
       }
     },
     draw(c) {
-      c.fillStyle = '#c8b090'; c.fillRect(0, 0, W, H);
-      for (let y = top; y < H; y += 8) { c.fillStyle = (y / 8) % 2 ? '#c0a880' : '#ccb494'; c.fillRect(0, y, W, 8); }
-      c.fillStyle = '#8c6c48'; c.fillRect(0, top - 4, W, 4);
+      backdrop(c, 0, 0, W, H, '#e0c8a0', '#a88860');
+      for (let y = top; y < H; y += 8) { c.fillStyle = (y / 8) % 2 ? '#0000000c' : '#ffffff0c'; c.fillRect(0, y, W, 8); c.fillStyle = '#00000018'; c.fillRect(0, y + 7, W, 1); }
+      box(c, 0, top - 5, W, 5, '#8c6c48', { r: 0, drop: false });
+      for (const o of objs) if (!o.open) shadow(c, o.x + o.w / 2, o.y + o.h, o.w * .6, 3, .3);
       for (const o of objs) {
-        if (o.open) { const k = Math.min(1, o.open * 3); for (let i = 0; i < 3; i++) brick(c, o.x + i * o.w / 3 + (i - 1) * k * 6, o.y + o.h - 4 + k * 2, o.w / 3, 4, o.col, 4); if (o.piece) { const py = o.y + o.h / 2 - Math.min(10, o.open * 30); c.fillStyle = '#f8e040'; c.beginPath(); c.moveTo(o.x + o.w / 2, py - 6); c.lineTo(o.x + o.w / 2 + 5, py); c.lineTo(o.x + o.w / 2, py + 6); c.lineTo(o.x + o.w / 2 - 5, py); c.fill(); c.fillStyle = '#fff8c0'; c.fillRect(o.x + o.w / 2 - 1, py - 3, 2, 2); } continue; }
+        if (o.open) { const k = Math.min(1, o.open * 3); for (let i = 0; i < 3; i++) brick(c, o.x + i * o.w / 3 + (i - 1) * k * 6, o.y + o.h - 4 + k * 2, o.w / 3, 4, o.col, 4); if (o.piece) { const py = o.y + o.h / 2 - Math.min(10, o.open * 30); glow(c, o.x + o.w / 2, py, 14, '#f8e040', .5); c.fillStyle = '#f8e040'; c.beginPath(); c.moveTo(o.x + o.w / 2, py - 6); c.lineTo(o.x + o.w / 2 + 5, py); c.lineTo(o.x + o.w / 2, py + 6); c.lineTo(o.x + o.w / 2 - 5, py); c.fill(); c.fillStyle = '#fff8c0'; c.fillRect(o.x + o.w / 2 - 1, py - 3, 2, 2); } continue; }
         const n = Math.max(1, Math.round(o.h / 7)), bh = o.h / n; for (let i = 0; i < n; i++) brick(c, o.x + (i % 2) * 1, o.y + i * bh, o.w - (i % 2) * 2, bh, o.col, 5);
       }
-      if (probe && probe.on && battery > 0) { const k = probe.k || 0, r = 10 + Math.sin(t * (6 + k * 20)) * 2; c.strokeStyle = k > .8 ? '#f84040' : k > .5 ? '#f8a020' : '#40a0f8'; c.lineWidth = 2; c.beginPath(); c.arc(probe.x, probe.y, r, 0, 7); c.stroke(); c.lineWidth = 1; }
+      if (probe && probe.on && battery > 0) { const k = probe.k || 0, r = 10 + Math.sin(t * (6 + k * 20)) * 2; c.strokeStyle = k > .8 ? '#f84040' : k > .5 ? '#f8a020' : '#40a0f8'; glow(c, probe.x, probe.y, r * 2, k > .8 ? '#f84040' : k > .5 ? '#f8a020' : '#40a0f8', .35); c.lineWidth = 2; c.beginPath(); c.arc(probe.x, probe.y, r, 0, 7); c.stroke(); c.lineWidth = 1; }
       for (const p of parts) { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); }
-      c.font = '6px "Press Start 2P", monospace'; c.fillStyle = '#382818'; c.fillRect(0, 0, W, top - 4);
+      c.font = '6px "Press Start 2P", monospace'; backdrop(c, 0, 0, W, top - 4, '#4a3624', '#281a10');
       c.textAlign = 'left'; for (let i = 0; i < 5; i++) { c.fillStyle = i < found ? '#f8e040' : '#584838'; c.beginPath(); const x = 6 + i * 10, y = 7; c.moveTo(x, y - 4); c.lineTo(x + 4, y); c.lineTo(x, y + 4); c.lineTo(x - 4, y); c.fill(); }
       c.fillStyle = '#e0d0b0'; c.fillText(`ROOM ${room}`, 4, 19); c.fillStyle = battery > 0 ? '#a0d0ff' : '#f86060'; c.fillText(battery > 0 ? `${Math.ceil(battery)}s` : 'FLAT', 60, 19);
       c.textAlign = 'right'; c.fillText(`SWINGS ${swings}`, W - 4, 9);

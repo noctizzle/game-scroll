@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { backdrop, glow } from '../kit/gfx.js';
 import { brick, stud } from '../kit/bricks.js';
 
 // Build a brick car, then race it. Pick a body in the garage: the zippy Racer, the tough Truck or
@@ -60,7 +61,7 @@ function make(api) {
     draw(c) {
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
       if (mode === 'garage' || mode === 'pit') {
-        c.fillStyle = '#303848'; c.fillRect(0, 0, W, H);
+        backdrop(c, 0, 0, W, H, '#404c64', '#181c28'); glow(c, W / 2, 0, W * .6, '#f8e8c0', .18);
         for (let i = 0; i < W; i += 16) brick(c, i, H - 10, 16, 10, 'grey', 8);
         c.fillStyle = '#f0c020'; c.fillText(mode === 'garage' ? 'PICK YOUR CAR' : `PIT STOP · ◆${studs}`, W / 2, 24);
         if (mode === 'garage') {

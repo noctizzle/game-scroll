@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { backdrop, box, ball, shadow, glow } from '../kit/gfx.js';
 
 // A one-on-one arena fighter built for thumbs. Tap to jab, swipe forward for a heavy blow, swipe
 // down to sweep low, swipe up to hop, swipe back to step away, and hold still to guard. Guard
@@ -76,9 +77,10 @@ function make(api) {
       else if (you.hp <= 0) { you.hp = 0; dead = .01; msg = { txt: 'DOWN AND OUT', l: 9 }; haptic('error'); sfx(110, .7, 'sawtooth', .05, -40); }
     },
     draw(c) {
-      c.fillStyle = flash > 0 ? '#f8f8f0' : '#382848'; c.fillRect(0, 0, W, H);
-      if (!flash) { c.fillStyle = '#48385a'; for (let i = 0; i < 6; i++) c.fillRect(i * W / 6 + 6, H * .25, W / 6 - 12, H * .3); c.fillStyle = '#f8c84030'; c.beginPath(); c.arc(W / 2, H * .18, 40, 0, 7); c.fill(); }
-      c.fillStyle = '#806048'; c.fillRect(0, floor(), W, H - floor()); c.fillStyle = '#a07858'; c.fillRect(0, floor(), W, 2);
+      if (flash > 0) { c.fillStyle = '#f8f8f0'; c.fillRect(0, 0, W, H); } else backdrop(c, 0, 0, W, floor(), '#20142c', '#5a4070');
+      if (!flash) { for (let i = 0; i < 6; i++) box(c, i * W / 6 + 6, H * .25, W / 6 - 12, H * .3, '#48385a', { r: 3, drop: false }); glow(c, W / 2, H * .18, 60, '#f8c840', .35); }
+      backdrop(c, 0, floor(), W, H - floor(), '#a07858', '#4a3020'); c.fillStyle = '#d0a07880'; c.fillRect(0, floor(), W, 1);
+      for (const f of [foe, you]) shadow(c, f.x, floor(), 12 * (f.air > 0 ? .7 : 1), 3, .45);
       const fig = f => {
         const x = Math.round(f.x), base = floor() - (f.air > 0 ? Math.sin(f.air / .55 * Math.PI) * 22 : 0), d = f.dir;
         if (f.down > 0) { c.fillStyle = f.col; c.fillRect(x - 14, base - 6, 24, 6); c.fillStyle = f.skin; c.fillRect(x + 10 * d - 3, base - 7, 6, 6); return; }
@@ -86,8 +88,8 @@ function make(api) {
         // telegraph glow during wind-up
         if (f.st === 'wind' && f === foe) { c.fillStyle = MOVES[f.mv].kind === 'low' ? '#4890ff70' : '#ff484870'; c.beginPath(); c.arc(x, base - 18, 22, 0, 7); c.fill(); }
         c.fillStyle = '#302030'; c.fillRect(x - 5, by + 20, 4, 14 - crouch); c.fillRect(x + 1, by + 20, 4, 14 - crouch);
-        c.fillStyle = f.col; c.fillRect(x - 6, by + 6, 12, 15);
-        c.fillStyle = f.skin; c.fillRect(x - 4, by - 2, 8, 8); c.fillStyle = '#202020'; c.fillRect(x + d * 2 - 1, by + 1, 2, 2);
+        box(c, x - 6, by + 6, 12, 15, f.col, { r: 3, drop: false });
+        ball(c, x, by + 2, 4.5, f.skin, { gloss: .35 }); c.fillStyle = '#202020'; c.fillRect(x + d * 2 - 1, by + 1, 2, 2);
         c.fillStyle = f.skin;
         if (f.guard && f.st === 'idle') { c.fillRect(x + d * 6 - 2, by + 2, 4, 12); }
         else if (f.st === 'act' || (f.st === 'rec' && f.tt < .1)) { const m = MOVES[f.mv]; if (f.mv === 'sweep') { c.fillStyle = '#302030'; c.fillRect(d > 0 ? x : x - m.reach + 6, base - 4, m.reach - 6, 4); } else { const ly = f.mv === 'heavy' ? by + 12 : by + 6; c.fillRect(d > 0 ? x + 4 : x - m.reach + 6, ly, m.reach - 10, 4); } }

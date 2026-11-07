@@ -1,6 +1,7 @@
 import { clamp, rnd } from '../util.js';
 import { sfx } from '../sfx.js';
 import { haptic } from '../kit/device.js';
+import { box, ball, shadow, glow, backdrop } from '../kit/gfx.js';
 
 // Top-down stealth. Hold to creep toward your finger and reach the exit hatch. Guards patrol with
 // torch cones that walls block; stay in a cone too long and you're caught. Tap anywhere away from
@@ -70,31 +71,32 @@ function make(api) {
       if (seen && (t * 6 | 0) % 2) haptic('tick');
     },
     draw(c) {
-      c.fillStyle = '#283038'; c.fillRect(0, 0, W, H);
-      c.fillStyle = '#2e3842'; for (let x = 0; x < W; x += 16) for (let y = top; y < H; y += 16) if (((x + y) / 16) % 2) c.fillRect(x, y, 16, 16);
+      backdrop(c, 0, 0, W, H, '#2c3540', '#1c2229');
+      c.fillStyle = '#ffffff08'; for (let x = 0; x < W; x += 16) for (let y = top; y < H; y += 16) if (((x + y) / 16) % 2) c.fillRect(x + .5, y + .5, 15, 15);
       // cones
       for (const g of guards) {
-        c.fillStyle = g.sus > .5 ? '#f8404060' : g.look ? '#f8a04050' : '#f8f0a038';
+        const cg = c.createRadialGradient(g.x, g.y, 2, g.x, g.y, g.range), cc = g.sus > .5 ? '248,64,64' : g.look ? '248,160,64' : '248,240,160';
+        cg.addColorStop(0, `rgba(${cc},.55)`); cg.addColorStop(1, `rgba(${cc},0)`); c.fillStyle = cg;
         c.beginPath(); c.moveTo(g.x, g.y); const N = 18;
         for (let i = 0; i <= N; i++) { const a = g.a - g.fov + i / N * g.fov * 2; let r = 4; while (r < g.range && !inWall(g.x + Math.cos(a) * r, g.y + Math.sin(a) * r)) r += 2; c.lineTo(g.x + Math.cos(a) * r, g.y + Math.sin(a) * r); }
         c.closePath(); c.fill();
       }
-      c.fillStyle = '#586878'; for (const w of walls) c.fillRect(w.x, w.y, w.w, w.h); c.fillStyle = '#7888a0'; for (const w of walls) c.fillRect(w.x, w.y, w.w, 2);
+      for (const w of walls) box(c, w.x, w.y, w.w, w.h, '#64748a', { r: 1.5 });
       c.fillStyle = '#586878'; c.fillRect(0, top, W, 2); c.fillRect(0, H - 2, W, 2); c.fillRect(0, top, 2, H - top); c.fillRect(W - 2, top, 2, H - top);
-      c.fillStyle = (t * 3 | 0) % 2 ? '#40d870' : '#30a858'; c.fillRect(exit.x - 7, exit.y - 7, 14, 14); c.fillStyle = '#183020'; c.fillRect(exit.x - 4, exit.y - 4, 8, 8); c.fillStyle = '#40d870'; c.fillRect(exit.x - 1, exit.y - 4, 2, 8);
-      if (!intel.got) { c.fillStyle = '#f8e070'; c.fillRect(intel.x - 3, intel.y - 4, 7, 8); c.fillStyle = '#a08030'; c.fillRect(intel.x - 2, intel.y - 2, 5, 1); c.fillRect(intel.x - 2, intel.y, 5, 1); }
+      glow(c, exit.x, exit.y, 16 + Math.sin(t * 5) * 2, '#40d870', .5); box(c, exit.x - 7, exit.y - 7, 14, 14, '#2fa85a', { r: 3 }); c.fillStyle = '#183020'; c.fillRect(exit.x - 4, exit.y - 4, 8, 8); c.fillStyle = '#7dffa8'; c.fillRect(exit.x - 1, exit.y - 4, 2, 8);
+      if (!intel.got) { glow(c, intel.x, intel.y, 9, '#f8e070', .35); box(c, intel.x - 3.5, intel.y - 4, 7, 8, '#f0d060', { r: 1 }); c.fillStyle = '#a08030'; c.fillRect(intel.x - 2, intel.y - 2, 5, .8); c.fillRect(intel.x - 2, intel.y, 5, .8); }
       if (noise) { c.strokeStyle = `rgba(255,255,255,${noise.l})`; c.beginPath(); c.arc(noise.x, noise.y, (1.2 - noise.l) * 40, 0, 7); c.stroke(); }
       for (const g of guards) {
-        c.fillStyle = '#a03030'; c.beginPath(); c.arc(g.x, g.y, 5, 0, 7); c.fill(); c.fillStyle = '#e8c090'; c.beginPath(); c.arc(g.x + Math.cos(g.a) * 2, g.y + Math.sin(g.a) * 2, 2.5, 0, 7); c.fill();
+        shadow(c, g.x + 1, g.y + 3, 6, 3); ball(c, g.x, g.y, 5, '#b03838', { gloss: .4 }); ball(c, g.x + Math.cos(g.a) * 2, g.y + Math.sin(g.a) * 2, 2.6, '#e8c090', { gloss: .3 });
         if (g.sus > 0) { c.fillStyle = '#000a'; c.fillRect(g.x - 6, g.y - 11, 12, 3); c.fillStyle = g.sus > .6 ? '#f84040' : '#f8c040'; c.fillRect(g.x - 6, g.y - 11, 12 * Math.min(1, g.sus), 3); }
         if (g.look && !g.sus) { c.fillStyle = '#f8c040'; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText('?', g.x, g.y - 8); }
       }
-      if (crate) { c.fillStyle = '#b08850'; c.fillRect(pl.x - 6, pl.y - 6, 12, 12); c.fillStyle = '#806030'; c.fillRect(pl.x - 6, pl.y - 1, 12, 2); c.fillRect(pl.x - 1, pl.y - 6, 2, 12); }
-      else { c.fillStyle = '#3858a8'; c.beginPath(); c.arc(pl.x, pl.y, 5, 0, 7); c.fill(); c.fillStyle = '#202020'; c.fillRect(pl.x + Math.cos(pl.a) * 2 - 2, pl.y + Math.sin(pl.a) * 2 - 1, 4, 2); }
+      if (crate) { box(c, pl.x - 6, pl.y - 6, 12, 12, '#b08850', { r: 1.5 }); c.fillStyle = '#806030'; c.fillRect(pl.x - 6, pl.y - .8, 12, 1.6); c.fillRect(pl.x - .8, pl.y - 6, 1.6, 12); }
+      else { shadow(c, pl.x + 1, pl.y + 3, 6, 3); ball(c, pl.x, pl.y, 5, '#3f68c8', { gloss: .5 }); c.fillStyle = '#1a1a22'; c.beginPath(); c.ellipse(pl.x + Math.cos(pl.a) * 2.2, pl.y + Math.sin(pl.a) * 2.2, 2.4, 1.2, pl.a + Math.PI / 2, 0, 7); c.fill(); }
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
       for (const p of parts) { if (p.txt) { c.fillStyle = '#000'; c.fillText(p.txt, p.x + 1, p.y + 1); c.fillStyle = p.col; c.fillText(p.txt, p.x, p.y); } }
-      c.fillStyle = '#101418'; c.fillRect(0, 0, W, top);
-      c.textAlign = 'left'; for (let i = 0; i < 3; i++) { c.fillStyle = i < lives ? '#3878e0' : '#384048'; c.fillRect(4 + i * 8, 4, 6, 6); }
+      backdrop(c, 0, 0, W, top, '#1a2028', '#0c1014');
+      c.textAlign = 'left'; for (let i = 0; i < 3; i++) { ball(c, 7 + i * 8, 7, 3, i < lives ? '#3878e0' : '#384048', { gloss: .5 }); }
       c.textAlign = 'right'; c.fillStyle = '#e0e8f0'; c.fillText(`ROOM ${room}`, W - 4, 10);
       if (msg) { c.textAlign = 'center'; c.fillStyle = '#000c'; c.fillRect(0, H / 2 - 10, W, 14); c.fillStyle = caught ? '#f86060' : '#e0e8f0'; c.fillText(msg.txt, W / 2, H / 2); }
       if (t < 7 && !msg && room === 1) { c.textAlign = 'center'; c.fillStyle = '#000a'; c.fillRect(0, H - 30, W, 28); c.fillStyle = '#e0e8f0'; c.fillText('HOLD: SNEAK TO HATCH', W / 2, H - 21); c.fillText('TAP AWAY: PEBBLE', W / 2, H - 13); c.fillText('TAP YOU: CRATE', W / 2, H - 5); }
