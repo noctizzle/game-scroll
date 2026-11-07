@@ -52,9 +52,9 @@ function makeSlide(def){
       <button class="caption" aria-label="How to play ${def.title}"><span class="tag">${def.tag}</span><h2>${def.title}</h2><p>${def.hint}</p><span class="more"><b>ⓘ How to play</b> · Best <span class="best">0</span></span></button>
       <div class="rail">
         <button class="rbtn like" aria-pressed="false"><span class="ic">♥</span><span class="n"></span></button>
-        <button class="rbtn sharebtn" aria-label="Share this game"><span class="ic">↗</span><span>Share</span></button>
         <button class="rbtn meh" aria-label="Meh: hide this game"><span class="ic">👎</span><span>Meh</span></button>
         <button class="rbtn walletbtn" aria-label="Credits and trophies"><span class="ic">◆</span><span class="n">${fmt(progress.credits)}</span></button>
+        <button class="rbtn sharebtn" aria-label="Share this game"><span class="ic">↗</span><span>Share</span></button>
         <button class="rbtn nextbtn" aria-label="Next game"><span class="ic">↓</span><span>Next</span></button>
       </div>
     </div>`;
