@@ -31,16 +31,17 @@ Game Scroll is a feed of quick mini games. Each one takes a second to learn and 
 ★ A FEED THAT LEARNS
 Heart the games you love and the feed brings you more like them. Tap Meh and you'll see fewer. Or pick a tab and stick to one style.
 
-★ SIX STYLES, FROM PIXELS TO HD
+★ SEVEN STYLES, FROM PIXELS TO AR
 • Casual: smooth, colourful phone games, puzzles and physics toys
 • Pocket: four shades of green on a chunky dot-matrix screen
 • Color: the bright colour handheld era
 • Advance: wide-screen handheld adventures, racers and platformers
 • Classic Console: cel-shaded 3D inspired by home consoles
 • Next Gen: HD 3D with real lighting, shadows and particles
+• AR · 3D: games in your real room through the camera. Zap saucers swooping past your sofa, flick paper balls into a bin on your floor, fly a drone through hoops
 
 ★ USES YOUR WHOLE PHONE
-Tilt to steer, shake to roll, shout to launch, walk to explore, and feel every hit through vibration. Every game also plays with touch alone.
+Tilt to steer, shake to roll, shout to launch, walk to explore, look through the camera, and feel every hit through vibration. Every game also plays with touch alone.
 
 ★ WIN CREDITS, UNLOCK STUFF
 Win any game to earn credits, then spend them on boosts and unlocks. Earn achievements and climb leaderboards with Google Play Games, and keep your progress when you change phones.
@@ -113,6 +114,6 @@ Google Play Games data is handled by Google under its own policy.
 | Permission | Why |
 | --- | --- |
 | Location (coarse and fine) | A few games build their level from where you are. Never leaves the phone. |
-| Camera | A few games use the camera as a control, like finding real-world colours. Nothing is saved or sent. |
+| Camera | AR games show 3D objects over the camera picture, and a few games use it as a control. Nothing is saved or sent. |
 | Microphone (record audio) | A few games react to loudness, like shouting to launch a rocket. Audio is never recorded or sent. |
 | Vibrate | Haptic feedback in games. |

@@ -20,7 +20,7 @@
   <div class="wrap">
     <a class="brand" href="/"><img src="/icons/icon-192.png" alt="" width="34" height="34"><span>GAME<br><b>SCROLL</b></span></a>
     <ul>
-      <li class="hide-s"><a href="/#games">Games</a></li>
+      <li class="hide-s"><a href="/#styles">Styles</a></li>
       <li><a href="/make/" aria-current="page">Make a game</a></li>
       <li><a href="/support/">Help</a></li>
     </ul>
@@ -35,6 +35,7 @@
     <li><a href="#setup">1. Get set up</a></li>
     <li><a href="#file">2. Write your game</a></li>
     <li><a href="#style">3. Pick a style</a></li>
+    <li><a href="#ar">AR games</a></li>
     <li><a href="#phone">4. Sound, haptics, sensors</a></li>
     <li><a href="#credits">5. Credits and shop items</a></li>
     <li><a href="#test">6. Test it</a></li>
@@ -61,7 +62,7 @@
 <h2 id="rules">The rules</h2>
 <ul>
   <li><b>Original games only.</b> Take inspiration from a genre or a mechanic (falling blocks, kart racing, platformers), but don't recreate a specific existing game: no copied names, characters, art, music, levels or look, even renamed.</li>
-  <li><b>A new mechanic.</b> The goal is 1,000 games that each play differently. A reskin or harder version of a game already in the feed won't be merged. Browse <a href="/#games">every game in the feed</a> and the <a href="https://github.com/robthewizzuk/game-scroll/blob/main/docs/game-ideas.md">ideas list</a> first.</li>
+  <li><b>A new mechanic.</b> The goal is 1,000 games that each play differently. A reskin or harder version of a game already in the feed won't be merged. Play the feed and check the <a href="https://github.com/robthewizzuk/game-scroll/blob/main/docs/game-ideas.md">ideas list</a> first.</li>
   <li><b>Quick to learn, quick to play.</b> A player should get it from a one-sentence hint. A round lasts about 20 seconds to 3 minutes.</li>
   <li><b>Self-contained.</b> One file, everything drawn in code. No image, font or sound files, no network requests, no tracking, no ads, no links out of the app.</li>
   <li><b>Touch first.</b> Every game must be fully playable with touch alone. Sensors are welcome as an extra.</li>
@@ -142,7 +143,7 @@ export default {
 <p>The <code>hint</code> and the genre in <code>tag</code> also feed the recommender, so mention the control (tap, drag, tilt...) and the genre honestly.</p>
 
 <h2 id="style">3. Pick a style</h2>
-<p>Every game picks one of six looks. The style sets the frame around your game, the start and game-over screens, and which tab it appears in.</p>
+<p>Every game picks one of seven looks. The style sets the frame around your game, the start and game-over screens, and which tab it appears in.</p>
 <img src="/img/make/styles.png" alt="The styles side by side: Phone, Dot matrix, Color, Advance and Console" loading="lazy">
 <table>
   <tr><th>Style</th><th>Set</th><th>Typical size</th><th>Look</th></tr>
@@ -152,12 +153,55 @@ export default {
   <tr><td><span class="chip s-advance">Advance</span></td><td><code>era: 'advance'</code></td><td>176–192 wide</td><td>Wider handheld, detailed sprites, parallax.</td></tr>
   <tr><td><span class="chip s-console">Classic Console</span></td><td><code>era: 'console'</code></td><td>192 × 160, fluid</td><td>Real-time cel-shaded 3D with the shared toon kit.</td></tr>
   <tr><td><span class="chip s-nextgen">Next Gen</span></td><td><code>era: 'nextgen'</code></td><td>300 × 300, fluid</td><td>HD 3D: real materials, shadows, bloom, particles.</td></tr>
+  <tr><td><span class="chip s-ar">AR · 3D</span></td><td><code>era: 'ar'</code></td><td>300 × 460, fluid</td><td>3D objects in the player's real room, through the camera. <a href="#ar">How to make one</a>.</td></tr>
 </table>
 <p>Retro styles also set <code>retro: true</code> and a shell colour with <code>pal</code>. The 3D styles share one renderer, so never make your own WebGL context. The <a href="https://github.com/robthewizzuk/game-scroll/blob/main/CONTRIBUTING.md#choosing-a-style">full contributor guide</a> has the palettes, code samples for each style, and the 3D kits.</p>
 
 <h3>Big screens and foldables</h3>
 <p>Players use everything from small phones to unfolded Galaxy Z Fold and iPhone foldables, and can fold mid-game. By default your canvas is scaled to fit. To fill the extra space, add <code>maxW</code> and <code>maxH</code> and a <code>resize(w, h)</code> method; the app picks the best size and tells you. Keep the game fair at every size.</p>
 <img src="/img/make/fluid.png" alt="The same game on a folded and an unfolded phone" loading="lazy">
+
+<h2 id="ar">AR games: 3D in the player's real room</h2>
+<p>AR · 3D is the newest style. The back camera fills the screen and the phone's motion sensor turns the 3D camera, so a saucer, a bin or a hoop stays put in the room while the player moves their phone around. Shadows fall on the real floor. It's "look-around" AR: players turn, tilt and look up and down on the spot, but walking isn't tracked.</p>
+<p>The games in the feed now show what works: <b>Saucer Swarm</b> (turn to aim, tap to zap saucers swooping round the room), <b>Bin Flick</b> (flick paper balls into a bin on your floor) and <b>Hoop Drone</b> (fly a tiny drone through glowing hoops wherever you point).</p>
+<h3>The AR kit</h3>
+<p>AR games use <code>src/kit/ar3d.js</code>, built on the Next Gen HD renderer, so you get real materials, reflections and shadows. A minimal AR game looks like this:</p>
+<pre><code>import { want } from '../kit/device.js';
+import { ARView, arNote, FLOOR } from '../kit/ar3d.js';
+import { pbr, rbox, THREE } from '../kit/hd3d.js';
+
+function make(api) {
+  want('motion');                      // iPhones ask for motion access on the Play tap
+  let v;
+  return {
+    reset() { v?.off(); v?.recenter(); /* set up the round */ },
+    update(dt) { if (!v) return; v.live(); /* game logic; v.off() before api.over() */ },
+    draw(c) {
+      if (!v) { v = new ARView(); /* build meshes, add them to v.scene */ this.reset(); }
+      v.look();                        // motion sensor (or drag) turns the camera
+      v.draw(c, W, H);                 // camera picture + your 3D scene
+      v.pointers(c, W, H, [{ p: target, col: '#8affdc' }]);   // arrows to things off screen
+      arNote(c, v, W, H);              // says when a fallback is on
+    },
+  };
+}
+
+export default {
+  id: 'my-ar-game', title: 'My AR Game', tag: 'AR · Shooter',
+  retro: true, era: 'ar', pal: 'grape',
+  w: 300, h: 460, maxW: 600, maxH: 680,
+  goal: 20, hint: 'Turn your phone to aim... No camera? Drag to look around.', make,
+};</code></pre>
+<h3>Making it feel real</h3>
+<ul>
+  <li><b>Use real sizes and distances.</b> The phone is the eye, about 1.3 m above the floor (<code>FLOOR</code> is -1.3) and straight ahead is <code>-z</code>. Put things 1.5 to 7 m away at their real size: a bin is about 38 cm tall, a saucer 80 cm across.</li>
+  <li><b>Make players turn.</b> Spread targets all round them, behind too, and always add edge arrows with <code>v.pointers()</code> so they can find them.</li>
+  <li><b>Use the helpers.</b> <code>v.forward()</code>, <code>v.heading()</code> and <code>v.offAim(p)</code> tell you where the phone points; <code>v.toScreen(x, y, z)</code> gives screen positions for taps and labels.</li>
+  <li><b>Keep it phone-friendly.</b> AR shares the one 3D renderer with the console games, so keep meshes few and simple.</li>
+</ul>
+<h3>Fallbacks are required</h3>
+<p>Every AR game must play everywhere. With no camera (refused, or on a computer) the kit draws a virtual room instead. With no motion sensor, the player drags to look around (<code>v.drag(dx, dy)</code>); if dragging is already your control, keep targets in view instead. Stop the camera with <code>v.off()</code> in <code>reset()</code> and before <code>api.over()</code>. The camera picture is never saved or sent.</p>
+<p>Test the fallback path with the usual checks (<code>smoke</code>, <code>fold</code>, <code>sweep</code>), then try it on a real phone, because the camera and motion sensor only work there. The full reference, including how to fake a camera in a headless browser, is in <a href="https://github.com/robthewizzuk/game-scroll/blob/main/docs/ar-3d.md">docs/ar-3d.md</a>.</p>
 
 <h2 id="phone">4. Sound, haptics and phone sensors</h2>
 <p>Import shared helpers from the app; it hands them to streamed games:</p>
@@ -183,7 +227,7 @@ shop: [
 npm run build:bundled
 node scripts/smoke.cjs tap-bubbles    # plays it with random input; fails on any error
 node scripts/fold.cjs tap-bubbles     # folds and unfolds the screen mid-game
-node scripts/sweep.cjs tap-bubbles    # long play at odd sizes (needed for 3D games)
+node scripts/sweep.cjs tap-bubbles    # long play at odd sizes (needed for 3D and AR games)
 npm run games                         # fails if the file name and id differ</code></pre>
 
 <h2 id="submit">7. Submit it</h2>

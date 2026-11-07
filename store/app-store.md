@@ -34,16 +34,17 @@ Game Scroll is a feed of quick mini games. Each one takes a second to learn and 
 A FEED THAT LEARNS
 Heart the games you love and the feed brings you more like them. Tap Meh and you'll see fewer. Or pick a tab and stick to one style.
 
-SIX STYLES, FROM PIXELS TO HD
+SEVEN STYLES, FROM PIXELS TO AR
 • Casual: smooth, colourful phone games, puzzles and physics toys
 • Pocket: four shades of green on a chunky dot-matrix screen
 • Color: the bright colour handheld era
 • Advance: wide-screen handheld adventures, racers and platformers
 • Classic Console: cel-shaded 3D inspired by home consoles
 • Next Gen: HD 3D with real lighting, shadows and particles
+• AR · 3D: games in your real room through the camera. Zap saucers swooping past your sofa, flick paper balls into a bin on your floor, fly a drone through hoops
 
 USES YOUR WHOLE PHONE
-Tilt to steer, shake to roll, shout to launch, walk to explore, and feel every hit through haptics. Every game also plays with touch alone.
+Tilt to steer, shake to roll, shout to launch, walk to explore, look through the camera, and feel every hit through haptics. Every game also plays with touch alone.
 
 WIN CREDITS, UNLOCK STUFF
 Win any game to earn credits, then spend them on boosts and unlocks. Collect trophies and climb leaderboards in Game Center. Your progress syncs across your iPhone and iPad.
@@ -63,7 +64,7 @@ No ads between games. No account needed.
 ### Keywords (100, comma separated, no spaces)
 
 <!-- field:keywords -->
-mini games,arcade,retro,pixel,casual,puzzle,feed,swipe,quick,handheld,tilt,3d,fun,brain,minigames
+mini games,arcade,retro,pixel,casual,puzzle,feed,swipe,quick,handheld,tilt,3d,fun,brain,ar
 <!-- /field -->
 
 | Field | Value |
@@ -99,7 +100,7 @@ Regenerate with `npm run store-shots`.
 > every game is written or reviewed by us before release. No native code is downloaded.
 > No login is needed. Location, camera and microphone are only optional game controls, processed on the
 > device and never sent; every game also works with touch alone. To try them: Tilt Maze (motion), Shout
-> Rocket (microphone).
+> Rocket (microphone), Saucer Swarm (camera and motion; AR · 3D).
 
 ## App Privacy ("nutrition label")
 
