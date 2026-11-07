@@ -73,7 +73,11 @@ const eu = new Euler(), q0 = new Quaternion(), qd = new Quaternion(), qy = new Q
 const mA = new Matrix4(), mB = new Matrix4(), mC = new Matrix4(), sc = new Vector3(), ray = new Raycaster(), floorPl = new Plane(new Vector3(0, 1, 0), -FLOOR), v2 = new Vector2();
 const GOOD = { TRACKING: 1, LIMITED: 1 };
 // a fresh native-AR state: the latest pose and projection, and how native space maps to game space
-const natState = () => ({ pose: new Matrix4(), proj: new Matrix4(), has: false, tracking: 'PAUSED', light: null, planes: [], yaw0: null, x0: 0, z0: 0, yOff: null, yOffT: 0, floor: null, M: new Matrix4(), t0: performance.now() });
+// The floor found last time (native height): the native session keeps its map between rounds, so
+// the next round doesn't have to look for the floor again.
+let keptFloor = null;
+const natState = () => ({ pose: new Matrix4(), proj: new Matrix4(), has: false, tracking: 'PAUSED', light: null, planes: [], yaw0: null, x0: 0, z0: 0, yOff: null, yOffT: 0, floor: null, M: new Matrix4(), t0: performance.now(),
+  scan: keptFloor == null, scanT: 0, asking: false, cands: [], shown: 0 });
 
 export class ARView extends HDView {
   constructor(o = {}) {
@@ -141,6 +145,7 @@ export class ARView extends HDView {
       // the first good pose (or after recenter): where the phone points becomes "straight ahead" (-z),
       // where it stands becomes x = z = 0, and until a floor is found it's held at the calibrated height
       n.yaw0 = Math.atan2(m[8], m[10]); n.x0 = m[12]; n.z0 = m[14];
+      if (n.floor == null && keptFloor != null && keptFloor < m[13] - .3) this.setFloor(keptFloor, false);
       if (n.floor == null) n.yOff = n.yOffT = FLOOR + (this.eye ?? -FLOOR) - m[13];
       if (n.yOff == null) n.yOff = n.yOffT;
     }
@@ -149,10 +154,30 @@ export class ARView extends HDView {
   planes(list) {
     const n = this.nat; if (!n) return;
     n.planes = list;
-    // the floor is the lowest big surface well below the phone
+    // the floor is the lowest surface at least 70 cm below the phone (so not a table; a lower one later wins)
     const py = n.pose.elements[13]; let low = null;
-    for (const p of list) { const y = p.pose[13]; if (p.w * p.d >= .25 && y < py - .3 && (low == null || y < low)) low = y; }
-    if (low != null) { n.floor = low; n.yOffT = FLOOR - low; if (n.yOff == null) n.yOff = n.yOffT; }
+    for (const p of list) { const y = p.pose[13]; if (p.w * p.d >= .08 && y < py - .7 && (low == null || y < low)) low = y; }
+    if (low != null && (n.floor == null || low < n.floor - .03)) this.setFloor(low);
+  }
+  setFloor(y, fresh = true) {
+    const n = this.nat, was = n.floor == null;
+    n.floor = keptFloor = y; n.yOffT = FLOOR - y; if (n.yOff == null || !fresh) n.yOff = n.yOffT;
+    if (was && n.scan) { n.scan = false; n.shown = 1.4; haptic('success'); }   // found: show the grid on it for a moment
+  }
+  // While looking for the floor, ask where the middle of the screen meets something a few times a
+  // second. A real surface counts at once; rough feature points need three that agree.
+  scanFloor(dt) {
+    const n = this.nat, r = this.rect;
+    if (n.floor != null || n.asking || !r || !GOOD[n.tracking] || (n.scanT -= dt) > 0) return;
+    n.scanT = .2; n.asking = true;
+    nativeHit(r.left + r.width / 2, r.top + r.height * .6).then(hs => {
+      n.asking = false; const h = hs[0]; if (!h || this.nat !== n || n.floor != null) return;
+      const y = h.pose[13]; if (y > n.pose.elements[13] - .7) return;   // too close below the phone: a table top, not the floor
+      if (h.kind === 'plane') return this.setFloor(y);
+      n.cands.push(y); if (n.cands.length > 6) n.cands.shift();
+      const near = n.cands.filter(c => Math.abs(c - y) < .05);
+      if (near.length >= 3) this.setFloor(near.reduce((a, b) => a + b) / near.length);
+    });
   }
   /**
    * Surfaces native AR has found, in game space: [{ id, p (centre), q (turn), w, d, floor }]. w runs
@@ -189,6 +214,12 @@ export class ARView extends HDView {
       n.yOff += (n.yOffT - n.yOff) * (1 - Math.exp(-dt * 5));   // a newly found floor eases in
       n.M.makeTranslation(-n.x0, 0, -n.z0).premultiply(mB.makeRotationY(-n.yaw0)).premultiply(mC.makeTranslation(0, n.yOff, 0));
       mA.multiplyMatrices(n.M, n.pose).decompose(this.cam.position, this.cam.quaternion, sc);
+      this.scanFloor(dt);
+      // the teal grid shows while looking for the floor (where it's guessed) and briefly once found
+      if (n.shown > 0) n.shown -= dt;
+      this.calGrid.visible = n.scan || n.shown > 0;
+      this.calGrid.material.opacity = n.scan ? .35 + .25 * Math.sin(performance.now() / 180) : Math.min(1, n.shown);
+      this.calGrid.position.set(this.cam.position.x, FLOOR + .004, this.cam.position.z);
     } else this.cam.position.set(0, FLOOR + this.eyeH, 0);
     this.sensor = true; this.cam.updateMatrixWorld();
     return this;
@@ -236,12 +267,18 @@ export class ARView extends HDView {
   /** Open floor calibration: drag until the grid lies on the real floor, then tap Done. */
   calibrate() { if (!this.cal) { this.cal = { eye: this.eye ?? -FLOOR, drag: null, moved: 0 }; this.calGrid.visible = true; } return this; }
   /** True while the floor calibration is open: games should not advance (skip update). */
-  get calibrating() { return !!this.cal; }
+  get calibrating() { return !!this.cal || !!this.nat?.scan; }
   /**
    * Route a game's input through the kit first: input('down' | 'move' | 'up', x, y, id[, pressed]).
    * Returns true when the kit used it (calibration, or the Floor chip), so the game should ignore it.
    */
   input(kind, x, y, id, pressed) {
+    const n = this.nat;
+    if (n?.scan) {   // looking for the floor: everything waits; Skip carries on at the guessed height
+      const b = n.skip;
+      if (kind === 'up' && b && x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h) { n.scan = false; this.calGrid.visible = false; haptic('light'); }
+      return true;
+    }
     const c = this.cal;
     if (!c) {
       const k = this.chip;
@@ -368,8 +405,26 @@ function pill(c, t, W, y) {
 function nativeNote(c, v, W, H) {
   v.chip = null;
   const n = v.nat;
+  if (n.scan) return scanHUD(c, v, W, H);
   if (!GOOD[n.tracking]) pill(c, 'Finding your room: move the phone slowly', W, H - 34);
   else if (n.floor == null && performance.now() - n.t0 < 8000) pill(c, 'Point at the floor to find it', W, H - 34);
+}
+
+function scanHUD(c, v, W, H) {
+  const n = v.nat, wait = (performance.now() - n.t0) / 1000;
+  c.save(); c.textAlign = 'center';
+  c.fillStyle = '#04110ed9'; c.beginPath(); c.roundRect(16, 60, W - 32, 74, 14); c.fill();
+  c.fillStyle = '#fff'; c.font = '800 16px Rubik, sans-serif'; c.fillText('Find your floor', W / 2, 86);
+  c.font = '500 12px Rubik, sans-serif'; c.fillStyle = '#c4ccdc';
+  c.fillText(GOOD[n.tracking] ? 'Point the phone at the floor a few steps ahead' : 'Move the phone slowly from side to side', W / 2, 106);
+  c.fillText('and sweep it slowly from side to side', W / 2, 122);
+  n.skip = null;
+  if (wait > 6) {
+    const b = n.skip = { x: W / 2 - 50, y: H - 76, w: 100, h: 36 };
+    c.fillStyle = '#04110ed9'; c.beginPath(); c.roundRect(b.x, b.y, b.w, b.h, 18); c.fill();
+    c.fillStyle = '#8affdc'; c.font = '700 13px Rubik, sans-serif'; c.fillText('Skip', W / 2, b.y + 23);
+  }
+  c.restore();
 }
 
 function calHUD(c, v, W, H) {

@@ -20,8 +20,13 @@ estimate. So the 3D camera moves when the player walks, and things stay put on t
 
 - `v.mode` is `'world'` with native AR, `'look'` otherwise. Games don't have to care: `FLOOR`,
   `look()`, `draw()`, `eyePos`, `forward()` and `recenter()` all work the same in both.
-- The floor is found, not calibrated: the lowest big surface below the phone becomes `y = FLOOR`
-  (until one is found the calibrated phone height is used). The Floor chip is hidden.
+- The floor is found, not calibrated. Each round opens with "Find your floor" (`v.calibrating` is
+  true, so games already pause): the kit hit-tests the middle of the screen a few times a second
+  (a mapped surface counts at once, rough points need three that agree; on Android, depth helps
+  where the phone has it) and also watches mapped surfaces. Only something at least 70 cm below
+  the phone counts, so a table top isn't taken for the floor, and a lower surface found later
+  wins. A Skip button appears after 6 s (then the calibrated phone height is used). The floor is
+  kept for later rounds, and the Floor chip is hidden.
 - `recenter()` makes where the phone points and stands now "straight ahead" at x = z = 0.
 - `v.surfaces()` lists found surfaces `{ id, p, q, w, d, floor }` (empty in look mode);
   `v.floorFound` says whether the floor is known.
