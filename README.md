@@ -54,16 +54,21 @@ export default {
 
 ## Streaming games (Cloudflare R2)
 
-Games are built into the app (so it works offline and on first launch) and also streamed from a
-Cloudflare R2 bucket, so a game can be fixed or added without a new app release.
+The app ships with no games inside: every game streams from a Cloudflare R2 bucket, so games can be
+fixed or added without a new app release.
 
-- `npm run games` builds every game in `src/games/` as its own file in `dist-games/` plus a `manifest.json` catalogue.
+- `npm run games` builds every game in `src/games/` as its own file in `dist-games/` plus a `manifest.json` catalogue (title, hint, era... for each game).
 - On every push to main, `.github/workflows/games-r2.yml` uploads them to R2 (needs the `CLOUDFLARE_API_TOKEN` repo secret).
-- The app (`src/remote.js`) reads the catalogue from `VITE_GAMES_URL` (set in `.env`), swaps in any game whose code changed,
-  adds games it doesn't have, downloads the next few in the feed ahead of time, and keeps them in IndexedDB for offline play.
-- A streamed game may only use shared exports (`src/util.js`, `src/sfx.js`, `src/kit/*.js`...) the installed app has.
-  If it needs newer shared code, older apps keep their built-in copy until they're updated.
+- The app (`src/remote.js`) reads the catalogue from `VITE_GAMES_URL` (in `.env`), keeps the next 5 games in the feed
+  downloaded and ready, and saves the last 100 played in IndexedDB so they open instantly and work offline.
+  Settings (⚙) shows the cache and has a Clear cache button.
+- A streamed game may only use shared exports (`src/util.js`, `src/sfx.js`, `src/kit/*.js`...) the installed app has;
+  games that need newer shared code are left out of older apps.
 - A game's file name must match its `id`.
+
+**Local dev and tests build the games in** instead (`--mode bundled`, see `.env.bundled`), so a new game can be
+tried before it is published: `npm run dev`, `npm run build:bundled && node scripts/smoke.cjs`. `npm run dev:stream`
+runs against R2 like the real app.
 
 ## Phone features
 

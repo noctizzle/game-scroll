@@ -1,4 +1,4 @@
-// Prints the game screen size at several viewports. Usage: npm run build && node scripts/measure.cjs [id]
+// Prints the game screen size at several viewports. Usage: npm run build:bundled && node scripts/measure.cjs [id]
 const { chromium } = require('playwright');
 (async () => {
   const id = process.argv[2] || 'stack';

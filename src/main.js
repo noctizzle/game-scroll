@@ -18,16 +18,19 @@ import { initWallet, toast, shopHTML, bindShop } from './kit/wallet-ui.js';
 
 import { haptic } from './kit/device.js';
 import { remote } from './remote.js';
+import { openSettings } from './settings.js';
+import BUNDLED from 'virtual:bundled-games';
 
-/* ---------- catalogue: every file in src/games/ is one game ---------- */
-const modules = import.meta.glob('./games/*.js', { eager: true });
-const GAMES = Object.values(modules).map(m => m.default)
-  .filter(g => g && g.id && g.make)
-  .map(g => ({ likes: 300 + hash(g.id) % 6000, ...g }));
-// Games can also stream in from the game host (src/remote.js): updated versions replace the built-in
-// copy, and new ones join the feed. They're added to GAMES as metadata and downloaded just before they're due.
-remote.init(GAMES, meta => { const g = { likes: 300 + hash(meta.id) % 6000, ...meta }; GAMES.push(g); return g; },
-  added => { for (const g of added) if (inPool(g)) queue.splice(Math.random() * (queue.length + 1) | 0, 0, g); });   // new games join this cycle
+/* ---------- catalogue ---------- */
+// The app streams every game from the game host (src/remote.js): GAMES holds each game's metadata from
+// the online catalogue, and a game's code downloads just before it comes up in the feed.
+// Dev and test builds (--mode bundled) have every file in src/games/ built in instead.
+const GAMES = BUNDLED.filter(g => g && g.id && g.make).map(g => ({ likes: 300 + hash(g.id) % 6000, ...g }));
+const STREAM = remote.enabled;
+const playable = g => STREAM ? remote.def(g) : g;   // null while a streamed game is still downloading
+let booted = false;
+if (STREAM) remote.init(meta => { const g = { likes: 300 + hash(meta.id) % 6000, ...meta }; GAMES.push(g); return g; },
+  added => { if (booted) for (const g of added) if (inPool(g)) queue.splice(Math.random() * (queue.length + 1) | 0, 0, g); });   // new games join this cycle
 
 /* ---------- feed engine ---------- */
 const feed=document.getElementById('feed');
@@ -189,7 +192,8 @@ let lastGameInput=0;
 }
 function goNext(s){
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
-  const i=slides.indexOf(s);if(i>=slides.length-2)addBatch();
+  const i=slides.indexOf(s);topUp();
+  if(!slides[i+1])return;
   slides[i+1].el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
 }
 
@@ -223,29 +227,50 @@ function pickDefs(n=6){
   const out=[],later=[];let tries=pool.length*2+n;
   while(out.length<n&&pool.length&&tries-->0){
     if(!queue.length){queue=rankQueue(pool,GAMES);if(queue.length>1&&queue[0].id===lastId)queue.push(queue.shift())}
-    const q=queue.shift(),d=remote.def(q);
-    if(!d){if(remote.has(q.id))later.push(q);continue}   // streamed game still downloading: it goes in the next batch
+    const q=queue.shift(),d=playable(q);
+    if(!d){if(remote.has(q.id))later.push(q);if(later.length>=n)break;continue}   // still downloading: it goes in the next batch
     out.push(d);lastId=d.id;
     if(pool.length<n&&out.length>=pool.length)break;
   }
   queue.unshift(...later);
-  remote.prefetch(queue.slice(0,8));   // download the next few now so they're ready by the time you swipe to them
+  remote.prefetch(queue.slice(0,AHEAD+3));   // start downloading the games after those too
   return out;
 }
 // After a heart or Meh, re-rank the games still waiting in this cycle so similar ones come sooner.
 function rerank(){if(queue.length>1)queue=rankQueue(queue.filter(g=>!isHidden(g.id)),GAMES)}
 function paint(s){s.game.draw(s.ctx);if(s.def.era==='console'){s.ctx.save();consolePost(s.ctx,s.w||s.def.w,s.h||s.def.h);s.ctx.restore()}}
-function addBatch(){
-  const defs=pickDefs();
+// Always keep AHEAD games downloaded and ready below the one you're on, so swiping never waits.
+const AHEAD=5;
+function topUp(){const ahead=slides.length-1-(active?slides.indexOf(active):0);if(ahead<AHEAD)addBatch(AHEAD-ahead+1)}
+let waiting=false;
+function addBatch(n=AHEAD+1){
+  const defs=pickDefs(n);
   for(const d of defs){const s=makeSlide(d);feed.appendChild(s.el);slides.push(s);fit(s);paint(s);io.observe(s.el)}
-  // Nothing ready yet (only streamed games left and still downloading): try again once they arrive.
-  if(!defs.length&&queue.some(g=>remote.has(g.id))){const gen=built;Promise.all(queue.slice(0,6).map(g=>remote.load(g.id))).then(()=>{if(gen!==built)return;addBatch();if(!active&&slides[0])setActive(slides[0])})}
+  if(defs.length)feedMsg(null);
+  if(defs.length>=n||waiting)return;
+  // Some of the next games are still downloading: add them as soon as they arrive.
+  if(STREAM&&queue.some(g=>remote.has(g.id))){
+    if(!slides.length)feedMsg('loading');
+    waiting=true;
+    Promise.all(queue.slice(0,n-defs.length).map(g=>remote.load(g.id))).then(()=>{waiting=false;if(!slides.length)addBatch();else topUp();if(!active&&slides[0])setActive(slides[0])});
+  }else if(!slides.length)feedMsg('offline');
+}
+
+// A card in the empty feed: downloading the first games, or offline with none saved yet.
+function feedMsg(kind){
+  feed.querySelector('.feed-msg')?.remove();
+  if(!kind)return;
+  const el=document.createElement('div');el.className='feed-msg '+kind;
+  el.innerHTML=kind==='loading'?'<div class="fm-spin"></div><p>Loading games…</p>'
+    :'<b>No connection</b><p>Games stream in over the internet. Connect and try again. Games you\'ve played recently also work offline.</p><button class="play">Try again</button>';
+  const b=el.querySelector('button');if(b)b.onclick=()=>{feedMsg('loading');remote.refresh().then(()=>start())};
+  feed.appendChild(el);
 }
 
 // Play a chosen game now: slot it in right after the current game and scroll to it.
 function playNow(id){
   const g=GAMES.find(x=>x.id===id);if(!g)return;
-  const def=remote.def(g);if(!def){remote.load(id).then(d=>{if(d)playNow(id)});return}
+  const def=playable(g);if(!def){remote.load(id).then(d=>{if(d)playNow(id)});return}
   const i=active?slides.indexOf(active):-1;if(active&&active.state==='playing')resetSlide(active);feed.classList.remove('locked');
   const s=makeSlide(def),next=slides[i+1];feed.insertBefore(s.el,next?next.el:null);slides.splice(i+1,0,s);fit(s);paint(s);io.observe(s.el);
   requestAnimationFrame(()=>s.el.scrollIntoView({behavior:'auto'}));
@@ -253,8 +278,8 @@ function playNow(id){
 function setActive(s){
   if(active===s)return;
   if(active&&active.state!=='ready')resetSlide(active);
-  feed.classList.remove('locked');active=s;s.dirty=true;
-  if(slides.indexOf(s)>=slides.length-3)addBatch();
+  feed.classList.remove('locked');active=s;s.dirty=true;if(STREAM)remote.touch(s.def.id);
+  topUp();
 }
 
 let built=0;
@@ -304,14 +329,25 @@ const logo=document.querySelector('.logo');logo.setAttribute('role','button');lo
 logo.onclick=()=>openPanel(GAMES,best);
 const mineBtn=document.createElement('button');mineBtn.className='iconbtn';mineBtn.id='mine';mineBtn.setAttribute('aria-label','My games: hearted and Meh');mineBtn.textContent='♥';
 const muteBtn=document.getElementById('mute');muteBtn.before(mineBtn);
+const setBtn=document.createElement('button');setBtn.className='iconbtn';setBtn.id='settings';setBtn.setAttribute('aria-label','Settings');setBtn.textContent='⚙';
+muteBtn.after(setBtn);setBtn.onclick=()=>openSettings({stream:STREAM,cached:()=>remote.cacheInfo(),clear:()=>remote.clearCache()});
 mineBtn.onclick=()=>openMyGames({games:GAMES,best,play:playNow,changed:(id,r)=>{slides.forEach(x=>{if(x.def.id===id)x.setLike(r>0)});rerank()},qa:()=>openPanel(GAMES,best)});
 const paintMute=()=>{muteBtn.textContent=sound.muted?'🔇':'🔊';muteBtn.setAttribute('aria-pressed',String(sound.muted))};paintMute();
 muteBtn.onclick=()=>{sound.muted=!sound.muted;store.set('gs_muted',sound.muted);paintMute()};
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{if(filter===b.dataset.f)return;filter=b.dataset.f;
   document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));rebuild()});
 
-function boot(){initWallet(GAMES);services.init(GAMES);rebuild();requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
-boot();
+function boot(){initWallet(GAMES);services.init(GAMES);booted=true;rebuild();requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
+// Streaming: with a saved catalogue, start at once and check for updates in the background.
+// First launch has to fetch the catalogue before there is anything to show.
+function start(){
+  if(booted){rebuild();return}
+  if(GAMES.length){boot();return}
+  feedMsg('loading');
+  remote.refresh().then(()=>GAMES.length?boot():feedMsg('offline'));
+}
+if(STREAM&&GAMES.length)remote.refresh();
+start();
 // Coming back to the app: look for game updates (cheap: one small catalogue file).
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&remote.enabled)remote.refresh()});
 

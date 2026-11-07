@@ -1,5 +1,5 @@
 // Plays every game (or the ids given as args) with random input on a phone-sized screen
-// and fails if any game throws. Usage: npm run build && node scripts/smoke.cjs [id ...]
+// and fails if any game throws. Usage: npm run build:bundled && node scripts/smoke.cjs [id ...]
 const { chromium, devices } = require('playwright');
 (async () => {
   const server = await (await import('vite')).preview({ preview: { port: 4179 } });

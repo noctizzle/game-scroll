@@ -1,5 +1,5 @@
 // Checks credits, wins, the shop, trophies and save merging in a real browser.
-// Usage: npm run build && node scripts/wallet.cjs
+// Usage: npm run build:bundled && node scripts/wallet.cjs
 const { chromium, devices } = require('playwright');
 (async () => {
   const server = await (await import('vite')).preview({ preview: { port: 4180 } });
