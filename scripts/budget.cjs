@@ -21,11 +21,11 @@ const p95 = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - 
 
 (async () => {
   const { createServer } = await import('vite');
-  const server = await createServer({ mode: 'bundled', server: { port: 4185, hmr: false }, logLevel: 'error' }); await server.listen();
+  const server = await createServer({ mode: 'bundled', server: { port: 4186, hmr: false }, logLevel: 'error' }); await server.listen();
   const b = await chromium.launch();
   const ctx = await b.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 1 });
   const p = await ctx.newPage(), cdp = await ctx.newCDPSession(p);
-  await p.goto('http://localhost:4185/'); await p.waitForFunction(() => window.__gs, null, { timeout: 180000 }); await p.waitForTimeout(400);
+  await p.goto('http://localhost:4186/'); await p.waitForFunction(() => window.__gs, null, { timeout: 180000 }); await p.waitForTimeout(400);
   const ids = process.argv.slice(2).length ? process.argv.slice(2) : await p.evaluate(() => __gs.GAMES.map(g => g.id));
   await cdp.send('Profiler.enable'); await cdp.send('HeapProfiler.enable');
   let failed = 0;
