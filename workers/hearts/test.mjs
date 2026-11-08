@@ -16,6 +16,7 @@ import { cbor, b64u, sha256, concat } from './src/util.js';
 import { cleanBatch } from './src/stats.js';
 import { sharePage, idFromPath } from './src/sharepage.js';
 import { cleanPerf, perfPage } from './src/perf.js';
+import { plausible, cleanSecs } from './src/scores.js';
 
 x509.cryptoProvider.set(crypto);
 const ok = msg => console.log('  ✓ ' + msg);
@@ -27,6 +28,20 @@ const rejects = async (p, re) => { await assert.rejects(p, e => re.test(e.messag
   const d = cbor(new Uint8Array(cborEncode(v)));
   assert.deepEqual({ ...d, b: [...d.b] }, { ...v, b: [1, 2] });
   ok('CBOR decoder reads what cbor-x writes');
+}
+
+/* ---------- leaderboard quick checks ---------- */
+{
+  const meta = { goal: 30 };
+  assert.equal(plausible(45, 60, meta), null, 'a good round is fine');
+  assert.equal(plausible(45, 1, meta), 'round too short');
+  assert.equal(plausible(40000, 3600, meta), 'higher than the game allows');
+  assert.equal(plausible(5000, 30, meta), 'scored too fast');
+  assert.equal(plausible(5000, 30, { goal: 30, scoreRate: 500 }), null, 'a game can allow faster scoring');
+  assert.equal(plausible(900, 600, { goal: 30, scoreMax: 500 }), 'higher than the game allows', 'or a lower top');
+  assert.equal(plausible(1e8, 60, null), null, 'unknown games only get the basic checks');
+  assert.equal(cleanSecs(-1), null); assert.equal(cleanSecs('5'), null); assert.equal(cleanSecs(20000), null); assert.equal(cleanSecs(12.5), 12.5);
+  ok('quick checks: too short, too high, too fast; games can set their own limits');
 }
 
 /* ---------- play stats and share pages ---------- */
@@ -223,16 +238,21 @@ await run({}, async url => {
   assert.equal(r.headers.get('access-control-allow-origin'), null);
   ok('counts readable; browsers only allowed from the app and test site');
   // leaderboards: best score kept per device, ranks, today's board, made-up names
-  r = await post(url, '/score', { device: A, game, score: 50 }); assert.equal(r.status, 200);
+  r = await post(url, '/score', { device: A, game, score: 50, secs: 10 }); assert.equal(r.status, 200);
   let sc = await r.json(); assert.deepEqual([sc.all.rank, sc.all.of, sc.day.rank], [1, 1, 1]);
-  r = await post(url, '/score', { device: B, game, score: 80 }); sc = await r.json(); assert.deepEqual([sc.all.rank, sc.all.of], [1, 2]);
-  r = await post(url, '/score', { device: A, game, score: 30 }); sc = await r.json(); assert.equal(sc.all.best, 50, 'a lower score keeps the best'); assert.equal(sc.all.rank, 2);
-  r = await post(url, '/score', { device: A, game, score: -1 }); assert.equal(r.status, 400);
-  r = await post(url, '/score', { device: A, game, score: 1e12 }); assert.equal(r.status, 400);
+  r = await post(url, '/score', { device: B, game, score: 80, secs: 10 }); sc = await r.json(); assert.deepEqual([sc.all.rank, sc.all.of], [1, 2]);
+  r = await post(url, '/score', { device: A, game, score: 30, secs: 10 }); sc = await r.json(); assert.equal(sc.all.best, 50, 'a lower score keeps the best'); assert.equal(sc.all.rank, 2);
+  r = await post(url, '/score', { device: A, game, score: -1, secs: 10 }); assert.equal(r.status, 400);
+  r = await post(url, '/score', { device: A, game, score: 1e12, secs: 10 }); assert.equal(r.status, 400);
   r = await fetch(url + `/board?game=${game}&device=${A}&when=day`, { headers: { 'CF-Connecting-IP': IP } }); const bd = await r.json();
   assert.deepEqual(bd.top.map(t => t.score), [80, 50]); assert.equal(bd.me.rank, 2); assert.ok(bd.top[1].me && !bd.top[0].me);
   assert.match(bd.top[0].name, /^[A-Z][a-z]+ [A-Z][a-z]+ \d+$/);
   ok('leaderboards keep each device\'s best, rank it, and show made-up names');
+  r = await post(url, '/score', { device: A, game, score: 60 }); assert.equal(r.status, 400, 'round length is needed');
+  r = await post(url, '/score', { device: A, game, score: 60, secs: 1 }); assert.equal(r.status, 422, 'too short a round is not counted');
+  r = await post(url, '/score', { device: A, game, score: 60, secs: 900 }); assert.equal(r.status, 422, 'a round longer than the time since the last one');
+  assert.equal((await r.json()).why, 'round longer than the time since the last one');
+  ok('quick checks turn away rounds that cannot be real');
   // Tiny Brains shared learning: trimmed average of each device's latest brain
   {
     const { pack } = await import('./src/brains.js');

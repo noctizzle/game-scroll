@@ -154,6 +154,7 @@ export default {
 | `maxW`, `maxH`, `step` | no | Makes the game fluid on tall and unfolded screens. See [Screen sizes](#screen-sizes-foldables-and-fluid-games). |
 | `reward`, `shop`, `board` | no | Credits per win, shop items, own leaderboard. See [Credits](#credits-shop-items-and-trophies). |
 | `traits` | no | Extra recommender traits, for example `traits: ['theme:space']`. |
+| `scoreMax`, `scoreRate` | no | Leaderboard fairness limits: the highest score a round can really reach, and the most points a second a great player keeps up. Defaults come from `goal` (×1000 and ×2 a second). Set them if your scores can legitimately go higher. |
 
 ### The `api` you get in `make(api)`
 
@@ -397,6 +398,12 @@ shop: [
 
 Details in [`docs/game-services.md`](docs/game-services.md). Use `board: true` sparingly; it needs a
 leaderboard set up in the app stores, so mention it in your PR.
+
+Every game also gets the app's own boards (today and all time). The server turns away scores that
+can't be real: rounds under 2 seconds, scores above `scoreMax`, points piling up faster than
+`scoreRate`, a round longer than the time since that phone's last one, or more than five times the
+top score on a board with 20 or more players. If your game can legitimately score far above its
+`goal` (big combos, multipliers), set `scoreMax` and `scoreRate` so good players aren't turned away.
 
 ## Testing your game
 

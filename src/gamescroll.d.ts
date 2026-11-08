@@ -68,6 +68,10 @@ export interface GameDef {
   hint: string;
   /** The score that counts as a win (a decent player gets there in about a minute). */
   goal: number;
+  /** Leaderboard checks: the highest score a round can really reach (default: goal × 1000). */
+  scoreMax?: number;
+  /** Leaderboard checks: the most points a second a great player can keep up (default: goal × 2). */
+  scoreRate?: number;
   w: number;
   h: number;
   maxW?: number;

@@ -13,15 +13,18 @@ const ranks = new Map();   // game id -> last { all, day } from the server (this
 
 export const boards = {
   enabled: !!HEARTS_URL,
-  /** Sends a finished round's score when it beats today's best here. Resolves to { all, day } ranks, or null. */
-  async submit(id, score) {
+  /**
+   * Sends a finished round's score when it beats today's best here, with how long the round took
+   * (the server's quick fairness checks use it). Resolves to { all, day } ranks, or null.
+   */
+  async submit(id, score, secs) {
     if (!this.enabled || !(score > 0)) return null;
     let d = store.get(DAY_KEY, null);
     if (!d || d.day !== today()) d = { day: today(), best: {} };
     if (score < (d.best[id] || 0)) return ranks.get(id) || null;   // not a new best today: show the last ranks
     try {
-      const r = await apiPost('/score', { device: deviceId(), game: id, score: Math.floor(score) });
-      if (!r.ok) return null;
+      const r = await apiPost('/score', { device: deviceId(), game: id, score: Math.floor(score), secs: Math.round(Math.max(0, secs || 0) * 10) / 10 });
+      if (!r.ok) return null;   // 422: the quick checks didn't count it (nothing to show)
       const res = await r.json();
       d.best[id] = Math.max(d.best[id] || 0, score); store.set(DAY_KEY, d);
       ranks.set(id, res); return res;
