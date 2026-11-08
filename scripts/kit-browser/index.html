@@ -56,7 +56,7 @@ try {
   const m = new gs.moves.Moves(); m.update(); m.stop(); ok(true, 'moves'); ok(gs.pad.pad() === null, 'no pad');
   ok(!('store' in gs.util) && !('setSound' in gs.sound) && !('hapticSettings' in gs.device) && !('stopVision' in gs.vision), 'hidden stay hidden');
   ok(Object.isFrozen(gs) && Object.isFrozen(gs.sound), 'frozen');
-  // Next Gen: reflections on marked surfaces (ultra), contact shadows, path-traced photo
+  // Next Gen: reflections on marked surfaces (ultra), contact shadows
   {
     const T3 = gs.THREE, hv = new gs.hd.HDView({ bg: '#334' }); gs.hd.HD.force = 3;
     const floor = new T3.Mesh(new T3.PlaneGeometry(10, 10).rotateX(-Math.PI / 2), gs.hd.pbr('#556', { rough: .1 })); hv.scene.add(floor);
@@ -68,9 +68,10 @@ try {
     hv.render(hx, 160, 120); hv.render(hx, 160, 120);
     ok(hx.getImageData(80, 60, 1, 1).data[3] > 0, 'reflections + contact shadows render');
     ok(!!cs.rt && cs.plane.visible, 'contact shadow map made');
-    const shot = await hv.photo({ samples: 2 }); const t0 = performance.now(); while (!shot.done && performance.now() - t0 < 180000) { shot.step(50); await new Promise(r => setTimeout(r, 10)); }
-    ok(shot.done && shot.image().width > 0, 'path-traced photo: ' + shot.samples + ' samples in ' + Math.round(performance.now() - t0) + ' ms (software GPU)');
-    shot.stop(); hv.render(hx, 160, 120); ok(!hv.shot, 'back to normal rendering after the photo');
+    // see-through things (light shafts, alpha-cut leaves) stay out of the AO and reflection pictures
+    const shaft = new T3.Mesh(new T3.PlaneGeometry(1, 6), new T3.MeshBasicMaterial({ transparent: true, depthWrite: false })); hv.scene.add(shaft);
+    hv.render(hx, 160, 120); ok(shaft.visible, 'see-through meshes put back after the AO pass');
+    ok(!('photo' in hv) && !('loadPhoto' in gs.hd), 'photo mode is gone');
     // Snapdragon GSR 1: a big canvas on the low tier is drawn smaller and upscaled to full size
     {
       gs.hd.HD.force = 0;
@@ -83,7 +84,6 @@ try {
       gs.hd.HD.force = 3;
     }
     gs.hd.HD.direct = direct; gs.hd.HD.force = null;
-    ok(!('currentView' in gs.hd), 'currentView hidden from games');
   }
   // 2D look: lights cut by walls, screen effects and fast sprites (PixiJS)
   {

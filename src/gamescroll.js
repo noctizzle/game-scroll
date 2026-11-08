@@ -112,7 +112,6 @@ export const HIDDEN = {
   moves: ['stopMoves'],
   pad: ['pollPads'],
   vision: ['stopVision'],
-  hd: ['currentView'],
   gen: ['loadGen'],
 };
 
