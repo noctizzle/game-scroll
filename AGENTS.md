@@ -157,6 +157,12 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   screens), `gs.rhythm` (`Beat`, `Chart`, `Calibrate`), `gs.strokes` (`Stroke`, `Shapes` recogniser, `toPhysics`),
   `gs.vehicles` (`Car`, `Kart`, `Laps`; `World3D.vehicle()` for suspension), `gs.level3d.Level3D(text)`, `gs.sky`
   (`Sky` time of day, `Weather` rain/snow/storm).
+- Action and adventure: `gs.combat` (`Gun`, `Shots`, `arc`/`lob`, `Health`, `Markers`, `Explosives`), `gs.tactics`
+  (`CoverMap`, `Squad`, `Route`), `gs.climb` (`Ledges`, `Climber`, `Rope`), `gs.poses` (`figure`, `Rig`), `gs.missions`
+  (`Mission` scripts, `zone`), `gs.cutscene`, `gs.prompts` (quick-time), `gs.destruction` (`shatter`, `slice`, `Rubble`),
+  `gs.stealth` (`lightAt`, `Takedown`, `Bodies`, `Floors`, `Disguise`), `gs.gadgets` (`Grapple`, `Zipline`, `Wires`, `Lock`,
+  `Code`), `gs.arena` (`Arena`, `BallCar`, `chaseBall`), `gs.campaign.Campaign`, `gs.sound.Ears` (3D sound) and
+  `music({ layers }).intensity()`, `gs.props` (`Props` instancing + LOD, `Areas`, `Chunks`, `simplify`).
 - `gs.tweak(name, { speed: 3, grip: [.8, 0, 1] })`: live sliders in `npm run dev` (starting values elsewhere); read fields where used.
 - `gs.prefs` (read only): the player's Reduce motion setting, `reduceMotion`, `motion`. Shake, flash and
   camera kicks already follow it; scale your own big effects by `gs.prefs.motion`.
@@ -171,8 +177,8 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 
 **Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `story.Story`, `look2d.Screen`, `look2d.Batch`): create them in `make()` or `reset()`, never
 later. The app shows "Loading…" and remakes the game once the library is in.
-The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `THREE`)
-and `ai` also load on first use, so the app opens fast. The app loads the ones a game uses before it
+The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `THREE`)
+and `ai`, plus the action kits (`combat`, `tactics`, `climb`, `missions`, `cutscene`, `prompts`, `stealth`, `gadgets`, `campaign`, `arena`), also load on first use, so the app opens fast. The app loads the ones a game uses before it
 runs, so read them as usual (`const { HDView } = gs.hd` at the top of the file is fine).
 
 **Sensors are worked out for you.** The build reads which camera, mic and motion parts a game uses and

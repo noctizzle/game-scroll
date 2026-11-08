@@ -53,9 +53,18 @@
 //   gs.camera    3D camera rigs: chase, shoulder, first person, top, side, orbit, rail; no wall clipping
 //   gs.nav3d     3D path finding on a walkable map made from your level (Recast)
 //   gs.characters  heads that look, limbs that reach (IK), feet that step, springy hit reactions
+//   gs.combat    guns (spread, recoil, reloads, falloff), flying shots, throw arcs, health and armour, explosives
+//   gs.tactics   cover spots, squads that suppress, flank and call out, allies that lead
+//   gs.climb     ledges, hanging, shimmying, climbing up, leaps, ropes   gs.poses  a posable 3D figure and pose blending
+//   gs.missions  mission scripts: objectives, waits, checkpoints        gs.cutscene  camera paths, lines, letterbox, skip
+//   gs.prompts   quick-time taps, swipes, holds and mashing              gs.destruction  shatter and slice meshes (three-pinata)
+//   gs.stealth   light meter, takedowns, bodies, noisy floors, disguises
+//   gs.gadgets   grappling hook, zip line, wire / lock / code puzzles   gs.campaign  chapters, stars, collectibles, unlocks
+//   gs.arena     ball games with cars: arena, goals, boost, flips, ball prediction, replays
+//   gs.props     thousands of props with culling and detail levels (InstancedMesh2), rooms, chunked worlds
 //   gs.THREE     three.js itself
 //
-// The 3D styles and AI load when a game that uses them is on its way (the app does this; games don't
+// The 3D styles, AI and the action kits load when a game that uses them is on its way (the app does this; games don't
 // need to), so the app opens fast. Big libraries (physics, 3D path finding, 3D effects, face
 // tracking, Tone.js) load the first time a game uses them:
 // make those things in make() or reset() and the app shows "Loading…" until they're in.
@@ -126,11 +135,14 @@ function pick(name, ...mods) {
 // code). The app loads the parts a streamed game needs before running it, so games don't notice;
 // if a part isn't in yet, reading it throws StillLoading and the app shows "Loading…".
 const GROUPS = {
-  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'level3d', 'sky', 'THREE'],
+  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'level3d', 'sky', 'poses', 'destruction', 'props', 'THREE'],
     load: () => import('./gs-3d.js').then(m => ({ toon: pick('toon', m.toon), hd: pick('hd', m.hd), ar: pick('ar', m.ar), bricks: pick('bricks', m.bricks),
       physics3d: pick('physics3d', m.physics3d), fx3d: pick('fx3d', m.fx3d), camera: pick('camera', m.camera), nav3d: pick('nav3d', m.nav3d),
-      characters: pick('characters', m.characters), level3d: pick('level3d', m.level3d), sky: pick('sky', m.sky), THREE: m.THREE })) },
+      characters: pick('characters', m.characters), level3d: pick('level3d', m.level3d), sky: pick('sky', m.sky),
+      poses: pick('poses', m.poses), destruction: pick('destruction', m.destruction), props: pick('props', m.props), THREE: m.THREE })) },
   ai: { parts: ['ai'], load: () => import('./kit/ai.js').then(m => ({ ai: pick('ai', m) })) },
+  action: { parts: ['combat', 'tactics', 'climb', 'missions', 'cutscene', 'prompts', 'stealth', 'gadgets', 'campaign', 'arena'],
+    load: () => import('./gs-action.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
 };
 const groupOf = {}; for (const [g, d] of Object.entries(GROUPS)) for (const p of d.parts) groupOf[p] = g;
 const loaded = {}, loading = {};

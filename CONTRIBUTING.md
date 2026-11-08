@@ -71,7 +71,9 @@ motion, frame stepping and hitboxes. Save your file and the game reloads in plac
 checks it's fast enough for a mid-range phone. For opponents that learn as people play, see
 [Tiny Brains](docs/maker-kit.md#tiny-brains). Boards, battles, made levels, drag and drop, idle maths,
 pass-and-play, rhythm, drawn shapes, vehicles, 3D text levels and weather are in
-[Game kits](docs/maker-kit.md#game-kits).
+[Game kits](docs/maker-kit.md#game-kits). Guns, cover and squads, climbing, poses, missions,
+cutscenes, quick-time prompts, breaking things, stealth, gadgets, ball games with cars, campaigns,
+3D sound and big levels are in [Action and adventure kits](docs/maker-kit.md#action-and-adventure-kits).
 
 The [maker kit](docs/maker-kit.md) (everything on `gs`) has one-call effects, particles, screen shake,
 easing, sounds, music, thumbsticks, controllers, real 2D and 3D physics, enemy AI, pixel text and

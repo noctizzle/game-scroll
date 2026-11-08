@@ -558,3 +558,101 @@ console.log('physics ok');
   const seen = fov('#####\n#...#\n#...#\n#####', 2, 1, 5); assert.ok(seen.has('3,2') && seen.has('0,0'));
   console.log('gen: dungeon (seeded), cave, maze, islands, pattern, fov ok');
 }
+{
+  const { Gun, Health, lob, arc, Explosives, hitFrom } = await import('../src/kit/combat.js');
+  const g = new Gun({ mag: 3, rate: 10, reload: .5, reserve: 6, rng: () => .5 });
+  let shots = 0; for (let i = 0; i < 60; i++) { shots += g.pull({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 }, true).length; g.update(1 / 60); }
+  assert.ok(shots >= 3 && g.reserve < 6, 'gun empties its magazine and reloads from reserve: ' + shots);
+  const f = new Gun({ falloff: [10, 30, .5] }); assert.equal(f.damageAt(5), f.damage); assert.ok(f.damageAt(40) < f.damage && f.damageAt(40) >= f.damage * .5 - 1, 'damage falls off with range');
+  const h = new Health({ max: 100, regen: 50, delay: 1 }); h.hurt(60, { from: { x: 1, y: 0 }, at: { x: 0, y: 0 }, facing: 0 }); assert.equal(h.hp, 40); assert.ok(h.hits.length === 1, 'hit direction kept');
+  for (let i = 0; i < 180; i++) h.update(1 / 60); assert.equal(h.hp, 100, 'health comes back after the delay');
+  h.hurt(500); assert.ok(h.dead, 'dies');
+  const v = lob({ x: 0, y: 0, z: 0 }, { x: 10, y: 0, z: 0 }, 1, -20), path = arc({ x: 0, y: 0, z: 0 }, v, -20, { steps: 21, dt: 1 / 20 });
+  assert.ok(Math.abs(path[20].x - 10) < .6 && Math.abs(path[20].y) < .6, 'lob lands on its target: ' + JSON.stringify(path[20]));
+  const ex = new Explosives({ fuse: .1, radius: 3 }); let booms = 0; ex.on('boom', () => booms++); const a = ex.add({ x: 0, y: 0 }); ex.add({ x: 2, y: 0 }); ex.add({ x: 20, y: 0 });
+  ex.light(a); for (let i = 0; i < 60; i++) ex.update(1 / 60); assert.equal(booms, 2, 'a barrel sets off the one next to it, not the far one');
+  assert.ok(typeof hitFrom({ x: 1, y: 0 }, { x: 0, y: 0 }, 0) === 'number');
+  console.log('combat: gun mag + reload, falloff, health regen, lob, chain explosions ok');
+}
+{
+  const { CoverMap, Squad } = await import('../src/kit/tactics.js');
+  const lv = ['..........', '..........', '....##....', '..........', '..........'];
+  const cm = new CoverMap(10, 5, (c, r) => lv[r]?.[c] === '#');
+  assert.ok(cm.spots.length > 0, 'cover spots found beside walls');
+  const s = cm.find({ x: 5, y: 4.5 }, { x: 5, y: 0 }); assert.ok(s && cm.protects(s, { x: 5, y: 0 }), 'finds cover that blocks the threat');
+  const men = [{ x: 2, y: 4 }, { x: 8, y: 4 }, { x: 5, y: 4.6 }]; const sq = new Squad(men, { cover: cm, think: .1 }); let calls = 0; sq.on('call', () => calls++);
+  for (let i = 0; i < 30; i++) sq.update(1 / 30, { x: 5, y: .5 }); assert.ok(men.every(m => m.order), 'every squad member gets an order'); assert.ok(calls >= 1, 'squad calls out contact');
+  console.log('tactics: cover spots, cover that protects, squad orders + callouts ok');
+}
+{
+  const { Ledges, Climber, Rope } = await import('../src/kit/climb.js');
+  const L = new Ledges().add({ x: 0, y: 3, z: 0 }, { x: 4, y: 3, z: 0 }, { x: 0, z: 1 });
+  const cl = new Climber(L); assert.ok(cl.grab({ x: 1, y: 1.4, z: .3 }, -1), 'grabs a ledge in reach');
+  assert.equal(cl.state, 'hang'); const x0 = cl.pos.x; for (let i = 0; i < 30; i++) cl.update(1 / 60, { x: 1 }); assert.ok(cl.pos.x < x0, 'shimmies right (facing the wall along -z, right is -x)');
+  for (let i = 0; i < 60; i++) cl.update(1 / 60, { y: 1 }); assert.ok(cl.state === 'free' && cl.pos.y >= 2.9, 'climbs up onto the top: ' + cl.state + ' ' + cl.pos.y);
+  const rope = new Rope({ x: 0, y: 6, z: 0 }, 4); rope.catch({ x: 0, y: 2, z: 0 }, { x: 4, y: 0, z: 0 }); for (let i = 0; i < 20; i++) rope.update(1 / 60, 1);
+  const hd = rope.hands; assert.ok(Math.abs(Math.hypot(hd.x, hd.y - 6, hd.z) - rope.length) < .01 && Math.abs(hd.x) > .1, 'rope swings and keeps its length');
+  console.log('climb: grab, shimmy, climb up, rope swing ok');
+}
+{
+  const { Mission, zone } = await import('../src/kit/missions.js');
+  const me = { x: 0, y: 0 }, door = zone({ x: 10, y: 0 }, 2); let said = 0, done = 0;
+  const m = new Mission(function* (m) { m.objective('Reach the door'); m.say('Go'); yield m.until(() => door.has(me)); m.checkpoint('door'); m.say('Made it'); yield m.wait(1); m.objective('Wait'); yield m.wait(1); m.complete(); });
+  m.on('say', () => said++).on('complete', () => done++);
+  m.update(1 / 60); assert.equal(m.current.text, 'Reach the door'); me.x = 10; for (let i = 0; i < 70; i++) m.update(1 / 60); assert.equal(m.current.text, 'Wait');
+  m.restart(); me.x = 0; assert.equal(said, 2, 'lines before the checkpoint are not said again on a restart');
+  for (let i = 0; i < 70; i++) m.update(1 / 60); assert.equal(m.current.text, 'Wait', 'restart carries on from the checkpoint, past the door');
+  for (let i = 0; i < 70; i++) m.update(1 / 60); assert.equal(done, 1, 'mission completes');
+  console.log('missions: objectives, zones, checkpoints, restart skips ahead ok');
+}
+{
+  const { Cutscene, along } = await import('../src/kit/cutscene.js');
+  const mid = along([{ x: 0, y: 0, z: 0 }, { x: 10, y: 0, z: 0 }], .5); assert.ok(Math.abs(mid.x - 5) < .01);
+  let lines = 0, ended = 0; const cs = new Cutscene([{ cam: [{ x: 0, y: 2, z: 0 }, { x: 10, y: 2, z: 0 }], look: { x: 0, y: 0, z: -5 }, time: 1 }, { say: 'Hello', who: 'Ana', time: 1 }]);
+  cs.on('say', () => lines++).on('end', () => ended++); for (let i = 0; i < 30; i++) cs.update(1 / 60); assert.ok(cs.shot && cs.shot.x > 0 && cs.shot.x < 10, 'camera moves along the path');
+  cs.skip(); assert.ok(ended === 1 && !cs.playing, 'skip ends it');
+  console.log('cutscene: camera path, lines, skip ok');
+}
+{
+  const { Prompts } = await import('../src/kit/prompts.js');
+  const p = new Prompts(); let pass = 0, fail = 0, done = 0; p.on('pass', () => pass++).on('fail', () => fail++).on('done', () => done++);
+  p.start([{ kind: 'tap', x: 100, y: 100, time: 1 }, { kind: 'swipe', dir: 'left', time: 1 }, { kind: 'tap', x: 50, y: 50, time: .2 }]);
+  p.update(1 / 60); p.down(100, 100); p.update(1 / 60); p.down(200, 200); p.move(120, 200); p.up(); p.update(1 / 60);
+  for (let i = 0; i < 30; i++) p.update(1 / 60);
+  assert.equal(pass, 2, 'tap and swipe pass'); assert.equal(fail, 1, 'a missed prompt fails');
+  console.log('prompts: tap, swipe, timeout ok');
+}
+{
+  const { lightAt, Takedown, Bodies, Floors, Disguise } = await import('../src/kit/stealth.js');
+  assert.ok(lightAt({ x: 0, y: 0 }, [{ x: 0, y: 1, r: 5 }]) > lightAt({ x: 0, y: 0 }, [{ x: 0, y: 4, r: 5 }]), 'nearer the lamp is brighter');
+  assert.ok(lightAt({ x: 0, y: 0 }, [{ x: 0, y: 1, r: 5 }], { sees: () => false }) <= .11, 'walls cast shadows');
+  const g = { x: 0, y: 0, facing: 0 }; assert.equal(Takedown.check({ x: -1, y: 0 }, [g]), g, 'takedown from behind'); assert.equal(Takedown.check({ x: 1, y: 0 }, [g]), null, 'not from the front');
+  const bodies = new Bodies(); bodies.add(3, 0); const seer = { x: 0, y: 0, facing: 0 }; let found = 0; bodies.on('found', () => found++); bodies.update(0, [seer]); assert.equal(found, 1, 'a guard finds a body');
+  const fl = new Floors({}, p => (p.x > 0 ? 'gravel' : 'carpet')); assert.ok(fl.noise({ x: 1, y: 0 }, 2) > fl.noise({ x: -1, y: 0 }, 2) && fl.noise({ x: 1, y: 0 }, .5) === 0, 'gravel loud, carpet quiet, sneaking silent');
+  const d = new Disguise().wear('guard'); assert.ok(d.fooling({ x: 9, y: 0, rank: 'guard' }) && !d.blow(2).fooling({ x: 9, y: 0, rank: 'guard' }), 'disguise fools until blown');
+  console.log('stealth: light meter, takedowns, bodies, floors, disguise ok');
+}
+{
+  const { Grapple, Zipline, Wires, Lock, Code } = await import('../src/kit/gadgets.js');
+  const hook = new Grapple({ range: 20, flyTime: .05 }); assert.ok(hook.fire({ x: 0, y: 0, z: 0 }, { x: 1, y: 1, z: 0 }, () => ({ point: { x: 5, y: 5, z: 0 } })));
+  let pos = { x: 0, y: 0, z: 0 }, vel = { x: 0, y: 0, z: 0 }; for (let i = 0; i < 90; i++) { vel = hook.update(1 / 60, pos, vel, { reel: true }); pos = { x: pos.x + vel.x / 60, y: pos.y + vel.y / 60, z: 0 }; }
+  assert.ok(Math.hypot(pos.x - 5, pos.y - 5) < 3, 'reeling pulls you to the hook: ' + JSON.stringify(pos));
+  const z = new Zipline({ x: 0, y: 10, z: 0 }, { x: 30, y: 0, z: 0 }).ride(); for (let i = 0; i < 600 && z.riding; i++) z.update(1 / 60); assert.ok(z.done, 'zip line reaches the end');
+  const w = new Wires(4, 4, { seed: 3 }); assert.ok(!w.solved); w.cells = w.answer.slice(); w.update(); assert.ok(w.solved, 'the answer lights every tile');
+  const lk = new Lock({ pins: 1, seed: 1 }); lk.a = lk.at; assert.ok(lk.stop() && lk.solved, 'stopping on the mark opens the lock');
+  const code = new Code({ start: 3, seed: 1 }); for (const k of code.seq) code.press(k); assert.ok(code.done && !code.failed, 'repeating the code works');
+  console.log('gadgets: grapple reel, zip line, wires, lock, code ok');
+}
+{
+  const { Campaign } = await import('../src/kit/campaign.js');
+  let saved = null; const api = { load: f => saved ?? f, save: d => { saved = JSON.parse(JSON.stringify(d)); } };
+  const chapters = [{ id: 'a', missions: [{ id: 'a1', stars: [100, 200, 300], collect: 2 }, { id: 'a2', stars: ['Finish', 'Unseen'] }] }, { id: 'b', needs: { stars: 5 }, missions: [{ id: 'b1' }] }];
+  const c = new Campaign(chapters, { extras: { hat: 3 } }).attach(api);
+  assert.equal(c.state('a1'), 'open'); assert.equal(c.state('a2'), 'locked'); assert.equal(c.state('b1'), 'locked');
+  let r = c.finish('a1', { score: 250 }); assert.equal(r.stars, 2); assert.ok(r.unlocked.includes('a2'), 'finishing opens the next mission');
+  r = c.finish('a2', { stars: [true, true] }); assert.ok(r.unlocked.includes('hat') && c.state('b1') === 'locked', 'extras unlock by stars');
+  c.finish('a1', { score: 120 }); assert.equal(c.best('a1'), 250, 'keeps the best score'); c.finish('a1', { score: 320 }); assert.equal(c.state('b1'), 'open', 'enough stars open the next chapter');
+  assert.ok(c.collect('a1', 1) && !c.collect('a1', 1), 'collectibles count once');
+  const c2 = new Campaign(chapters).attach(api); assert.equal(c2.stars, 5); assert.equal(c2.collected('a1'), 1); assert.ok(JSON.stringify(saved).length < 200, 'save is small');
+  console.log('campaign: unlocks, stars, extras, best, collectibles, save ok');
+}
