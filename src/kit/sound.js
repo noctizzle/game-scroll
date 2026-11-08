@@ -12,6 +12,7 @@
 import { sfx, sound, audio } from '../sfx.js';
 import { buildSamples, SAMPLE_RATE } from './zzfx.js';
 import { lazy } from './lazy.js';
+import { register } from './cleanup.js';
 
 /* ---------- notes ---------- */
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -143,10 +144,13 @@ export function zsound(...params) {
 // app's audio, so the player's volume and mute apply.
 //   const T = gs.sound.Tone();
 //   const synth = new T.PolySynth(T.Synth).toDestination();  synth.triggerAttackRelease(['C4', 'E4', 'G4'], '8n');
+let toneHeld = false;
 const toneLib = lazy('Tone.js', () => import('tone').then(T => {
   const a = audio(); if (!a) throw new Error('No audio on this device');
   T.setContext(a.ctx);
   const d = T.getDestination(); d.output.disconnect(); d.output.connect(a.out);
+  // a game's Tone loops stop with the round and hold on the pause screen
+  register('tone', { stop: () => { T.getTransport().stop(); T.getTransport().cancel(); }, pause: () => T.getTransport().state === 'started' && (T.getTransport().pause(), toneHeld = true), resume: () => { if (toneHeld) { toneHeld = false; T.getTransport().start(); } } });
   return T;
 }));
 /** The Tone.js library (loads it the first time). */
@@ -208,4 +212,5 @@ export function stopMusic() { for (const m of [...playing, ...held]) m.stop(); }
 /** Holds every playing tune; resumeMusic() carries them on. The app calls these when a game pauses. */
 export function pauseMusic() { for (const m of [...playing]) m.pause(); }
 export function resumeMusic() { for (const m of [...held]) m.resume(); }
+register('music', { stop: stopMusic, pause: pauseMusic, resume: resumeMusic });
 if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => { if (document.hidden) pauseMusic(); });

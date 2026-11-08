@@ -8,7 +8,7 @@ const { chromium, devices } = require('playwright');
   const sizes = { phone: { width: 390, height: 844 }, foldin: { width: 904, height: 1050 }, foldout: { width: 344, height: 882 } };
   for (const [name, vp] of Object.entries(sizes)) {
     const ctx = await b.newContext({ viewport: vp, deviceScaleFactor: 1, hasTouch: true });
-    const p = await ctx.newPage(); await p.goto('http://localhost:4181/'); await p.waitForTimeout(300);
+    const p = await ctx.newPage(); await p.goto('http://localhost:4181/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(300);
     for (const id of ids) {
       await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(150);
       await p.evaluate(() => __gs.start()); await p.waitForTimeout(700);

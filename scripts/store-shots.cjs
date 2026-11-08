@@ -47,7 +47,7 @@ const BG = 'radial-gradient(90% 60% at 0% 0%,#ff2d8755,transparent 60%),radial-g
 async function capture(b, { w, h, dpr }, shots, dir) {
   const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dpr, isMobile: true, hasTouch: true });
   const p = await ctx.newPage();
-  await p.goto('http://localhost:4182/'); await p.waitForTimeout(1200);
+  await p.goto('http://localhost:4182/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(1200);
   // A few wins first, so the wallet and shop show some credits (local to this headless browser).
   for (const id of ['stack', 'cave', 'mini-golf', 'pocket-kart', 'fossil-dig', 'tilt-maze']) {
     await p.evaluate(id => { __gs.only(id); }, id); await p.waitForTimeout(150);
@@ -153,7 +153,7 @@ const slug = s => (s.title + ' ' + s.accent).toLowerCase().replace(/[^a-z0-9]+/g
   if (want('site') || want('styles')) {
     // style pictures: each game on a landscape screen, so the whole game card shows
     const ctx = await b.newContext({ viewport: { width: 800, height: 600 }, deviceScaleFactor: 2, hasTouch: true });
-    const p = await ctx.newPage(); await p.goto('http://localhost:4182/'); await p.waitForTimeout(1200);
+    const p = await ctx.newPage(); await p.goto('http://localhost:4182/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(1200);
     for (const [k, id] of Object.entries(STYLES)) {
       await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(500);
       await p.evaluate(() => __gs.start()); await p.waitForTimeout(300);

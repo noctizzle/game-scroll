@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
   const b = await chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true });
   const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
-  await p.goto('http://localhost:4182/'); await p.waitForTimeout(300);
+  await p.goto('http://localhost:4182/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(300);
   for (const id of ids) {
     await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(150);
     await p.evaluate(() => __gs.start());

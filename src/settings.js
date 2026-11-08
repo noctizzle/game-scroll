@@ -7,6 +7,7 @@ import { nativeARSupported } from './kit/native-ar.js';
 import { fpsPick, setFpsPick, autoFps, phoneClass, screenHz } from './kit/speed.js';
 import { geoSettings } from './geo.js';
 import { OPEN_SOURCE } from './licences.js';
+import { prefSettings, setPrefs } from './kit/prefs.js';
 
 const size = b => b < 1024 * 1024 ? `${Math.ceil(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
 
@@ -38,6 +39,12 @@ export function openSettings({ stream, cached, clear, arTest }) {
         <div class="qa-actions"><button class="set-ar">Open AR test</button></div>
       </section>` : ''}
       <section class="set-row">
+        <h3>Comfort</h3>
+        <p class="qa-help">Reduce motion softens screen shake, flashes and camera kicks in every game. Aim assist is how much shooting games help your aim on touch.</p>
+        <label class="set-toggle"><input type="checkbox" class="set-motion"${prefSettings.reduceMotion ? ' checked' : ''}> Reduce motion</label>
+        <div class="qa-actions set-aim">${prefSettings.AIM_LEVELS.map(v => `<button data-aim="${v}"${prefSettings.aim === v ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}>Aim assist: ${v}</button>`).join('')}</div>
+      </section>
+      <section class="set-row">
         <h3>Location</h3>
         <p class="qa-help">A few games build their level from your area, and ask the first time you play one. They only get a rounded position (about 1 km, or about 10 m for walk-around games), only while you play, and it never leaves your phone. Turn this off and they use a made-up spot instead.</p>
         <label class="set-toggle"><input type="checkbox" class="set-loc"${geoSettings.enabled ? ' checked' : ''}> Let games use my location</label>
@@ -59,6 +66,8 @@ export function openSettings({ stream, cached, clear, arTest }) {
     el.querySelector('.qa-x').onclick = () => el.close();
     el.querySelector('.set-ar')?.addEventListener('click', () => { el.close(); arTest(); });
     el.querySelectorAll('.set-fps button').forEach(b => b.addEventListener('click', () => { setFpsPick(b.dataset.fps); render(); }));
+    el.querySelector('.set-motion').addEventListener('change', e => setPrefs({ reduceMotion: e.target.checked }));
+    el.querySelectorAll('.set-aim button').forEach(b => b.addEventListener('click', () => { setPrefs({ aim: b.dataset.aim }); render(); }));
     el.querySelector('.set-loc').addEventListener('change', e => { geoSettings.enabled = e.target.checked; });
     el.querySelector('.set-stats')?.addEventListener('change', e => { playstats.enabled = e.target.checked; });
     el.querySelector('.set-clear')?.addEventListener('click', async e => {

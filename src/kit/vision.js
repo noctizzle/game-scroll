@@ -17,6 +17,7 @@
 // hands game is played, then stay cached.
 
 import { lazy } from './lazy.js';
+import { register } from './cleanup.js';
 import { ML_VERSION } from './vision-files.js';
 
 const BASE = String((import.meta.env && import.meta.env.VITE_GAMES_URL) || '').replace(/\/+$/, '');
@@ -39,6 +40,7 @@ function releaseCamera() { if (--users <= 0 && cam) { cam.stream.getTracks().for
 const live = new Set();
 /** Stops every tracker (the app calls this when a round ends or the player leaves). */
 export function stopVision() { for (const t of [...live]) t.stop(); }
+register('vision', { stop: stopVision });
 
 class Tracker {
   constructor(kind) { this.L = lib.get(); this.kind = kind; this.ready = false; this.failed = null; this.running = false; this.lastT = -1; }

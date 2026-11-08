@@ -32,6 +32,7 @@
     "ml": "node scripts/fetch-ml.mjs",
     "kit-test": "node scripts/kit-test.mjs",
     "licences": "node scripts/licence-check.mjs",
+    "types-check": "node scripts/types-check.mjs",
     "kit-browser": "node scripts/kit-browser.cjs",
     "ai-prompt": "node scripts/ai-prompt.mjs",
     "store-shots": "vite build --mode bundled && node scripts/store-shots.cjs"

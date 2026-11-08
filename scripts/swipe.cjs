@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 (async () => {
   const server = await (await import('vite')).preview({ preview: { port: 4185 } });
   const b = await chromium.launch(); const p = await (await b.newContext({ viewport: { width: 390, height: 844 } })).newPage();
-  await p.goto('http://localhost:4185/'); await p.waitForTimeout(400); let fails = 0;
+  await p.goto('http://localhost:4185/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(400); let fails = 0;
   const where = () => p.evaluate(() => [...document.querySelectorAll('.slide')].indexOf(__gs.active.el));
   const rects = () => p.evaluate(() => { const r = q => { const b = __gs.active.el.querySelector(q).getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; }; return { cap: r('.caption'), scr: r('.screen') }; });
   const flick = async (x, y0, y1, ms = 200) => { await p.mouse.move(x, y0); await p.mouse.down(); for (let i = 1; i <= 6; i++) { await p.mouse.move(x, y0 + (y1 - y0) * i / 6); await p.waitForTimeout(ms / 6); } await p.mouse.up(); await p.waitForTimeout(900); };

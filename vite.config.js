@@ -1,7 +1,8 @@
 import { defineConfig, loadEnv } from 'vite';
-import { readdirSync, existsSync, createReadStream, cpSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, createReadStream, cpSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
+import { gsNeeds, sensorsOf } from './src/game-modules.js';
 
 // virtual:bundled-games = the game modules built into the app.
 // The real app streams every game from the game host (VITE_GAMES_URL in .env), so this is empty.
@@ -16,8 +17,13 @@ function bundledGames(streamed) {
       if (id !== RID) return null;
       if (streamed) return 'export default [];';
       const files = readdirSync(dir).filter(f => f.endsWith('.js')).sort();
-      return files.map((f, i) => `import g${i} from ${JSON.stringify(resolve(dir, f))};`).join('\n') +
-        `\nexport default [${files.map((_, i) => 'g' + i).join(',')}];`;
+      // gs's 3D and AI parts load on demand, so load them all before the games run (dev and tests only)
+      // and add the sensors each one uses (worked out from its code, as the streamed build does)
+      const uses = files.map(f => sensorsOf(gsNeeds(readFileSync(resolve(dir, f), 'utf8'))));
+      return `import { loadParts } from ${JSON.stringify(resolve('src/gamescroll.js'))};\nawait loadParts();\n` +
+        `const mods = await Promise.all([${files.map(f => `import(${JSON.stringify(resolve(dir, f))})`).join(',')}]);\n` +
+        `const uses = ${JSON.stringify(uses)};\n` +
+        'export default mods.map((m, i) => { const d = m.default; if (d && uses[i].length && !d.uses) { try { d.uses = uses[i]; } catch (_) {} } return d; });';
     },
   };
 }

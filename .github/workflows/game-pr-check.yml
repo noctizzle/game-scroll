@@ -40,6 +40,9 @@ jobs:
       - name: Open-source list in Settings is up to date
         run: npm run licences
 
+      - name: Types for gs cover every part
+        run: npm run types-check
+
       - name: Kit tests (physics, AI, maths)
         run: npm run kit-test
 

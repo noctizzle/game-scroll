@@ -14,6 +14,7 @@
 // For pixel styles (Pocket, Color, Advance) pass new Juice({ pixel: true }): particles are drawn as
 // crisp squares and shake moves in whole pixels.
 
+import { prefs } from './prefs.js';
 const TAU = Math.PI * 2;
 
 /* ---------- easing ---------- */
@@ -149,7 +150,7 @@ export class Particles {
  */
 export class Shake {
   constructor({ pixel = false, max = 12, fade = 1.6 } = {}) { this.pixel = pixel; this.max = max; this.fade = fade; this.trauma = 0; this.x = 0; this.y = 0; this.t = 0; }
-  add(amount = 4) { this.trauma = Math.min(1, this.trauma + amount / this.max); }
+  add(amount = 4) { this.trauma = Math.min(1, this.trauma + amount * prefs.motion / this.max); }   // softer with Reduce motion
   update(dt) {
     this.t += dt; this.trauma = Math.max(0, this.trauma - this.fade * dt);
     const k = this.trauma * this.trauma * this.max;   // squared: big hits shake hard, small ones barely
@@ -209,7 +210,7 @@ export class Juice {
   pop(x, y, text, o) { this.pops.add(x, y, text, o); return this; }
   tween(obj, props, dur, fn, delay) { return this.tweens.to(obj, props, dur, fn, delay); }
   /** Brief full-screen colour flash (a hit, a pickup). a = strength 0..1. */
-  flash(color = '#ffffff', a = .35, dur = .18) { this.fl = { color, a, dur, t: 0 }; return this; }
+  flash(color = '#ffffff', a = .35, dur = .18) { this.fl = { color, a: a * (prefs.reduceMotion ? .3 : 1), dur, t: 0 }; return this; }
   /**
    * Hit-stop: freeze the action for a moment on a big hit (it sells the impact). The game checks
    * `if (fx.frozen) return;` at the top of its own update logic; effects keep moving.

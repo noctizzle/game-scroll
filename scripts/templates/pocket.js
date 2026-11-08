@@ -56,6 +56,7 @@ function make(api) {
   };
 }
 
+/** @type {import('../gamescroll.js').GameDef} */
 export default {
   id: '__ID__',
   title: '__TITLE__',

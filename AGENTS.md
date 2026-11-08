@@ -139,6 +139,8 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.camera.CameraRig` (3D): `chase`, `shoulder`, `first`, `top`, `side`, `orbit`, `rail`, `fixed`; walls, blends, `shake`, `kick`.
 - `gs.nav3d.NavMesh3D` (lazy): 3D paths made from your level meshes, `crowd()` agents.
 - `gs.characters`: `lookAt`, `reach` (two-bone IK), `Steps` (feet that plant), `Wobble`; ragdolls are `World3D.ragdoll()`.
+- `gs.prefs` (read only): the player's comfort settings, `reduceMotion`, `aimAssist`, `motion`. Shake,
+  flash, camera kicks and AimAssist already follow them; scale your own big effects by `gs.prefs.motion`.
 - `gs.math`: `rng(seed)`, `daily(salt)`, `noise2`, `noise3`, `fbm`, `vec`, `overlap`, `Grid`, `Timers`, `angleDiff`, `wrap`.
 - `gs.util`: `clamp`, `rnd`, `pix`, `disc`, `hash`, `fmt`, `flickTracker`. `gs.palettes`: `PAL`, `SHELL`, `C16`.
 - `gs.gfx` (shaded 2D shapes, glow, backdrops), `gs.bricks` (toy bricks), `gs.geo` (location maths).
@@ -150,6 +152,15 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 
 **Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone): create them in `make()` or `reset()`, never
 later. The app shows "Loading…" and remakes the game once the library is in.
+The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `THREE`)
+and `ai` also load on first use, so the app opens fast. The app loads the ones a game uses before it
+runs, so read them as usual (`const { HDView } = gs.hd` at the top of the file is fine).
+
+**Sensors are worked out for you.** The build reads which camera, mic and motion parts a game uses and
+the card says so before Play (and iPhones ask for motion access on the Play tap). Don't add a field.
+
+**Types:** `src/gamescroll.d.ts` describes all of `gs` and the game definition, so editors autocomplete.
+Add `/** @type {import('../gamescroll.js').GameDef} */` above `export default` to check the definition.
 
 ## Common mistakes
 

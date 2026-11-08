@@ -7,7 +7,7 @@ const { chromium, devices } = require('playwright');
   const ctx = await b.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 1 });
   const p = await ctx.newPage(); const errs = [];
   p.on('pageerror', e => errs.push(e.message));
-  await p.goto('http://localhost:4180/'); await p.waitForTimeout(300);
+  await p.goto('http://localhost:4180/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(300);
   let failed = 0;
   const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${info ? '  ' + info : ''}`); if (!ok) failed++; };
   const ev = f => p.evaluate(f);

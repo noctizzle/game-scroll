@@ -6,7 +6,7 @@ const { chromium } = require('playwright');
   const server = await (await import('vite')).preview({ preview: { port: 4186 } });
   const b = await chromium.launch(); const p = await (await b.newContext({ viewport: { width: 390, height: 844 } })).newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
-  await p.goto('http://localhost:4186/'); await p.waitForTimeout(500);
+  await p.goto('http://localhost:4186/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(500);
   const state = () => p.evaluate(() => {
     const f = document.getElementById('feed'), a = __gs.active.el, all = [...f.querySelectorAll('.slide')];
     return { cards: all.length, index: all.indexOf(a), id: __gs.active.def.id, offset: Math.round(a.getBoundingClientRect().top - f.getBoundingClientRect().top) };

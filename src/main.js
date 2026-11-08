@@ -19,12 +19,11 @@ import { checkTrophies } from './kit/trophies.js';
 import { services } from './kit/services.js';
 import { initWallet, toast, shopHTML, bindShop } from './kit/wallet-ui.js';
 
-import { haptic } from './kit/device.js';
+import { haptic, want } from './kit/device.js';
 import { pollPads } from './kit/gamepad.js';
-import { stopVision } from './kit/vision.js';
-import { stopMoves } from './kit/motion.js';
+import { stopAll, pauseAll, resumeAll } from './kit/cleanup.js';
 // Things a game may leave running (music, the camera for face tracking, motion moves): stopped when a round ends or the player leaves.
-const stopKits=()=>{stopMusic();stopVision();stopMoves()};
+const stopKits=stopAll;   // every kit registers its own stop (src/kit/cleanup.js)
 import { remote } from './remote.js';
 import { openSettings } from './settings.js';
 import { nativeARProbe, nativeARSupported } from './kit/native-ar.js';
@@ -35,7 +34,6 @@ import { speed, fpsFor, tick as tickHz } from './kit/speed.js';
 import { history } from './history.js';
 import { savesFor } from './saves.js';
 import { geoFor, roundStarted, roundEnded } from './geo.js';
-import { stopMusic, pauseMusic, resumeMusic } from './kit/sound.js';
 import { makeDebug } from './debug.js';
 import { shareGame, onSharedGame } from './share.js';
 import BUNDLED from 'virtual:bundled-games';
@@ -138,7 +136,7 @@ function openInfo(s){
   const kind=d.era==='console'?'Classic · Console game':d.era==='nextgen'?'Next Gen · Console game':d.era==='ar'?'AR 3D game: uses your camera and motion sensor':d.era==='advance'?'Advance-style pocket game':d.era==='color'?'Colour pocket game':d.retro?'Dot-matrix pocket game':'Phone game';
   infoDlg.innerHTML=`<div class="info-card"><button class="info-x" aria-label="Close">✕</button>
     <span class="tag">${d.tag}</span><h2>${d.title}</h2><div class="info-by">Created by <b>${creatorOf(d)}</b></div><div class="info-k">${kind}</div>
-    <h3>How to play</h3><p>${d.hint}</p>${locNote(d)}
+    <h3>How to play</h3><p>${d.hint}</p>${locNote(d)}${sensorNote(d)}
     <div class="info-stats"><div><b>${fmt(best(d.id))}</b>Your best</div>${d.goal?`<div><b>${d.goal}</b>Score to win</div>`:''}</div>
     <button class="play info-play">${s.state==='playing'?'Keep playing':'Play'}</button></div>`;
   infoDlg.querySelector('.info-x').onclick=()=>infoDlg.close();
@@ -149,11 +147,17 @@ function best(id){return progress.best(id)}
 function updateBest(s){s.el.querySelector('.best').textContent=fmt(best(s.def.id))}
 
 // Games that use location say so before Play, so the phone's question doesn't come out of nowhere.
+// ...and so do games that use the camera, mic or motion sensor (worked out from their code), and
+// iPhones get asked for motion access on the Play tap instead of in the middle of a round.
+const SENSOR_WORDS={camera:'camera',mic:'microphone',motion:'motion sensor'};
+const sensorNote=d=>{const u=(d.uses||[]).filter(k=>SENSOR_WORDS[k]);if(!u.length||d.era==='ar')return'';const w=u.map(k=>SENSOR_WORDS[k]);
+  return`<div class="ov-loc">${u.includes('camera')?'📷':u.includes('mic')?'🎤':'📱'} Uses your ${w.length>1?w.slice(0,-1).join(', ')+' and '+w[w.length-1]:w[0]}${u.includes('camera')||u.includes('mic')?'. Nothing is recorded or leaves your phone':''}.</div>`};
 const locNote=d=>d.location?`<div class="ov-loc">📍 Uses your ${d.location==='precise'?'location to walk around':'rough area (about 1 km)'}. It stays on your phone, and you can say no.</div>`:'';
 function renderOverlay(s){
   const d=s.def,cue='<div class="swipe-cue">Swipe up for the next game</div>';
   if(s.state==='ready'){
-    s.overlay.innerHTML=`<div class="ov-k">${d.era==='nextgen'||d.era==='ar'?'Ready':d.retro?'Insert coin':'Tap to start'}</div><div class="ov-title">${d.title}</div><div class="ov-hint">${d.hint}</div>${goalHTML(d)}${locNote(d)}<button class="play">${d.retro?'PRESS START':'Play'}</button>${shopHTML(d)}${cue}`;
+    if(d.uses?.includes('motion'))want('motion');
+    s.overlay.innerHTML=`<div class="ov-k">${d.era==='nextgen'||d.era==='ar'?'Ready':d.retro?'Insert coin':'Tap to start'}</div><div class="ov-title">${d.title}</div><div class="ov-hint">${d.hint}</div>${goalHTML(d)}${locNote(d)}${sensorNote(d)}<button class="play">${d.retro?'PRESS START':'Play'}</button>${shopHTML(d)}${cue}`;
     bindShop(s.overlay,d,()=>renderOverlay(s));
   }else if(s.state==='over'){
     const b=best(d.id),isNew=s.score>0&&s.score>=b&&s.newBest;
@@ -179,7 +183,7 @@ function goalHTML(d){
 // holds where it is, and the player taps "Carry on" to continue (the card resumes by itself on close).
 function pauseGame(s,why='away'){
   if(!s||s.state!=='playing'||s.paused)return;
-  s.paused=true;s.pauseWhy=why;pauseMusic();
+  s.paused=true;s.pauseWhy=why;pauseAll();
   try{s.game.pause?.()}catch(e){console.error(s.def.id,e)}
   if(why!=='info'){
     let el=s.screen.querySelector('.pause-ov');
@@ -194,7 +198,7 @@ function resumeGame(s){
   lastT=performance.now();perf.gap();
   if(s.state!=='playing')return;
   try{s.game.resume?.()}catch(e){console.error(s.def.id,e)}
-  resumeMusic();
+  resumeAll();
 }
 function clearPause(s){s.paused=false;s.pauseWhy=null;const el=s.screen.querySelector('.pause-ov');if(el)el.hidden=true}
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&active)pauseGame(active,'away')});

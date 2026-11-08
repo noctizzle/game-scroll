@@ -15,6 +15,12 @@ try {
   const feel = new gs.effects.Feel(); feel.coin(10, 10); feel.boom(50, 50); feel.hit(20, 20); feel.combo(5, 30, 30); feel.update(.016); feel.begin(c); feel.end(c, 320, 240); ok(true, 'feel');
   // sound
   gs.sound.zzfx(...[, , 925, .04, .3, .6, 1, .3, , 6.27, -184, .09, .17]); gs.sound.sounds.coin(); ok(true, 'zzfx');
+  // gs's 3D and AI parts load on first use: reading one before it's in throws StillLoading
+  let g3; try { gs.hd; } catch (x) { g3 = x; } ok(g3?.kitLoading && /gs\.hd/.test(g3.message), 'gs.hd StillLoading before the 3D parts load'); await g3.kitLoading;
+  let gai; try { gs.ai; } catch (x) { gai = x; } ok(gai?.kitLoading, 'gs.ai StillLoading'); await gai.kitLoading; ok(!!gs.hd.HDView && !!gs.ai.Crowd && !!gs.THREE.Scene, '3D and AI parts in');
+  // comfort settings: shake and flash shrink with Reduce motion (the default here is off)
+  ok(gs.prefs.reduceMotion === false && gs.prefs.aimAssist === 1 && new gs.aim.AimAssist().strength === 1, 'prefs defaults');
+  try { gs.prefs.aimAssist = 0; } catch (_) { /* frozen */ } ok(gs.prefs.aimAssist === 1, 'games cannot change prefs');
   // lazy: physics
   let e; try { new gs.physics.Physics(); } catch (x) { e = x; } ok(e && e.kitLoading, 'physics StillLoading'); await e.kitLoading;
   const p = new gs.physics.Physics({ walls: [0, 0, 320, 240] }); const b = p.box(100, 20, 20, 20); for (let i = 0; i < 90; i++) p.step(1 / 60); ok(b.y > 200, 'physics in browser ' + b.y);

@@ -12,7 +12,7 @@ const FLOWS = [['fold8-cover', 'fold8-inner', 'fold8-cover'], ['duo-cover', 'duo
   for (const id of process.argv.slice(2).length ? process.argv.slice(2) : ['stack', 'cave', 'slice', 'gold-digger']) for (const flow of FLOWS) {
     const ctx = await b.newContext({ viewport: SIZES[flow[0]], hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
     const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
-    await p.goto('http://localhost:4180/'); await p.waitForTimeout(300);
+    await p.goto('http://localhost:4180/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(300);
     await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(200);
     await p.evaluate(() => __gs.start());
     const probs = [];
