@@ -98,13 +98,17 @@ export interface SoundPart {
   /** A note name ('C5', 'F#3') to Hz. */
   freq(note: string | number): number;
   tone(f: number | string, o?: { len?: number; wave?: OscillatorType; vol?: number; slide?: number; attack?: number; at?: number; out?: AudioNode }): void;
-  noise(len?: number, o?: { vol?: number; from?: number; to?: number; filter?: BiquadFilterType; q?: number; at?: number; out?: AudioNode }): void;
+  noise(len?: number, o?: { vol?: number; from?: number; to?: number; filter?: BiquadFilterType; q?: number; at?: number; attack?: number; out?: AudioNode }): void;
+  /** The sound of a place: a reverb made in code. Play into sp.in (sound + echo) or give it to new Ears({ space }). Null without audio. */
+  space(o?: { seconds?: number; decay?: number; wet?: number; bright?: number; pre?: number }): { in: AudioNode; tail: AudioNode; set(o: { wet?: number; bright?: number }, seconds?: number): Loose } | null;
+  /** A steady background of noise (wind, rain, a river) that glides with set(); stops with the round, quiet while paused. */
+  bed(o?: { vol?: number; from?: number; filter?: BiquadFilterType; q?: number; gusts?: number; out?: AudioNode }): { set(o: { vol?: number; from?: number; q?: number }, seconds?: number): Loose; stop(): void; [k: string]: Loose };
   /** Plays a tune like 'C5 E5 G5 - C6' ('-' is a rest). */
   notes(seq: string, o?: { len?: number; gap?: number; wave?: OscillatorType; vol?: number }): void;
   /** Background music from patterns; start it in update(), not reset(). */
   music(o?: { tempo?: number; vol?: number; swing?: number; lead?: string; bass?: string; drums?: string; layers?: Record<string, number>; [part: string]: Loose }): { start(): Loose; stop(): void; pause(): void; resume(): void; speed(x: number): Loose; layer(name: string, level?: number, fade?: number): Loose; intensity(x: number, fade?: number): Loose; readonly level: number; readonly playing: boolean; [k: string]: Loose };
   /** 3D sound: the listener follows the camera; sounds play at points in the world (HRTF in headphones). */
-  Ears: new (o?: { ref?: number; max?: number; rolloff?: number; hrtf?: boolean; flat?: boolean }) => {
+  Ears: new (o?: { ref?: number; max?: number; rolloff?: number; hrtf?: boolean; flat?: boolean; space?: { tail: AudioNode } | null; send?: number }) => {
     place(pos: { x: number; y: number; z?: number }, forward?: { x: number; y: number; z: number }, up?: { x: number; y: number; z: number }): Loose; place2d(x: number, y: number, facing?: number): Loose;
     tone(f: number | string, p: { x: number; y: number; z?: number }, o?: Loose): Loose; noise(len: number, p: { x: number; y: number; z?: number }, o?: Loose): Loose; zzfx(p: { x: number; y: number; z?: number }, ...params: (number | undefined)[]): Loose;
     play(name: string, p: { x: number; y: number; z?: number }, pitch?: number, o?: { muffled?: boolean }): Loose;
