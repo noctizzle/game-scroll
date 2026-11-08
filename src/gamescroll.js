@@ -62,9 +62,16 @@
 //   gs.gadgets   grappling hook, zip line, wire / lock / code puzzles   gs.campaign  chapters, stars, collectibles, unlocks
 //   gs.arena     ball games with cars: arena, goals, boost, flips, ball prediction, replays
 //   gs.props     thousands of props with culling and detail levels (InstancedMesh2), rooms, chunked worlds
+//   gs.outdoors  3D outdoor worlds: terrain (THREE.Terrain), grass, trees, rocks, wavy water you can float on
+//   gs.craft     planes, boats and hover craft that feel right, and floating bodies in physics3d
+//   gs.soft      cloth, ropes, jelly and squishy blobs you can grab, cut and tear; a simple liquid
+//   gs.cards     decks, deals, hands, blackjack totals, rummy sets and runs, poker hands (pokersolver)
+//   gs.dice      dice notation ('4d6kh3'), odds, tumbling 2D dice, real 3D dice read by the top face
+//   gs.words     an English dictionary (SCOWL): check, pick, find words in letters or grids, compare guesses
+//   gs.ui        layout with no look (Yoga flexbox): boxes, taps, holds, drags, scrolling lists, focus for pads
 //   gs.THREE     three.js itself
 //
-// The 3D styles, AI and the action kits load when a game that uses them is on its way (the app does this; games don't
+// The 3D styles, AI, the action kits and the play kits (craft ... ui) load when a game that uses them is on its way (the app does this; games don't
 // need to), so the app opens fast. Big libraries (physics, 3D path finding, 3D effects, face
 // tracking, Tone.js) load the first time a game uses them:
 // make those things in make() or reset() and the app shows "Loading…" until they're in.
@@ -122,6 +129,8 @@ export const HIDDEN = {
   pad: ['pollPads'],
   vision: ['stopVision'],
   gen: ['loadGen'],
+  words: ['loadWords'],
+  ui: ['loadUI'],
 };
 
 function pick(name, ...mods) {
@@ -134,14 +143,16 @@ function pick(name, ...mods) {
 // code). The app loads the parts a streamed game needs before running it, so games don't notice;
 // if a part isn't in yet, reading it throws StillLoading and the app shows "Loading…".
 const GROUPS = {
-  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'level3d', 'sky', 'poses', 'destruction', 'props', 'THREE'],
+  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'level3d', 'sky', 'poses', 'destruction', 'props', 'outdoors', 'THREE'],
     load: () => import('./gs-3d.js').then(m => ({ toon: pick('toon', m.toon), hd: pick('hd', m.hd), ar: pick('ar', m.ar), bricks: pick('bricks', m.bricks),
       physics3d: pick('physics3d', m.physics3d), fx3d: pick('fx3d', m.fx3d), camera: pick('camera', m.camera), nav3d: pick('nav3d', m.nav3d),
       characters: pick('characters', m.characters), level3d: pick('level3d', m.level3d), sky: pick('sky', m.sky),
-      poses: pick('poses', m.poses), destruction: pick('destruction', m.destruction), props: pick('props', m.props), THREE: m.THREE })) },
+      poses: pick('poses', m.poses), destruction: pick('destruction', m.destruction), props: pick('props', m.props), outdoors: pick('outdoors', m.outdoors), THREE: m.THREE })) },
   ai: { parts: ['ai'], load: () => import('./kit/ai.js').then(m => ({ ai: pick('ai', m) })) },
   action: { parts: ['combat', 'tactics', 'climb', 'missions', 'cutscene', 'prompts', 'stealth', 'gadgets', 'campaign', 'arena'],
     load: () => import('./gs-action.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
+  play: { parts: ['craft', 'soft', 'cards', 'dice', 'words', 'ui'],
+    load: () => import('./gs-play.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
 };
 const groupOf = {}; for (const [g, d] of Object.entries(GROUPS)) for (const p of d.parts) groupOf[p] = g;
 const loaded = {}, loading = {};

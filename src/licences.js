@@ -31,6 +31,11 @@ export const OPEN_SOURCE = [
   { name: 'three.quarks', for: '3D particle effects', licence: 'MIT', spdx: 'MIT', packages: ['three.quarks'] },
   { name: 'three-pinata', for: 'breaking things into pieces', licence: 'MIT', spdx: 'MIT', packages: ['@dgreenheck/three-pinata'] },
   { name: 'InstancedMesh2 (with bvh.js)', for: 'big levels: many props, culling and detail levels', licence: 'MIT', spdx: 'MIT', packages: ['@three.ez/instanced-mesh'] },
+  { name: 'THREE.Terrain', for: '3D outdoor land and grass', licence: 'MIT', spdx: 'MIT', packages: ['three.terrain.js'] },
+  { name: 'Yoga', for: 'in-game menu and HUD layout (flexbox)', licence: 'MIT', spdx: 'MIT', packages: ['yoga-layout'] },
+  { name: 'pokersolver', for: 'naming and ranking poker hands', licence: 'MIT', spdx: 'MIT', packages: ['pokersolver'] },
+  { name: 'SCOWL word lists (wordlist-english)', for: 'the word game dictionary', licence: 'MIT (word lists: SCOWL licence)', spdx: 'MIT', packages: ['wordlist-english'], notice: '© 2000-2016 Kevin Atkinson and others (SCOWL)' },
+  { name: '@2toad/profanity', for: 'keeping rude words out of word games', licence: 'MIT', spdx: 'MIT', packages: ['@2toad/profanity'] },
   { name: 'Press Start 2P font', for: 'pixel text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/press-start-2p'] },
   { name: 'Rubik font', for: 'app text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/rubik'] },
 ];

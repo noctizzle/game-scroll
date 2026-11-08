@@ -14,4 +14,5 @@ export * as sky from './kit/sky.js';
 export * as poses from './kit/poses.js';
 export * as destruction from './kit/destruction.js';
 export * as props from './kit/props.js';
+export * as outdoors from './kit/outdoors.js';
 export * as THREE from 'three';
