@@ -37,6 +37,9 @@ jobs:
       - name: Build every game as a streamed file
         run: npm run games
 
+      - name: Open-source list in Settings is up to date
+        run: npm run licences
+
       - name: Kit tests (physics, AI, maths)
         run: npm run kit-test
 

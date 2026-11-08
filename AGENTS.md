@@ -24,6 +24,9 @@ The human-facing guide is [CONTRIBUTING.md](CONTRIBUTING.md); the kit reference 
 5. Only change files in `src/games/` (and optionally tick the idea in `docs/game-ideas.md`). Shared
    code (`src/kit/`, `src/gamescroll.js`, `src/main.js`...) ships inside the app: change it only when
    asked to, in a separate PR.
+6. **Adding a dependency** (a package in `package.json` `dependencies`, only for shared code): add it
+   to `src/licences.js` in the same PR so it shows under Settings › Licence › Open-source parts.
+   `npm run licences` checks this, and the PR check fails until it's listed.
 
 ## The rules (a game that breaks one won't be merged)
 

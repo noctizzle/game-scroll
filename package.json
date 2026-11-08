@@ -31,6 +31,7 @@
     "site": "node scripts/build-site.mjs",
     "ml": "node scripts/fetch-ml.mjs",
     "kit-test": "node scripts/kit-test.mjs",
+    "licences": "node scripts/licence-check.mjs",
     "kit-browser": "node scripts/kit-browser.cjs",
     "ai-prompt": "node scripts/ai-prompt.mjs",
     "store-shots": "vite build --mode bundled && node scripts/store-shots.cjs"
