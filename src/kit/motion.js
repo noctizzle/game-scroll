@@ -17,10 +17,12 @@
 // On iPhones the player is asked for motion access the first time they tap Play.
 
 import { onMotion, onShake } from './device.js';
+import { register } from './cleanup.js';
 
 const live = new Set();
 /** Stops every Moves (the app calls this when a round ends or the player leaves a game). */
 export function stopMoves() { for (const m of [...live]) m.stop(); }
+register('moves', { stop: stopMoves });
 
 export class Moves {
   /** sensitivity: 1 normal, below 1 needs harder moves, above 1 fires more easily. */

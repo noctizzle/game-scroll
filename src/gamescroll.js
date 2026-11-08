@@ -30,12 +30,15 @@
 //   gs.pacing    spawners, waves with breathers, a difficulty director
 //   gs.aim       touch aim assist: sticky aim, pull onto targets, auto fire
 //   gs.senses    enemy sight cones, hearing, memory and moods (calm, suspicious, alert, searching)
+//   gs.prefs     the player's comfort settings (read only): reduceMotion, aimAssist, motion
 //   gs.camera    3D camera rigs: chase, shoulder, first person, top, side, orbit, rail; no wall clipping
 //   gs.nav3d     3D path finding on a walkable map made from your level (Recast)
 //   gs.characters  heads that look, limbs that reach (IK), feet that step, springy hit reactions
 //   gs.THREE     three.js itself
 //
-// Big parts (physics, 3D path finding, 3D effects, face tracking, Tone.js) load the first time a game uses them:
+// The 3D styles and AI load when a game that uses them is on its way (the app does this; games don't
+// need to), so the app opens fast. Big libraries (physics, 3D path finding, 3D effects, face
+// tracking, Tone.js) load the first time a game uses them:
 // make those things in make() or reset() and the app shows "Loading…" until they're in.
 
 import * as sfx from './sfx.js';
@@ -43,34 +46,25 @@ import * as util from './util.js';
 import * as palettes from './palettes.js';
 import * as device from './kit/device.js';
 import * as gfx from './kit/gfx.js';
-import * as bricks from './kit/bricks.js';
-import * as toon from './kit/toon3d.js';
-import * as hd from './kit/hd3d.js';
-import * as ar from './kit/ar3d.js';
 import * as juice from './kit/juice.js';
 import * as sound from './kit/sound.js';
 import * as controls from './kit/controls.js';
 import * as physics2d from './kit/physics2d.js';
 import * as physics from './kit/physics.js';
-import * as physics3d from './kit/physics3d.js';
 import * as geo from './kit/geo.js';
 import * as math from './kit/math.js';
-import * as ai from './kit/ai.js';
 import * as pixel from './kit/pixel.js';
 import * as effects from './kit/effects.js';
 import * as moves from './kit/motion.js';
 import * as pad from './kit/gamepad.js';
-import * as fx3d from './kit/fx3d.js';
 import * as vision from './kit/vision.js';
 import * as things from './kit/things.js';
 import * as rounds from './kit/rounds.js';
 import * as pacing from './kit/pacing.js';
 import * as aim from './kit/aim.js';
 import * as senses from './kit/senses.js';
-import * as camera from './kit/camera.js';
-import * as nav3d from './kit/nav3d.js';
-import * as characters from './kit/characters.js';
-import * as THREE from 'three';
+import * as prefsKit from './kit/prefs.js';
+import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
 // and the hooks the app uses to stop things between rounds.
@@ -89,7 +83,42 @@ function pick(name, ...mods) {
   return Object.freeze(out);
 }
 
-const gs = Object.freeze({
+// Parts that load on first use, so the app opens without them (three.js alone is most of the app's
+// code). The app loads the parts a streamed game needs before running it, so games don't notice;
+// if a part isn't in yet, reading it throws StillLoading and the app shows "Loading…".
+const GROUPS = {
+  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'THREE'],
+    load: () => import('./gs-3d.js').then(m => ({ toon: pick('toon', m.toon), hd: pick('hd', m.hd), ar: pick('ar', m.ar), bricks: pick('bricks', m.bricks),
+      physics3d: pick('physics3d', m.physics3d), fx3d: pick('fx3d', m.fx3d), camera: pick('camera', m.camera), nav3d: pick('nav3d', m.nav3d),
+      characters: pick('characters', m.characters), THREE: m.THREE })) },
+  ai: { parts: ['ai'], load: () => import('./kit/ai.js').then(m => ({ ai: pick('ai', m) })) },
+};
+const groupOf = {}; for (const [g, d] of Object.entries(GROUPS)) for (const p of d.parts) groupOf[p] = g;
+const loaded = {}, loading = {};
+function loadGroup(g) {
+  return loading[g] ||= GROUPS[g].load().then(parts => { Object.assign(loaded, parts); return parts; }, e => { delete loading[g]; throw e; });
+}
+/** The parts that load later. */
+export const LAZY_PARTS = Object.freeze(Object.keys(groupOf));
+/** Loads the parts these names need ('toon', 'hd.HDView', ...), or every part if none are given. */
+export function loadParts(names) {
+  const tops = names ? [...new Set(names.map(n => n.split('.')[0]))] : LAZY_PARTS;
+  return Promise.all([...new Set(tops.filter(t => groupOf[t]).map(t => groupOf[t]))].map(loadGroup)).then(() => {});
+}
+/** Are these parts loaded? */
+export const partsReady = names => (names || LAZY_PARTS).every(n => !groupOf[n.split('.')[0]] || n.split('.')[0] in loaded);
+/**
+ * Could this app give a game these names? Parts that haven't loaded yet count by name only (the
+ * app checks them in full once they're in, before running the game).
+ */
+export function offers(names) {
+  return names.every(n => {
+    const ks = n.split('.'); if (groupOf[ks[0]] && !(ks[0] in loaded)) return true;
+    let o = gs; for (const k of ks) { if (o == null || !(k in Object(o))) return false; o = o[k]; } return true;
+  });
+}
+
+const core = {
   sound: pick('sound', sound, sfx),
   device: pick('device', device),
   util: pick('util', util),
@@ -102,14 +131,7 @@ const gs = Object.freeze({
   moves: pick('moves', moves),
   pixel: pick('pixel', pixel),
   gfx: pick('gfx', gfx),
-  bricks: pick('bricks', bricks),
   physics: pick('physics', physics, physics2d),
-  physics3d: pick('physics3d', physics3d),
-  ai: pick('ai', ai),
-  toon: pick('toon', toon),
-  hd: pick('hd', hd),
-  ar: pick('ar', ar),
-  fx3d: pick('fx3d', fx3d),
   vision: pick('vision', vision),
   geo: pick('geo', geo),
   things: pick('things', things),
@@ -117,9 +139,13 @@ const gs = Object.freeze({
   pacing: pick('pacing', pacing),
   aim: pick('aim', aim),
   senses: pick('senses', senses),
-  camera: pick('camera', camera),
-  nav3d: pick('nav3d', nav3d),
-  characters: pick('characters', characters),
-  THREE,
+  prefs: prefsKit.prefs,
+};
+const gs = {};
+for (const [k, v] of Object.entries(core)) Object.defineProperty(gs, k, { value: v, enumerable: true });
+for (const k of LAZY_PARTS) Object.defineProperty(gs, k, {
+  enumerable: true,
+  get() { if (k in loaded) return loaded[k]; throw new StillLoading('gs.' + k, loadGroup(groupOf[k])); },
 });
+Object.freeze(gs);
 export default gs;

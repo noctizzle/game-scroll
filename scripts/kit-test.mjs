@@ -270,3 +270,29 @@ console.log('physics ok');
   assert.ok(nav.random() && nav.closest({ x: 0, y: 5, z: 0 }).y < 3.2, 'random and closest');
   console.log('ragdoll + nav3d ok');
 }
+// one clean-up registry: every kit's stop runs, and one failing doesn't stop the rest
+{
+  const { register, stopAll, pauseAll, resumeAll } = await import('../src/kit/cleanup.js');
+  const log = [];
+  register('test-a', { stop: () => { log.push('a'); throw new Error('boom'); }, pause: () => log.push('pa'), resume: () => log.push('ra') });
+  register('test-b', { stop: () => log.push('b') });
+  stopAll(); pauseAll(); resumeAll();
+  assert.ok(log.includes('a') && log.includes('b') && log.includes('pa') && log.includes('ra'), 'cleanup hooks all run ' + log);
+  console.log('cleanup ok');
+}
+// comfort settings: Reduce motion softens shake and flash; aim assist strength comes from Settings
+{
+  const { setPrefs, prefs } = await import('../src/kit/prefs.js');
+  const { Shake, Juice } = await import('../src/kit/juice.js');
+  const { AimAssist } = await import('../src/kit/aim.js');
+  const a = new Shake(); a.add(6); const full = a.trauma;
+  setPrefs({ reduceMotion: true, aim: 'off' });
+  const b = new Shake(); b.add(6);
+  assert.ok(b.trauma < full * .5, 'reduce motion: smaller shake ' + b.trauma + ' vs ' + full);
+  const j = new Juice(); j.flash('#fff', .4); assert.ok(j.fl.a < .2, 'reduce motion: softer flash');
+  assert.equal(new AimAssist().strength, 0, 'aim assist off from Settings');
+  assert.equal(new AimAssist({ strength: .7 }).strength, .7, 'a game can still set its own');
+  assert.ok(Object.isFrozen(prefs), 'games cannot change prefs');
+  setPrefs({ reduceMotion: false, aim: 'normal' });
+  console.log('prefs ok');
+}

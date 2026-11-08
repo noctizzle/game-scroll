@@ -17,13 +17,16 @@
 // direction { x, y, z }; then a.dir is the helped direction (a THREE.Vector3 works for both).
 // Targets need x, y (and z in 3D) and r (their size); dead ones (t.dead) are skipped. Targets that
 // move can be led: give them vx, vy (vz) and pass { lead: bulletSpeed }.
-// Strength by player: assist.strength = 0 turns it all off (a settings toggle), 1 is normal.
+// Strength: starts at the player's Aim assist setting (0 off .. 1.5 high, 1 normal); set
+// assist.strength yourself only if your game has its own reason to.
+
+import { prefs } from './prefs.js';
 
 const DEG = Math.PI / 180;
 const len = v => Math.hypot(v.x, v.y, v.z || 0) || 1;
 
 export class AimAssist {
-  constructor({ cone = 10, range = 400, pull = .4, slow = .5, autoFire = 0, stickTime = .12, strength = 1 } = {}) {
+  constructor({ cone = 10, range = 400, pull = .4, slow = .5, autoFire = 0, stickTime = .12, strength = prefs.aimAssist } = {}) {
     Object.assign(this, { cone, range, pull, slow, autoFire, stickTime, strength });
     this.target = null; this.onTime = 0; this.on = false; this.offTime = 9;
   }

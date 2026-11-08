@@ -22,6 +22,7 @@
 // flat directions the camera faces, to make "stick up = away from camera" movement.
 
 import { Vector3, Raycaster, MathUtils } from 'three';
+import { prefs } from './prefs.js';
 
 const MODES = {
   chase: { distance: 6, height: 2.2, side: 0, look: 1.2, lag: .18, follows: true },
@@ -54,8 +55,8 @@ export class CameraRig {
     return this;
   }
   pick(o) { const keep = {}; for (const k of ['walls', 'margin', 'lead', 'rail', 'at', 'pitchMin', 'pitchMax']) if (o[k] !== undefined) keep[k] = o[k]; return keep; }
-  shake(amount = .4) { this.trauma = Math.min(1, this.trauma + amount); return this; }
-  kick(deg = 6, sec = .3) { this.kickFov = deg; this.kickLeft = this.kickTime = sec; return this; }
+  shake(amount = .4) { this.trauma = Math.min(1, this.trauma + amount * prefs.motion); return this; }   // softer with Reduce motion
+  kick(deg = 6, sec = .3) { this.kickFov = deg * prefs.motion; this.kickLeft = this.kickTime = sec; return this; }
   forward(out = new Vector3()) { const c = this.cam; c.getWorldDirection(out); out.y = 0; return out.lengthSq() ? out.normalize() : out.set(0, 0, -1); }
   right(out = new Vector3()) { this.forward(out); return out.set(-out.z, 0, out.x); }
   /** Where the rig wants to be, without lag or walls. */

@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { GAME_MODULES, API_FEATURES, LOCATION_LEVELS, gsNeeds, hasAll } from '../src/game-modules.js';
+import { GAME_MODULES, API_FEATURES, LOCATION_LEVELS, gsNeeds, hasAll, sensorsOf } from '../src/game-modules.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'src'), GAMES = join(SRC, 'games');
@@ -66,7 +66,7 @@ async function buildOne(file) {
   // Location must be declared (location: 'coarse' | 'precise'), so the feed can say so before Play.
   if (feats.some(f => /location/i.test(f)) && !new RegExp(`\\blocation\\s*:\\s*['"](${LOCATION_LEVELS.join('|')})['"]`).test(src))
     throw new Error(`src/games/${file} uses api.location but doesn't declare it: add location: 'coarse' (or 'precise') to the game definition`);
-  return { code: chunk.code, needs };
+  return { code: chunk.code, needs, uses: sensorsOf(used) };
 }
 
 // Everything in a game definition except functions (make, etc.) is plain data the feed needs
@@ -85,7 +85,7 @@ function shim() {
 }
 // gs itself, to check games only use parts of it that exist. A failure here is loud: every game needs it.
 let gsP = null;
-const loadGs = () => gsP ||= (shim(), import(pathToFileURL(join(SRC, 'gamescroll.js')).href).then(m => m.default));
+const loadGs = () => gsP ||= (shim(), import(pathToFileURL(join(SRC, 'gamescroll.js')).href).then(async m => { await m.loadParts(); return m.default; }));
 async function readMeta(file) {
   shim();
   try { return metaOf((await import(pathToFileURL(join(GAMES, file)).href)).default || {}); }
@@ -98,7 +98,7 @@ export async function buildGames({ withMeta = false } = {}) {
   const games = [];
   for (const file of files) {
     const id = file.replace(/\.js$/, '');
-    const { code, needs } = await buildOne(file);
+    const { code, needs, uses } = await buildOne(file);
     const sha256 = createHash('sha256').update(code).digest('hex'), hash = sha256.slice(0, 12);
     // hash (short) names the file; sha256 (full) is what the app checks, via the signed catalogue.
     const g = { id, hash, sha256, file: `games/${id}.${hash}.js`, bytes: Buffer.byteLength(code), needs, code };
@@ -107,6 +107,7 @@ export async function buildGames({ withMeta = false } = {}) {
       if (!meta || !meta.id) continue;        // helper files that are not games
       if (meta.id !== id) throw new Error(`src/games/${file} has id '${meta.id}'; the file name must match the id`);
       if (meta.location !== undefined && !LOCATION_LEVELS.includes(meta.location)) throw new Error(`src/games/${file}: location must be one of ${LOCATION_LEVELS.join(', ')}`);
+      if (uses.length) meta.uses = uses;   // sensors, worked out from the code (not declared by the game)
       g.meta = meta;
     }
     games.push(g);

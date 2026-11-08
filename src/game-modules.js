@@ -42,3 +42,15 @@ export const API_FEATURES = ['save', 'load', 'clearSave', 'location', 'watchLoca
 // How precisely a game may know where the player is. A game that calls api.location() or
 // api.watchLocation() must say which in its definition (location: 'coarse'), and the feed shows it.
 export const LOCATION_LEVELS = ['coarse', 'precise'];
+
+// Which phone sensors a game uses, worked out from the gs parts it uses (gsNeeds), so the feed can
+// say so before Play and ask for motion access on the Play tap. Games don't declare it themselves.
+const SENSORS = {
+  camera: ['device.startCamera', 'vision.Face', 'vision.Hands', 'vision', 'ar.ARView', 'ar'],
+  mic: ['device.startMic'],
+  motion: ['device.tilt', 'device.calibrateTilt', 'device.onMotion', 'device.onShake', 'device.heading', 'device.orientation', 'device.faceDown', 'moves.Moves', 'moves', 'ar.ARView', 'ar'],
+};
+/** ['camera', 'mic', 'motion'] (the ones a game uses), from a gsNeeds list. */
+export function sensorsOf(needs) {
+  return Object.keys(SENSORS).filter(s => SENSORS[s].some(n => needs.includes(n)));
+}

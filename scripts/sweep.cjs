@@ -8,7 +8,7 @@ const { chromium } = require('playwright');
   const b = await chromium.launch();
   const p = await (await b.newContext({ viewport: { width: 390, height: 844 } })).newPage();
   const pageErrs = []; p.on('pageerror', e => pageErrs.push(e.message));
-  await p.goto('http://localhost:4185/'); await p.waitForTimeout(400);
+  await p.goto('http://localhost:4185/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(400);
   const ids = process.argv.slice(2).length ? process.argv.slice(2)
     : await p.evaluate(() => __gs.GAMES.filter(g => g.era === 'console' || g.era === 'nextgen' || g.era === 'ar').map(g => g.id));
   let failed = 0;

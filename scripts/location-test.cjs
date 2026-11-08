@@ -14,7 +14,7 @@ const HERE = { latitude: 51.507351, longitude: -0.127758, accuracy: 15 };   // s
     const ctx = await b.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 1, geolocation: HERE, permissions: perms });
     const p = await ctx.newPage(); const errs = [];
     p.on('pageerror', e => errs.push(e.message));
-    await p.goto('http://localhost:4183/'); await p.waitForTimeout(400);
+    await p.goto('http://localhost:4183/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(400);
     await p.evaluate(() => __gs.only('street-lamps')); await p.waitForTimeout(200);
     return { ctx, p, errs };
   };

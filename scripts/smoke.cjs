@@ -7,7 +7,7 @@ const { chromium, devices } = require('playwright');
   const ctx = await b.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 1 });
   const p = await ctx.newPage(); let errs = [];
   p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-  await p.goto('http://localhost:4179/'); await p.waitForTimeout(400);
+  await p.goto('http://localhost:4179/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(400);
   const ids = process.argv.slice(2).length ? process.argv.slice(2) : await p.evaluate(() => __gs.GAMES.map(g => g.id));
   let failed = 0;
   // Every game must pay credits for a win, so every game needs a goal score.

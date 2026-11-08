@@ -16,7 +16,7 @@
 // got write access to the games host still couldn't get their own code to run in the app.
 
 import { API_FEATURES, LOCATION_LEVELS, hasAll } from './game-modules.js';
-import gs from './gamescroll.js';
+import gs, { loadParts, offers } from './gamescroll.js';
 
 export const BASE = String(import.meta.env.VITE_GAMES_URL || '').replace(/\/+$/, '');
 export const CACHE_MAX = 1000;
@@ -31,7 +31,8 @@ const MANIFEST_KEY = SIGNED ? 'gs_catalogue' : 'gs_manifest', INDEX_KEY = 'gs_ca
 // everything app-only (the wallet, saved progress, settings).
 // It carries gs's parts at the top level as well as default, so it works however the bundler reads
 // the default import (as module.default, or as the whole module).
-const KIT = { 'gamescroll.js': Object.freeze({ __esModule: true, ...gs, default: gs }) };
+// The parts that load later are copied as getters, so building this doesn't load them.
+const KIT = { 'gamescroll.js': Object.freeze(Object.defineProperties({ __esModule: true, default: gs }, Object.getOwnPropertyDescriptors(gs))) };
 // Not a module: the api features this app gives games in make(api) (see API_FEATURES).
 KIT['@api'] = Object.fromEntries(API_FEATURES.map(k => [k, true]));
 
@@ -81,7 +82,7 @@ const known = new Map();   // id -> the app's entry for it (metadata, likes)
 
 // Can this app run the game? It must only use shared exports this build actually has.
 function compatible(g) {
-  for (const [mod, names] of Object.entries(g.needs || {})) { const m = KIT[mod]; if (!m || !hasAll(mod === 'gamescroll.js' ? m.default : m, names)) return false; }
+  for (const [mod, names] of Object.entries(g.needs || {})) { const m = KIT[mod]; if (!m || !(mod === 'gamescroll.js' ? offers(names) : hasAll(m, names))) return false; }
   // A location level this app doesn't know (a future one) would get no location at all: skip the game.
   if (g.meta && g.meta.location !== undefined && !LOCATION_LEVELS.includes(g.meta.location)) return false;
   return true;
@@ -205,7 +206,10 @@ export const remote = {
     const l = loaded.get(id);
     if (l && l.hash === g.hash) return Promise.resolve(l.def);
     if (inflight.has(id)) return inflight.get(id);
-    const p = fetchCode(g).then(code => {
+    const need = g.needs?.['gamescroll.js'] || [];
+    const p = Promise.all([fetchCode(g), loadParts(need)]).then(([code]) => {
+      // the parts that just loaded are checked in full now (an older app may lack something newer)
+      if (!hasAll(gs, need)) throw new Error('needs a newer app');
       const def = { ...known.get(id), ...evaluate(id, code) };
       loaded.set(id, { hash: g.hash, def }); failed.delete(id); return def;
     }).catch(e => { console.warn('[games]', id, e.message); failed.set(id, Date.now()); return null; })
