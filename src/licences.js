@@ -14,6 +14,7 @@ export const OPEN_SOURCE = [
   { name: 'MediaPipe', for: 'face and hand tracking, and its models', licence: 'Apache 2.0', spdx: 'Apache-2.0',
     packages: ['@mediapipe/tasks-vision'] },
   { name: 'Yuka', for: 'game AI', licence: 'MIT', spdx: 'MIT', packages: ['yuka'] },
+  { name: 'Recast Navigation', for: '3D path finding', licence: 'MIT', spdx: 'MIT', packages: ['recast-navigation'] },
   { name: 'Tone.js', for: 'music', licence: 'MIT', spdx: 'MIT', packages: ['tone'] },
   { name: 'ZzFX', for: 'sound effects, by Frank Force', licence: 'MIT', spdx: 'MIT', packages: ['zzfx'] },
   { name: 'simplex-noise', for: 'noise for terrain and motion', licence: 'MIT', spdx: 'MIT', packages: ['simplex-noise'] },
