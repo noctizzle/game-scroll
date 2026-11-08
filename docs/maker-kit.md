@@ -752,6 +752,9 @@ update(dt) { enemy.mind.act(see, dt); if (nearMiss) enemy.mind.feel(1); }
 // when the enemy is destroyed or leaves: enemy.mind.done();
 ```
 
+Each mind has its own reaction time and its own choice (`enemy.mind.action`), so a whole squad can
+act in the same frame.
+
 `wave.unsure(see)` says how much the live minds disagree about what to do on those inputs (0 they
 all agree, towards 1 they don't). It's a cheap "not sure" signal: when it's high, let the teacher
 decide, hesitate, or show a tell the player can read.

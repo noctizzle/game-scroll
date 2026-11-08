@@ -371,10 +371,13 @@ export class Wave {
     const pair = this.pair, net = b.net.copy();
     for (let i = 0; i < n; i++) net.w[i] += sign * eps[i];
     let total = 0, time = 0, alive = true;
+    // each mind keeps its own reaction timer and last choice, so a squad of enemies that all act in
+    // the same frame each decide for themselves (rather than getting whatever the last one chose)
+    const own = { wait: 0, since: 1, last: -1 }, swap = () => { for (const k in own) [own[k], b[k]] = [b[k], own[k]]; };
     const self = this; this.live.add(net);
     return {
-      act(see, dt = 1 / 60) { time += dt; return b.act(see, dt, net); },
-      get action() { return b.action; },
+      act(see, dt = 1 / 60) { time += dt; swap(); try { return b.act(see, dt, net); } finally { swap(); } },
+      get action() { return own.last < 0 ? undefined : b.names ? b.names[own.last] : own.last; },
       feel(x = 1) { total += clamp(+x || 0, -2, 2); b.feel(x); },
       done() {
         if (!alive) return; alive = false; self.live.delete(net);

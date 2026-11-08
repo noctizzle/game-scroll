@@ -562,7 +562,7 @@ export interface BrainMind { act(see: number[], dt?: number): number; readonly a
 export interface BrainsPart {
   Net: typeof TinyNet;
   Brain: typeof Brain;
-  /** Every enemy in a wave is an experiment: wave.mind() per enemy, mind.done() when it leaves. */
+  /** Every enemy in a wave is an experiment: wave.mind() per enemy (each with its own reaction time and action), mind.done() when it leaves. */
   Wave: new (brain: Brain, o?: { change?: number }) => { mind(): BrainMind; /** How much the live minds disagree on these inputs, 0..1. */ unsure(see: number[]): number };
   /** Learns the player's habits and guesses their next move (board, card, rhythm, turn games). */
   Predict: typeof Predict;
