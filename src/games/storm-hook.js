@@ -1,4 +1,5 @@
 import gs from '../gamescroll.js';
+const { Timers } = gs.math;
 const { sounds, noise, tone } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
@@ -44,6 +45,7 @@ function makeHero() {
 }
 
 function make(api) {
+  const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   let v, hero, rope, ropeMesh, anchors, towers, gems, gemMesh, sunL, rain, spark, built, mx = new Object3D();
   let press = false, p, vel, hook, steer, holding, fingers, keys, t, dist, bonus, msg, flashT, nextBolt, best, farZ, gemN, swingT;
   const tmp = new Vector3(), tmp2 = new Vector3(), camPos = new Vector3();
@@ -103,11 +105,11 @@ function make(api) {
   function release() { if (!hook) return; hook = null; tone(500, { len: .1, wave: 'triangle', vol: .04, slide: 300 }); haptic('light'); }
   function bolt() {
     flashT = .25; nextBolt = rnd(3, 7); haptic('heavy');
-    setTimeout(() => { noise(1.2, { vol: .16, from: 900, to: 40 }); haptic('medium'); }, 250);
+    later(() => { noise(1.2, { vol: .16, from: 900, to: 40 }); haptic('medium'); }, 250);
     const x = rnd(-60, 60), z = p.z + rnd(40, 120); let y = 70;
     for (let i = 0; i < 40; i++) { const nx = x + rnd(-4, 4); spark.emit({ x: nx, y, z, life: .25, size: .9, col: [3, 3.5, 6] }); y -= 2; }
   }
-  function update(dt) {
+  function update(dt) { timers.update(dt);
     t += dt; flashT = Math.max(0, flashT - dt); nextBolt -= dt; if (nextBolt <= 0) bolt();
     if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
     if (t < 1.5) return fx(dt);
@@ -187,7 +189,7 @@ function make(api) {
     c.restore();
   }
   const self = {
-    reset() {
+    reset() { timers.clear();
       if (!v) setup();
       p = new Vector3(0, 16, 0); vel = new Vector3(0, 4, 16); hook = null; steer = 0; holding = false; fingers = {}; keys = new Set();
       t = 0; dist = 0; bonus = 0; msg = null; flashT = 0; nextBolt = 2.5; farZ = 0; gemN = 0; gems = []; tI = 0; aI = 0; swingT = 0;

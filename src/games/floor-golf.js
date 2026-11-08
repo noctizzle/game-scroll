@@ -1,4 +1,5 @@
 import gs from '../gamescroll.js';
+const { Timers } = gs.math;
 const { sounds, tone, noise } = gs.sound;
 const { haptic, want } = gs.device;
 const { clamp, rnd } = gs.util;
@@ -33,6 +34,7 @@ function looks() {
 }
 
 function make(api) {
+  const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   want('motion');
   let v, course, ball, mover, flag, sparkle, built;
   let state, hi, hole, base, yaw, bp, bv, strokes, total, score, t, msg, aim, tap, moverT, sunk, lastHit, cards;
@@ -100,7 +102,7 @@ function make(api) {
     if (inCup) { haptic('success'); sounds.win(); const c = course.localToWorld(new Vector3(hole.cup[0], .05, hole.cup[1])); for (let i = 0; i < 50; i++) sparkle.emit({ x: c.x, y: c.y, z: c.z, vx: rnd(-.6, .6), vy: rnd(.6, 1.6), vz: rnd(-.6, .6), life: rnd(.6, 1.2), size: .015, col: [rnd(1, 3), rnd(1, 3), rnd(.5, 2)], drag: 1, grav: 2 }); }
     sunk = 2.2;
   }
-  function update(dt) {
+  function update(dt) { timers.update(dt);
     if (!v) return; v.live(); if (v.calibrating) return;
     t += dt; moverT += dt; lastHit -= dt; if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
     if (state === 'place') { if (v.mode !== 'world' && t > 1) placeAt(W / 2, H / 2); return; }
@@ -117,7 +119,7 @@ function make(api) {
       if (hit && lastHit <= 0 && sp > .2) { lastHit = .08; tone(900, { len: .03, wave: 'triangle', vol: Math.min(.06, sp * .02) }); haptic('tick'); }
       // the cup: slow enough and close enough drops in; too fast lips out
       const dc = Math.hypot(bp.x - hole.cup[0], bp.z - hole.cup[1]);
-      if (dc < CUP - BR * .4) { if (sp < 1.4) { ball.visible = false; bv.set(0, 0, 0); tone(300, { len: .08, wave: 'sine', vol: .07 }); setTimeout(() => tone(200, { len: .1, wave: 'sine', vol: .06 }), 80); return holeDone(true); } bv.x += (bp.x - hole.cup[0]) * 6 * h; bv.z += (bp.z - hole.cup[1]) * 6 * h; }
+      if (dc < CUP - BR * .4) { if (sp < 1.4) { ball.visible = false; bv.set(0, 0, 0); tone(300, { len: .08, wave: 'sine', vol: .07 }); later(() => tone(200, { len: .1, wave: 'sine', vol: .06 }), 80); return holeDone(true); } bv.x += (bp.x - hole.cup[0]) * 6 * h; bv.z += (bp.z - hole.cup[1]) * 6 * h; }
       else if (dc < CUP) { const pull = (CUP - dc) * 8 * h; bv.x -= (bp.x - hole.cup[0]) / dc * pull; bv.z -= (bp.z - hole.cup[1]) / dc * pull; }
     }
     if (bv.lengthSq() === 0 && strokes >= MAXS) holeDone(false);
@@ -151,7 +153,7 @@ function make(api) {
     arNote(c, v, W, H);
   }
   const self = {
-    reset() {
+    reset() { timers.clear();
       v?.off(); v?.recenter();
       state = 'place'; hi = 0; hole = null; total = 0; score = 0; t = 0; msg = null; aim = null; tap = null; sunk = 0; cards = []; bp = new Vector3(); bv = new Vector3(); base = new Vector3(0, FLOOR, -.9);
       if (v) { course.visible = false; sparkle.clear(); if (!v.sensor) v.pitch = -.75; }

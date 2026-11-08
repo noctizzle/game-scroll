@@ -1,4 +1,5 @@
 import gs from '../gamescroll.js';
+const { Timers } = gs.math;
 const { sfx } = gs.sound;
 const { buzz, canBuzz, haptic } = gs.device;
 
@@ -7,6 +8,7 @@ const { buzz, canBuzz, haptic } = gs.device;
 const W = 360, H = 640, SHORT = 110, LONG = 420, GAP = 260;
 
 function make(api) {
+  const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   let pat, opts, time, score, lives, t, playing, flashT, flashSeq, msg, feel, replays;
   const key = p => p.join('');
   function rand(len) { return [...Array(len)].map(() => Math.random() < .5 ? 0 : 1); }
@@ -18,7 +20,7 @@ function make(api) {
   function play() {
     feel = canBuzz(); playing = buzz(pat, SHORT, LONG, GAP) / 1000 + .2; flashT = 0;
     flashSeq = []; let at = 0; for (const p of pat) { const d = (p ? LONG : SHORT) / 1000; flashSeq.push([at, at + d]); at += d + GAP / 1000; }
-    if (!feel) for (const [a] of flashSeq) setTimeout(() => sfx(660, .05, 'sine', .015), a * 1000);
+    if (!feel) for (const [a] of flashSeq) later(() => sfx(660, .05, 'sine', .015), a * 1000);
   }
   function pick(i) {
     if (playing > 0 || msg) return;
@@ -26,8 +28,8 @@ function make(api) {
     else { lives--; haptic('error'); sfx(140, .3, 'square', .05, -40); msg = { ok: false, l: 1.1, i }; }
   }
   return {
-    reset() { score = 0; lives = 3; t = 0; msg = null; next(); },
-    update(dt) {
+    reset() { timers.clear(); score = 0; lives = 3; t = 0; msg = null; next(); },
+    update(dt) { timers.update(dt);
       t += dt; flashT += dt; if (playing > 0) playing -= dt;
       if (msg) { msg.l -= dt; if (msg.l <= 0) { msg = null; if (lives <= 0) return api.over(); next(); } return; }
       if (playing <= 0) { time -= dt; if (time <= 0) { lives--; haptic('error'); msg = { ok: false, l: 1, i: -1 }; } }

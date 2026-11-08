@@ -1,4 +1,5 @@
 import gs from '../gamescroll.js';
+const { Timers } = gs.math;
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, disc } = gs.util;
@@ -235,6 +236,7 @@ function pano(th) {
 
 /* ---------- the game ---------- */
 function make(api) {
+  const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   let trk, karts, me, t, raceT, go, msg, held, flash, shake, finished, endT, results, camA, parts, wrongT, lastPlace, themeI = Math.random() * THEMES.length | 0;
   let img = null, mini = null;
   const at = (x, y) => { const cx = x / CELL | 0, cy = y / CELL | 0; return cx < 0 || cy < 0 || cx >= N || cy >= N ? GROUND : trk.tex[cy * N + cx]; };
@@ -266,7 +268,7 @@ function make(api) {
   function lapDone(k) {
     k.lap++;
     if (k.lap >= LAPS && !k.done) { k.done = true; k.doneT = raceT; if (k === me) finish(); }
-    else if (k === me && k.lap > 0) { if (k.lap === LAPS - 1) { say('FINAL LAP!', 1.6, '#f86868'); sfx(660, .15, 'square', .05); setTimeout(() => sfx(990, .25, 'square', .05), 140); } else say(`LAP ${k.lap + 1}`, 1.2); haptic('success'); }
+    else if (k === me && k.lap > 0) { if (k.lap === LAPS - 1) { say('FINAL LAP!', 1.6, '#f86868'); sfx(660, .15, 'square', .05); later(() => sfx(990, .25, 'square', .05), 140); } else say(`LAP ${k.lap + 1}`, 1.2); haptic('success'); }
   }
   function finish() {
     finished = true; endT = 3.6; const place = order().indexOf(me) + 1, pts = POINTS[place - 1];
@@ -317,7 +319,7 @@ function make(api) {
   }
 
   const self = {
-    reset() {
+    reset() { timers.clear();
       themeI = (themeI + 1) % THEMES.length; const th = THEMES[themeI];
       if (!trk || trk.th !== th) { trk = buildTrack(th); trk.solid = trk.props.filter(o => KINDS[o.kind][1]).map(o => ({ x: o.x, y: o.y, r: KINDS[o.kind][1] })); img = null; mini = null; }
       const lineup = [...DRIVERS].sort(() => Math.random() - .5);
@@ -326,7 +328,7 @@ function make(api) {
       me = karts[5]; t = 0; raceT = 0; go = 3.2; msg = null; held = null; flash = 0; shake = 0; finished = false; endT = 0; results = null; camA = me.a; parts = []; wrongT = 0; lastPlace = 6; live = true;
     },
     resize(w, h) { W = w; H = h; img = null; },
-    update(dt) {
+    update(dt) { timers.update(dt);
       dt = Math.min(dt, 1 / 20); t += dt; flash = Math.max(0, flash - dt); shake = Math.max(0, shake - dt); if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
       if (go > 0) { const was = Math.ceil(go); go -= dt; const now = Math.ceil(go);
         if (now !== was && now > 0 && now <= 3) { sfx(440, .12, 'square', .05); haptic('light'); }

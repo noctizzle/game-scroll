@@ -1,4 +1,5 @@
 import gs from '../gamescroll.js';
+const { Timers } = gs.math;
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
@@ -336,6 +337,7 @@ function bfs(g, S, sx, sy) {
 
 /* ---------- the game ---------- */
 function make(api) {
+  const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   let v, L, lvl, world, spt, flashL, exitL, add, smoke, dust, gunG, guns = {}, holes, holeN, casings, scorchN;
   let pl, foes, pickups, barrels, doors, score, floorN, t, msg, feed, stick, look, keys, fireCD, auto, kick, shake, hurtDir, hurtT, hitT, fade, state, stT, pathT, weapon, ammo;
 
@@ -573,7 +575,7 @@ function make(api) {
     const mx = new Object3D(); mx.position.set(b.x, .015, b.z); mx.rotation.x = -Math.PI / 2; mx.scale.setScalar(2.6); mx.updateMatrix(); holes.setMatrixAt(holeN % 60, mx.matrix); holeN++; holes.count = Math.min(60, holeN); holes.instanceMatrix.needsUpdate = true;
     for (const f of foes) { if (f.ko) continue; const d = Math.hypot(f.x - b.x, f.z - b.z); if (d < 3.4) { f.hp -= 260 * (1 - d / 3.4) + 60; f.flash = 1; if (f.hp <= 0) knockOut(f, true); } }
     const dp = Math.hypot(pl.x - b.x, pl.z - b.z); if (dp < 3.4) hurt(42 * (1 - dp / 3.4) + 6, b.x, b.z);
-    for (const o of barrels) if (o.alive && Math.hypot(o.x - b.x, o.z - b.z) < 2.6) setTimeout(() => o.alive && state === 'play' && boom(o), 180);
+    for (const o of barrels) if (o.alive && Math.hypot(o.x - b.x, o.z - b.z) < 2.6) later(() => o.alive && state === 'play' && boom(o), 180);
     alertNear(b.x, b.z, 16);
   }
   function knockOut(f, blast) {
@@ -582,7 +584,7 @@ function make(api) {
     feedMsg(`${f.kind === 'officer' ? 'OFFICER' : f.kind === 'heavy' ? 'HEAVY' : 'GUARD'} KNOCKED OUT +${pts}`);
     f.hatV = { x: rnd(-1, 1) + (blast ? rnd(-2, 2) : 0), y: rnd(3, 4.5), z: rnd(-1, 1), rx: rnd(-8, 8) };
     f.fallDir = Math.sign(wrap(Math.atan2(pl.x - f.x, pl.z - f.z) - f.yaw)) || 1;
-    sfx(520, .08, 'square', .04, 300); setTimeout(() => sfx(780, .1, 'triangle', .04, 200), 90); haptic('medium');
+    sfx(520, .08, 'square', .04, 300); later(() => sfx(780, .1, 'triangle', .04, 200), 90); haptic('medium');
     for (let i = 0; i < 12; i++) add.emit({ x: f.x, y: 1.6 * f.T.scale, z: f.z, vx: rnd(-1.5, 1.5), vy: rnd(1, 3), vz: rnd(-1.5, 1.5), life: rnd(.4, .8), size: .05, col: [5, 4.2, 1], grav: 5 });
   }
   function hurt(n, fromX, fromZ) {
@@ -616,7 +618,7 @@ function make(api) {
       if (f.cd <= 0) {
         f.cd = rnd(.8, 1.3) / f.T.rate / (1 + floorN * .06); f.aim = 0;
         const n = f.kind === 'heavy' ? 4 : 1;
-        for (let k = 0; k < n; k++) setTimeout(() => enemyShot(f), k * 90);
+        for (let k = 0; k < n; k++) later(() => enemyShot(f), k * 90);
       }
       if (d < 2.2) { moving = -1; }   // back off a little when you get close
     } else {
@@ -710,7 +712,7 @@ function make(api) {
     // the lift
     if (Math.hypot(pl.x - L.exit.x, pl.z - L.exit.z) < .8) {
       const left = foes.filter(f => !f.ko).length, bonus = 300 + floorN * 150 + (left ? 0 : 250);
-      score += bonus; api.score(score); haptic('success'); sfx(520, .15, 'triangle', .05, 520); setTimeout(() => sfx(780, .2, 'triangle', .05, 520), 140);
+      score += bonus; api.score(score); haptic('success'); sfx(520, .15, 'triangle', .05, 520); later(() => sfx(780, .2, 'triangle', .05, 520), 140);
       msg = { txt: 'FLOOR CLEAR', sub: `+${bonus}${left ? '' : ' · every guard out cold'}`, l: 2 }; state = 'clear'; stT = 0; pl.hp = Math.min(100, pl.hp + 20); return;
     }
     // guards
@@ -855,13 +857,13 @@ function make(api) {
 
   let hasSMG;
   return {
-    reset() {
+    reset() { timers.clear();
       score = 0; floorN = 0; t = 0; feed = []; stick = null; look = null; keys = new Set(); fireCD = 0; auto = null; kick = 0; shake = 0; hurtT = 0; hurtDir = null; hitT = 0; fade = 0;
       state = 'play'; stT = 0; weapon = 'pistol'; ammo = 0; hasSMG = false; pl = null;
       buildFloor(); pl.hp = 100;
     },
     resize(w, h) { W = w; H = h; },
-    update(dt) { step(dt); fxTick(dt); },
+    update(dt) { timers.update(dt); step(dt); fxTick(dt); },
     fx(dt) { t += dt; fxTick(dt); },
     draw(c) {
       scene3d();

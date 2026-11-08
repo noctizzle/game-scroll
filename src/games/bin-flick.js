@@ -1,4 +1,5 @@
 import gs from '../gamescroll.js';
+const { Timers } = gs.math;
 const { sfx } = gs.sound;
 const { haptic, want } = gs.device;
 const { clamp, rnd } = gs.util;
@@ -41,6 +42,7 @@ function crumple() {   // an icosphere with its points pushed in and out: a scru
 }
 
 function make(api) {
+  const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   want('motion');
   let v, bin, ball, held, conf, flight, bx, bz, score, misses, wind, msg, msgT, flick, t, streak, binA;
   const vtmp = new Vector3();
@@ -82,7 +84,7 @@ function make(api) {
   function scored(swish) {
     const pts = swish ? 2 : 1; score += pts; streak++; api.score(score);
     say(swish ? 'SWISH! +2' : 'IN! +1', swish ? '#ffd24a' : '#8affdc');
-    haptic('success'); sfx(660, .1, 'triangle', .05, 200); setTimeout(() => sfx(990, .14, 'triangle', .05, 200), 90);
+    haptic('success'); sfx(660, .1, 'triangle', .05, 200); later(() => sfx(990, .14, 'triangle', .05, 200), 90);
     const cols = [[1, .3, .4], [.2, .9, .7], [1, .85, .2], [.3, .6, 1]];
     for (let i = 0; i < 50; i++) conf.emit({ x: bx, y: FLOOR + BH, z: bz, vx: rnd(-1.2, 1.2), vy: rnd(1.5, 3.4), vz: rnd(-1.2, 1.2), life: rnd(1, 1.8), size: rnd(.025, .045), col: cols[i % 4], drag: 1.2, grav: 3.5, floor: FLOOR });
   }
@@ -90,13 +92,13 @@ function make(api) {
     misses++; streak = 0; say(misses >= MISSES ? 'Out of paper!' : 'Miss', '#ff8a8a'); haptic('warning'); sfx(200, .2, 'triangle', .04, -80);
   }
   return {
-    reset() {
+    reset() { timers.clear();
       v?.off(); v?.recenter();
       score = 0; misses = 0; streak = 0; flight = null; flick = null; msg = null; msgT = 0; t = 0; binA = 0; wind = 0;
       if (v) { place(true); ball.visible = false; held.visible = true; conf.clear(); }
     },
     resize(w, h) { W = w; H = h; },
-    update(dt) {
+    update(dt) { timers.update(dt);
       if (!v) return; v.live(); if (v.calibrating) return;   // floor calibration open: pause
       t += dt; msgT -= dt;
       if (flight) {

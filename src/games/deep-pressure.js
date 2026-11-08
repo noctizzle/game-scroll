@@ -1,4 +1,5 @@
 import gs from '../gamescroll.js';
+const { Timers } = gs.math;
 const { sounds, tone, noise } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
@@ -67,6 +68,7 @@ function makeLurker() {
 }
 
 function make(api) {
+  const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   let v, sub, lurker, lamp, bubbles, snow, spark, curve, LEN, PT, TN, NN, BN, world, spikes, mines, pearls, pearlIM, built;
   let d, ox, oy, vx, vy, speed, hull, hurtT, pingT, noiseLvl, lurkGap, lurkT, score, pearlsGot, t, msg, fingers, keys, stick, best, beatT;
   const mx = new Object3D(), pos = new Vector3(), tmp = new Vector3(), camPos = new Vector3(), look = new Vector3(), camOff = { x: 0, y: 0 };
@@ -122,14 +124,14 @@ function make(api) {
     tone(1500, { len: .5, wave: 'sine', vol: .07, slide: -200 }); haptic('light');
     // echoes: the nearest things ahead answer back, sooner when closer
     const near = [...spikes.map(s => ({ d: s.d, w: .5 })), ...mines.filter(m => m.on).map(m => ({ d: m.d, w: 1 }))].map(o => ({ ...o, gap: o.d - d })).filter(o => o.gap > 0 && o.gap < 40).sort((a, b) => a.gap - b.gap).slice(0, 4);
-    near.forEach((o, i) => setTimeout(() => { haptic(o.gap < 12 ? 'heavy' : o.gap < 24 ? 'medium' : 'light'); tone(1200 - o.gap * 15, { len: .07, wave: 'sine', vol: .045 }); }, 120 + o.gap * 28));
+    near.forEach((o, i) => later(() => { haptic(o.gap < 12 ? 'heavy' : o.gap < 24 ? 'medium' : 'light'); tone(1200 - o.gap * 15, { len: .07, wave: 'sine', vol: .045 }); }, 120 + o.gap * 28));
   }
   function crack(why) {
     if (hurtT > 0) return; hull--; hurtT = 1.2; haptic('error'); sounds.hurt(.7); noise(.4, { vol: .12, from: 2500, to: 200 });
     msg = { txt: hull > 0 ? `HULL CRACKED · ${hull} LEFT` : 'HULL BREACH', sub: why, l: 1.4, col: '#ff6a5a' };
     for (let i = 0; i < 30; i++) bubbles.emit({ x: sub.position.x, y: sub.position.y, z: sub.position.z, vx: rnd(-2, 2), vy: rnd(.5, 3), vz: rnd(-2, 2), life: rnd(1, 2), size: rnd(.05, .15), col: [.7, .85, 1], a: .7, drag: 1.5, grav: -1.5 });
   }
-  function update(dt) {
+  function update(dt) { timers.update(dt);
     t += dt; pingT += dt; hurtT = Math.max(0, hurtT - dt); if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
     PING.r.value = pingT * 22; PING.a.value = Math.max(0, 1 - pingT / 1.6);
     // steering
@@ -197,7 +199,7 @@ function make(api) {
     c.restore();
   }
   const self = {
-    reset() {
+    reset() { timers.clear();
       buildWorld();
       d = 8; ox = 0; oy = 0; vx = 0; vy = 0; speed = 6.5; hull = HULL; hurtT = 0; pingT = 1; noiseLvl = 0; lurkGap = 46; score = 0; pearlsGot = 0; t = 0; msg = null; fingers = {}; keys = new Set(); beatT = 0;
       stick = { on: false, x: 0, y: 0, ax: 0, ay: 0, id: null }; camPos.set(0, 0, 0); camOff.x = camOff.y = 0; bubbles.clear(); snow.clear(); spark.clear(); PING.a.value = 0;

@@ -1,4 +1,5 @@
 import gs from '../gamescroll.js';
+const { Timers } = gs.math;
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
@@ -13,6 +14,7 @@ let W = 176, H = 176;
 const NET = 20, ARC = 1.05;
 
 function make(api) {
+  const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   let pl, imps, rocks, stage, caught, time, t, hold, swing, parts, msg, dead, tapStart;
   function place(r) { for (let i = 0; i < 40; i++) { const x = rnd(14, W - 14), y = rnd(24, H - 14); if (Math.hypot(x - pl.x, y - pl.y) > 50 && !rocks.some(o => Math.hypot(o.x - x, o.y - y) < o.r + r + 4)) return { x, y }; } return { x: rnd(14, W - 14), y: rnd(24, H - 14) }; }
   function build() {
@@ -64,9 +66,9 @@ function make(api) {
   }
   function burst(x, y, col) { for (let i = 0; i < 10; i++) parts.push({ x, y, vx: rnd(-50, 50), vy: rnd(-60, 20), l: .5, col }); }
   const self = {
-    reset() { stage = 1; caught = 0; time = 0; t = 0; hold = null; swing = 0; parts = []; dead = 0; build(); },
+    reset() { timers.clear(); stage = 1; caught = 0; time = 0; t = 0; hold = null; swing = 0; parts = []; dead = 0; build(); },
     resize(w, h) { const sx = w / W, sy = h / H; W = w; H = h; if (pl) { for (const o of [pl, ...imps, ...rocks]) { o.x *= sx; o.y *= sy; } } },
-    update(dt) {
+    update(dt) { timers.update(dt);
       t += dt; for (const p of parts) { p.l -= dt; if (p.vx != null) { p.x += p.vx * dt; p.y += p.vy * dt; } else p.y -= 16 * dt; } parts = parts.filter(p => p.l > 0);
       if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
       if (dead) { dead += dt; if (dead > 1.2) api.over(); return; }
@@ -131,7 +133,7 @@ function make(api) {
       if (msg) { c.textAlign = 'center'; c.fillStyle = '#183018c0'; c.fillRect(0, H / 2 - 10, W, 14); c.fillStyle = '#f8f040'; c.fillText(msg.txt, W / 2, H / 2); }
       if (t < 6 && !msg) { c.textAlign = 'center'; c.fillStyle = '#183018a0'; c.fillRect(0, H - 22, W, 20); c.fillStyle = '#f8f8f0'; c.fillText('HOLD TO WALK', W / 2, H - 14); c.fillText('TAP TO SWING NET', W / 2, H - 5); }
     },
-    down(x, y) { [x, y] = view3d().pick(x, y); tapStart = { x, y, t: performance.now() }; hold = { x, y, walk: false }; setTimeout(() => { if (hold && !hold.done) hold.walk = true; }, 140); },
+    down(x, y) { [x, y] = view3d().pick(x, y); tapStart = { x, y, t: performance.now() }; hold = { x, y, walk: false }; later(() => { if (hold && !hold.done) hold.walk = true; }, 140); },
     move(x, y, p) { if (!p || !hold) return; [x, y] = view3d().pick(x, y); hold.x = x; hold.y = y; if (Math.hypot(x - tapStart.x, y - tapStart.y) > 8) hold.walk = true; },
     up(x, y) {
       if (x != null) [x, y] = view3d().pick(x, y);
