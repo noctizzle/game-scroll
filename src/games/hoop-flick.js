@@ -1,5 +1,6 @@
-import { clamp, rnd, flickTracker } from '../util.js';
-import { sfx } from '../sfx.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { clamp, rnd, flickTracker } = gs.util;
 
 // Flick the ball up into the hoop. After a few baskets the hoop starts sliding. One miss ends the run.
 const W = 360, H = 640, G = 1500, BR = 20, RIM = 46, START = { x: W / 2, y: H - 90 };

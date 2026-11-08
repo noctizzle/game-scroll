@@ -1,5 +1,6 @@
-import { sfx } from '../sfx.js';
-import { startMic, stopMic, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { startMic, stopMic, haptic } = gs.device;
 
 // Call and response. Listen to the beat, then clap it back (the mic hears real claps) or tap it.
 // Your first clap sets the timing; the rest must land with it. Patterns grow longer. Three flops and you're out.

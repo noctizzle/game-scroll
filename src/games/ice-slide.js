@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // On ice you can't stop until you hit a rock. Swipe to slide, and come to rest on the flag. Fewer moves score more.
 const R = PAL.ice, W = 160, H = 160, N = 9, CS = 14, OX = (W - N * CS) / 2, OY = 22, D = [[1, 0], [-1, 0], [0, 1], [0, -1]];

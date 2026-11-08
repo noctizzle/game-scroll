@@ -1,10 +1,12 @@
 // __TITLE__: a starter Advance (Pocket) game made with `npm run new`. Change anything you like.
-// Rich pixel colours. Shows 2D physics (stacking crates), pixel juice, sounds and a save slot.
-import { C16 } from '../palettes.js';
-import { haptic } from '../kit/device.js';
-import { Juice } from '../kit/juice.js';
-import { sounds } from '../kit/sound.js';
-import { World } from '../kit/physics2d.js';
+// Rich pixel colours. Shows real 2D physics (crates that tumble), pixel text, pixel juice, sounds and a save slot.
+import gs from '../gamescroll.js';
+const { sounds } = gs.sound;
+const { haptic } = gs.device;
+const { C16 } = gs.palettes;
+const { Juice } = gs.juice;
+const { Physics } = gs.physics;
+const { text } = gs.pixel;
 
 let W = 192, H = 160;
 
@@ -14,12 +16,12 @@ function make(api) {
   let best = api.load({ tallest: 0 }).tallest;   // this game's save slot: the tallest tower ever
 
   function setup() {
-    world = new World({ gravity: 500, walls: false });
+    world = new Physics({ gravity: 500, scale: 16 });   // Rapier: made in reset(), so the engine has loaded
     world.box(W / 2, H - 8, 70, 16, { fixed: true, tag: 'base' });
     world.onHit((a, b, speed) => { if (speed > 90) { sounds.hit(.6 + Math.random() * .3); fx.shake(Math.min(3, speed / 80)); } });
   }
   const newCrate = () => { held = { w: 18 + (Math.random() * 3 | 0) * 6, h: 12 + (Math.random() * 2 | 0) * 4, col: C16[2 + (Math.random() * 8 | 0)] }; };
-  const towerTop = () => world.bodies.reduce((m, b) => b.tag === 'crate' && b.sleeping ? Math.min(m, b.y - b.h / 2) : m, H - 16);
+  const towerTop = () => world.things.reduce((m, b) => b.tag === 'crate' && b.sleeping ? Math.min(m, b.y - b.h / 2) : m, H - 16);
 
   return {
     reset() { setup(); hook = { x: W / 2, dir: 1 }; score = 0; fallen = 0; t = 0; settle = 0; newCrate(); fx.clear(); },
@@ -30,7 +32,7 @@ function make(api) {
       hook.x += hook.dir * (40 + score * 3) * dt;
       if (hook.x < 20 || hook.x > W - 20) hook.dir *= -1;
       if (!held) { settle -= dt; if (settle <= 0) newCrate(); }
-      for (const b of world.bodies) if (b.tag === 'crate' && b.y > H + 20) {
+      for (const b of world.things) if (b.tag === 'crate' && b.y > H + 20) {
         world.remove(b); fallen++; fx.flash(C16[2], .3); sounds.hurt(); haptic('warning');
         if (fallen >= 3) { sounds.lose(); api.over(); }
       }
@@ -43,17 +45,19 @@ function make(api) {
       const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#3858d8'); g.addColorStop(1, '#88c8f8'); c.fillStyle = g; c.fillRect(0, 0, W, H);
       fx.begin(c);
       // the camera stays put; you could scroll up as the tower grows
-      for (const b of world.bodies) {
-        const x = Math.round(b.x - b.w / 2), y = Math.round(b.y - b.h / 2);
+      for (const b of world.things) {   // crates can tip over: draw each turned by its angle
+        c.save(); c.translate(Math.round(b.x), Math.round(b.y)); c.rotate(b.angle);
+        const x = -b.w / 2, y = -b.h / 2;
         c.fillStyle = b.tag === 'base' ? C16[12] : b.col; c.fillRect(x, y, b.w, b.h);
         c.fillStyle = '#ffffff55'; c.fillRect(x, y, b.w, 2); c.fillStyle = '#00000044'; c.fillRect(x, y + b.h - 2, b.w, 2);
+        c.restore();
       }
       c.fillStyle = C16[13]; c.fillRect(0, 10, W, 2); c.fillRect(Math.round(hook.x) - 1, 12, 2, 8);
       if (held) { c.fillStyle = held.col; c.fillRect(Math.round(hook.x - held.w / 2), 20, held.w, held.h); }
       fx.end(c, W, H);
-      c.font = '8px "Press Start 2P", monospace'; c.fillStyle = C16[1]; c.textAlign = 'left'; c.fillText(`BEST ${best}`, 4, 8);
-      c.textAlign = 'right'; c.fillStyle = C16[2]; c.fillText('X'.repeat(fallen), W - 4, 8);
-      if (t < 3) { c.textAlign = 'center'; c.fillStyle = C16[1]; c.fillText('TAP TO DROP', W / 2, H / 2); }
+      text(c, `BEST ${best}`, 4, 2, { color: C16[1] });                       // crisp pixel text
+      text(c, 'X'.repeat(fallen), W - 4, 2, { color: C16[2], align: 'right' });
+      if (t < 3) text(c, 'TAP TO DROP', W / 2, H / 2, { font: 'big', color: C16[1], align: 'center', outline: C16[0] });
     },
     down() {
       if (!held) return;

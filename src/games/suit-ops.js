@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { HDView, Particles, pbr, rbox, surface, speckle, sun, THREE } from '../kit/hd3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { HDView, Particles, pbr, rbox, surface, speckle, sun, THREE } = gs.hd;
 const {
   Group, Mesh, InstancedMesh, Object3D, SphereGeometry, CylinderGeometry, CapsuleGeometry, IcosahedronGeometry, PlaneGeometry, CircleGeometry,
   TorusGeometry, BufferAttribute, MeshBasicMaterial, PointLight, CanvasTexture, Color, DoubleSide, AdditiveBlending, SRGBColorSpace, Vector3,

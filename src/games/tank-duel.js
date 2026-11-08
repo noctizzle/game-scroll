@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // Turn-based artillery on a hill. Drag back from your tank to aim and set power, then let go.
 // Mind the wind. Each enemy tank you hit brings a sharper one. Get hit once and it's over.

@@ -20,6 +20,11 @@ import { services } from './kit/services.js';
 import { initWallet, toast, shopHTML, bindShop } from './kit/wallet-ui.js';
 
 import { haptic } from './kit/device.js';
+import { pollPads } from './kit/gamepad.js';
+import { stopVision } from './kit/vision.js';
+import { stopMoves } from './kit/motion.js';
+// Things a game may leave running (music, the camera for face tracking, motion moves): stopped when a round ends or the player leaves.
+const stopKits=()=>{stopMusic();stopVision();stopMoves()};
 import { remote } from './remote.js';
 import { openSettings } from './settings.js';
 import { nativeARProbe, nativeARSupported } from './kit/native-ar.js';
@@ -219,13 +224,13 @@ function awardTrophies(s){
 }
 function gameOver(s){
   if(s.state!=='playing')return;clearPause(s);
-  s.state='over';s.overAt=Date.now();stopMusic();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
+  s.state='over';s.overAt=Date.now();stopKits();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(progress.score(s.def.id,s.score))s.newBest=true;
   awardTrophies(s);services.reportRun(s.def);
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){stopMusic();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function resetSlide(s){stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
 function goPrev(s){
   const i=slides.indexOf(s);if(i<=0)return;
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
@@ -369,7 +374,7 @@ function openShared(id){
 }
 function setActive(s){
   if(active===s)return;
-  stopMusic();if(active&&active.state!=='ready')resetSlide(active);
+  stopKits();if(active&&active.state!=='ready')resetSlide(active);
   feed.classList.remove('locked');active=s;speed.game=s.def;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);
   topUp();schedulePrune();
 }
@@ -406,6 +411,7 @@ const DBG=import.meta.env.MODE==='bundled'?makeDebug():null;
 let lastT=performance.now();
 function frame(now){
   requestAnimationFrame(frame);
+  pollPads(padInput);
   tickHz(now);
   const s=active;
   // Frame rate per game and phone (src/kit/speed.js): on a 120 Hz screen a 60 fps game skips every
@@ -428,14 +434,26 @@ function frame(now){
   }
 }
 
-/* keyboard (desktop preview) */
-addEventListener('keydown',e=>{
-  const s=active;if(!s)return;
-  if(s.state==='playing'){if(s.game.key){s.game.key(e.key,true)}if([' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))e.preventDefault();return}
-  if(e.key===' '||e.key==='Enter'){e.preventDefault();if(Date.now()-s.overAt>550)startGame(s)}
-  else if(e.key==='ArrowDown'||e.key==='PageDown'){e.preventDefault();goNext(s)}
-});
-addEventListener('keyup',e=>{const s=active;if(s&&s.state==='playing'&&s.game.key)s.game.key(e.key,false)});
+/* keyboard (desktop preview) and game controllers (src/kit/gamepad.js turns pads into these keys) */
+function keyInput(k,down){
+  const s=active;if(!s)return false;
+  if(down&&k==='Escape'&&s.state==='playing'){s.paused?resumeGame(s):pauseGame(s,'key');return true}
+  if(s.state==='playing'){if(s.paused){if(down&&(k===' '||k==='Enter'))resumeGame(s);return true}if(s.game.key)s.game.key(k,down);return[' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(k)}
+  if(!down)return false;
+  if(k===' '||k==='Enter'){if(Date.now()-s.overAt>550)startGame(s);return true}
+  if(k==='ArrowDown'||k==='PageDown'){goNext(s);return true}
+  if(k==='ArrowUp'||k==='PageUp'){goPrev(s);return true}
+  return false;
+}
+function padInput(kind,k,down){
+  const s=active;if(!s)return;lastGameInput=performance.now();
+  if(kind==='start'){if(s.state==='playing'){s.paused?resumeGame(s):pauseGame(s,'pad')}else if(Date.now()-s.overAt>550)startGame(s);return}
+  keyInput(k,down);
+}
+addEventListener('keydown',e=>{if(e.repeat&&active&&active.state!=='playing')return;if(keyInput(e.key,true))e.preventDefault()});
+addEventListener('keyup',e=>{keyInput(e.key,false)});
+
+
 
 // Folding/unfolding a phone, rotating, or split-screen all arrive as a resize. Refit every
 // canvas and keep the current game snapped in place so a running game is not lost.

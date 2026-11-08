@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { haptic } from '../kit/device.js';
-import { HDView, Particles, pbr, rbox, surface, speckle, spot, THREE } from '../kit/hd3d.js';
-import { sounds, tone, noise } from '../kit/sound.js';
+import gs from '../gamescroll.js';
+const { sounds, tone, noise } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { HDView, Particles, pbr, rbox, surface, speckle, spot, THREE } = gs.hd;
 const { Group, Mesh, InstancedMesh, Object3D, Vector3, CatmullRomCurve3, TubeGeometry, CylinderGeometry, SphereGeometry, CapsuleGeometry, ConeGeometry, IcosahedronGeometry, BoxGeometry, BackSide, Color } = THREE;
 
 // Deep Pressure: steer a little submarine down a pitch-black ocean trench. Your lamp only shows a

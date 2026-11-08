@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A side-scrolling platformer. Floating ledges can be jumped through from below. Drag left or right to run, flick up (or tap) to jump. Grab coins,
 // bounce on bugs, hop the gaps and spikes, and reach the flag at the end of each stage.

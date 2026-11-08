@@ -111,7 +111,8 @@ fire or nitro control. Keep a single-finger fallback so the game still plays wit
 ## Writing a Next Gen game
 
 ```js
-import { HDView, Particles, pbr, rbox, surface, spot, THREE } from '../kit/hd3d.js';
+import gs from '../gamescroll.js';
+const { HDView, Particles, pbr, rbox, surface, spot, THREE } = gs.hd;
 
 let v;
 function setup() {

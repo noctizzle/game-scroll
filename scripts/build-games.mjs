@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { GAME_MODULES, HIDDEN, API_FEATURES, LOCATION_LEVELS } from '../src/game-modules.js';
+import { GAME_MODULES, API_FEATURES, LOCATION_LEVELS, gsNeeds, hasAll } from '../src/game-modules.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'src'), GAMES = join(SRC, 'games');
@@ -50,14 +50,16 @@ async function buildOne(file) {
   // Which shared exports the game uses, read from its own import lines, so an older app can tell a
   // game that needs newer shared code and keep its bundled copy instead.
   const src = readFileSync(join(GAMES, file), 'utf8');
-  for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"](\.[^'"]+)['"]/g)) {
+  for (const m of src.matchAll(/\bimport\s+([^'"]*?)\s*from\s*['"](\.[^'"]+)['"]/g)) {
     const key = kitKey(resolve(GAMES, m[2]));
     if (!key) continue;
-    const names = m[1].split(',').map(x => x.trim().split(/\s+as\s+/)[0]).filter(Boolean);
-    const hidden = names.filter(n => (HIDDEN[key] || []).includes(n));
-    if (hidden.length) throw new Error(`src/games/${file} imports ${hidden.join(', ')} from src/${key}, which games may not use (save with api.save / api.load, find the player with api.location)`);
-    needs[key] = [...new Set([...(needs[key] || []), ...names])].sort();
+    if (!/^gs$/.test(m[1].trim())) throw new Error(`src/games/${file}: import gs from '../gamescroll.js' (got: import ${m[1].trim()} from '${m[2]}')`);
   }
+  const used = gsNeeds(src);
+  if (used.length) needs['gamescroll.js'] = used;
+  const gs = await loadGs();
+  const missing = used.filter(n => !hasAll(gs, [n]));
+  if (missing.length) throw new Error(`src/games/${file} uses ${missing.map(n => 'gs.' + n).join(', ')}, which gamescroll.js doesn't have`);
   // Newer api features (api.save ...): older apps without them skip the game instead of crashing.
   const feats = API_FEATURES.filter(f => new RegExp(`\\bapi\\s*\\.\\s*${f}\\b`).test(src));
   if (feats.length) needs['@api'] = feats;
@@ -74,13 +76,18 @@ function metaOf(def) {
 }
 
 let shimmed = false;
+function shim() {
+  if (shimmed) return;   // game modules only touch the browser inside make(), but kit modules may peek at window on import
+  shimmed = true;
+  globalThis.window ??= globalThis; globalThis.addEventListener ??= () => {};
+  globalThis.localStorage ??= { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.matchMedia ??= () => ({ matches: false, addEventListener() {} });
+}
+// gs itself, to check games only use parts of it that exist. A failure here is loud: every game needs it.
+let gsP = null;
+const loadGs = () => gsP ||= (shim(), import(pathToFileURL(join(SRC, 'gamescroll.js')).href).then(m => m.default));
 async function readMeta(file) {
-  if (!shimmed) {   // game modules only touch the browser inside make(), but kit modules may peek at window on import
-    shimmed = true;
-    globalThis.window ??= globalThis; globalThis.addEventListener ??= () => {};
-    globalThis.localStorage ??= { getItem: () => null, setItem() {}, removeItem() {} };
-    globalThis.matchMedia ??= () => ({ matches: false, addEventListener() {} });
-  }
+  shim();
   try { return metaOf((await import(pathToFileURL(join(GAMES, file)).href)).default || {}); }
   catch { return null; }
 }

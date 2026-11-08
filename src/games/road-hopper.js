@@ -1,6 +1,7 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // Hop forward through endless roads and fields. Tap to hop up, swipe left/right to sidestep. Don't fall behind.
 const R = PAL.mint, W = 160, H = 160, S = 10, COLS = 16;

@@ -62,6 +62,7 @@ const check = (ok, label) => { if (!ok) fails++; console.log(ok ? 'PASS' : 'FAIL
 async function open(files = {}, keepPage) {
   served = files;
   const page = keepPage || await (await b.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+  if (!keepPage && process.env.DEBUG) page.on('console', msg => console.log('  [page]', msg.text().slice(0, 300)));
   if (!keepPage) await page.goto('http://127.0.0.1:4191/'); else await page.reload();
   await page.waitForTimeout(2500);
   return page;

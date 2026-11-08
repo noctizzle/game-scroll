@@ -1,9 +1,10 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { backdrop, glow } from '../kit/gfx.js';
-import { brick, brick3d, BRICK_KEYS } from '../kit/bricks.js';
-import { View, G, part, grp, flat } from '../kit/toon3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
+const { backdrop, glow } = gs.gfx;
+const { brick, brick3d, BRICK_KEYS } = gs.bricks;
+const { View, G, part, grp, flat } = gs.toon;
 
 // Build the model on the blueprint. A brick slides back and forth along the top: tap to drop it.
 // It falls straight down and lands on whatever is below. Fill the dotted outline: every cell inside

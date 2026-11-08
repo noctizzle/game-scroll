@@ -1,9 +1,10 @@
-import { clamp, rnd, hash } from '../util.js';
-import { haptic, want, heading as compass } from '../kit/device.js';
-import { ARView, arNote, FLOOR } from '../kit/ar3d.js';
-import { Particles, pbr, rbox, surface, speckle, THREE } from '../kit/hd3d.js';
-import { sounds, tone, noise } from '../kit/sound.js';
-import { distance, bearing, offset } from '../kit/geo.js';
+import gs from '../gamescroll.js';
+const { sounds, tone, noise } = gs.sound;
+const { haptic, want, heading: compass } = gs.device;
+const { clamp, rnd, hash } = gs.util;
+const { Particles, pbr, rbox, surface, speckle, THREE } = gs.hd;
+const { ARView, arNote, FLOOR } = gs.ar;
+const { distance, bearing, offset } = gs.geo;
 const { Group, Mesh, Vector3, CylinderGeometry, TorusGeometry, BoxGeometry, ConeGeometry, MeshBasicMaterial, AdditiveBlending, Color } = THREE;
 
 // Treasure Drop: once a day a treasure chest lands somewhere 100 to 300 m from where you are. No map:

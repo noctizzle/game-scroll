@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { tilt, calibrateTilt, want, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { tilt, calibrateTilt, want, haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Balance a marble on a round tray while gusts of wind shove it about. Tilt to fight back and keep it
 // near the middle: the inner rings score faster. The tray slowly shrinks. Roll off and it's over.

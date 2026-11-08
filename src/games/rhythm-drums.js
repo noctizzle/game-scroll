@@ -1,6 +1,7 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
 
 // Three drum pads, notes fall to the line, tap the pad in time. The beat is built from short
 // patterns that get busier and faster. Misses drain the groove meter; hits refill it.

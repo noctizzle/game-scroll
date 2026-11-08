@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A grid of little critters that all look the same, except one. Tap the odd one out.
 // The grid grows and the difference gets subtler. A wrong tap costs time.

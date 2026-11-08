@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // You're in goal. The striker runs in from one side and shoots across to the other. Tap where the
 // ball is going: the keeper takes a moment to get there, so reading the run-up early is what saves it.

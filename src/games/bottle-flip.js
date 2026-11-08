@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Pull down and let go to toss the bottle onto the next table. It spins at a steady rate,
 // so the toss height decides how it lands: upright scores 1, on its cap scores 3, anything else tips over.

@@ -1,6 +1,7 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { rnd } = gs.util;
 
 // Drag the dots around until no two lines cross. Every untangled web adds time and a dot.
 const W = 360, H = 640, PAD = 40, TOP = 120, BOT = 600;

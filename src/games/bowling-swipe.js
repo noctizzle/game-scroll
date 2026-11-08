@@ -1,6 +1,7 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
 
 // Five frames of top-down bowling. Swipe up to roll: the swipe's direction aims it and a curved
 // swipe puts hook on the ball. Strikes earn +5, spares +3, on top of every pin knocked down.

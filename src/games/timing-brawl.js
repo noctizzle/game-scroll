@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A turn-based brawl where timing is everything. On your turn pick JUMP or BASH. Jump: tap as you
 // land to bounce for another hit. Bash: hold to wind up and let go in the green zone. On the

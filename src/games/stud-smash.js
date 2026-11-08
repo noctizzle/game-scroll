@@ -1,11 +1,12 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { View, G, part, grp, blob, toon, THREE } from '../kit/toon3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { backdrop, glow } = gs.gfx;
+const { brick3d, stud3d, BRICK, brick, stud, BRICK_KEYS } = gs.bricks;
+const { View, G, part, grp, blob, toon, THREE } = gs.toon;
 const { Group } = THREE;
 const eyeOn = toon('#f84040', { glow: .8 }), eyeStun = toon('#f8e040', { glow: .8 });
-import { backdrop, glow } from '../kit/gfx.js';
-import { brick3d, stud3d, BRICK, brick, stud, BRICK_KEYS } from '../kit/bricks.js';
 
 // Smash the brick-built town square into studs. Hold to walk toward your finger, tap to whack the
 // nearest thing. Lamps, crates, bins and benches burst into studs; walk near studs to pull them

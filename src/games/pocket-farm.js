@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A tiny farm, one season at a time. Pick a seed at the bottom, then tap a plot: tap empty soil to
 // plant, tap a dry crop to water it, tap a ripe crop to harvest and sell it. Watered crops grow

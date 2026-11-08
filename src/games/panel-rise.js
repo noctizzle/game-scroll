@@ -1,5 +1,6 @@
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
 
 // Coloured panels rise from the bottom. Drag a panel sideways to swap it with its neighbour and line
 // up three or more of a colour across or down. Cleared panels let the ones above drop, and drops that

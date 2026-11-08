@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A fresh one-hole course every time. Drag back from the ball and let go to putt. Sink it within five strokes.
 const W = 360, H = 640, BR = 8, HR = 12, X0 = 30, X1 = 330, Y0 = 110, Y1 = 600;

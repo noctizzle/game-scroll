@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Tower defense, pocket-console style. Bugs march down the winding road toward your picnic.
 // Tap grass to build one of five towers, tap a tower to upgrade or sell it. Each wave mixes

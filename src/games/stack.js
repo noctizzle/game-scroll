@@ -1,5 +1,6 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { clamp, rnd } = gs.util;
 
 function Stack(api){
   const W=360,BH=30,D=12;let H=640,VW=360,BASE=H-150,tower,cur,debris,pops,cam,camT,combo,hue0,t;

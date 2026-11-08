@@ -1,6 +1,7 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
 
 // An arrow appears: swipe the way it points. A red arrow means swipe the OPPOSITE way. Later a
 // double arrow wants two swipes. The time per arrow keeps shrinking.

@@ -1,5 +1,6 @@
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
 
 // Tap a group of touching equal numbers to fuse them into one number higher. New tiles drop in. Reach 10!
 const W = 360, H = 640, N = 5, CS = 64, OX = (W - N * CS) / 2, OY = 180;

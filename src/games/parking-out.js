@@ -1,6 +1,7 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
 
 // Slide the cars along their lanes to clear a path so the red car can drive out of the exit on the right.
 const W = 360, H = 640, N = 6, CS = 52, OX = (W - N * CS) / 2, OY = 170, EXIT_ROW = 2;

@@ -1,5 +1,6 @@
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
 
 // Drag the three offered blocks onto the 8x8 board. Fill a whole row or column to clear it. Ends when nothing fits.
 const W = 360, H = 640, N = 8, CS = 40, OX = (W - N * CS) / 2, OY = 120, TRAY = 520;

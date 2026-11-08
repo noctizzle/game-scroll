@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Feel for the combination: drag the dial round; the phone ticks on every number and thumps on the right one.
 // Lift your finger on it to lock that number in. Three numbers open the safe.

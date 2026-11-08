@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Keep the ball off the ground. Tap the ball to kick it up: tap its left side to send it right
 // and its right side to send it left. Wind picks up after ten kicks. Dead-centre kicks score double.

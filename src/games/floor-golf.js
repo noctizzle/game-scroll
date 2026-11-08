@@ -1,8 +1,9 @@
-import { clamp, rnd } from '../util.js';
-import { haptic, want } from '../kit/device.js';
-import { ARView, arNote, FLOOR } from '../kit/ar3d.js';
-import { Particles, pbr, rbox, surface, speckle, THREE } from '../kit/hd3d.js';
-import { sounds, tone, noise } from '../kit/sound.js';
+import gs from '../gamescroll.js';
+const { sounds, tone, noise } = gs.sound;
+const { haptic, want } = gs.device;
+const { clamp, rnd } = gs.util;
+const { Particles, pbr, rbox, surface, speckle, THREE } = gs.hd;
+const { ARView, arNote, FLOOR } = gs.ar;
 const { Group, Mesh, Vector3, Vector2, Raycaster, Plane, CylinderGeometry, SphereGeometry, CircleGeometry, PlaneGeometry, BoxGeometry, DoubleSide } = THREE;
 
 // Floor Golf: a mini golf course rolls out across your real floor, one hole at a time. Put your

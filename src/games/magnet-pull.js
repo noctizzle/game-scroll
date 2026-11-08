@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // You can't touch the steel ball, but your finger is a magnet. Hold near it to pull it along,
 // steer round the spikes and into the goal ring. Each goal is a new layout and adds time.

@@ -5,23 +5,35 @@
 // services, hearts, settings ...) is app-only, so a game can't pay itself credits, wipe a player's
 // save or change their settings.
 //
+// Games import one module, src/gamescroll.js, and get everything through its default export `gs`.
 // Used in three places, so they always agree:
-//  - src/remote.js gives streamed games only these modules (and leaves out the HIDDEN exports);
+//  - src/remote.js gives streamed games only gs;
 //  - scripts/build-games.mjs refuses to build a game that imports anything else;
 //  - scripts/game-lint.mjs flags such imports on pull requests.
 //
 // Adding a module here is a change to the app (it ships with an app update), so it needs its own PR.
-export const GAME_MODULES = [
-  'sfx.js', 'util.js', 'palettes.js',
-  'kit/device.js', 'kit/gfx.js', 'kit/bricks.js',
-  'kit/toon3d.js', 'kit/hd3d.js', 'kit/ar3d.js',
-  'kit/juice.js', 'kit/sound.js', 'kit/controls.js', 'kit/physics2d.js', 'kit/geo.js',
-];
+export const GAME_MODULES = ['gamescroll.js'];
 
-// Exports of allowed modules that games still don't get: raw storage, the player's sound and haptics settings, and the
-// old unrounded location(). Games save with api.save() / api.load() and find the player with
-// api.location() instead (see docs/maker-kit.md).
-export const HIDDEN = { 'util.js': ['store'], 'sfx.js': ['sound', 'setSound', 'audio'], 'kit/device.js': ['location', 'hapticSettings', 'setHaptics'] };
+// Games import only the default export, gs (import gs from '../gamescroll.js'). What gs leaves out
+// (raw storage, settings, the app's own hooks) is listed in src/gamescroll.js.
+export const HIDDEN = {};
+
+/**
+ * Which parts of gs a game uses, read from its source: ['sound.sfx', 'device.haptic', 'physics.Physics', ...].
+ * Streamed games carry this list, so an older app that lacks one of them skips the game.
+ * Reads `const { a, b: c } = gs.ns`, `gs.ns.name` and plain `gs.ns`.
+ */
+export function gsNeeds(src) {
+  const out = new Set();
+  for (const m of src.matchAll(/\{([^{}]*)\}\s*=\s*gs\s*\.\s*(\w+)/g))
+    for (const part of m[1].split(',')) { const n = part.trim().split(/\s*:\s*/)[0].trim(); if (/^\w+$/.test(n)) out.add(m[2] + '.' + n); }
+  for (const m of src.matchAll(/\bgs\s*\.\s*(\w+)(?:\s*\.\s*(\w+))?/g)) out.add(m[2] ? m[1] + '.' + m[2] : m[1]);
+  return [...out].sort();
+}
+/** Does gs (or a module object) have every path in names? */
+export function hasAll(obj, names) {
+  return names.every(n => { let o = obj; for (const k of n.split('.')) { if (o == null || !(k in Object(o))) return false; o = o[k]; } return true; });
+}
 
 // Extra features on the `api` a game receives in make(api). A streamed game that uses one is only
 // offered to apps that have it (older apps skip the game instead of crashing).

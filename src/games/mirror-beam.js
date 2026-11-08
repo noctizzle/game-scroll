@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Tap mirrors to flip them and bounce the laser into the receiver.
 const R = PAL.rose, W = 160, H = 160, N = 7, CS = 18, OX = (W - N * CS) / 2 + 4, OY = 20;

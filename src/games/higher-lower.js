@@ -1,6 +1,7 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
 
 // Guess if the next card is higher or lower. Each right guess grows the pot, more for riskier calls.
 // Cash out any time to bank it; a wrong guess loses the pot. Same value is a free push. Five runs.

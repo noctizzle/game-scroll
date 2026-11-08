@@ -1,9 +1,10 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { backdrop, glow } from '../kit/gfx.js';
-import { brick, stud, brick3d, stud3d, BRICK } from '../kit/bricks.js';
-import { View, G, part, grp, blob } from '../kit/toon3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { backdrop, glow } = gs.gfx;
+const { brick, stud, brick3d, stud3d, BRICK } = gs.bricks;
+const { View, G, part, grp, blob } = gs.toon;
 
 // Build a brick car, then race it. Pick a body in the garage: the zippy Racer, the tough Truck or
 // the grippy Buggy. Drag to steer down the track. Smash brick piles your armour can handle for

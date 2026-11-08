@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A space knight with a light blade holds the hangar floor. Tap the left or right side to swing
 // that way: a swing that meets an incoming bolt knocks it back, and a late, close swing sends it

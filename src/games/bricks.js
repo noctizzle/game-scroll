@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Brick breaker, colour edition. Drag to slide the paddle and keep the ball in play. Silver bricks
 // take extra hits and gold ones never break. Catch falling capsules: W wide paddle, M multiball,

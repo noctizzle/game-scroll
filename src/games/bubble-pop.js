@@ -1,6 +1,7 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
 
 // Aim and fire bubbles into the cluster. Three or more of a colour pop, and anything left hanging drops too.
 const W = 360, H = 640, R = 18, D = R * 2, COLS_N = 9, ROW_H = D * .866, TOPY = 70, SX = W / 2, SY = H - 70, LIMIT = 15;

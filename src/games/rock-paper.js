@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Rock, paper, scissors against opponents with habits. Each one plays by a hidden rule you can
 // read from their history. Beat five rounds to face the next one. Three losses and you're out.

@@ -1,5 +1,6 @@
-import { PAL } from '../palettes.js';
-import { sfx } from '../sfx.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { PAL } = gs.palettes;
 
 // Grow the worm by eating seeds without biting yourself.
 function make(api, p) {

@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Warehouse puzzle: push (never pull) every crate onto a dot. Swipe or tap beside the worker to step. Tap ↺ to restart a room.
 const R = PAL.amber, W = 160, H = 160, N = 8, CS = 16, OX = (W - N * CS) / 2, OY = 20, D = [[1, 0], [-1, 0], [0, 1], [0, -1]];

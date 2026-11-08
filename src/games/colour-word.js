@@ -1,6 +1,7 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
 
 // A colour word in a different colour of ink. The rule at the top says whether to tap the INK
 // or the WORD, and it can flip at any time. The timer shrinks with every right answer.

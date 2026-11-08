@@ -1,5 +1,6 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { clamp, rnd } = gs.util;
 
 // Hold to fire a rope at the nearest hook ahead and swing; let go to fly. Touch the floor and you're out.
 const W = 360, H = 640, G = 1300, FLOOR = H - 60;

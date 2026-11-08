@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { haptic } from '../kit/device.js';
-import { HDView, Particles, pbr, rbox, surface, speckle, sun, spot, THREE } from '../kit/hd3d.js';
-import { sounds, noise, tone } from '../kit/sound.js';
+import gs from '../gamescroll.js';
+const { sounds, noise, tone } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { HDView, Particles, pbr, rbox, surface, speckle, sun, spot, THREE } = gs.hd;
 const { Group, Mesh, InstancedMesh, Object3D, Vector3, CylinderGeometry, SphereGeometry, TorusGeometry, BoxGeometry, PlaneGeometry, CircleGeometry, Color } = THREE;
 
 // Mech Brawl: one-on-one boxing between two giant cartoon mechs in a stadium. Tap the left or right

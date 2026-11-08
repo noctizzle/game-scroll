@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Falling two-tone capsules: line up four of the same shade (germs count) to wipe them out. Clear every germ to go up a level.
 // Swipe left/right to move, tap to rotate, swipe down to drop.

@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // Run the lift in a six-floor block. Tap a floor to send the lift there. Riders get off at their
 // floor and anyone waiting gets on (four at most). Leave someone waiting too long and they storm off.

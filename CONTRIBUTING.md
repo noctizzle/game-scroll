@@ -33,8 +33,8 @@ There is a friendlier walkthrough at **https://game-scroll.com/make/**. This gui
 - **Self-contained.** One file in `src/games/`, everything drawn in code on a canvas. No image,
   font or sound files, no network requests, no `eval`, no tracking, no ads, no links out of the app.
   Saving, sound, haptics and sensors all go through the shared kit and `api.save()`: a game never
-  touches `localStorage`, `fetch`, Capacitor or other windows itself, and imports only the shared
-  modules listed in [the maker kit guide](docs/maker-kit.md#which-shared-code-a-game-may-use).
+  touches `localStorage`, `fetch`, Capacitor or other windows itself, and imports only
+  `gs` (`import gs from '../gamescroll.js'`, see [the maker kit guide](docs/maker-kit.md#what-gs-has-and-what-it-doesnt)).
   `node scripts/game-lint.mjs my-game` flags any line that breaks this, and the app blocks network
   calls to anywhere but our own servers anyway.
 - **Touch first.** Every game must be fully playable with touch alone. Phone sensors are welcome as
@@ -68,8 +68,11 @@ game, open the browser console and run `__gs.only('my-game')`. Desktop keys: Spa
 arrows to steer, ↓ for the next game. Press `` ` `` (backquote) for the debug overlay: frame rate, slow
 motion, frame stepping and hitboxes.
 
-The [maker kit](docs/maker-kit.md) has ready-made particles, screen shake, easing, sounds, music,
-thumbsticks, gestures, 2D physics and save slots. Use them: they make games feel better with less code.
+The [maker kit](docs/maker-kit.md) (everything on `gs`) has one-call effects, particles, screen shake,
+easing, sounds, music, thumbsticks, controllers, real 2D and 3D physics, enemy AI, pixel text and
+sprites, motion moves, face tracking and save slots. Use them: they make games feel better with less code.
+
+Making a game with an AI tool (Claude, ChatGPT, Gemini, Copilot)? See [docs/ai-makers.md](docs/ai-makers.md).
 
 ## How a game file works
 
@@ -78,8 +81,9 @@ working game you can copy as a starting point:
 
 ```js
 // src/games/tap-bubbles.js
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
 
 const W = 360, H = 640;
 
@@ -166,6 +170,7 @@ export default {
 | `fx(dt)` | Optional. Keeps effects animating behind the game-over screen. |
 | `resize(w, h)` | Optional, for fluid games. |
 | `debug(c)` | Optional. Draws hitboxes or other helpers while the debug overlay is on (dev only). |
+| `pause()`, `resume()` | Optional. Called when the app pauses the game (How to play, app switch, Escape, controller Start). Only needed for timers or sounds outside `update()`. |
 
 The app draws the start screen (title, hint, goal, Play button) and the game-over screen for you, so
 your game only needs to draw gameplay.
@@ -204,18 +209,19 @@ Inspired by the original monochrome handhelds. The screen is rendered with crisp
 draw on whole-number coordinates. Use only the four shades of your palette, darkest first:
 
 ```js
-import { PAL } from '../palettes.js';
+import gs from '../gamescroll.js';
+const { PAL } = gs.palettes;
 const R = PAL.moss;          // R[0] darkest ... R[3] lightest (the background)
 c.fillStyle = R[3]; c.fillRect(0, 0, W, H);
 ```
 
-`pix(ctx, map, x, y, colour)` from `src/util.js` draws small sprites from strings. The start screen
+`pix(ctx, map, x, y, colour)` from `gs.util` draws small sprites from strings. The start screen
 says "Insert coin / PRESS START". These appear under the Pocket tab.
 
 ### Color (Pocket)
 
 The colour handheld era: same chunky pixels and small screen, but in colour. Use the bright 16-colour
-set `C16` from `src/palettes.js` (`C16[0]` black, `C16[1]` white, then 14 colours). The shell takes the
+set `C16` from `gs.palettes` (`C16[0]` black, `C16[1]` white, then 14 colours). The shell takes the
 colour of `pal`.
 
 ### Advance (Pocket)
@@ -227,11 +233,12 @@ start. Good for platformers, RPG battles, karts and tactics.
 ### Classic · Console (3D)
 
 Home-console and PC inspired games from the 32 to 128-bit era (they appear under **Classic · Console**). These are real-time 3D using three.js through the shared kit
-`src/kit/toon3d.js`: toon shading with a three-band light ramp and ink outlines, giving a cel-shaded
+`gs.toon` (`src/kit/toon3d.js`): toon shading with a three-band light ramp and ink outlines, giving a cel-shaded
 cartoon look. The HUD and text are drawn in normal 2D on top, at full resolution.
 
 ```js
-import { View, G, part, grp, blob } from '../kit/toon3d.js';
+import gs from '../gamescroll.js';
+const { View, G, part, grp, blob } = gs.toon;
 let v3;
 function view3d(W, H) {
   if (!v3) {
@@ -251,7 +258,7 @@ Run `npm run sweep` on Console games (see [Testing](#testing-your-game)).
 
 ### Next Gen · Console (HD 3D)
 
-Games that look like they belong on a current home console. They use `src/kit/hd3d.js`:
+Games that look like they belong on a current home console. They use `gs.hd` (`src/kit/hd3d.js`):
 physically based materials (roughness, metal, clearcoat, normal maps painted in code), image-based
 reflections, real-time shadows, HDR lighting with bloom, ambient occlusion, filmic tone mapping,
 a colour grade, and GPU particles for sparks, smoke and dust. Characters can be stylised or
@@ -259,7 +266,8 @@ cartoony, but the rendering must be **clearly a generation ahead of the Classic 
 If a game can't reach that bar, make it a Classic Console game instead.
 
 ```js
-import { HDView, Particles, pbr, rbox, surface, spot } from '../kit/hd3d.js';
+import gs from '../gamescroll.js';
+const { HDView, Particles, pbr, rbox, surface, spot } = gs.hd;
 let v;   // in draw(c): move v.cam and your meshes, then v.render(c, W, H), then the 2D HUD
 v = new HDView({ bg: '#06080c', fog: .07 }).lampLights(9);
 ```
@@ -280,7 +288,7 @@ never create your own. Run `npm run sweep` on Next Gen games too. These appear u
 
 3D games that happen in the player's real room. The back camera is the background and the phone's
 gyro turns the view, so objects stay put while the player turns and tilts the phone to find them
-(look-around AR; walking isn't tracked). They use `src/kit/ar3d.js` on top of the Next Gen
+(look-around AR; walking isn't tracked). They use `gs.ar` (`src/kit/ar3d.js`) on top of the Next Gen
 renderer, with real-time shadows cast onto the real floor. Every AR game must also play with no
 camera (a virtual room is drawn instead) and with no gyro (drag to look). Read
 [`docs/ar-3d.md`](docs/ar-3d.md) for the kit, sizes and testing. These appear under **AR · 3D**.
@@ -288,7 +296,7 @@ camera (a virtual room is drawn instead) and with no gyro (drag to look). Read
 ## Palettes and shells
 
 For retro styles, `pal` sets the handheld shell colour, the start and game-over screen colours, and
-(for Dot matrix) the four shades you draw with. Pick one key from `src/palettes.js`.
+(for Dot matrix) the four shades you draw with. Pick one key from `gs.palettes.PAL`.
 
 **Dot matrix palettes** (`moss`, `amber`, `ice`, `mono`, `rose`, `mint`):
 
@@ -330,23 +338,26 @@ Here is the same fluid game (Brick Bounce, `160 x 160` growing to `240 x 280`) o
 
 ## Sound, haptics and phone sensors
 
-Import shared helpers only from these modules; the app provides them to streamed games, and a game
-can't import any other app code:
+Everything comes through one import, `import gs from '../gamescroll.js'`, and a game can't import
+any other app code. The full guide is [docs/maker-kit.md](docs/maker-kit.md). The main parts:
 
-- `src/sfx.js`: `sfx(freq, duration, type, volume, slide)` makes short synth sounds. Respects the Sound & haptics settings.
-- `src/kit/sound.js`: ready-made sounds (`sounds.coin()`, `sounds.boom()`...), `noise()` for hits and
-  explosions, `notes()` for jingles and `music()` for looping tunes.
-- `src/kit/juice.js`: particles, screen shake, easing and tweens, pop-up text, flashes, hit-stop.
-- `src/kit/controls.js`: thumbsticks, buttons, the two-thumb layout, tap / double-tap / hold / swipe.
-- `src/kit/physics2d.js`: balls and boxes that fall, bounce, stack and collide.
-- `src/kit/device.js`: `haptic('light' | 'tick' | 'success' | 'warning' ...)`, `buzz()` patterns,
+- `gs.sound`: `sfx(freq, duration, type, volume, slide)`, ready-made sounds (`sounds.coin()`...),
+  `noise()`, `notes()`, `music()`, ZzFX designs (`zzfx(...)`) and Tone.js synths. Respects the Sound & haptics settings.
+- `gs.effects`: `new Feel()` for one-call moments (`feel.coin(x, y)`, `feel.hit()`, `feel.boom()`...).
+- `gs.juice`: particles, screen shake, easing and tweens, pop-up text, flashes, hit-stop.
+- `gs.controls`: thumbsticks, buttons, the two-thumb layout, tap / double-tap / hold / swipe. `gs.pad`: game controllers.
+- `gs.physics` / `gs.physics3d`: real physics (Rapier): spinning shapes, joints, ropes, 3D bodies, a character mover.
+- `gs.ai`: steering, flocking and path finding (Yuka). `gs.math`: seeded random, daily seed, noise, timers.
+- `gs.pixel`: pixel text and sprites from text. `gs.moves`: swing, punch, throw, flip, twist.
+- `gs.vision`: face and hand tracking (MediaPipe). `gs.fx3d`: 3D text, 3D particles, outlines and glitches.
+- `gs.device`: `haptic('light' | 'tick' | 'success' | 'warning' ...)`, `buzz()` patterns,
   `tilt()`, `onShake(cb)`, `heading()` (compass), `faceDown()`, `startMic()`,
   `startCamera()`, `orientation()` (raw gyro, used by the AR kit).
-- `src/kit/geo.js`: `distance`, `bearing`, `offset`, `toLocal`, `cellId` for location games. The
+- `gs.geo`: `distance`, `bearing`, `offset`, `toLocal`, `cellId` for location games. The
   location itself comes from `api.location()` (see [Location](docs/maker-kit.md#location)).
-- `src/util.js`: `clamp`, `rnd`, `pix`, `disc`, `flickTracker`, `hash`, `fmt` (not `store`: use `api.save`).
-- `src/palettes.js`: `PAL`, `SHELL`, `C16`.
-- `src/kit/gfx.js` (2D shading helpers), `src/kit/toon3d.js` (Classic Console 3D), `src/kit/hd3d.js` (Next Gen Console HD 3D), `src/kit/ar3d.js` (AR · 3D: camera + gyro), `src/kit/bricks.js` (toy bricks).
+- `gs.util`: `clamp`, `rnd`, `pix`, `disc`, `flickTracker`, `hash`, `fmt` (no raw storage: use `api.save`).
+- `gs.palettes`: `PAL`, `SHELL`, `C16`.
+- `gs.gfx` (2D shading helpers), `gs.toon` (Classic Console 3D), `gs.hd` (Next Gen Console HD 3D), `gs.ar` (AR · 3D: camera + gyro), `gs.bricks` (toy bricks), `gs.THREE`.
 
 All of the new kits are explained, with examples, in [`docs/maker-kit.md`](docs/maker-kit.md).
 

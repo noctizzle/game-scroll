@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { tilt, calibrateTilt, want, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { tilt, calibrateTilt, want, haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Glasses roll past on a belt. Tilt your phone to tip the jug and fill each one to its line.
 // Close to the line scores best; spill over and you lose a glass. No tilt sensor? Drag to tip.

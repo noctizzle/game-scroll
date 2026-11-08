@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Pull back the slingshot and fling stones at the grumpy blobs hiding in wood, glass and stone
 // forts. Blocks break on hard hits and crush whatever they land on. Clear every blob to move on.

@@ -1,6 +1,7 @@
-import { clamp, rnd, pix } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { clamp, rnd, pix } = gs.util;
+const { PAL } = gs.palettes;
 
 // Top-down four-lane racer: tap the left or right half to switch lanes and dodge traffic.
 const R = PAL.mono, W = 160, H = 160, L0 = 16, LW = 32, PY = 128;

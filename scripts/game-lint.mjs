@@ -11,7 +11,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GAME_MODULES, HIDDEN } from '../src/game-modules.js';
+import { GAME_MODULES } from '../src/game-modules.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..'), GAMES = join(ROOT, 'src', 'games');
 
@@ -40,7 +40,7 @@ const RULES = [
   [/\b(atob|btoa|fromCharCode|fromCodePoint|unescape|decodeURIComponent)\b/, 'decodes hidden strings ($1)'],
   [/\\x[0-9a-f]{2}|\\u\{?[0-9a-f]{4}/i, 'escaped characters in a string (often used to hide code)'],
   [/\b(Reflect|Proxy|__proto__|defineProperty|getOwnPropertyDescriptor)\b/, 'changes how objects work ($1)'],
-  [/\bimport\b[^;]*?\bfrom\s*['"`](?!\.\.?\/)/, 'imports a package from outside the app (only ../kit, ../sfx.js... are allowed)'],
+  [/\bimport\b[^;]*?\bfrom\s*['"`](?!\.\.?\/)/, 'imports a package from outside the app (only ../gamescroll.js is allowed)'],
   [/\bimport\s*['"`](?!\.\.?\/)/, 'imports a package from outside the app'],
   [/\brequire\s*\(/, 'require() (use import from the kit)'],
   [/\b__(gs|hd)\b/, 'uses the app\'s test hooks (__$1)'],
@@ -68,8 +68,7 @@ export function lint(file) {
       if (!abs.startsWith(SRC) || abs.startsWith(GAMES)) continue;
       const key = abs.slice(SRC.length + 1).split('\\').join('/');
       if (!GAME_MODULES.includes(key)) { out.push({ line: i + 1, why: `imports src/${key}, which is app-only (games may import: ${GAME_MODULES.join(', ')})`, code: line.trim().slice(0, 120) }); continue; }
-      const names = (m[1] || '').split(',').map(x => x.trim().split(/\s+as\s+/)[0]).filter(Boolean);
-      for (const n of names) if ((HIDDEN[key] || []).includes(n)) out.push({ line: i + 1, why: `imports ${n} from src/${key}, which games may not use (save with api.save / api.load, find the player with api.location)`, code: line.trim().slice(0, 120) });
+      if (!/^\s*import\s+gs\s+from\b/.test(line)) out.push({ line: i + 1, why: `import gs from '../gamescroll.js' (games use everything through gs)`, code: line.trim().slice(0, 120) });
     }
   });
   return out;

@@ -1,8 +1,9 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { box } from '../kit/gfx.js';
-import { View, G as GEO, part, grp, toon, THREE } from '../kit/toon3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { box } = gs.gfx;
+const { View, G: GEO, part, grp, toon, THREE } = gs.toon;
 const { Group, Mesh, BufferGeometry, BufferAttribute } = THREE;
 
 // Turn-based artillery between two squads of battle spuds on hills you can blow apart. On your

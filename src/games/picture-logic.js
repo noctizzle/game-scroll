@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Picture logic: the numbers say how many filled squares run in a row or column, in order. Fill the grid to match.
 const R = PAL.mono, W = 160, H = 160, N = 5, CS = 18, OX = 58, OY = 54;

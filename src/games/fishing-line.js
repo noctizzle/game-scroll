@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // Hold to sink the hook, let go to reel it in. The first fish it touches on the way UP is caught,
 // so slip past the small ones on the way down. Deeper fish are worth more. Jellyfish cut the line.

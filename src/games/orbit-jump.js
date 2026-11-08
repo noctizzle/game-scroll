@@ -1,5 +1,6 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { rnd } = gs.util;
 
 // Circle a planet, tap to launch off on a straight line, and get caught by the next planet's pull. Drift into space and it's over.
 const W = 360, H = 640;

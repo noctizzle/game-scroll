@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // A hungry frog on a lily pad. Tap anywhere to flick its tongue that way: it takes a moment to
 // reach, so lead your target. Flies are food, wasps sting. The frog gets hungrier as time goes on.

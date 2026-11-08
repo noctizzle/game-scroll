@@ -1,6 +1,7 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { rnd } = gs.util;
 
 // A one-minute daily workout for your brain: four quick drills, fifteen seconds each. Quick sums,
 // count the dots, remember the lit squares, pick the bigger side, and tap 1 to 9 in order. Every

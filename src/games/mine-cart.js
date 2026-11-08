@@ -1,7 +1,8 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // Your cart races along three rails. Junction switches flash ahead: tap to flip the next one
 // so the cart changes rail (or not) and dodges the broken track. Grab gems on the way.

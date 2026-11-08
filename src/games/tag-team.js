@@ -1,9 +1,10 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { backdrop, glow } from '../kit/gfx.js';
-import { brick, stud, brick3d, stud3d } from '../kit/bricks.js';
-import { View, G as GEO, part, grp, blob, flat, THREE } from '../kit/toon3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { backdrop, glow } = gs.gfx;
+const { brick, stud, brick3d, stud3d } = gs.bricks;
+const { View, G: GEO, part, grp, blob, flat, THREE } = gs.toon;
 const { Group } = THREE;
 
 // Two brick heroes share one run. Swipe down to tag between them. The big BRUISER smashes grey

@@ -1,6 +1,7 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
 
 // You're mayor of a little town. Townsfolk bring requests: swipe left or right to decide.
 // Keep Food, Gold, Mood and Safety balanced: if any runs out OR overflows, your term is over.

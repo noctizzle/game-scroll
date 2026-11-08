@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // First year at a school for young spellcasters. Mischief creatures drift down the great hall,
 // each showing the rune that banishes it. Trace that rune with your finger anywhere on screen

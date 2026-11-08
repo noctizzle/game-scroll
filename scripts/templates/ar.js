@@ -2,12 +2,13 @@
 // 3D in the player's real room (src/kit/ar3d.js, see docs/ar-3d.md): the camera picture behind, the
 // gyro to look around, a virtual room and drag-to-look when either is missing. Shows gestures (tap
 // to pop, drag to look), sounds and 2D juice on the HUD.
-import { haptic, want } from '../kit/device.js';
-import { ARView, arNote, FLOOR } from '../kit/ar3d.js';
-import { Particles, pbr, THREE } from '../kit/hd3d.js';
-import { Juice } from '../kit/juice.js';
-import { sounds } from '../kit/sound.js';
-import { Gestures } from '../kit/controls.js';
+import gs from '../gamescroll.js';
+const { sounds } = gs.sound;
+const { haptic, want } = gs.device;
+const { Juice } = gs.juice;
+const { Gestures } = gs.controls;
+const { Particles, pbr, THREE } = gs.hd;
+const { ARView, arNote, FLOOR } = gs.ar;
 
 let W = 300, H = 460;
 const COLS = ['#ff4d6d', '#ffd23f', '#3ddc97', '#4fc3ff', '#b388ff'];

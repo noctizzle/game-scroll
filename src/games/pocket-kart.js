@@ -1,6 +1,7 @@
-import { clamp, disc } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, disc } = gs.util;
 
 // Pocket Kart: a flat-plane scaling kart racer in the style of early-2000s handhelds. Three laps
 // against five rival drivers on one of four hand-laid tracks, each with its own scenery and

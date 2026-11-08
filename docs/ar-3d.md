@@ -77,9 +77,10 @@ estimate. So the 3D camera moves when the player walks, and things stay put on t
 ## Writing an AR game
 
 ```js
-import { haptic, want } from '../kit/device.js';
-import { ARView, arNote, FLOOR } from '../kit/ar3d.js';
-import { Particles, pbr, rbox, THREE } from '../kit/hd3d.js';
+import gs from '../gamescroll.js';
+const { haptic, want } = gs.device;
+const { ARView, arNote, FLOOR } = gs.ar;
+const { Particles, pbr, rbox, THREE } = gs.hd;
 
 function make(api) {
   want('motion');                  // iPhones ask for motion access on the Play tap

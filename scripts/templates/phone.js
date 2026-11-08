@@ -1,8 +1,9 @@
 // __TITLE__: a starter Phone (Casual) game made with `npm run new`. Change anything you like.
 // It shows the maker kits in use: juice (particles, shake, pop-up text), sound and a save slot.
-import { haptic } from '../kit/device.js';
-import { Juice, ease } from '../kit/juice.js';
-import { sounds, noise } from '../kit/sound.js';
+import gs from '../gamescroll.js';
+const { sounds, noise } = gs.sound;
+const { haptic } = gs.device;
+const { Juice, ease } = gs.juice;
 
 let W = 360, H = 640;
 

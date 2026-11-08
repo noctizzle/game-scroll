@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // One-on-one football between two jelly blobs. Hold and slide to move your blob, tap or flick up
 // to jump. Head the ball into the other net. First to five wins the match, and every match the

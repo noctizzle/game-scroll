@@ -1,5 +1,6 @@
-import { sfx } from '../sfx.js';
-import { buzz, canBuzz, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { buzz, canBuzz, haptic } = gs.device;
 
 // Feel the code. Your phone buzzes a pattern of short and long pulses: pick the matching pattern
 // from four. Tap the hand to feel it again (costs time). Phones that can't vibrate flash the screen instead.

@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A dinosaur skeleton is buried in the quarry. Rub with your finger to brush the dirt away
 // gently. Tap to swing the pick, which clears a big hole at once but cracks any bone it hits.

@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Real-time battle on a 6x3 grid. Your net-runner owns the blue panels, glitch programs own the
 // red ones. Tap a blue panel to jump there and dodge; tap the red side to fire your buster down

@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Flies zig-zag round the picnic table. Tap to swat them. Leave the bees alone, and don't
 // let flies land on the cake for long. 40 seconds; three stings or a ruined cake ends it.

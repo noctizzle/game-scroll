@@ -1,0 +1,41 @@
+<!doctype html><meta charset="utf-8"><title>kit browser test</title>
+<canvas id="c" width="320" height="240"></canvas>
+<script type="module">
+import gs from '/src/gamescroll.js';
+const out = []; const ok = (c, m) => out.push((c ? 'ok   ' : 'FAIL ') + m);
+const c = document.getElementById('c').getContext('2d');
+try {
+  // pixel
+  const w = gs.pixel.text(c, 'HELLO 123', 4, 4, { size: 2, color: '#fff', outline: '#000' }); ok(w > 50, 'pixel text width ' + w);
+  await document.fonts.load("8px 'Press Start 2P'");
+  gs.pixel.text(c, 'BIG', 4, 30, { font: 'big', size: 2 }); ok(true, 'big text');
+  const s = gs.pixel.sprite(`.kk.\nkyyk\n.kk.`, { k: '#000', y: '#fd0' }); s.draw(c, 50, 50, { scale: 4, outline: '#fff', flip: true }); ok(s.w === 4 && s.solid(1, 1) && !s.solid(0, 0), 'sprite');
+  const a = gs.pixel.anim(['kk', 'yy'], { k: '#000', y: '#ff0' }, 4); a.draw(c, 0, 100, .3); ok(a.frames.length === 2, 'anim');
+  // effects
+  const feel = new gs.effects.Feel(); feel.coin(10, 10); feel.boom(50, 50); feel.hit(20, 20); feel.combo(5, 30, 30); feel.update(.016); feel.begin(c); feel.end(c, 320, 240); ok(true, 'feel');
+  // sound
+  gs.sound.zzfx(...[, , 925, .04, .3, .6, 1, .3, , 6.27, -184, .09, .17]); gs.sound.sounds.coin(); ok(true, 'zzfx');
+  // lazy: physics
+  let e; try { new gs.physics.Physics(); } catch (x) { e = x; } ok(e && e.kitLoading, 'physics StillLoading'); await e.kitLoading;
+  const p = new gs.physics.Physics({ walls: [0, 0, 320, 240] }); const b = p.box(100, 20, 20, 20); for (let i = 0; i < 90; i++) p.step(1 / 60); ok(b.y > 200, 'physics in browser ' + b.y);
+  try { new gs.physics3d.World3D(); } catch (x) { e = x; } await e.kitLoading; const w3 = new gs.physics3d.World3D(); w3.floor(0); const bb = w3.ball(null, .5, { at: { x: 0, y: 3, z: 0 } }); for (let i = 0; i < 90; i++) w3.step(1 / 60); ok(Math.abs(bb.pos.y - .5) < .05, 'physics3d in browser');
+  // Tone
+  try { gs.sound.Tone(); } catch (x) { e = x; } ok(e?.kitLoading, 'Tone StillLoading'); await e.kitLoading; const T = gs.sound.Tone(); const syn = new T.Synth().toDestination(); syn.triggerAttackRelease('C4', '8n'); ok(!!T.Synth, 'Tone synth');
+  // fx3d
+  try { gs.fx3d.text3d('x'); } catch (x) { e = x; } ok(e?.kitLoading, 'fx3d StillLoading'); await e.kitLoading;
+  const scene = new gs.THREE.Scene(); const t = gs.fx3d.text3d('HI', { size: .5 }); scene.add(t); ok(!!t.isMesh, 'text3d');
+  const fx = new gs.fx3d.Particles3D(scene); fx.boom({ x: 0, y: 0, z: 0 }); fx.fire({ x: 0, y: 0, z: 0 }); fx.update(.016); fx.update(.016); ok(fx.live.size >= 3, 'particles3d ' + fx.live.size);
+  const v = new gs.hd.HDView({}); gs.fx3d.outline(v, []); gs.fx3d.pixelate(v, 4); gs.fx3d.glitch(v); gs.fx3d.trails(v); ok(v.extras.length === 4, 'extra passes');
+  const cc = document.createElement('canvas'); cc.width = 180; cc.height = 320; document.body.append(cc); const cx = cc.getContext('2d');
+  v.render(cx, 180, 320); v.render(cx, 180, 320); ok(true, 'HDView render with extras');
+  // vision library loads (no camera here)
+  try { new gs.vision.Face(); } catch (x) { e = x; } ok(e?.kitLoading, 'vision StillLoading'); await e.kitLoading; const f = new gs.vision.Face(); const task = await f.makeTask(); ok(!!task, 'face model loads');
+  const hands = new gs.vision.Hands(); ok(!!(await hands.makeTask()), 'hand model loads');
+  // ai, math, moves, pad
+  const crowd = new gs.ai.Crowd(); crowd.add(0, 0).chase({ x: 50, y: 50 }); crowd.update(.1); ok(true, 'ai');
+  const m = new gs.moves.Moves(); m.update(); m.stop(); ok(true, 'moves'); ok(gs.pad.pad() === null, 'no pad');
+  ok(!('store' in gs.util) && !('setSound' in gs.sound) && !('hapticSettings' in gs.device) && !('stopVision' in gs.vision), 'hidden stay hidden');
+  ok(Object.isFrozen(gs) && Object.isFrozen(gs.sound), 'frozen');
+} catch (err) { out.push('FAIL threw ' + (err && err.stack || err)); }
+window.result = out;
+</script>

@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A round little puff walks right on its own. Tap the right side to jump, and keep tapping in the
 // air to flap and float over gaps. Hold the left side to suck in the critter ahead; swallow a

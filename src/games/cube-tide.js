@@ -1,7 +1,8 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { View, G, part, grp, flat } from '../kit/toon3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
+const { View, G, part, grp, flat } = gs.toon;
 
 // Waves of stone cubes tumble down a floating floor toward the edge. Tap a tile to set a trap,
 // then tap it again when a cube is on it to sink the cube. Grey cubes must be caught: every few

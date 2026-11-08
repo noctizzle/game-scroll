@@ -1,6 +1,7 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { rnd } = gs.util;
 
 // Hold to pump the balloon, let go to cash it in. The bigger it gets, the more it's worth,
 // but every balloon has a secret bursting point. Colours hint at how tough they are. Ten balloons.

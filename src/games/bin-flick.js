@@ -1,8 +1,9 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic, want } from '../kit/device.js';
-import { ARView, arNote, FLOOR } from '../kit/ar3d.js';
-import { Particles, pbr, surface, speckle, THREE } from '../kit/hd3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic, want } = gs.device;
+const { clamp, rnd } = gs.util;
+const { Particles, pbr, surface, speckle, THREE } = gs.hd;
+const { ARView, arNote, FLOOR } = gs.ar;
 const { Group, Mesh, CylinderGeometry, TorusGeometry, CircleGeometry, IcosahedronGeometry, Vector3, DoubleSide } = THREE;
 
 // Bin Flick: a metal bin appears on your real floor. Flick a paper ball up the screen to throw it:
