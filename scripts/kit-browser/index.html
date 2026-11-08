@@ -71,6 +71,17 @@ try {
     const shot = await hv.photo({ samples: 2 }); const t0 = performance.now(); while (!shot.done && performance.now() - t0 < 180000) { shot.step(50); await new Promise(r => setTimeout(r, 10)); }
     ok(shot.done && shot.image().width > 0, 'path-traced photo: ' + shot.samples + ' samples in ' + Math.round(performance.now() - t0) + ' ms (software GPU)');
     shot.stop(); hv.render(hx, 160, 120); ok(!hv.shot, 'back to normal rendering after the photo');
+    // Snapdragon GSR 1: a big canvas on the low tier is drawn smaller and upscaled to full size
+    {
+      gs.hd.HD.force = 0;
+      const bc = document.createElement('canvas'); bc.width = 1200; bc.height = 900; const bx = bc.getContext('2d');
+      const edges = () => { const d = bx.getImageData(0, 0, 1200, 900).data; let e = 0; for (let y = 0; y < 900; y += 3) for (let x = 1; x < 1200; x++) { const i = (y * 1200 + x) * 4; e += Math.abs(d[i] - d[i - 4]) + Math.abs(d[i + 1] - d[i - 3]); } return e; };
+      gs.hd.HD.upscale = false; hv.render(bx, 1200, 900); hv.render(bx, 1200, 900); const plain = edges(), plainUp = gs.hd.HD.info.upscaled;
+      gs.hd.HD.upscale = true; hv.render(bx, 1200, 900); hv.render(bx, 1200, 900); const sharp = edges();
+      ok(gs.hd.HD.info.upscaled && !plainUp, 'drawn smaller and upscaled with SGSR 1');
+      ok(bx.getImageData(600, 450, 1, 1).data[3] > 0 && sharp >= plain * .98, 'SGSR picture is as sharp or sharper: edges ' + sharp + ' vs plain ' + plain);
+      gs.hd.HD.force = 3;
+    }
     gs.hd.HD.direct = direct; gs.hd.HD.force = null;
     ok(!('currentView' in gs.hd), 'currentView hidden from games');
   }
@@ -91,6 +102,46 @@ try {
     for (let i = 0; i < 2000; i++) batch.add(tex, Math.random() * 100, Math.random() * 100);
     batch.add(tex, 50, 50, { scale: 2 }); batch.draw(bx);
     ok(bx.getImageData(50, 50, 1, 1).data[1] > 200 && batch.count === 2001, 'batch drew 2001 sprites');
+  }
+  // Tiny Brains in the browser: a chaser learns its teacher, waves and plans run, numbers pack
+  {
+    const { Brain, Wave, Imagine, Net } = gs.brains;
+    const bot = new Brain(null, { name: 'kb', inputs: 2, actions: ['left', 'right'], hidden: [8], teacher: s => s[0] < 0 ? 'left' : 'right', limits: { react: 0, perSecond: 1000, minNoise: 0 }, share: false });
+    const t0 = performance.now(); for (let i = 0; i < 3000; i++) { bot.act([Math.random() * 2 - 1, 0], 1 / 60); if (i % 20 === 0) bot.feel(.5); }
+    const per = (performance.now() - t0) / 3000;
+    ok(bot.agree > .8, 'brain copied its teacher: ' + bot.agree.toFixed(2));
+    ok(per < .2, 'a decision takes ' + (per * 1000).toFixed(1) + ' µs');
+    ok(Net.unpack(bot.net.pack())?.shape === '2x8x2', 'brain packs');
+    const wave = new Wave(bot), m = wave.mind(); m.act([.5, 0]); m.feel(1); m.done(); ok(true, 'wave mind ran');
+    ok(new Imagine({ actions: 2, step: (s, a) => ({ x: s.x + (a ? 1 : -1) }), score: s => s.x }).pick({ x: 0 }) === 1, 'imagine picked the better move');
+  }
+  // made levels load rot.js and WaveFunctionCollapse on first use, like the other lazy parts
+  { let ge; try { gs.gen.dungeon(30, 20, { seed: 1 }); } catch (x) { ge = x; } ok(ge?.kitLoading, 'gs.gen StillLoading first'); await ge.kitLoading;
+    ok(gs.gen.dungeon(30, 20, { seed: 1 }).text.includes('S') && !!gs.gen.pattern('.#.\n###\n.#.', 12, 12, { seed: 3 }), 'dungeon and pattern in the browser'); }
+  // round 6: 3D levels from text, sky and weather, a car with suspension
+  {
+    const { Level3D } = gs.level3d, { Sky, Weather } = gs.sky, { View, toon } = gs.toon, { HDView } = gs.hd;
+    const lv = new Level3D(`
+      ########
+      #P..22.#
+      #..~~..#
+      #...=.E#
+      ########`, { size: 2, wall: 3, look: { '#': toon('#887766'), '.': toon('#ccbb99') } });
+    ok(lv.cols === 8 && lv.rows === 5 && lv.find('P').length === 1 && lv.find('E').length === 1, '3D level read its map and marks');
+    ok(lv.group.children.length <= 6 && lv.blocks.length < 30, `walls merged: ${lv.blocks.length} blocks in ${lv.group.children.length} meshes`);
+    const p0 = lv.find('P')[0]; ok(lv.height(p0.x, p0.z) === 0 && lv.height(-8 + 1, -5 + 1) === 3 && lv.walkable(p0.col, p0.row), '3D level heights');
+    const w5 = new gs.physics3d.World3D(); lv.solid(w5); const ball = w5.ball(null, .3, { at: { x: p0.x, y: 3, z: p0.z } }); for (let i = 0; i < 90; i++) w5.step(1 / 60);
+    ok(Math.abs(ball.pos.y - .3) < .08, '3D level is solid in physics: ' + ball.pos.y.toFixed(2));
+    const tv = new View(); tv.scene.fog = new gs.THREE.Fog('#fff', 10, 100); const sky = new Sky(tv, { time: 12, speed: 6 }); sky.update(0); const noon = tv.sun.intensity;
+    sky.time = 0; sky.update(0); ok(sky.night > .9 && tv.sun.intensity < noon * .3, 'night falls: sun ' + tv.sun.intensity.toFixed(2) + ' vs ' + noon.toFixed(2));
+    sky.time = 11; sky.update(1); ok(sky.time > 16.9 && sky.time < 17.1, 'time moves at its speed');
+    const hv = new HDView(); const hs = new Sky(hv, { physical: true, time: 8 }); hs.update(0); ok(hs.dome.material.uniforms.sunPosition.value.y > 0, 'physical sky sun up at 8');
+    const rain = new Weather(hv, { kind: 'storm', amount: .5 }); let flashes = 0; rain.onFlash = () => flashes++; for (let i = 0; i < 60 * 15; i++) rain.update(1 / 60);
+    ok(flashes >= 1 && rain.rainMesh.visible, 'storm rains and flashes: ' + flashes); rain.set('snow', 1); rain.update(.1); ok(rain.snowMesh.visible && !rain.rainMesh.visible, 'snow');
+    const w6 = new gs.physics3d.World3D(); w6.floor(0); const car = w6.vehicle(null, { at: { x: 0, y: 1, z: 0 } });
+    for (let i = 0; i < 60; i++) w6.step(1 / 60); ok(car.grounded, 'car settles on its wheels');
+    for (let i = 0; i < 120; i++) { car.drive(1, 0); w6.step(1 / 60); } ok(car.speed > 2 && car.chassis.pos.z < -1, 'car drives forward: speed ' + car.speed.toFixed(1) + ' z ' + car.chassis.pos.z.toFixed(1));
+    const h0 = car.chassis.body.rotation(); for (let i = 0; i < 60; i++) { car.drive(1, 1); w6.step(1 / 60); } const h1 = car.chassis.body.rotation(); ok(Math.abs(h1.y - h0.y) > .02 && !car.upsideDown, 'car steers and stays upright');
   }
 } catch (err) { out.push('FAIL threw ' + (err && err.stack || err)); }
 window.result = out;

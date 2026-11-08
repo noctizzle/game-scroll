@@ -7,6 +7,7 @@
 //                     Android: { token }                                                     (Play Integrity)
 //   POST /heart       body { device, game, on } (+ "Authorization: Bearer <session>") -> { game, n }
 //   POST /score, GET /board   leaderboards, all time and today (see scores.js)
+//   POST /brain, GET /brain   Tiny Brains shared learning: everyone's average brain (see brains.js)
 //   POST /stats, GET /stats   anonymous play stats (see stats.js)
 //   POST /perf, GET /perf, GET /perf/report   anonymous frame timing and crash reports (see perf.js)
 //   play.game-scroll.com/<id> the page a shared game link opens (see sharepage.js)
@@ -23,6 +24,7 @@ import { cleanBatch, saveBatch, totals, prune } from './stats.js';
 import { sharePage, idFromPath } from './sharepage.js';
 import { cleanPerf, savePerf, perfTotals, prunePerf, perfPage } from './perf.js';
 import { cleanScore, saveScore, board, pruneScores } from './scores.js';
+import { cleanBrain, saveBrain, sharedBrain, pruneBrains, NAME_RE, SHAPE_RE } from './brains.js';
 
 // Browsers may call the API only from the app itself and the test website. (Not a security
 // boundary on its own, since scripts outside a browser ignore CORS, but it stops other sites
@@ -37,7 +39,7 @@ const ORIGINS = [
 const COUNTS_TTL = 60;
 const DEVICE_RE = /^[A-Za-z0-9-]{16,64}$/;
 const GAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const MAX_BODY = { '/heart': 512, '/score': 512, '/session': 24_000, '/stats': 8_000, '/perf': 12_000 };
+const MAX_BODY = { '/heart': 512, '/score': 512, '/brain': 4096, '/session': 24_000, '/stats': 8_000, '/perf': 12_000 };
 const STATS_TTL = 600, PERF_TTL = 300;
 
 function cors(req) {
@@ -242,6 +244,36 @@ async function postScore(env, ctx, req) {
   return json(req, res, 200, { 'Cache-Control': 'no-store' });
 }
 
+async function postBrain(env, ctx, req) {
+  const b = await body(req, MAX_BODY['/brain']);
+  if (!b) return json(req, { error: 'bad request' }, 400);
+  const { device, game } = b;
+  if (typeof device !== 'string' || !DEVICE_RE.test(device)) return json(req, { error: 'bad device' }, 400);
+  if (typeof game !== 'string' || !GAME_RE.test(game)) return json(req, { error: 'bad game' }, 400);
+  const bad = cleanBrain(b); if (bad) return json(req, { error: bad }, 400);
+  const no = await writer(env, req, device, 'n'); if (no) return no;
+  const ids = await gameIds(env);
+  if (ids && !ids.has(game)) return json(req, { error: 'unknown game' }, 404);
+  await saveBrain(env.DB, game, device, b);
+  if (Math.random() < .01) ctx.waitUntil(pruneBrains(env.DB));
+  return json(req, { ok: true }, 200, { 'Cache-Control': 'no-store' });
+}
+
+async function getBrain(env, ctx, req) {
+  const u = new URL(req.url), game = u.searchParams.get('game') || '', name = u.searchParams.get('name') || '', shape = u.searchParams.get('shape') || '';
+  if (!GAME_RE.test(game) || !NAME_RE.test(name) || !SHAPE_RE.test(shape)) return json(req, { error: 'bad request' }, 400);
+  if (await limited(env.LIMIT_SESSION, 'nb:' + ip(req))) return json(req, { error: 'slow down' }, 429);
+  // the average changes slowly: keep it at the edge for an hour
+  const cache = typeof caches !== 'undefined' ? caches.default : null, key = new Request(`https://cache.internal/brain/${game}/${name}/${shape}`);
+  let hit = cache && await cache.match(key);
+  if (!hit) {
+    const r = await sharedBrain(env.DB, game, name, shape);
+    hit = new Response(JSON.stringify(r || { error: 'none yet' }), { status: r ? 200 : 404, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'max-age=3600' } });
+    if (cache) ctx.waitUntil(cache.put(key, hit.clone()));
+  }
+  return json(req, await hit.json(), hit.status, { 'Cache-Control': 'public, max-age=600' });
+}
+
 async function getBoard(env, req) {
   const u = new URL(req.url), game = u.searchParams.get('game') || '', device = u.searchParams.get('device') || '';
   if (!GAME_RE.test(game)) return json(req, { error: 'bad game' }, 400);
@@ -296,6 +328,8 @@ export default {
       if (req.method === 'POST' && pathname === '/heart') return await heart(env, ctx, req);
       if (req.method === 'POST' && pathname === '/score') return await postScore(env, ctx, req);
       if (req.method === 'GET' && pathname === '/board') return await getBoard(env, req);
+      if (req.method === 'POST' && pathname === '/brain') return await postBrain(env, ctx, req);
+      if (req.method === 'GET' && pathname === '/brain') return await getBrain(env, ctx, req);
       if (req.method === 'POST' && pathname === '/stats') return await postStats(env, req);
       if (req.method === 'GET' && pathname === '/stats') return await getStats(env, ctx, req);
       if (req.method === 'POST' && pathname === '/perf') return await postPerf(env, req);

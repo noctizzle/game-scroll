@@ -139,3 +139,5 @@ the game with a real click (motion access is asked on the Play tap), and dispatc
 up), so objects look like they're sitting on your real floor. Adjust them with
 `v.contactShadows.at(x, z)` (centre) or turn them off with `v.contactShadows.enabled = false`. Screen-space reflections and photo mode are Next Gen only: they'd look wrong over the
 live camera picture.
+
+Like Next Gen, the 3D layer is drawn at the tier's pixel count and upscaled to the screen with Snapdragon Game Super Resolution 1 (the camera picture underneath stays at full resolution).

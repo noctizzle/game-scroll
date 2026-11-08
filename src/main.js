@@ -34,6 +34,8 @@ import { perf } from './perf.js';
 import { speed, fpsFor, tick as tickHz, screenHz } from './kit/speed.js';
 import { history } from './history.js';
 import { savesFor } from './saves.js';
+import { brainsFor } from './brainstore.js';
+import { ran as gameRan, awayFor } from './away.js';
 import { geoFor, roundStarted, roundEnded } from './geo.js';
 import { makeDebug } from './debug.js';
 import { show as showTweaks } from './kit/tweak.js';
@@ -95,6 +97,8 @@ function makeSlide(def){
     win:()=>win(s),                                     // for games with a natural win (cleared the board, etc.)
     has:id=>!!(s.run&&s.run.items.has(id)),             // is this shop item active for the current run?
     ...savesFor(def),                                     // save(data) / load(fallback) / clearSave(): this game's own save slot
+    ...awayFor(def.id),                                 // away(): seconds since this game last ran (idle games)
+    brains:brainsFor(def.id),                            // where this game's Tiny Brains keep what they learned (src/brainstore.js)
     ...geoFor(def),                                     // location() / watchLocation(cb): rounded, only during a round (src/geo.js)
   };
   bootGame(s);
@@ -511,7 +515,7 @@ function frame(now){
     try{
       let run=true;if(DBG&&DBG.on)({dt,run}=DBG.time(dt));
       const timed=s.state==='playing'&&!s.paused,t0=timed?performance.now():0;
-      if(timed){if(run)s.game.update(dt)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
+      if(timed){if(run)s.game.update(dt);gameRan(s.def.id)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
       const t1=performance.now();
       if(s.state!=='ready'||s.dirty||(DBG&&DBG.on)){paint(s);s.dirty=false}
       if(DBG&&DBG.on)DBG.after(s,timed?t1-t0:0,performance.now()-t1,now);
