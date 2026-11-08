@@ -60,17 +60,82 @@ function noiseBuffer(ctx) {
  * `from` Hz to `to` Hz. High to low = explosion; short and high = hit or snare; long and low = rumble.
  * filter: 'lowpass' (default) | 'highpass' | 'bandpass'.
  */
-export function noise(len = .25, { vol = .08, from = 3000, to = 300, filter = 'lowpass', q = 1, at = 0, out = null, bus = null } = {}) {
+export function noise(len = .25, { vol = .08, from = 3000, to = 300, filter = 'lowpass', q = 1, at = 0, attack = 0, out = null, bus = null } = {}) {
   if (sound.muted || !sound.volume) return;
   const a = audio(); if (!a) return;
   try {
     const { ctx } = a, t = ctx.currentTime + at, src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
     src.buffer = noiseBuffer(ctx); src.loop = true;
     f.type = filter; f.Q.value = q; f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(Math.max(40, to), t + len);
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    if (attack > 0) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack); } else g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(len, attack + .01));
     src.connect(f); f.connect(g); g.connect(out || route || busIn(bus || playBus)); src.start(t); src.stop(t + len + .02);
   } catch { /* audio unavailable */ }
 }
+
+/* ---------- places and backgrounds: reverb made in code, steady beds of sound ---------- */
+/**
+ * space({ seconds, decay, wet, bright, pre }): the sound of a place (a room, a church, a valley, a
+ * cave): a reverb whose echo tail is made in code. Play into it with tone(f, { out: sp.in }) or
+ * noise(len, { out: sp.in }) (the sound plus its echo), or new Ears({ space: sp }) for 3D sounds.
+ * seconds: how long the tail is; decay: how fast it dies away (higher is shorter); wet: 0..1 how
+ * much echo; bright: Hz above which the tail is dull; pre: seconds before the first echo (big
+ * places have more). sp.set({ wet, bright }, seconds) glides; sp.tail takes only the echo.
+ * Returns null where there is no audio, so pass sp?.in.
+ */
+export function space({ seconds = 2.4, decay = 3, wet = .35, bright = 5000, pre = .02 } = {}) {
+  const a = audio(); if (!a) return null;
+  try {
+    const { ctx } = a, inp = ctx.createGain(), tail = ctx.createGain(), dl = ctx.createDelay(1), cv = ctx.createConvolver(), lp = ctx.createBiquadFilter(), w = ctx.createGain();
+    const n = Math.max(64, Math.floor(seconds * ctx.sampleRate)), ir = ctx.createBuffer(2, n, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay); }
+    cv.buffer = ir; dl.delayTime.value = Math.min(1, pre); lp.type = 'lowpass'; lp.frequency.value = bright; w.gain.value = wet;
+    const to = busIn('sfx'); inp.connect(to); inp.connect(tail); tail.connect(dl); dl.connect(cv); cv.connect(lp); lp.connect(w); w.connect(to);
+    const sp = {
+      in: inp, tail,
+      set({ wet: v, bright: hz } = {}, sec = .3) { const t = ctx.currentTime, k = Math.max(.01, sec / 3); if (v != null) w.gain.setTargetAtTime(v, t, k); if (hz != null) lp.frequency.setTargetAtTime(hz, t, k); return sp; },
+    };
+    return sp;
+  } catch { return null; }
+}
+// beds use a longer noise loop than the bursts, so the repeat can't be heard
+let bedBuf = null;
+function bedBuffer(ctx) {
+  if (bedBuf) return bedBuf;
+  const n = ctx.sampleRate * 5; bedBuf = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = bedBuf.getChannelData(ch); let b = 0; for (let i = 0; i < n; i++) { b = b * .6 + (Math.random() * 2 - 1) * .4; d[i] = b * 1.6; } }
+  return bedBuf;
+}
+const beds = new Set();
+/**
+ * bed({ vol, from, filter, q, gusts, out }): a steady background sound made from noise: wind, rain,
+ * a river, a crowd's hum, the roar of an engine room. b.set({ vol, from, q }, seconds) glides to new
+ * values (a storm rising, a door closing on the wind). gusts: 0..1 slow random swells. Beds fade in,
+ * stop with the round and go quiet on the pause screen; b.stop() ends one sooner.
+ */
+export function bed({ vol = .03, from = 600, filter = 'lowpass', q = .7, gusts = 0, out = null } = {}) {
+  const dead = { set() { return dead; }, stop() {} };
+  if (sound.muted || !sound.volume) return dead;
+  const a = audio(); if (!a) return dead;
+  try {
+    const { ctx } = a, src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(), sw = ctx.createGain();
+    src.buffer = bedBuffer(ctx); src.loop = true; src.loopStart = Math.random() * 4; f.type = filter; f.frequency.value = from; f.Q.value = q;
+    g.gain.value = 0; sw.gain.value = 1;
+    src.connect(f); f.connect(sw); sw.connect(g); g.connect(out || busIn('sfx')); src.start(ctx.currentTime, Math.random() * 4);
+    // gusts: two slow wobbles that never line up, so the swells don't repeat
+    const lfos = [];
+    if (gusts > 0) for (const hz of [.07 + Math.random() * .03, .17 + Math.random() * .05]) { const o = ctx.createOscillator(), lg = ctx.createGain(); o.frequency.value = hz; lg.gain.value = gusts * .35; o.connect(lg); lg.connect(sw.gain); o.start(); lfos.push(o); }
+    const b = {
+      vol, held: false,
+      set({ vol: v, from: hz, q: qq } = {}, sec = .5) { const t = ctx.currentTime, k = Math.max(.01, sec / 3); if (v != null) { b.vol = v; if (!b.held) g.gain.setTargetAtTime(v, t, k); } if (hz != null) f.frequency.setTargetAtTime(hz, t, k); if (qq != null) f.Q.setTargetAtTime(qq, t, k); return b; },
+      hold(on) { b.held = on; g.gain.setTargetAtTime(on ? 0 : b.vol, ctx.currentTime, .08); },
+      stop() { try { g.gain.setTargetAtTime(0, ctx.currentTime, .15); src.stop(ctx.currentTime + .8); for (const o of lfos) o.stop(ctx.currentTime + .8); } catch { /* stopped */ } beds.delete(b); },
+    };
+    g.gain.setTargetAtTime(vol, ctx.currentTime, .4);
+    beds.add(b); return b;
+  } catch { return dead; }
+}
+register('beds', { stop: () => { for (const b of [...beds]) b.stop(); }, pause: () => { for (const b of beds) b.hold(true); }, resume: () => { for (const b of beds) b.hold(false); } });
 
 /* ---------- jingles ---------- */
 /**
@@ -242,7 +307,7 @@ if (typeof document !== 'undefined') document.addEventListener?.('visibilitychan
 const P3 = p => ({ x: p?.x || 0, y: p?.z == null ? 0 : (p.y || 0), z: p?.z == null ? (p?.y || 0) : p.z });
 export class Ears {
   /** ref: distance at full volume; max: past this it doesn't get quieter; rolloff: how fast it falls; hrtf: false for plain stereo (cheaper). */
-  constructor({ ref = 2, max = 60, rolloff = 1, hrtf = true, flat = false } = {}) { Object.assign(this, { ref, max, rolloff, hrtf, flat }); this.pos = { x: 0, y: 0, z: 0 }; }
+  constructor({ ref = 2, max = 60, rolloff = 1, hrtf = true, flat = false, space = null, send = .5 } = {}) { Object.assign(this, { ref, max, rolloff, hrtf, flat, space, send }); this.pos = { x: 0, y: 0, z: 0 }; }
   /** Where the listener is and which way it faces (forward and up are directions; up defaults to +y). */
   place(pos, forward = { x: 0, y: 0, z: -1 }, up = { x: 0, y: 1, z: 0 }) {
     const a = audio(); if (!a) return this;
@@ -263,6 +328,8 @@ export class Ears {
       const q = this.flat ? P3(p) : { x: p.x, y: p.y, z: p.z || 0 }, pn = a.ctx.createPanner();
       pn.panningModel = this.hrtf ? 'HRTF' : 'equalpower'; pn.distanceModel = 'inverse'; pn.refDistance = this.ref; pn.maxDistance = this.max; pn.rolloffFactor = this.rolloff;
       if (pn.positionX) { pn.positionX.value = q.x; pn.positionY.value = q.y; pn.positionZ.value = q.z; } else pn.setPosition(q.x, q.y, q.z);
+      // with a space, some of each sound also goes into the place's echo (far sounds keep more of it)
+      if (this.space?.tail) { const s = a.ctx.createGain(); s.gain.value = this.send; pn.connect(s); s.connect(this.space.tail); }
       if (!muffled) { pn.connect(busIn('sfx')); return pn; }
       const f = a.ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 700; pn.connect(f); f.connect(busIn('sfx')); return pn;
     } catch { return null; }

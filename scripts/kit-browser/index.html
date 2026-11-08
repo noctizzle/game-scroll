@@ -226,6 +226,9 @@ try {
 
     const ears = new gs.sound.Ears(); ears.place({ x: 0, y: 0, z: 0 }); ears.tone(440, { x: 5, y: 0, z: 0 }); ears.noise(.2, { x: -5, y: 0, z: 0 }); ears.play('boom', { x: 0, y: 0, z: -10 });
     const eng = ears.loop({ x: 2, y: 0, z: 0 }); eng.move({ x: 3, y: 0, z: 0 }).pitch(120); eng.stop(); ok(ears.heard({ x: 2, y: 0, z: 0 }) > ears.heard({ x: 30, y: 0, z: 0 }), '3D sounds play and fall off with distance');
+    const sp = gs.sound.space({ seconds: 1, wet: .3 }); gs.sound.noise(.15, { out: sp?.in, attack: .01 }); sp?.set({ wet: .1, bright: 2000 });
+    const ears2 = new gs.sound.Ears({ space: sp, send: .4 }); ears2.place({ x: 0, y: 0, z: 0 }); ears2.play('boom', { x: 0, y: 0, z: -20 });
+    const bd = gs.sound.bed({ vol: .01, from: 500, gusts: .5 }); bd.set({ vol: .005, from: 900 }, .2); bd.stop(); ok(typeof bd.set === 'function', 'space reverb, Ears into a space, beds glide and stop');
     const tune = gs.sound.music({ tempo: 140, lead: 'C5 E5 G5 E5', drums: 'k h s h', lead2: 'C6 . G5 .', layers: { drums: .3, lead2: .7 } }).start();
     tune.intensity(.5); ok(tune.level === .5, 'music intensity brings in layers'); tune.stop();
   }
