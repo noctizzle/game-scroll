@@ -244,6 +244,17 @@ try {
     const tr = tree({ kind: 'pine' }), rk = rock({ seed: 3 }); ok(tr.attributes.position.count > 50 && rk.attributes.position.count > 20, 'trees and rocks');
     const water = new Water({ level: 0, waves: 1 }); sc.add(water.mesh); water.update(.5, { x: 0, y: 0, z: 0 }); ok(Math.abs(water.height(3, 4)) < 1, 'waves');
     const rr = new T.WebGLRenderer({ canvas: document.createElement('canvas') }); rr.setSize(256, 256); sc.add(new T.DirectionalLight()); rr.render(sc, cam); ok(true, 'outdoor scene renders');
+    { // the outdoor looks: ground with masks, far hills, rock and leaves all compile and draw
+      const { looks, groundDetail, horizon } = gs.outdoors, gd = groundDetail(), gm = new T.MeshStandardMaterial({ normalMap: gd.normal });
+      const gl = looks.ground(gm, { detail: gd.detail, roads: [[-20, 0, 20, 5]] }); gl.wet = .5;
+      const l2 = new Land({ kind: (x, z) => Math.sin(x * .1) * 3, size: 80, segments: 32, material: gm }).masks((x, z, y, sl) => [x > 0 ? 1 : 0, z > 20 ? 1 : 0, sl, 0]);
+      const rm = new T.MeshStandardMaterial({ vertexColors: true }); looks.rock(rm, { mossy: .5 });
+      const lm = new T.MeshStandardMaterial({ map: gd.detail, alphaTest: .5, side: T.DoubleSide }); const lu = looks.leaves(lm, { wind: .8 }); lu.uniforms.lkTime.value = 2;
+      const s2 = new T.Scene(); s2.add(l2.object, horizon(l2, { inner: 38, outer: 160, height: 60 }), new T.Mesh(rock({ seed: 2 }), rm), new T.Mesh(new T.PlaneGeometry(2, 2), lm), new T.DirectionalLight());
+      let bad = ''; rr.debug.onShaderError = (g, p, vs, fs) => { bad = g.getShaderInfoLog(fs) || g.getShaderInfoLog(vs) || 'link'; };
+      rr.render(s2, cam); rr.debug.onShaderError = null;
+      ok(!bad && gm.userData.gsLooks.join() === 'ground' && lm.userData.gsLooks.join() === 'leaves' && l2.mesh.geometry.attributes.gsMask, 'outdoor looks compile and draw' + (bad ? ': ' + bad.slice(0, 200) : ''));
+    }
     const w9 = new gs.physics3d.World3D(); land.solid(w9); const b9 = w9.ball(null, .5, { at: { x: 0, y: 8, z: 0 } }); for (let i = 0; i < 120; i++) w9.step(1 / 60);
     ok(Math.abs(b9.pos.y - (land.height(b9.pos.x, b9.pos.z) + .5)) < .3, 'land is solid in physics3d: ' + b9.pos.y.toFixed(2));
     const wf = new gs.physics3d.World3D(); const crate = wf.box(null, 1, 1, 1, { at: { x: 0, y: 3, z: 0 }, density: .5 }); const fl = new gs.craft.Floater(crate, water);

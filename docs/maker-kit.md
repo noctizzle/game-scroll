@@ -1093,7 +1093,7 @@ the ground is, `flatten()` makes a pad for a village or a landing strip, `paint(
 colours it by height in your palette, `solid(world)` makes it solid in `gs.physics3d`, `grass()` scatters
 blades that sway (only near the camera), and `scatter(props, 'tree', 300, { above: 1, steep: .3 })` puts
 `gs.props` things on suitable ground. `tree({ kind: 'pine' | 'round' | 'palm' | 'bush' })` and `rock()`
-make simple shapes to scatter. `Water({ level, waves })` is a sea of rolling waves you can ask about
+make simple shapes to scatter. Next Gen worlds can paint it instead with `looks.ground` (fields, hedges, lanes, mud, puddles), ring it with far hills (`horizon(land)`) and give rocks and leaves their looks: see [Next Gen outdoor looks](nextgen-3d.md#outdoor-looks-ground-hills-rock-leaves). `Water({ level, waves })` is a sea of rolling waves you can ask about
 anywhere (`height(x, z)`, `normal`, `depth(p)`); call `update(dt, camera.position)` each frame.
 
 **Planes, boats and hover craft** (`gs.craft`): `Plane({ at, speed, ground })` flies like arcade games

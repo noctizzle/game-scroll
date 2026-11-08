@@ -10,6 +10,8 @@ The rules for new 3D code until then:
 - Use three.js's stock materials and lights (`MeshStandardMaterial`, `MeshPhysicalMaterial`,
   `MeshToonMaterial`, `LightProbe`...). The WebGPU renderer turns them into node materials itself.
 - No new `onBeforeCompile` patches, and no raw `ShaderMaterial` in games (game-lint warns).
+  A look the kits need goes through `lookPatch()` in `src/kit/looks.js`, so it is named and can be
+  swapped for a node in one place.
 - Each screen effect is its own small pass with its own settings, so it can be rewritten in TSL on
   its own and compared side by side.
 - Only the kits make renderers, and pixel reads go through one place that can wait (WebGPU reads
@@ -31,7 +33,8 @@ The rules for new 3D code until then:
 | 3D particles | three.quarks | Check its WebGPU support; else our own node particles |
 | GPU points particles | `hd3d.js` `Particles` (ShaderMaterial) | A TSL points material |
 | Card pictures and test reads | `toDataURL` / `readPixels` | `await renderer.readRenderTargetPixelsAsync` |
-| Games with their own shaders | `deep-pressure.js`, `long-shadow.js` | Port to kit materials or TSL |
+| Outdoor looks: ground, hills, rock, leaves | `src/kit/looks.js` (`lookPatch`, onBeforeCompile; listed in `material.userData.gsLooks`) | One TSL node per look name, same uniforms (`lk...`) |
+| Games with their own shaders | `deep-pressure.js` | Port to kit materials or TSL |
 
 Parts that already move without work: PixiJS (2D effects and sprites) supports WebGPU, so
 `look2d` only needs its `preference` changed; decals (`DecalGeometry`) and light probes (`LightProbe`)

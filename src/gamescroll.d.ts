@@ -979,7 +979,7 @@ export interface PropsPart {
 export interface LandPart {
   object: Loose; mesh: Loose; size: number; segments: number; low: number; high: number;
   height(x: number, z: number): number; normal(x: number, z: number): P3; slope(x: number, z: number): number; inside(x: number, z: number): boolean;
-  flatten(x: number, z: number, r: number, h?: number, soft?: number): LandPart; paint(stops: [number, string][]): LandPart; solid(world: Loose, o?: Loose): Loose;
+  flatten(x: number, z: number, r: number, h?: number, soft?: number): LandPart; paint(stops: [number, string][]): LandPart; masks(fn: (x: number, z: number, y: number, slope: number) => number[]): LandPart; solid(world: Loose, o?: Loose): Loose;
   grass(o?: { count?: number; colour?: string; tint?: string; width?: number; height?: number; blades?: number; above?: number; below?: number; steep?: number; far?: number; seed?: number; wind?: number }): Loose;
   scatter(props: Loose, name: string, count: number, o?: { above?: number; below?: number; steep?: number; keepOut?: (x: number, z: number) => boolean; inset?: number; [k: string]: Loose }): number[];
   update(dt: number, camera?: Loose): LandPart; dispose(): void;
@@ -995,7 +995,22 @@ export interface OutdoorsPart {
   Water: new (o?: { level?: number; waves?: number | { height: number; length: number; dir?: number; speed?: number }[]; size?: number; segments?: number; colour?: string; opacity?: number; material?: Loose; seed?: number }) => WaterPart;
   tree(o?: { kind?: 'pine' | 'round' | 'palm' | 'bush'; trunk?: string; leaves?: string; height?: number; seed?: number }): Loose;
   rock(o?: { size?: number; colour?: string; seed?: number }): Loose;
+  /** A named patch on a three.js material (stacks; listed in material.userData.gsLooks). vertex / fragment: { head, after, before, replace } by shader chunk name. world: true gives vec3 vGsWorld. */
+  lookPatch(material: Loose, name: string, o?: { uniforms?: Record<string, { value: Loose }>; world?: boolean; vertex?: LookCode; fragment?: LookCode; key?: string }): Record<string, { value: Loose }>;
+  /** Outdoor looks for Next Gen worlds, as patches on standard materials. Colours: '#hex' or [r, g, b] linear. Numbers can be shared uniforms ({ value }). */
+  looks: {
+    /** Painted ground; needs land.masks(). */
+    ground(material: Loose, o?: { detail?: Loose; colours?: Partial<Record<'grassA' | 'grassB' | 'dry' | 'dirt' | 'mud' | 'rock' | 'forest' | 'cropA' | 'cropB' | 'plough' | 'hedge', string | number[]>>; fields?: false | { angle?: number; size?: [number, number]; furrows?: number; hedge?: number }; roads?: [number, number, number, number][]; road?: { width?: number; edge?: number; ruts?: number }; bank?: { low?: number; high?: number; shiny?: number; shinier?: number }; wet?: number | { value: number }; scale?: [number, number, number] }): { uniforms: Record<string, { value: Loose }>; wet: number };
+    hills(material: Loose, o?: { wood?: string | number[]; scale?: number; woods?: number }): { uniforms: Record<string, { value: Loose }> };
+    rock(material: Loose, o?: { detail?: Loose; scale?: number; moss?: string | number[]; mossy?: number }): { uniforms: Record<string, { value: Loose }> };
+    leaves(material: Loose, o?: { time?: number | { value: number }; wind?: number | { value: number }; sun?: Loose; sway?: number; above?: number; glow?: number; atlas?: [number, number] }): { uniforms: Record<string, { value: Loose }> };
+  };
+  /** Tiling detail, normal and ripple textures for ground and rock, made in code (shared: clone() before changing repeat). */
+  groundDetail(o?: { seed?: number }): { detail: Loose; normal: Loose; ripple: Loose };
+  /** A ring of far hills round a Land, with the hills look. */
+  horizon(land: LandPart, o?: { inner?: number; outer?: number; height?: number; seed?: number; lower?: ((x: number, z: number) => number) | null; colours?: { meadow?: string; forest?: string; rock?: string }; segments?: number; rings?: number; look?: false | Loose }): Loose;
 }
+type LookCode = { head?: string; after?: Record<string, string>; before?: Record<string, string>; replace?: Record<string, string> };
 export interface CraftPart {
   /** Arcade-true flight. Events this frame in events[]: 'stall', 'land', 'touch', 'crash', 'takeoff'. */
   Plane: new (o?: { at?: P3; heading?: number; speed?: number; power?: number; lift?: number; drag?: number; stall?: number; top?: number; turn?: [number, number, number]; assist?: number; grip?: number; gravity?: number; ground?: ((x: number, z: number) => number) | null; gear?: number; crashSpeed?: number }) => {

@@ -18,6 +18,7 @@
 
 import { BufferAttribute, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, IcosahedronGeometry, Mesh, MeshStandardMaterial, PlaneGeometry, SphereGeometry, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+export { lookPatch, looks, groundDetail, horizon } from './looks.js';
 import Terrain, { TerrainNS, createSeededRandom, scatterGrass, updateGrass, updateGrassLOD } from 'three.terrain.js';
 
 const KINDS = {
@@ -78,6 +79,18 @@ export class Land {
     }
     const g = this.mesh.geometry; g.attributes.position.needsUpdate = true; g.computeVertexNormals(); g.computeBoundingSphere(); if (this.colours) this.paint(this.colours);
     return this;
+  }
+  /**
+   * masks((x, z, y, slope) => [fields, forest, rock, trodden]): where each kind of ground goes, 0..1
+   * at every grid point, for looks.ground (gs.outdoors.looks). Call again after flatten().
+   */
+  masks(fn) {
+    const g = this.mesh.geometry, n = g.attributes.position.count, S = this.size, seg = this.segments, a = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      const c = i % (seg + 1), r = Math.floor(i / (seg + 1)), x = -S / 2 + c * S / seg, z = -S / 2 + r * S / seg, m = fn(x, z, this.height(x, z), this.slope(x, z));
+      for (let k = 0; k < 4; k++) a[i * 4 + k] = m[k] || 0;
+    }
+    g.setAttribute('gsMask', new BufferAttribute(a, 4)); return this;
   }
   /** Colours the land by height: [[height, colour], ...] blended in between. */
   paint(stops) {
