@@ -87,6 +87,8 @@ export class ARView extends HDView {
     super.onTier(T => { this.sunL.setTier(T); this.gameTier?.(T); });
     const catcher = new Mesh(new PlaneGeometry(40, 40), new ShadowMaterial({ color: 0x000000, opacity: .38 }));
     catcher.rotation.x = -Math.PI / 2; catcher.position.y = FLOOR + .002; catcher.receiveShadow = true; this.scene.add(catcher);
+    // soft contact shadows right under things, so they sit on the real floor (medium tier and up)
+    this.contactShadows = this.contact({ y: FLOOR, size: 6, opacity: .5 }).at(0, -2);
     // the virtual room, shown only while there is no camera picture
     const L = roomLooks(), room = new Group();
     const fl = new Mesh(new PlaneGeometry(14, 14), L.floor); fl.rotation.x = -Math.PI / 2; fl.position.y = FLOOR; fl.receiveShadow = true;

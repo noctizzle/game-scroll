@@ -316,10 +316,118 @@ export interface SensesPart {
 /** The player's Reduce motion setting (read only). The kits already apply it. */
 export interface PrefsPart { readonly reduceMotion: boolean; /** 1 normally, smaller with Reduce motion: scale your own shakes and flashes by it. */ readonly motion: number }
 
+// ---------- 2D worlds, characters, story, replays and look ----------
+
+export declare class Camera2D {
+  constructor(w: number, h: number, o?: { deadzone?: [number, number]; lag?: number; lead?: number; zoom?: number; bounds?: [number, number, number, number] | null; pixel?: boolean; x?: number; y?: number });
+  /** The world point at the centre of the screen. */
+  x: number; y: number; zoom: number; deadzone: [number, number]; lag: number; lead: number; bounds: [number, number, number, number] | null;
+  readonly view: { x: number; y: number; w: number; h: number };
+  update(dt: number, target?: { x: number; y: number; vx?: number; vy?: number }): this;
+  snap(x: number, y: number): this;
+  zoomIn(z: number, sec?: number): this;
+  begin(c: Ctx): this; end(c: Ctx): this;
+  /** A background layer moving at factor f of the camera (0 fixed, 1 with the world). */
+  layer(c: Ctx, f: number, draw: (c: Ctx) => void, o?: { repeat?: [number, number] | null }): this;
+  toWorld(sx: number, sy: number): XY; toScreen(wx: number, wy: number): XY;
+  sees(x: number, y: number, w?: number, h?: number, margin?: number): boolean;
+  offset(f?: number): [number, number];
+}
+export interface Camera2dPart { Camera2D: typeof Camera2D }
+
+export interface Box { x: number; y: number; w: number; h: number; onGround?: boolean; [k: string]: Loose }
+export interface TileHit { left: boolean; right: boolean; up: boolean; down: boolean; slope: number }
+export interface TileKind { solid?: boolean; oneWay?: boolean; slope?: 1 | -1; [k: string]: Loose }
+export declare class TileMap {
+  constructor(cols: number, rows: number, o?: { size?: number; legend?: Record<string, TileKind> });
+  /** '#' wall, '-' one-way, '/' '\' slopes, '.' empty; other letters are marks. */
+  static fromText(text: string | string[], o?: { size?: number; legend?: Record<string, TileKind> }): TileMap;
+  cols: number; rows: number; size: number; readonly w: number; readonly h: number;
+  marks: { ch: string; tx: number; ty: number; x: number; y: number }[];
+  find(ch: string): { ch: string; tx: number; ty: number; x: number; y: number }[];
+  clear(ch: string, to?: string): this;
+  get(tx: number, ty: number): string; set(tx: number, ty: number, ch: string): this;
+  info(tx: number, ty: number): TileKind; at(x: number, y: number): { tx: number; ty: number; ch: string };
+  solid(tx: number, ty: number): boolean; slopeY(tx: number, ty: number, x: number): number | null;
+  inside(tx: number, ty: number): boolean;
+  /** Moves a box (x, y centre) by dx, dy, stopping at walls. */
+  move(box: Box, dx: number, dy: number, o?: { drop?: boolean; stepDown?: number; stepUp?: number }): TileHit;
+  ray(x0: number, y0: number, x1: number, y1: number): { x: number; y: number; tx: number; ty: number } | null;
+  sees(x0: number, y0: number, x1: number, y1: number): boolean;
+  walkable(): boolean[][];
+  draw(c: Ctx, draw: (c: Ctx, ch: string, x: number, y: number, size: number, tx: number, ty: number) => void, cam?: Camera2D | null, o?: { empty?: boolean }): this;
+}
+export interface TilesPart { TileMap: typeof TileMap }
+
+interface MoverBase { x: number; y: number; w: number; h: number; vx: number; vy: number; onGround: boolean; facing: number; hit: Partial<TileHit>; readonly left: number; readonly right: number; readonly top: number; readonly bottom: number }
+export interface MoversPart {
+  Platformer: new (o?: { x?: number; y?: number; w?: number; h?: number; jump?: number; jumpTime?: number; run?: number; accel?: number; airAccel?: number; stop?: number; coyote?: number; buffer?: number; cut?: number; fall?: number; wall?: boolean; wallSlide?: number; wallKick?: number; airJumps?: number }) => MoverBase & {
+    jump: number; jumpTime: number; run: number; airJumps: number; wall: boolean;
+    state: 'idle' | 'run' | 'jump' | 'fall' | 'wall'; jumped: boolean; landed: boolean; impact: number; onWall: -1 | 0 | 1;
+    readonly gravity: number; readonly jumpSpeed: number;
+    /** input: x -1..1, jump held now, down (drop through one-way platforms). map: a TileMap, or { floor: y }. */
+    update(dt: number, map: TileMap | { floor: number } | null, input?: { x?: number; jump?: boolean; down?: boolean }): Loose;
+  };
+  TopDown: new (o?: { x?: number; y?: number; w?: number; h?: number; speed?: number; accel?: number; stop?: number }) => MoverBase & {
+    speed: number; state: 'idle' | 'walk'; dir: XY;
+    update(dt: number, map: TileMap | null, input?: { x?: number; y?: number }): Loose;
+  };
+}
+
+export interface AnimState { frames?: number | number[]; fps?: number; loop?: boolean; lock?: boolean; then?: string; events?: Record<number, string> }
+export interface AnimPart {
+  Animator: new (states: Record<string, AnimState>, start?: string) => {
+    readonly state: string; readonly frame: number; readonly progress: number; done: boolean; prev?: string;
+    on(event: string, fn: (event: string, a: Loose) => void): Loose;
+    play(name: string, restart?: boolean): Loose;
+    update(dt: number, want?: string): Loose;
+  };
+}
+
+export interface StoryLine { text: string; tags: Record<string, string | true>; choices: { text: string; index: number; tags: Record<string, string | true> }[] }
+export interface StoryPart {
+  /** Branching dialogue written in ink (lazy: make it in make() or reset()). */
+  Story: new (source: string) => {
+    readonly ended: boolean; readonly choices: StoryLine['choices']; vars: Record<string, Loose>; ink: Loose;
+    next(): StoryLine; choose(index: number): Loose; go(section: string): Loose; bind(name: string, fn: (...a: Loose[]) => Loose): Loose;
+    save(): string; load(json: string): Loose;
+  };
+  Typewriter: new (text?: string, o?: { speed?: number; pause?: number }) => { readonly shown: string; readonly done: boolean; ticked: boolean; text: string; show(text: string): Loose; skip(): Loose; update(dt: number): Loose };
+  loadStory(): Promise<Loose>;
+}
+
+export declare class Ghost {
+  constructor(o?: { every?: number });
+  time: number; readonly length: number;
+  record(dt: number, ...values: number[]): this;
+  at(t: number): { x: number; y: number; v: number[]; done: boolean } | null;
+  /** A short string for api.save(). */
+  pack(maxBytes?: number, precision?: number): string;
+  static unpack(s: string): Ghost;
+}
+export interface ReplayPart {
+  Ghost: typeof Ghost;
+  Recorder: new (o?: { seed?: number; max?: number }) => { seed: number; rng: Rng; readonly time: number; readonly data: { seed: number; frames: Loose[] }; event(kind: string, ...args: Loose[]): Loose; frame(dt: number): Loose };
+  Replayer: new (data: { seed: number; frames: Loose[] }) => { rng: Rng; readonly done: boolean; step(game: Partial<Game>): number };
+}
+
+export interface Light { x: number; y: number; r: number; color?: string; power?: number; cone?: number; dir?: number; flicker?: number; shadows?: boolean }
+export type ScreenEffect = 'crt' | 'bloom' | 'grade' | 'pixelate' | 'glitch' | 'rgbSplit' | 'film' | 'shockwave' | 'godrays' | 'zoomBlur' | 'blur' | 'outline' | 'grayscale';
+export interface Look2dPart {
+  /** Darkness with lights; walls (a TileMap, anything with ray(), or [x1, y1, x2, y2] segments) cast shadows. */
+  Lights: new (w: number, h: number, o?: { dark?: number; color?: string; pixel?: boolean; rays?: number; scale?: number }) => { dark: number; color: string; draw(c: Ctx, lights: Light[], o?: { walls?: Loose; cam?: Camera2D | null; dt?: number }): Loose };
+  /** Whole-screen effects with pixi-filters (lazy). Options are the pixi-filters filter's own. */
+  Screen: new (effects?: Partial<Record<ScreenEffect, object | boolean | null>>) => { set(effects: Partial<Record<ScreenEffect, object | boolean | null>>): Loose; filter(name: ScreenEffect): Loose; apply(c: Ctx, dt?: number): Loose; shock(x: number, y: number, o?: object): Loose };
+  /** Fast WebGL sprites with PixiJS (lazy). Sprites are PixiJS Sprites: x, y, rotation, scale, alpha, tint. */
+  Batch: new (w: number, h: number, o?: { pixel?: boolean }) => { texture(src: Loose, w?: number, h?: number): Loose; add(tex: Loose, x?: number, y?: number, o?: { scale?: number; rotation?: number; alpha?: number; tint?: number }): Loose; remove(s: Loose): Loose; clear(): Loose; readonly count: number; draw(c: Ctx): Loose };
+  loadLook2D(): Promise<Loose>;
+}
+
 // ---------- 3D and AI parts (load on first use; the app loads them before a game that needs them) ----------
 
 export interface ToonPart { View: new (...a: Loose[]) => Loose; G: Loose; part: Loose; grp: Loose; blob: Loose; toon: Loose; flat: Loose; dude: Loose; has3D(): boolean; THREE: Loose }
-export interface HdPart { HDView: new (...a: Loose[]) => Loose; HD: Loose; TIERS: Loose; hasHD(): boolean; pbr: Loose; rbox: Loose; surface: Loose; speckle: Loose; Particles: Loose; sun: Loose; spot: Loose; THREE: Loose }
+/** An HDView's extras for the ray-traced look: v.reflect(...meshes) (reflections on top-end phones), v.contact({ y, size }) (soft contact shadows), await v.photo({ samples }) (path-traced photo mode). */
+export interface HdPart { ContactShadows: new (o?: { y?: number; size?: number; blur?: number; darkness?: number; opacity?: number; height?: number }) => Loose; loadPhoto(): Promise<Loose>; HDView: new (...a: Loose[]) => Loose; HD: Loose; TIERS: Loose; hasHD(): boolean; pbr: Loose; rbox: Loose; surface: Loose; speckle: Loose; Particles: Loose; sun: Loose; spot: Loose; THREE: Loose }
 export interface ArPart { ARView: new (...a: Loose[]) => Loose; FLOOR: Loose; arNote: Loose; THREE: Loose }
 export interface BricksPart { BRICK: Loose; BRICK_KEYS: Loose; STUD: Loose; brick: Loose; brick3d: Loose; stud: Loose; stud3d: Loose }
 /** Rapier 3D (lazy). */
@@ -355,6 +463,7 @@ export interface GS {
   juice: JuicePart; effects: { Feel: typeof Feel }; controls: ControlsPart; pad: PadPart; moves: MovesPart;
   pixel: PixelPart; gfx: GfxPart; physics: PhysicsPart; vision: VisionPart; geo: GeoPart;
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
+  camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;
   /** three.js itself. */

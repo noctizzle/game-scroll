@@ -6,6 +6,7 @@
 //                     iOS:     first time { keyId, attestation }, later { keyId, assertion }  (App Attest)
 //                     Android: { token }                                                     (Play Integrity)
 //   POST /heart       body { device, game, on } (+ "Authorization: Bearer <session>") -> { game, n }
+//   POST /score, GET /board   leaderboards, all time and today (see scores.js)
 //   POST /stats, GET /stats   anonymous play stats (see stats.js)
 //   POST /perf, GET /perf, GET /perf/report   anonymous frame timing and crash reports (see perf.js)
 //   play.game-scroll.com/<id> the page a shared game link opens (see sharepage.js)
@@ -21,6 +22,7 @@ import { unb64, b64u } from './util.js';
 import { cleanBatch, saveBatch, totals, prune } from './stats.js';
 import { sharePage, idFromPath } from './sharepage.js';
 import { cleanPerf, savePerf, perfTotals, prunePerf, perfPage } from './perf.js';
+import { cleanScore, saveScore, board, pruneScores } from './scores.js';
 
 // Browsers may call the API only from the app itself and the test website. (Not a security
 // boundary on its own, since scripts outside a browser ignore CORS, but it stops other sites
@@ -35,7 +37,7 @@ const ORIGINS = [
 const COUNTS_TTL = 60;
 const DEVICE_RE = /^[A-Za-z0-9-]{16,64}$/;
 const GAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
-const MAX_BODY = { '/heart': 512, '/session': 24_000, '/stats': 8_000, '/perf': 12_000 };
+const MAX_BODY = { '/heart': 512, '/score': 512, '/session': 24_000, '/stats': 8_000, '/perf': 12_000 };
 const STATS_TTL = 600, PERF_TTL = 300;
 
 function cors(req) {
@@ -208,6 +210,39 @@ async function share(env, req) {
   });
 }
 
+/** Is this request allowed to write as device? null if so, else the error response. (Same rules as hearts.) */
+async function writer(env, req, device, kind) {
+  const auth = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  const s = auth && env.SESSION_SECRET ? await readSession(env.SESSION_SECRET, auth) : null;
+  if (s && s.d === device) { if (await limited(env.LIMIT_VERIFIED, kind + 'd:' + device)) return json(req, { error: 'slow down' }, 429); }
+  else if (env.ENFORCE === 'on') return json(req, { error: 'app not verified', session: true }, 401);
+  else if (await limited(env.LIMIT, kind + 'h:' + ip(req))) return json(req, { error: 'slow down' }, 429);
+  return null;
+}
+
+async function postScore(env, ctx, req) {
+  const b = await body(req, MAX_BODY['/score']);
+  if (!b) return json(req, { error: 'bad request' }, 400);
+  const { device, game } = b, score = cleanScore(b.score);
+  if (typeof device !== 'string' || !DEVICE_RE.test(device)) return json(req, { error: 'bad device' }, 400);
+  if (typeof game !== 'string' || !GAME_RE.test(game)) return json(req, { error: 'bad game' }, 400);
+  if (score == null) return json(req, { error: 'bad score' }, 400);
+  const no = await writer(env, req, device, 's'); if (no) return no;
+  const ids = await gameIds(env);
+  if (ids && !ids.has(game)) return json(req, { error: 'unknown game' }, 404);
+  const res = await saveScore(env.DB, game, device, score);
+  if (Math.random() < .01) ctx.waitUntil(pruneScores(env.DB));
+  return json(req, res, 200, { 'Cache-Control': 'no-store' });
+}
+
+async function getBoard(env, req) {
+  const u = new URL(req.url), game = u.searchParams.get('game') || '', device = u.searchParams.get('device') || '';
+  if (!GAME_RE.test(game)) return json(req, { error: 'bad game' }, 400);
+  if (device && !DEVICE_RE.test(device)) return json(req, { error: 'bad device' }, 400);
+  if (await limited(env.LIMIT_SESSION, 'b:' + ip(req))) return json(req, { error: 'slow down' }, 429);
+  return json(req, await board(env.DB, game, u.searchParams.get('when'), device), 200, { 'Cache-Control': 'no-store' });
+}
+
 async function heart(env, ctx, req) {
   const b = await body(req, MAX_BODY['/heart']);
   if (!b) return json(req, { error: 'bad request' }, 400);
@@ -251,6 +286,8 @@ export default {
       if (req.method === 'GET' && pathname === '/challenge') return await challenge(env, req);
       if (req.method === 'POST' && pathname === '/session') return await session(env, req);
       if (req.method === 'POST' && pathname === '/heart') return await heart(env, ctx, req);
+      if (req.method === 'POST' && pathname === '/score') return await postScore(env, ctx, req);
+      if (req.method === 'GET' && pathname === '/board') return await getBoard(env, req);
       if (req.method === 'POST' && pathname === '/stats') return await postStats(env, req);
       if (req.method === 'GET' && pathname === '/stats') return await getStats(env, ctx, req);
       if (req.method === 'POST' && pathname === '/perf') return await postPerf(env, req);

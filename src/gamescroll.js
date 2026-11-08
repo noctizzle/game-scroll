@@ -30,6 +30,13 @@
 //   gs.pacing    spawners, waves with breathers, a difficulty director
 //   gs.aim       touch aim assist: sticky aim, pull onto targets, auto fire
 //   gs.senses    enemy sight cones, hearing, memory and moods (calm, suspicious, alert, searching)
+//   gs.camera2d  Camera2D: follow with a dead zone, look-ahead, zoom, level bounds, parallax layers
+//   gs.tiles     TileMap.fromText(): levels as text, walls, one-way platforms, slopes, marks, rays
+//   gs.movers    Platformer (coyote time, jump buffer, wall jump) and TopDown movement through tiles
+//   gs.anim      Animator: sprite animation states with frame events
+//   gs.story     Story (branching dialogue in ink; lazy) and Typewriter text
+//   gs.replay    Ghost (record and race a run; packs for api.save), Recorder / Replayer (whole rounds)
+//   gs.look2d    Lights (with shadows off walls), Screen (CRT, bloom, glitch...; lazy), Batch (fast WebGL sprites; lazy)
 //   gs.prefs     the player's Reduce motion setting (read only): reduceMotion, motion
 //   gs.camera    3D camera rigs: chase, shoulder, first person, top, side, orbit, rail; no wall clipping
 //   gs.nav3d     3D path finding on a walkable map made from your level (Recast)
@@ -64,6 +71,13 @@ import * as pacing from './kit/pacing.js';
 import * as aim from './kit/aim.js';
 import * as senses from './kit/senses.js';
 import * as prefsKit from './kit/prefs.js';
+import * as camera2d from './kit/camera2d.js';
+import * as tiles from './kit/tiles.js';
+import * as movers from './kit/movers.js';
+import * as anim from './kit/anim.js';
+import * as story from './kit/story.js';
+import * as replay from './kit/replay.js';
+import * as look2d from './kit/look2d.js';
 import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
@@ -75,6 +89,7 @@ export const HIDDEN = {
   moves: ['stopMoves'],
   pad: ['pollPads'],
   vision: ['stopVision'],
+  hd: ['currentView'],
 };
 
 function pick(name, ...mods) {
@@ -140,6 +155,13 @@ const core = {
   aim: pick('aim', aim),
   senses: pick('senses', senses),
   prefs: prefsKit.prefs,
+  camera2d: pick('camera2d', camera2d),
+  tiles: pick('tiles', tiles),
+  movers: pick('movers', movers),
+  anim: pick('anim', anim),
+  story: pick('story', story),
+  replay: pick('replay', replay),
+  look2d: pick('look2d', look2d),
 };
 const gs = {};
 for (const [k, v] of Object.entries(core)) Object.defineProperty(gs, k, { value: v, enumerable: true });

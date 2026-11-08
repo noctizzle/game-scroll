@@ -351,6 +351,9 @@ any other app code. The full guide is [docs/maker-kit.md](docs/maker-kit.md). Th
 - `gs.pixel`: pixel text and sprites from text. `gs.moves`: swing, punch, throw, flip, twist.
 - `gs.things`, `gs.rounds`, `gs.pacing`: game objects and collisions, scenes and levels, spawners and waves.
 - `gs.aim`, `gs.senses`: touch aim assist; enemy sight, hearing and moods.
+- `gs.camera2d`, `gs.tiles`, `gs.movers`: 2D cameras with parallax, levels written as text, platformer and top-down movement.
+- `gs.anim`, `gs.story`, `gs.replay`: sprite animation states, ink dialogue with typewriter text, ghosts and replays.
+- `gs.look2d`: 2D lights with shadows, screen effects (CRT, bloom, glitch; pixi-filters), fast WebGL sprites (PixiJS).
 - `gs.camera`, `gs.nav3d`, `gs.characters`: 3D camera rigs, 3D path finding, look-at, IK, stepping feet (ragdolls in `gs.physics3d`).
 - `gs.vision`: face and hand tracking (MediaPipe). `gs.fx3d`: 3D text, 3D particles, outlines and glitches.
 - `gs.device`: `haptic('light' | 'tick' | 'success' | 'warning' ...)`, `buzz()` patterns,
