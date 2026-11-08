@@ -28,6 +28,23 @@ function bundledGames(streamed) {
   };
 }
 
+// Hot reload for game makers (npm run dev): saving a file in src/games/ swaps that game in place, on
+// the same card, instead of reloading the whole app (src/main.js hotSwap). Kit and app files still
+// reload the page as usual.
+function hotGames() {
+  const GAME = /[\\/]src[\\/]games[\\/]([a-z0-9-]+)\.js$/;
+  return {
+    name: 'hot-games',
+    apply: 'serve',
+    handleHotUpdate({ file, server }) {
+      const m = GAME.exec(file);
+      if (!m) return;
+      server.ws.send({ type: 'custom', event: 'gs:game', data: { id: m[1], url: `/src/games/${m[1]}.js` } });
+      return [];
+    },
+  };
+}
+
 // Build label for crash and stutter reports (src/perf.js): CI run number (the Android
 // versionName is 1.0.<run>) plus the commit, e.g. "1.0.57 a1b2c3d".
 function buildLabel() {
@@ -89,6 +106,6 @@ export default defineConfig(({ mode }) => {
   return {
     base: './',
     define: { __APP_BUILD__: JSON.stringify(buildLabel()) },
-    plugins: [bundledGames(!!env.VITE_GAMES_URL), mlFiles(!!env.VITE_GAMES_URL), csp(env)],
+    plugins: [bundledGames(!!env.VITE_GAMES_URL), hotGames(), mlFiles(!!env.VITE_GAMES_URL), csp(env)],
   };
 });

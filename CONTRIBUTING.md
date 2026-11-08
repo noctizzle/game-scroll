@@ -66,7 +66,9 @@ npm run dev
 Open the printed URL in a desktop browser or on your phone (same Wi-Fi). To jump straight to your
 game, open the browser console and run `__gs.only('my-game')`. Desktop keys: Space/Enter to start,
 arrows to steer, ↓ for the next game. Press `` ` `` (backquote) for the debug overlay: frame rate, slow
-motion, frame stepping and hitboxes.
+motion, frame stepping and hitboxes. Save your file and the game reloads in place (hot reload), and
+`gs.tweak({ speed: 3 })` gives you sliders to tune numbers while you play. `npm run budget my-game`
+checks it's fast enough for a mid-range phone.
 
 The [maker kit](docs/maker-kit.md) (everything on `gs`) has one-call effects, particles, screen shake,
 easing, sounds, music, thumbsticks, controllers, real 2D and 3D physics, enemy AI, pixel text and

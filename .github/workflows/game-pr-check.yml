@@ -1,6 +1,6 @@
 # Checks pull requests that add or change games: builds every game as a streamed file (fails if a
 # file name and its id differ), then plays the changed games in a headless browser (smoke + fold,
-# plus sweep for Console games). A second job flags game code that touches the network, storage or
+# plus sweep for Console games, and the speed budget). A second job flags game code that touches the network, storage or
 # native features (scripts/game-lint.mjs), and lists changed files outside src/games/ that need a
 # careful read. Runs with read-only permissions and no secrets, so it is safe for pull requests from
 # forks. See CONTRIBUTING.md.
@@ -76,6 +76,12 @@ jobs:
         env:
           IDS: ${{ steps.changed.outputs.ids }}
         run: node scripts/fold.cjs $IDS
+
+      - name: Speed budget (frame time and memory on a slowed CPU)
+        if: steps.changed.outputs.ids != ''
+        env:
+          IDS: ${{ steps.changed.outputs.ids }}
+        run: node scripts/budget.cjs $IDS
 
       - name: Sweep test (Console games)
         if: steps.changed.outputs.console != ''

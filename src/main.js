@@ -36,6 +36,7 @@ import { history } from './history.js';
 import { savesFor } from './saves.js';
 import { geoFor, roundStarted, roundEnded } from './geo.js';
 import { makeDebug } from './debug.js';
+import { show as showTweaks } from './kit/tweak.js';
 import { shareGame, onSharedGame } from './share.js';
 import BUNDLED from 'virtual:bundled-games';
 
@@ -93,7 +94,7 @@ function makeSlide(def){
     over:()=>gameOver(s),
     win:()=>win(s),                                     // for games with a natural win (cleared the board, etc.)
     has:id=>!!(s.run&&s.run.items.has(id)),             // is this shop item active for the current run?
-    ...savesFor(def.id),                                // save(data) / load(fallback) / clearSave(): this game's own save slot
+    ...savesFor(def),                                     // save(data) / load(fallback) / clearSave(): this game's own save slot
     ...geoFor(def),                                     // location() / watchLocation(cb): rounded, only during a round (src/geo.js)
   };
   bootGame(s);
@@ -428,7 +429,7 @@ function openShared(id){
 function setActive(s){
   if(active===s)return;
   stopKits();if(active&&active.state!=='ready')resetSlide(active);
-  feed.classList.remove('locked');active=s;speed.game=s.def;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);
+  feed.classList.remove('locked');active=s;speed.game=s.def;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);showTweaks(s);
   topUp();schedulePrune();
 }
 
@@ -460,6 +461,32 @@ function rebuild(){
 
 let resizeAt=0;
 io=new IntersectionObserver(es=>{if(performance.now()-resizeAt<500)return;for(const e of es)if(e.isIntersecting&&e.intersectionRatio>=.6)setActive(e.target._s)},{root:feed,threshold:[.6]});
+
+// Hot reload (npm run dev, vite.config.js hotGames): a saved game file arrives here and replaces the
+// game on its card. The feed, the debug overlay and gs.tweak values stay; a round in progress goes on
+// from where it was if the game has snapshot() / restore(data), otherwise it starts again at once.
+if(import.meta.hot)import.meta.hot.on('gs:game',async({id,url})=>{
+  try{const m=await import(/* @vite-ignore */url+'?t='+Date.now());hotSwap(m.default)}
+  catch(e){console.error(`[hot] ${id}:`,e)}
+});
+function hotSwap(d){
+  if(!d||!d.id||!d.make)return;
+  let g=GAMES.find(x=>x.id===d.id);
+  if(g){try{Object.assign(g,d)}catch(_){const i=GAMES.indexOf(g);GAMES[i]=g={likes:g.likes,...d}}}else GAMES.push(g={likes:300,...d});
+  for(const s of slides){
+    if(s.def.id!==d.id)continue;
+    const playing=s.state==='playing';let snap;
+    if(playing&&s.game.snapshot)try{snap=s.game.snapshot()}catch(e){console.warn('[hot] snapshot',e)}
+    if(s===active)stopKits();
+    try{s.game.dispose?.()}catch(_){}release(s);
+    s.def=g;s.w=g.w;s.h=g.h;bootGame(s);fit(s);
+    if(playing&&snap!==undefined&&s.game.restore)try{ownedBy(s,()=>s.game.restore(snap))}catch(e){console.warn('[hot] restore',e)}
+    else if(playing){s.score=0;s.scoreEl.textContent='0'}
+    else if(s.state==='over'){s.state='ready';s.el.classList.remove('over');renderOverlay(s)}
+    s.dirty=true;toast(s.el,'♻ '+g.title,'');
+  }
+  console.info(`[hot] ${d.id} reloaded`);
+}
 
 // Debug overlay for makers (src/debug.js): dev and test builds only, never in the store apps.
 const DBG=import.meta.env.MODE==='bundled'?makeDebug():null;
