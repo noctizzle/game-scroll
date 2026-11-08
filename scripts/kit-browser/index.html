@@ -28,6 +28,20 @@ try {
   const v = new gs.hd.HDView({}); gs.fx3d.outline(v, []); gs.fx3d.pixelate(v, 4); gs.fx3d.glitch(v); gs.fx3d.trails(v); ok(v.extras.length === 4, 'extra passes');
   const cc = document.createElement('canvas'); cc.width = 180; cc.height = 320; document.body.append(cc); const cx = cc.getContext('2d');
   v.render(cx, 180, 320); v.render(cx, 180, 320); ok(true, 'HDView render with extras');
+  // round 3: game objects, scenes, pacing, aim, senses, camera, characters, nav3d, ragdoll
+  const th = new gs.things.Things(); const pl = th.add({ x: 0, y: 0, r: 5 }, 'player'); th.add({ x: 3, y: 0, r: 2 }, 'coin'); ok(!!th.hit(pl, 'coin'), 'things');
+  const sc = new gs.rounds.Scenes({ a: { update: (dt, s) => s.time > .1 && s.go('b') }, b: {} }, 'a'); for (let i = 0; i < 10; i++) sc.update(.05); ok(sc.name === 'b', 'scenes');
+  const sp = new gs.pacing.Spawner({ every: .1 }); let n = 0; for (let i = 0; i < 30; i++) sp.update(.05, () => n++); ok(n > 10, 'spawner');
+  const aa = new gs.aim.AimAssist({ autoFire: .05 }); let fire = false; for (let i = 0; i < 20; i++) fire ||= aa.update(.016, { x: 0, y: 0 }, .05, [{ x: 100, y: 0, r: 8 }]).fire; ok(fire, 'aim assist');
+  const sn = new gs.senses.Senses({ spotTime: .2 }); for (let i = 0; i < 30; i++) sn.update(.05, { x: 0, y: 0, facing: 0 }, { x: 40, y: 0 }); ok(sn.mood === 'alert', 'senses');
+  const v2 = new gs.hd.HDView({}); const hero = new gs.THREE.Object3D(); const rig = new gs.camera.CameraRig(v2, { mode: 'shoulder' }); rig.update(.016, hero); v2.render(cx, 180, 320); ok(v2.cam.position.z < 0, 'camera rig');
+  const head = new gs.THREE.Object3D(); new gs.THREE.Group().add(head); gs.characters.lookAt(head, new gs.THREE.Vector3(1, 0, 0), null); ok(head.quaternion.y !== 0, 'look at');
+  try { new gs.nav3d.NavMesh3D([]); } catch (x) { e = x; } ok(e?.kitLoading, 'nav3d StillLoading'); await e.kitLoading;
+  const fl = new gs.THREE.Mesh(new gs.THREE.BoxGeometry(10, .2, 10)); fl.position.y = -.1;
+  const nav = new gs.nav3d.NavMesh3D([fl]); ok(nav.path({ x: -3, y: 0, z: 0 }, { x: 3, y: 0, z: 0 }).length >= 2, 'nav3d path in browser');
+  const sc3 = new gs.THREE.Scene(), guy = new gs.THREE.Group(); guy.position.y = 1; sc3.add(guy); guy.add(new gs.THREE.Mesh(new gs.THREE.BoxGeometry(.3, .5, .2)));
+  const arm = new gs.THREE.Group(); arm.position.set(.2, .2, 0); arm.add(new gs.THREE.Mesh(new gs.THREE.BoxGeometry(.1, .4, .1).translate(0, -.2, 0))); guy.add(arm);
+  const w4 = new gs.physics3d.World3D(); w4.floor(0); const rag = w4.ragdoll(guy); for (let i = 0; i < 60; i++) w4.step(1 / 60); ok(rag.parts.length === 2 && guy.position.y < .9, 'ragdoll');
   // vision library loads (no camera here)
   try { new gs.vision.Face(); } catch (x) { e = x; } ok(e?.kitLoading, 'vision StillLoading'); await e.kitLoading; const f = new gs.vision.Face(); const task = await f.makeTask(); ok(!!task, 'face model loads');
   const hands = new gs.vision.Hands(); ok(!!(await hands.makeTask()), 'hand model loads');

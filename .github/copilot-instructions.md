@@ -7,6 +7,6 @@ Read [AGENTS.md](../AGENTS.md) at the repo root: it is the full guide for AI too
 - No `fetch`, storage, `eval`, `import()`, other imports, image or sound files. Save with `api.save()`.
 - `make(api)` returns `{ reset, update(dt), draw(c), down, move, up, key? }`. All round state goes in `reset()`.
 - Use `gs.effects.Feel` for game feel, `gs.physics` (Rapier) for physics, `gs.ai` for enemies, `gs.pixel` for pixel art.
-- Lazy parts (`gs.physics`, `gs.physics3d`, `gs.fx3d`, `gs.vision`, `gs.sound.Tone`) must be created in `make()` or `reset()`.
+- Lazy parts (`gs.physics`, `gs.physics3d`, `gs.nav3d`, `gs.fx3d`, `gs.vision`, `gs.sound.Tone`) must be created in `make()` or `reset()`.
 - Original games only: no recreations of existing games, even renamed.
 - Check with `node scripts/game-lint.mjs <id>`, `npm run games`, `npm run build:bundled && node scripts/smoke.cjs <id>`.

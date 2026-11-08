@@ -20,6 +20,7 @@
 // Like 2D physics the engine loads the first time a game needs it (the app waits for it).
 
 import { lazy } from './lazy.js';
+import { Box3, Matrix4, Vector3 as V3, Quaternion } from 'three';
 const engine = lazy('The 3D physics engine', () => import('@dimforge/rapier3d-compat').then(async m => {
   const r = m.default?.init ? m.default : m;
   await r.init();
@@ -218,6 +219,52 @@ export class World3D {
     this.bodies = this.bodies.filter(x => x !== t); this.movers = this.movers.filter(x => x !== t);
   }
   clear() { for (const t of [...this.bodies, ...this.movers]) this.remove(t); }
+
+
+  /**
+   * Turns a character you built from parts into a ragdoll: it goes floppy and falls with real physics
+   * (a knockout, a big hit). Your character stays your own meshes; they just stop being animated by you.
+   *   const rag = phys.ragdoll(guard, { limbs: [head, armL, armR, legL, legR], push: [0, 2, -5] });
+   * root is the character's Group (its own meshes make the body). Each limb turns at its own origin, so
+   * put a limb's origin at its shoulder or hip (as you would to swing it). Leave out limbs to use every
+   * child Group. Limbs can sit inside limbs (a forearm in an arm). The parts move into the scene.
+   * rag.push(x, y, z) throws it (metres per second), rag.hit(part, x, y, z) hits one part,
+   * rag.parts are the bodies, rag.remove() takes the physics away and leaves the parts where they lie.
+   */
+  ragdoll(root, { limbs, push, drag = .3, spinDrag = 1.5, group = 14, bounce = .05, friction = .8 } = {}) {
+    let scene = root; while (scene.parent) scene = scene.parent;
+    if (scene === root) throw new Error('ragdoll: add the character to the scene first');
+    limbs = limbs || root.children.filter(c => !c.isMesh && c.children.length);
+    const set = new Set(limbs), parentOf = new Map();
+    for (const l of limbs) { let p = l.parent; while (p && p !== root && !set.has(p)) p = p.parent; parentOf.set(l, p && set.has(p) ? p : root); }
+    root.updateMatrixWorld(true);
+    const box = obj => {   // its own meshes (not other parts) in its own frame, world-sized
+      const pos = new V3(), q = new Quaternion(), sc = new V3(); obj.matrixWorld.decompose(pos, q, sc);
+      const inv = new Matrix4().compose(pos, q, new V3(1, 1, 1)).invert(), b = new Box3(), m = new Matrix4(), bb = new Box3();
+      const walk = o => { if (o !== obj && set.has(o)) return; if (o.isMesh && o.geometry) { o.geometry.boundingBox || o.geometry.computeBoundingBox(); bb.copy(o.geometry.boundingBox).applyMatrix4(m.multiplyMatrices(inv, o.matrixWorld)); b.union(bb); } for (const k of o.children) walk(k); };
+      walk(obj); return b;
+    };
+    const boxes = new Map([root, ...limbs].map(o => [o, box(o)]));
+    for (const o of [root, ...limbs]) if (o.parent !== scene) scene.attach(o);
+    const bodyOf = new Map(), parts = [];
+    for (const o of [root, ...limbs]) {
+      const b = boxes.get(o), c = new V3(), h = new V3();
+      let desc;
+      if (b.isEmpty()) desc = R.ColliderDesc.ball(.08);
+      else { b.getCenter(c); b.getSize(h).multiplyScalar(.5).max(new V3(.02, .02, .02)); desc = R.ColliderDesc.cuboid(h.x, h.y, h.z).setTranslation(c.x, c.y, c.z); }
+      const t = this.make(o, desc, { drag, spinDrag, group, bounce, friction, tag: 'ragdoll' }, 'part');
+      bodyOf.set(o, t); parts.push(t);
+    }
+    const joints = limbs.map(l => this.pin(bodyOf.get(parentOf.get(l)), bodyOf.get(l), l.position));
+    const rag = {
+      parts, joints, root: bodyOf.get(root),
+      push: (x, y, z) => { for (const p of parts) p.push(x, y, z); return rag; },
+      hit: (part, x, y, z) => { (bodyOf.get(part) || part).push(x, y, z); return rag; },
+      remove: () => { for (const j of joints) j.remove(); for (const p of parts) this.remove(p); },
+    };
+    if (push) rag.push(...(Array.isArray(push) ? push : [push.x, push.y, push.z]));
+    return rag;
+  }
 
   /** First thing along a ray from `from` in direction `dir` (needn't be normalised), up to max metres. */
   ray(from, dir, max = 100, filter = t => !t.collider.isSensor()) {

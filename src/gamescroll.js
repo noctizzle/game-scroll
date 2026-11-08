@@ -25,9 +25,17 @@
 //   gs.toon      Classic Console 3D (cel-shaded)       gs.hd   Next Gen 3D (PBR, bloom, shadows)
 //   gs.ar        AR 3D (camera + gyro)                 gs.fx3d 3D text, 3D particles, outline/glitch/trails
 //   gs.vision    face and hand tracking (MediaPipe)    gs.geo  distances and bearings for location games
+//   gs.things    game objects: tags, "what did this hit", nearest, reuse
+//   gs.rounds    scenes (intro, play, clear...) with timed changes, and level lists
+//   gs.pacing    spawners, waves with breathers, a difficulty director
+//   gs.aim       touch aim assist: sticky aim, pull onto targets, auto fire
+//   gs.senses    enemy sight cones, hearing, memory and moods (calm, suspicious, alert, searching)
+//   gs.camera    3D camera rigs: chase, shoulder, first person, top, side, orbit, rail; no wall clipping
+//   gs.nav3d     3D path finding on a walkable map made from your level (Recast)
+//   gs.characters  heads that look, limbs that reach (IK), feet that step, springy hit reactions
 //   gs.THREE     three.js itself
 //
-// Big parts (physics, 3D effects, face tracking, Tone.js) load the first time a game uses them:
+// Big parts (physics, 3D path finding, 3D effects, face tracking, Tone.js) load the first time a game uses them:
 // make those things in make() or reset() and the app shows "Loading…" until they're in.
 
 import * as sfx from './sfx.js';
@@ -54,6 +62,14 @@ import * as moves from './kit/motion.js';
 import * as pad from './kit/gamepad.js';
 import * as fx3d from './kit/fx3d.js';
 import * as vision from './kit/vision.js';
+import * as things from './kit/things.js';
+import * as rounds from './kit/rounds.js';
+import * as pacing from './kit/pacing.js';
+import * as aim from './kit/aim.js';
+import * as senses from './kit/senses.js';
+import * as camera from './kit/camera.js';
+import * as nav3d from './kit/nav3d.js';
+import * as characters from './kit/characters.js';
 import * as THREE from 'three';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
@@ -96,6 +112,14 @@ const gs = Object.freeze({
   fx3d: pick('fx3d', fx3d),
   vision: pick('vision', vision),
   geo: pick('geo', geo),
+  things: pick('things', things),
+  rounds: pick('rounds', rounds),
+  pacing: pick('pacing', pacing),
+  aim: pick('aim', aim),
+  senses: pick('senses', senses),
+  camera: pick('camera', camera),
+  nav3d: pick('nav3d', nav3d),
+  characters: pick('characters', characters),
   THREE,
 });
 export default gs;
