@@ -34,7 +34,6 @@ import {
 import { SSRPass } from 'three/examples/jsm/postprocessing/SSRPass.js';
 import { HorizontalBlurShader } from 'three/examples/jsm/shaders/HorizontalBlurShader.js';
 import { VerticalBlurShader } from 'three/examples/jsm/shaders/VerticalBlurShader.js';
-import { lazy } from './lazy.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
@@ -239,6 +238,22 @@ class FinalPass extends Pass {
   }
   dispose() { for (const m of this.mips) m.dispose(); for (const m of [this.bright, this.down, this.up, this.final]) m.dispose(); this.quad.dispose(); }
 }
+// Ambient occlusion and reflections draw their own depth + normals picture of the scene with one
+// plain material, so anything see-through came out as a solid wall: Suit Ops' light shafts (and any
+// glow, blob shadow, rotor blur or contact-shadow plane) became dark bands fixed to the camera, and
+// leaf and fern cards (alpha-cut) became dark squares. Only solid, opaque surfaces go into that
+// picture now. A game can also keep a mesh out with mesh.userData.noAO = true.
+function seeThrough3d(o) {
+  if (o.isPoints || o.isLine || o.isLine2 || o.isSprite || o.userData.noAO) return true;
+  if (!o.isMesh) return false;
+  const ms = Array.isArray(o.material) ? o.material : [o.material];
+  return ms.some(m => m && (m.transparent || !m.depthWrite || m.alphaTest > 0 || m.alphaMap || m.blending !== NormalBlending));
+}
+function hideSeeThrough(scene, cache) {
+  scene.traverseVisible(o => { if (seeThrough3d(o)) cache.push(o); });
+  for (const o of cache) o.visible = false;
+}
+function aoHide() { hideSeeThrough(this.scene, this._visibilityCache); }
 function chain(r, w, h) {
   const T = tier();
   if (comp && compKey !== T.msaa) {   // MSAA on/off: re-create just the two buffers
@@ -252,6 +267,7 @@ function chain(r, w, h) {
     P.render = new RenderPass(new Scene(), new PerspectiveCamera());
     P.ao = new GTAOPass(new Scene(), new PerspectiveCamera(), w, h);
     P.ao.updateGtaoMaterial({ radius: .6, distanceExponent: 1.4, thickness: 1.2, scale: 1.1, samples: 12 }); P.ao.blendIntensity = .9;
+    P.ao._overrideVisibility = aoHide;
     P.final = new FinalPass();
     for (const p of [P.render, P.ao, P.final]) comp.addPass(p);
     comp.setSize(w, h); comp.cw = w; comp.ch = h;
@@ -383,7 +399,7 @@ export class HDView {
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
     this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7;
-    this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = []; this.shot = null;
+    this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
   }
   /**
    * Marks shiny surfaces (a wet floor, a polished wall, a car) for screen-space reflections. They
@@ -396,15 +412,6 @@ export class HDView {
    * and up.
    */
   contact(o = {}) { const cs = new ContactShadows(o); this.scene.add(cs.group); this.contacts.push(cs); return cs; }
-  /**
-   * Photo mode: path-traces the current view into a lovely still (light bouncing, soft shadows,
-   * real reflections) over a few seconds. Resolves to a Photo: call shot.step(ms) each frame until
-   * shot.done (or let render() do it), then shot.image() is a canvas of the picture.
-   */
-  async photo({ samples = 120 } = {}) {
-    const L = await pathTracer.load(), r = renderer(); if (!r) throw new Error('No 3D on this device');
-    this.shot?.stop(); this.shot = new Photo(this, L, r, samples); return this.shot;
-  }
   /**
    * A pool of real point lights placed each frame at the nearest of many lamp spots (the far ones
    * only glow). Call v.lampLights(maxDistance) once, then v.placeLamps(spots, x, y, z) per frame
@@ -445,6 +452,29 @@ export class HDView {
     try { for (const sh of [true, false]) { r.shadowMap.enabled = sh; r.compile(this.scene, this.cam); } } catch (e) { /* compile is only a warm-up */ }
     r.shadowMap.enabled = was;
     for (const o of hidden) o.visible = false; for (const ms of tmp) { this.scene.remove(ms); ms.geometry.dispose(); }
+  }
+  /**
+   * Get ready to draw without a stall, in the background: the shaders compile on the GPU driver's own
+   * threads (KHR_parallel_shader_compile, through three's compileAsync) and the textures upload a few
+   * at a time, while the card waits below the one being played. Returns a promise; v.ready is true
+   * once it's done. The kit calls this itself the first time a card is drawn off screen.
+   */
+  prepare() {
+    if (this.preparing) return this.preparing;
+    const r = renderer(); if (!r) return Promise.resolve();
+    const hidden = [], jobs = [], was = r.shadowMap.enabled, sh = tier().shadow > 0;
+    this.scene.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    this.scene.environment = envTex;
+    try { for (const on of [sh, !sh]) { r.shadowMap.enabled = on; jobs.push(r.compileAsync(this.scene, this.cam)); } } catch (e) { /* only a warm-up */ }
+    r.shadowMap.enabled = was;
+    for (const o of hidden) o.visible = false;
+    this.warmed = true;
+    const texs = new Set();
+    this.scene.traverse(o => { for (const m of [o.material].flat()) if (m) for (const k in m) if (m[k]?.isTexture) texs.add(m[k]); });
+    return this.preparing = Promise.all(jobs).catch(() => {}).then(async () => {
+      for (const t of texs) { try { r.initTexture(t); } catch (_) { /* uploads on first use instead */ } await idle(); }
+      this.ready = true;
+    });
   }
   /** Called when the quality tier changes: let the game switch shadows on lights it owns. */
   onTier(fn) { this.tierFn = fn; return this; }
@@ -497,6 +527,14 @@ export class HDView {
     // A card being added below the one on screen (speed.offscreen) gets a copied frame: it mustn't take
     // the 3D canvas, the quality tuning or a shader warm-up away from the game being played.
     const off = !baking && speed.offscreen;
+    // A card being added below the one on screen: until its shaders and textures are ready (above),
+    // draw no 3D (drawing would stall the feed while they compile), then paint its picture in later.
+    if (off && !this.ready) {
+      this.prepare().then(() => { if (c.canvas.isConnected && host?.canvas !== c.canvas) bakeLater(this, c); });
+      c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, c.canvas.width, c.canvas.height); c.restore();
+      return;
+    }
+    if (!baking && !off) { this.drawnAt = now; for (const [v, bc] of bakes.splice(0)) if (bc.canvas.isConnected && host?.canvas !== bc.canvas) try { v.bake(bc); } catch (_) { /* best effort */ } }
     const direct = HD.direct && !baking && !off && !!c.canvas.parentNode && mount(r.domElement, c, this);
     if (!baking && !off) {
       if (Q.game !== speed.game) startGame(speed.game);
@@ -505,12 +543,6 @@ export class HDView {
     }
     const T = tier();
     if (this.tierSeen !== HD.tier) { this.tierSeen = HD.tier; this.tierFn?.(T); }
-    if (this.shot && !this.shot.stopped) {   // photo mode: the path tracer draws instead
-      this.shot.step(12);
-      if (direct) { c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, c.canvas.width, c.canvas.height); c.restore(); }
-      else { c.save(); c.drawImage(r.domElement, 0, 0, w, h); c.restore(); }
-      return;
-    }
     const fw = c.canvas.width, fh = c.canvas.height; let pw = fw, ph = fh; const q = Math.min(1, Math.sqrt(T.px / (pw * ph))) * HD.res;
     pw = Math.max(16, Math.round(pw * q)); ph = Math.max(16, Math.round(ph * q));
     // The 3D is drawn at pw x ph (fewer pixels on big screens and when the phone struggles). Below the
@@ -528,7 +560,12 @@ export class HDView {
     // reflections (ultra, and only if the game marked shiny surfaces): SSR draws the scene itself
     const ssr = !this.clearBg && T.ssr && this.reflectors.length > 0;
     if (ssr) {
-      if (!P.ssr) { P.ssr = new SSRPass({ renderer: r, scene: this.scene, camera: this.cam, width: pw, height: ph, selects: [], groundReflector: null }); Object.assign(P.ssr, { thickness: .02, maxDistance: 8, opacity: .55, blur: true, fresnel: true, distanceAttenuation: true, bouncing: false, infiniteThick: false }); P.ssr.cw = pw; P.ssr.ch = ph; }
+      if (!P.ssr) {
+        P.ssr = new SSRPass({ renderer: r, scene: this.scene, camera: this.cam, width: pw, height: ph, selects: [], groundReflector: null });
+        const ro = P.ssr._renderOverride.bind(P.ssr);   // its normals picture: solid surfaces only (see seeThrough3d)
+        P.ssr._renderOverride = (...a) => { const hid = []; hideSeeThrough(P.ssr.scene, hid); try { ro(...a); } finally { for (const o of hid) o.visible = true; } };
+        Object.assign(P.ssr, { thickness: .02, maxDistance: 8, opacity: .55, blur: true, fresnel: true, distanceAttenuation: true, bouncing: false, infiniteThick: false }); P.ssr.cw = pw; P.ssr.ch = ph;
+      }
       P.ssr.scene = this.scene; P.ssr.camera = this.cam; P.ssr.selects = this.reflectors;
       if (P.ssr.cw !== pw || P.ssr.ch !== ph) { P.ssr.setSize(pw, ph); P.ssr.cw = pw; P.ssr.ch = ph; }
     }
@@ -571,6 +608,19 @@ export class HDView {
 // the card's own canvas, filling the same box (CSS .hd-layer). The card's canvas stays on top for the
 // HUD and takes all the touches.
 let host = null, lastView = null;
+// Pictures of cards that finished getting ready (prepare) wait here and are drawn into their cards
+// just before the playing card's next frame, which then redraws the shared 3D canvas.
+const bakes = [];
+const idle = () => new Promise(res => (typeof requestIdleCallback === 'function' ? requestIdleCallback(() => res(), { timeout: 200 }) : setTimeout(res, 16)));
+function bakeLater(view, c) {
+  if (host && host.canvas.isConnected && performance.now() - (host.view.drawnAt || 0) < 300) { bakes.push([view, c]); return; }
+  // no 3D game is being played: give the card that holds the 3D canvas its own last picture, take the
+  // canvas off it, and draw this card's picture
+  const r = renderer(); if (!r) return;
+  if (host) { const old = host; host = null; if (old.canvas.isConnected) try { old.view.bake(old.ctx); } catch (_) { /* best effort */ } old.canvas.classList.remove('hd-host'); old.under?.remove(); }
+  r.domElement.remove();
+  try { view.bake(c); } catch (_) { /* best effort */ }
+}
 function mount(cv, c, view) {
   const hc = c.canvas, par = hc.parentNode, prevUnder = host?.under;
   if (host && host.canvas !== hc) {
@@ -666,38 +716,3 @@ export class ContactShadows {
     r.setRenderTarget(prevT); r.setClearAlpha(clr); r.autoClear = auto;
   }
 }
-
-/* ---------- photo mode (path tracing) ---------- */
-const pathTracer = lazy('Photo mode', () => import('three-gpu-pathtracer'));
-/** Loads the path tracer (the app does this when the player taps Photo). */
-export const loadPhoto = () => pathTracer.load();
-
-class Photo {
-  constructor(view, L, r, samples) {
-    this.view = view; this.r = r; this.target = samples; this.stopped = false;
-    this.pt = new L.WebGLPathTracer(r);
-    this.pt.tiles.set(2, 2); this.pt.minSamples = 1; this.pt.renderScale = 1; this.pt.dynamicLowRes = false; this.pt.fadeDuration = 0;
-    // the path tracer lights the scene from an equirect sky: a gradient from the view's fill light
-    const sc = view.scene, sky = new L.GradientEquirectTexture(256), k = view.hemi.intensity * 1.6 + view.envI;
-    sky.topColor.copy(view.hemi.color).multiplyScalar(k); sky.bottomColor.copy(view.hemi.groundColor).multiplyScalar(k * .6); sky.update();
-    this.saved = { env: sc.environment, envI: sc.environmentIntensity }; this.sky = sky;
-    sc.environment = sky; sc.environmentIntensity = 1;
-    this.pt.setScene(sc, view.cam);
-  }
-  get samples() { return this.pt.samples; }
-  get progress() { return Math.min(1, this.pt.samples / this.target); }
-  get done() { return this.pt.samples >= this.target; }
-  /** Renders samples for up to ms milliseconds. */
-  step(ms = 12) {
-    if (this.stopped || this.done) return this;
-    const t0 = performance.now();
-    do this.pt.renderSample(); while (!this.done && performance.now() - t0 < ms);
-    return this;
-  }
-  /** The picture so far, as a canvas. */
-  image() { const cv = document.createElement('canvas'), src = this.r.domElement; cv.width = src.width; cv.height = src.height; cv.getContext('2d').drawImage(src, 0, 0); return cv; }
-  /** Back to the game's normal rendering. */
-  stop() { if (this.stopped) return; this.stopped = true; try { this.pt.dispose(); } catch (_) { /* best effort */ } Object.assign(this.view.scene, { environment: this.saved.env, environmentIntensity: this.saved.envI }); this.sky.dispose(); if (this.view.shot === this) this.view.shot = null; }
-}
-/** The view drawn last (the app's photo button uses it). */
-export const currentView = () => lastView;

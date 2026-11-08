@@ -199,43 +199,9 @@ function pauseOv(s){
     let el=s.screen.querySelector('.pause-ov');
     if(!el){el=document.createElement('div');el.className='overlay pause-ov';s.screen.appendChild(el)}
     el.onclick=e=>{e.stopPropagation();resumeGame(s)};
-    el.classList.remove('photo-ov');
-    el.innerHTML=`<div class="ov-k">Paused</div><div class="ov-title">${s.def.title}</div><button class="play">${s.def.retro?'CONTINUE':'Carry on'}</button>${s.def.era==='nextgen'?'<button class="ov-photo">📷 Photo</button>':''}`;
-    el.querySelector('.ov-photo')?.addEventListener('click',e=>{e.stopPropagation();takePhoto(s,el)});
+    el.innerHTML=`<div class="ov-k">Paused</div><div class="ov-title">${s.def.title}</div><button class="play">${s.def.retro?'CONTINUE':'Carry on'}</button>`;
     el.hidden=false;
   }
-}
-// Photo mode (Next Gen games, from the pause screen): the scene is path traced into a still over a
-// few seconds (src/kit/hd3d.js, three-gpu-pathtracer), then shown with a Share button.
-async function takePhoto(s,el){
-  if(el.classList.contains('photo-ov'))return;
-  el.classList.add('photo-ov');el.onclick=null;
-  el.innerHTML='<div class="photo-chip">📷 Taking photo… <b>0%</b></div>';
-  let shot=null;
-  const done=()=>{if(s.paused&&active===s)pauseOv(s);else el.classList.remove('photo-ov')};
-  try{
-    const hd=await import('./kit/hd3d.js');const v=hd.currentView();if(!v)return done();
-    await hd.loadPhoto();shot=await v.photo({samples:120});
-    const pct=el.querySelector('b');
-    await new Promise(res=>{const tick=()=>{if(!s.paused||active!==s){shot.stop();return res()}shot.step(14);pct.textContent=Math.round(shot.progress*100)+'%';if(shot.done)res();else requestAnimationFrame(tick)};tick()});
-    if(!s.paused||active!==s)return done();
-    const img=shot.image();shot.stop();showPhoto(s.def,img,done);
-  }catch(e){console.error('photo',e);shot?.stop();done()}
-}
-function showPhoto(def,cv,after){
-  const dlg=document.createElement('dialog');dlg.className='info photo-dlg';document.body.appendChild(dlg);
-  const url=cv.toDataURL('image/jpeg',.92);
-  dlg.innerHTML=`<div class="info-card"><button class="info-x" aria-label="Close">✕</button><h2>${def.title}</h2><img class="photo-img" alt="Photo of ${def.title}" src="${url}"><button class="play photo-share">Share</button><p class="qa-help photo-note" hidden>Press and hold the picture to save it.</p></div>`;
-  dlg.querySelector('.info-x').onclick=()=>dlg.close();
-  dlg.querySelector('.photo-share').onclick=async()=>{
-    try{const blob=await (await fetch(url)).blob();const file=new File([blob],def.id+'.jpg',{type:'image/jpeg'});
-      if(navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:def.title,text:`${def.title} on Game Scroll`});return}
-    }catch(e){if(/abort|cancel/i.test(String(e&&(e.name||e.message))))return}
-    dlg.querySelector('.photo-note').hidden=false;
-  };
-  dlg.addEventListener('click',e=>{if(e.target===dlg)dlg.close()});
-  dlg.addEventListener('close',()=>{dlg.remove();after()});
-  dlg.showModal();
 }
 function resumeGame(s){
   if(!s||!s.paused)return;
@@ -311,7 +277,7 @@ let lastGameInput=0;
 }
 function goNext(s){
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
-  const i=slides.indexOf(s);topUp();
+  const i=slides.indexOf(s);if(!slides[i+2])topUp();
   if(!slides[i+1])return;
   slides[i+1].el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
 }
@@ -388,6 +354,21 @@ function catalogueChanged(added,updated){
   topUp();
 }
 function topUp(){const ahead=slides.length-1-(active?slides.indexOf(active):0);if(ahead<AHEAD)addBatch(AHEAD-ahead+1)}
+// Adding a card means making its game and drawing it the first time, which can take a while (a 3D
+// level, its textures). Done in the middle of a swipe, that froze the scroll. So after a swipe the
+// feed tops up once it has come to rest and the finger is off, one card at a time, and never while a
+// round is being played. There are always AHEAD cards ready below, so nothing is ever missing.
+let topT=0,scrollAt=0;
+feed.addEventListener('scroll',()=>{scrollAt=performance.now()},{passive:true});
+function topUpLater(wait=150){
+  clearTimeout(topT);
+  topT=setTimeout(()=>{
+    if(touches||performance.now()-scrollAt<150)return topUpLater(150);   // still moving: wait for it to settle
+    if(active&&active.state==='playing')return topUpLater(1000);           // mid-round: after it
+    const ahead=slides.length-1-(active?slides.indexOf(active):0);
+    if(ahead<AHEAD){addBatch(1);if(ahead+1<AHEAD)topUpLater(50)}
+  },wait);
+}
 let waiting=false;
 function addBatch(n=AHEAD+1){
   const defs=pickDefs(n);
@@ -434,7 +415,8 @@ function setActive(s){
   if(active===s)return;
   stopKits();if(active&&active.state!=='ready')resetSlide(active);
   feed.classList.remove('locked');active=s;speed.game=s.def;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);showTweaks(s);
-  topUp();schedulePrune();
+  // the last card or two (playNow, a short feed): top up now, else when the swipe has settled
+  if(slides.indexOf(s)>=slides.length-2)topUp();else topUpLater();schedulePrune();
 }
 
 // Cards you've scrolled past stay in the page so you can swipe back, but only the last BEHIND of

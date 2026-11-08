@@ -140,7 +140,7 @@ export default {
 Check it with `node scripts/sweep.cjs my-game` (long random play at odd sizes) as well as the
 usual smoke and fold tests.
 
-## Reflections, contact shadows and photo mode
+## Reflections and contact shadows
 
 - `v.reflect(floor, carBody)` marks shiny surfaces for screen-space reflections. They're drawn on the
   ultra tier (top-end phones) only; on other phones those surfaces keep their normal look, so mark the
@@ -148,8 +148,6 @@ usual smoke and fold tests.
 - `const cs = v.contact({ y: 0, size: 8 })` lays soft contact shadows on a floor (medium tier and up),
   so things look like they're standing on it even where real shadows are off. In a big level, keep it
   under the action with `cs.at(x, z)`.
-- Photo mode: every Next Gen game gets a 📷 Photo button on its pause screen. It path traces the
-  current view (three-gpu-pathtracer: light bouncing, soft shadows, real reflections) into a still
-  over a few seconds, then offers to share it. A game can start one itself with
-  `const shot = await v.photo({ samples: 120 })`; `render()` keeps refining it until `shot.done`,
-  then `shot.image()` is the picture and `shot.stop()` goes back to normal rendering.
+- Ambient occlusion and reflections only see solid, opaque surfaces: see-through things (light
+  shafts, glows, blob shadows, alpha-cut leaves) are left out of them so they don't leave dark marks.
+  Keep any other mesh out with `mesh.userData.noAO = true`.

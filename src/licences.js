@@ -20,8 +20,6 @@ export const OPEN_SOURCE = [
   { name: 'PixiJS', for: '2D screen effects and fast sprites', licence: 'MIT', spdx: 'MIT', packages: ['pixi.js'] },
   { name: 'pixi-filters', for: '2D screen effects', licence: 'MIT', spdx: 'MIT', packages: ['pixi-filters'] },
   { name: 'ink (inkjs)', for: 'story dialogue, by inkle', licence: 'MIT', spdx: 'MIT', packages: ['inkjs'] },
-  { name: 'three-gpu-pathtracer', for: 'photo mode (path tracing)', licence: 'MIT', spdx: 'MIT', packages: ['three-gpu-pathtracer'] },
-  { name: 'three-mesh-bvh', for: 'photo mode (path tracing)', licence: 'MIT', spdx: 'MIT', packages: ['three-mesh-bvh'] },
   { name: 'lil-gui', for: 'live tweak sliders for game makers (dev builds only)', licence: 'MIT', spdx: 'MIT', packages: ['lil-gui'] },
   { name: 'Snapdragon Game Super Resolution 1', for: 'sharp Next Gen and AR 3D when it is drawn smaller, by Qualcomm', licence: 'BSD 3-Clause', spdx: 'BSD-3-Clause', vendored: 'src/kit/sgsr.js', notice: '© 2023-2025 Qualcomm Innovation Center, Inc.' },
   { name: 'rot.js', for: 'dungeons, caves, mazes and field of view for made levels, by Ondřej Žára', licence: 'BSD 3-Clause', spdx: 'BSD-3-Clause', packages: ['rot-js'], notice: '© 2012-now Ondřej Žára' },
