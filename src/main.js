@@ -360,6 +360,8 @@ function topUp(){const ahead=slides.length-1-(active?slides.indexOf(active):0);i
 // round is being played. There are always AHEAD cards ready below, so nothing is ever missing.
 let topT=0,scrollAt=0;
 feed.addEventListener('scroll',()=>{scrollAt=performance.now()},{passive:true});
+const settling=()=>touches>0||performance.now()-scrollAt<150;
+function afterSettle(fn){setTimeout(()=>settling()?afterSettle(fn):fn(),150)}
 function topUpLater(wait=150){
   clearTimeout(topT);
   topT=setTimeout(()=>{
@@ -413,7 +415,12 @@ function openShared(id){
 }
 function setActive(s){
   if(active===s)return;
-  stopKits();if(active&&active.state!=='ready')resetSlide(active);
+  stopKits();
+  // the card being left: a round in play ends now; a finished one (the game-over screen) is reset
+  // once the swipe has settled, as resetting can rebuild a whole 3D level, which mid-swipe is a stutter
+  const prev=active;
+  if(prev&&prev.state==='playing')resetSlide(prev);
+  else if(prev&&prev.state!=='ready')afterSettle(()=>{if(prev!==active&&prev.state!=='ready'&&!prev.dropped)resetSlide(prev)});
   feed.classList.remove('locked');active=s;speed.game=s.def;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);showTweaks(s);
   // the last card or two (playNow, a short feed): top up now, else when the swipe has settled
   if(slides.indexOf(s)>=slides.length-2)topUp();else topUpLater();schedulePrune();
@@ -499,7 +506,10 @@ function frame(now){
       const timed=s.state==='playing'&&!s.paused,t0=timed?performance.now():0;
       if(timed){if(run)s.game.update(dt);gameRan(s.def.id)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
       const t1=performance.now();
-      if(s.state!=='ready'||s.dirty||(DBG&&DBG.on)){paint(s);s.dirty=false}
+      // a Next Gen / AR card scrolling into place already shows its picture: its first live frame (which
+      // moves the shared 3D canvas onto it) waits until the swipe has settled
+      const hold=s.state==='ready'&&s.dirty&&usesHD(s.def)&&settling();
+      if(!hold&&(s.state!=='ready'||s.dirty||(DBG&&DBG.on))){paint(s);s.dirty=false}
       if(DBG&&DBG.on)DBG.after(s,timed?t1-t0:0,performance.now()-t1,now);
       // frame timing for the anonymous stutter reports (src/perf.js)
       if(timed&&s.state==='playing')perf.frame(s.def.id,now,performance.now()-t0,1000/fps);else perf.gap();
