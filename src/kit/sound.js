@@ -31,7 +31,7 @@ export function freq(n) {
  * wave: 'square' | 'triangle' | 'sine' | 'sawtooth'. slide: Hz to bend by over the note.
  * at: seconds from now to start it (for scheduling).
  */
-export function tone(f, { len = .1, wave = 'square', vol = .05, slide = 0, attack = .005, at = 0 } = {}) {
+export function tone(f, { len = .1, wave = 'square', vol = .05, slide = 0, attack = .005, at = 0, out = null } = {}) {
   if (sound.muted || !sound.volume) return;
   const a = audio(); if (!a) return;
   const hz = freq(f); if (!hz) return;
@@ -41,7 +41,7 @@ export function tone(f, { len = .1, wave = 'square', vol = .05, slide = 0, attac
     if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, hz + slide), t + len);
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-    o.connect(g); g.connect(a.out); o.start(t); o.stop(t + len + .02);
+    o.connect(g); g.connect(out || route || a.out); o.start(t); o.stop(t + len + .02);
   } catch { /* audio unavailable */ }
 }
 
@@ -59,7 +59,7 @@ function noiseBuffer(ctx) {
  * `from` Hz to `to` Hz. High to low = explosion; short and high = hit or snare; long and low = rumble.
  * filter: 'lowpass' (default) | 'highpass' | 'bandpass'.
  */
-export function noise(len = .25, { vol = .08, from = 3000, to = 300, filter = 'lowpass', q = 1, at = 0 } = {}) {
+export function noise(len = .25, { vol = .08, from = 3000, to = 300, filter = 'lowpass', q = 1, at = 0, out = null } = {}) {
   if (sound.muted || !sound.volume) return;
   const a = audio(); if (!a) return;
   try {
@@ -67,7 +67,7 @@ export function noise(len = .25, { vol = .08, from = 3000, to = 300, filter = 'l
     src.buffer = noiseBuffer(ctx); src.loop = true;
     f.type = filter; f.Q.value = q; f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(Math.max(40, to), t + len);
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-    src.connect(f); f.connect(g); g.connect(a.out); src.start(t); src.stop(t + len + .02);
+    src.connect(f); f.connect(g); g.connect(out || route || a.out); src.start(t); src.stop(t + len + .02);
   } catch { /* audio unavailable */ }
 }
 
@@ -117,7 +117,8 @@ export { sfx };   // the classic single beep, re-exported so one import covers e
 // built once and cached, so playing the same one again is cheap.
 const zcache = new Map();
 /** Plays a ZzFX sound (the numbers from the ZzFX designer). Returns nothing. */
-export function zzfx(...params) {
+export function zzfx(...params) { playZ(params, null); }
+function playZ(params, out) {
   if (sound.muted || !sound.volume) return;
   const a = audio(); if (!a) return;
   try {
@@ -130,7 +131,7 @@ export function zzfx(...params) {
       zcache.set(key, buf);
     }
     const src = a.ctx.createBufferSource(), g = a.ctx.createGain();
-    src.buffer = buf; g.gain.value = .3; src.connect(g); g.connect(a.out); src.start();
+    src.buffer = buf; g.gain.value = .3; src.connect(g); g.connect(out || a.out); src.start();
   } catch { /* audio unavailable */ }
 }
 /** Makes a reusable sound from ZzFX numbers: const zap = zsound(...numbers); zap(); zap(1.5) plays it higher. */
@@ -169,14 +170,17 @@ const VOICE = { lead: ['square', .028], bass: ['triangle', .07], pad: ['sine', .
  * music({ tempo, steps, lead, bass, pad, arp, drums, vol, swing }): a looping tune. Each part is a
  * line of steps (eighth notes at the tempo): note names, '.' for a rest, '-' to hold the previous
  * note. drums use k (kick), s (snare), h (hi-hat), c (crash). Parts can be different lengths.
- * Returns { start(), stop(), pause(), resume(), speed(x), playing }. Keep tunes short and quiet: it plays under the game.
+ * Returns { start(), stop(), pause(), resume(), speed(x), layer(name, level), intensity(x), playing }. Keep tunes short and quiet: it plays under the game.
+ * Layered music: give parts numbered names (lead2, drums2...) and layers: { drums: .3, lead2: .7 }
+ * to bring them in with intensity(); parts not in layers always play.
  */
-export function music({ tempo = 120, vol = 1, swing = 0, ...parts } = {}) {
+export function music({ tempo = 120, vol = 1, swing = 0, layers = null, ...parts } = {}) {
   const tracks = [];
   for (const [name, line] of Object.entries(parts)) {
     if (typeof line !== 'string') continue;
-    tracks.push({ name, steps: line.trim().split(/\s+/) });
+    tracks.push({ name, voice: name.replace(/\d+$/, ''), steps: line.trim().split(/\s+/), level: layers && layers[name] != null ? 0 : 1, to: layers && layers[name] != null ? 0 : 1 });
   }
+  let intensity = 0;
   let timer = 0, step = 0, next = 0, rate = 1;
   const stepLen = () => 60 / tempo / 2 / rate;
   function noteLen(tr, i) { let n = 1; while (tr.steps[(i + n) % tr.steps.length] === '-' && n < tr.steps.length) n++; return n; }
@@ -185,12 +189,14 @@ export function music({ tempo = 120, vol = 1, swing = 0, ...parts } = {}) {
     const now = a.ctx.currentTime;
     if (next < now) next = now + .03;
     while (next < now + .15) {          // look ahead a little so timing stays tight
+      for (const tr of tracks) tr.level += (tr.to - tr.level) * Math.min(1, stepLen() / (tr.fade || .6));
       if (!sound.muted && sound.volume && sound.music) for (const tr of tracks) {
         const tok = tr.steps[step % tr.steps.length], at = next - now + (step % 2 ? swing * stepLen() : 0);
-        if (tok === '.' || tok === '-') continue;
-        if (tr.name === 'drums') { for (const d of tok) DRUM[d]?.(at, vol); continue; }
-        const [wave, v] = VOICE[tr.name] || VOICE.lead;
-        tone(tok, { len: stepLen() * noteLen(tr, step % tr.steps.length) * .9, wave, vol: v * vol, at, attack: tr.name === 'pad' ? .05 : .005 });
+        if (tok === '.' || tok === '-' || tr.level < .02) continue;
+        const lv = vol * tr.level;
+        if (tr.voice === 'drums') { for (const d of tok) DRUM[d]?.(at, lv); continue; }
+        const [wave, v] = VOICE[tr.voice] || VOICE.lead;
+        tone(tok, { len: stepLen() * noteLen(tr, step % tr.steps.length) * .9, wave, vol: v * lv, at, attack: tr.voice === 'pad' ? .05 : .005 });
       }
       step++; next += stepLen();
     }
@@ -204,6 +210,14 @@ export function music({ tempo = 120, vol = 1, swing = 0, ...parts } = {}) {
     resume() { if (timer || !held.has(m)) return m; held.delete(m); next = 0; schedule(); timer = setInterval(schedule, 40); playing.add(m); return m; },
     /** Plays faster (x > 1) or slower, for rising tension. */
     speed(x) { rate = Math.max(.25, Math.min(4, x)); return m; },
+    /** Fades one part in or out: m.layer('drums', 1) or m.layer('lead2', 0, 2) (fade seconds). */
+    layer(name, level = 1, fade = .6) { for (const tr of tracks) if (tr.name === name) { tr.to = Math.max(0, Math.min(1, level)); tr.fade = fade; } return m; },
+    /**
+     * Sets how intense the music is, 0..1: each part named in `layers` comes in once intensity
+     * reaches its number (layers: { drums: .3, lead2: .7 }), so combat can build the tune up.
+     */
+    intensity(x, fade = 1) { intensity = Math.max(0, Math.min(1, x)); if (layers) for (const [n, at] of Object.entries(layers)) m.layer(n, intensity >= at ? 1 : 0, fade); return m; },
+    get level() { return intensity; },
   };
   return m;
 }
@@ -214,3 +228,75 @@ export function pauseMusic() { for (const m of [...playing]) m.pause(); }
 export function resumeMusic() { for (const m of [...held]) m.resume(); }
 register('music', { stop: stopMusic, pause: pauseMusic, resume: resumeMusic });
 if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => { if (document.hidden) pauseMusic(); });
+
+/* ---------- 3D sound: sounds placed in the world ---------- */
+// The browser's own 3D audio (Web Audio PannerNode with HRTF: real left/right and front/behind in
+// headphones, distance fall-off on speakers). Place the ears each frame where the camera is, then
+// play sounds at points. 2D games: pass { x, y } and they sit on a flat plane.
+//   const ears = new Ears();
+//   update() { ears.place(camera.position, camera.getWorldDirection(v)); }
+//   ears.tone(440, enemy.pos, { len: .2 });  ears.noise(.4, barrel.pos);  ears.zzfx(gun.pos, ...numbers);
+//   engine = ears.loop(car.pos, 'sawtooth', 80);  engine.move(car.pos).pitch(80 + speed * 6);  engine.stop();
+const P3 = p => ({ x: p?.x || 0, y: p?.z == null ? 0 : (p.y || 0), z: p?.z == null ? (p?.y || 0) : p.z });
+const ears = new Set();
+export class Ears {
+  /** ref: distance at full volume; max: past this it doesn't get quieter; rolloff: how fast it falls; hrtf: false for plain stereo (cheaper). */
+  constructor({ ref = 2, max = 60, rolloff = 1, hrtf = true, flat = false } = {}) { Object.assign(this, { ref, max, rolloff, hrtf, flat }); this.pos = { x: 0, y: 0, z: 0 }; ears.add(this); }
+  /** Where the listener is and which way it faces (forward and up are directions; up defaults to +y). */
+  place(pos, forward = { x: 0, y: 0, z: -1 }, up = { x: 0, y: 1, z: 0 }) {
+    const a = audio(); if (!a) return this;
+    const L = a.ctx.listener, p = this.flat ? P3(pos) : { x: pos.x, y: pos.y, z: pos.z || 0 }, f = forward; this.pos = p;
+    try {
+      if (L.positionX) { const t = a.ctx.currentTime; L.positionX.setTargetAtTime(p.x, t, .02); L.positionY.setTargetAtTime(p.y, t, .02); L.positionZ.setTargetAtTime(p.z, t, .02);
+        L.forwardX.setValueAtTime(f.x, t); L.forwardY.setValueAtTime(f.y || 0, t); L.forwardZ.setValueAtTime(f.z ?? -1, t); L.upX.setValueAtTime(up.x, t); L.upY.setValueAtTime(up.y, t); L.upZ.setValueAtTime(up.z, t); }
+      else { L.setPosition(p.x, p.y, p.z); L.setOrientation(f.x, f.y || 0, f.z ?? -1, up.x, up.y, up.z); }
+    } catch { /* old audio */ }
+    return this;
+  }
+  /** For top-down 2D games: the listener at (x, y) on the ground, facing up the screen. */
+  place2d(x, y, facing = -Math.PI / 2) { this.flat = true; return this.place({ x, y }, { x: Math.cos(facing), y: 0, z: Math.sin(facing) }); }
+  /** A panner at p (and an optional muffle filter for "behind a wall"). Kit use; play sounds into it. */
+  node(p, { muffled = false } = {}) {
+    const a = audio(); if (!a) return null;
+    try {
+      const q = this.flat ? P3(p) : { x: p.x, y: p.y, z: p.z || 0 }, pn = a.ctx.createPanner();
+      pn.panningModel = this.hrtf ? 'HRTF' : 'equalpower'; pn.distanceModel = 'inverse'; pn.refDistance = this.ref; pn.maxDistance = this.max; pn.rolloffFactor = this.rolloff;
+      if (pn.positionX) { pn.positionX.value = q.x; pn.positionY.value = q.y; pn.positionZ.value = q.z; } else pn.setPosition(q.x, q.y, q.z);
+      if (!muffled) { pn.connect(a.out); return pn; }
+      const f = a.ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 700; pn.connect(f); f.connect(a.out); return pn;
+    } catch { return null; }
+  }
+  /** One note at a point (options as tone(), plus muffled: true for behind a wall). */
+  tone(f, p, o = {}) { const n = this.node(p, o); if (n) tone(f, { ...o, out: n }); return this; }
+  /** A noise burst at a point (options as noise()). */
+  noise(len, p, o = {}) { const n = this.node(p, o); if (n) noise(len, { ...o, out: n }); return this; }
+  /** A ZzFX sound at a point. */
+  zzfx(p, ...params) { const n = this.node(p); if (n) playZ(params, n); return this; }
+  /** A ready-made sound at a point: ears.play('boom', pos). Ready-made sounds are built from tone and noise, so they follow. */
+  play(name, p, pitch = 1, o = {}) {
+    const n = this.node(p, o); if (!n || !sounds[name]) return this;
+    route = n; try { sounds[name](pitch); } finally { route = null; }   // its notes go into the panner
+    return this;
+  }
+  /** A steady sound that follows something (engines, fires, a humming generator): returns { move(p), pitch(hz), volume(v), stop() }. */
+  loop(p, wave = 'sawtooth', hz = 90, { vol = .03, muffled = false } = {}) {
+    const a = audio(), dead = { move() { return this; }, pitch() { return this; }, volume() { return this; }, stop() {} };
+    if (!a || sound.muted || !sound.volume) return dead;
+    const n = this.node(p, { muffled }); if (!n) return dead;
+    try {
+      const o = a.ctx.createOscillator(), g = a.ctx.createGain(); o.type = wave; o.frequency.value = hz; g.gain.value = vol; o.connect(g); g.connect(n); o.start();
+      const self = this, h = {
+        move(q) { const r = self.flat ? P3(q) : { x: q.x, y: q.y, z: q.z || 0 }, t = a.ctx.currentTime; if (n.positionX) { n.positionX.setTargetAtTime(r.x, t, .03); n.positionY.setTargetAtTime(r.y, t, .03); n.positionZ.setTargetAtTime(r.z, t, .03); } else n.setPosition(r.x, r.y, r.z); return h; },
+        pitch(f) { o.frequency.setTargetAtTime(f, a.ctx.currentTime, .05); return h; },
+        volume(v) { g.gain.setTargetAtTime(v, a.ctx.currentTime, .05); return h; },
+        stop() { try { g.gain.setTargetAtTime(0, a.ctx.currentTime, .05); o.stop(a.ctx.currentTime + .2); } catch { /* stopped */ } loops.delete(h); },
+      };
+      loops.add(h); return h;
+    } catch { return dead; }
+  }
+  /** How loud a sound at p would be here, 0..1 (for subtitles or "you heard that" hints). */
+  heard(p) { const q = this.flat ? P3(p) : { x: p.x, y: p.y, z: p.z || 0 }, d = Math.hypot(q.x - this.pos.x, q.y - this.pos.y, q.z - this.pos.z); return this.ref / (this.ref + this.rolloff * Math.max(0, Math.min(this.max, d) - this.ref)); }
+}
+let route = null;   // while set, tone() and noise() play into this node (for Ears.play)
+const loops = new Set();
+register('ears', { stop: () => { for (const h of [...loops]) h.stop(); const a = audio(); try { a?.ctx.listener.positionX?.setValueAtTime(0, a.ctx.currentTime); } catch { /* ok */ } } });

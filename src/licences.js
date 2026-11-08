@@ -31,6 +31,8 @@ export const OPEN_SOURCE = [
   { name: 'simplex-noise', for: 'noise for terrain and motion', licence: 'MIT', spdx: 'MIT', packages: ['simplex-noise'] },
   { name: 'troika-three-text', for: '3D text', licence: 'MIT', spdx: 'MIT', packages: ['troika-three-text'] },
   { name: 'three.quarks', for: '3D particle effects', licence: 'MIT', spdx: 'MIT', packages: ['three.quarks'] },
+  { name: 'three-pinata', for: 'breaking things into pieces', licence: 'MIT', spdx: 'MIT', packages: ['@dgreenheck/three-pinata'] },
+  { name: 'InstancedMesh2 (with bvh.js)', for: 'big levels: many props, culling and detail levels', licence: 'MIT', spdx: 'MIT', packages: ['@three.ez/instanced-mesh'] },
   { name: 'Press Start 2P font', for: 'pixel text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/press-start-2p'] },
   { name: 'Rubik font', for: 'app text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/rubik'] },
 ];

@@ -18,6 +18,7 @@ try {
   // gs's 3D and AI parts load on first use: reading one before it's in throws StillLoading
   let g3; try { gs.hd; } catch (x) { g3 = x; } ok(g3?.kitLoading && /gs\.hd/.test(g3.message), 'gs.hd StillLoading before the 3D parts load'); await g3.kitLoading;
   let gai; try { gs.ai; } catch (x) { gai = x; } ok(gai?.kitLoading, 'gs.ai StillLoading'); await gai.kitLoading; ok(!!gs.hd.HDView && !!gs.ai.Crowd && !!gs.THREE.Scene, '3D and AI parts in');
+  let gac; try { gs.combat; } catch (x) { gac = x; } ok(gac?.kitLoading, 'gs.combat StillLoading (action kits load on first use)'); await gac.kitLoading; ok(!!gs.arena.Arena && !!gs.campaign.Campaign && !!gs.combat.Gun, 'action kits in');
   // comfort settings: shake and flash shrink with Reduce motion (the default here is off)
   ok(gs.prefs.reduceMotion === false && gs.prefs.motion === 1, 'prefs defaults');
   try { gs.prefs.motion = 0; } catch (_) { /* frozen */ } ok(gs.prefs.motion === 1, 'games cannot change prefs');
@@ -142,6 +143,52 @@ try {
     for (let i = 0; i < 60; i++) w6.step(1 / 60); ok(car.grounded, 'car settles on its wheels');
     for (let i = 0; i < 120; i++) { car.drive(1, 0); w6.step(1 / 60); } ok(car.speed > 2 && car.chassis.pos.z < -1, 'car drives forward: speed ' + car.speed.toFixed(1) + ' z ' + car.chassis.pos.z.toFixed(1));
     const h0 = car.chassis.body.rotation(); for (let i = 0; i < 60; i++) { car.drive(1, 1); w6.step(1 / 60); } const h1 = car.chassis.body.rotation(); ok(Math.abs(h1.y - h0.y) > .02 && !car.upsideDown, 'car steers and stays upright');
+  }
+  // round 7: poses, breaking things, a ball arena, big levels, 3D sound and music layers
+  {
+    const T = gs.THREE, { figure, Rig } = gs.poses;
+    const man = figure({ body: '#c33' }); ok(man.rig && man.children.length > 0, 'a posable figure');
+    man.rig.play('run'); for (let i = 0; i < 30; i++) man.rig.update(1 / 60, { speed: 5 }); ok(man.rig.state === 'run', 'figure runs');
+    const w7 = new gs.physics3d.World3D(); w7.floor(0);
+    const scene = new T.Scene(), wall = new T.Mesh(new T.BoxGeometry(4, 3, .4), new T.MeshStandardMaterial()); wall.position.set(0, 1.5, 0); scene.add(wall);
+    const t0 = performance.now(), pieces = gs.destruction.shatter(wall, { pieces: 12, at: { x: 0, y: 1.5, z: .2 }, world: w7, push: 5, seed: 3 }), ms = performance.now() - t0;
+    ok(pieces.length >= 8 && !wall.parent && pieces.every(p => p.parent === scene), `wall shattered into ${pieces.length} pieces in ${ms.toFixed(0)} ms`);
+    const withBody = pieces.filter(p => p.body).length; for (let i = 0; i < 60; i++) w7.step(1 / 60);
+    ok(withBody >= pieces.length / 2 && pieces.some(p => Math.abs(p.position.z) > .5), `pieces fly with physics (${withBody} bodies)`);
+    const rub = new gs.destruction.Rubble(scene, { life: .2, shrink: .1 }); rub.add(pieces); for (let i = 0; i < 30; i++) rub.update(1 / 60); ok(rub.count === 0 && !pieces[0].parent, 'rubble tidies itself away');
+    const log = new T.Mesh(new T.BoxGeometry(1, 1, 4), new T.MeshStandardMaterial()); scene.add(log);
+    const halves = gs.destruction.slice(log, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }); ok(halves.length === 2, 'slice cuts in two');
+
+    const { Arena, BallCar, chaseBall } = gs.arena, w8 = new gs.physics3d.World3D();
+    const ar = new Arena(w8, { w: 30, l: 44, time: 60 }); let goals = 0; ar.on('goal', () => goals++);
+    const me = new BallCar(w8, null, { team: 0 }), bot = new BallCar(w8, null, { team: 1 }); ar.cars.push(me, bot); ar.kickoff();
+    for (let i = 0; i < 60; i++) { me.update(1 / 60); bot.update(1 / 60); w8.step(1 / 60); ar.update(1 / 60); }
+    ok(me.grounded && Math.abs(me.pos.z - ar.spawns[0][0].z) < 1, 'ball cars sit on their spawns');
+    for (let i = 0; i < 90; i++) { me.control({ throttle: 1, boost: true }).update(1 / 60); w8.step(1 / 60); ar.update(1 / 60); }
+    ok(me.pos.z > ar.spawns[0][0].z + 5 && me.boost < 33, 'boost drives toward the other goal: z ' + me.pos.z.toFixed(1) + ' boost ' + me.boost.toFixed(0));
+    me.control({ jump: true }).update(1 / 60); for (let i = 0; i < 20; i++) { me.control({ jump: true }).update(1 / 60); w8.step(1 / 60); } ok(!me.grounded && me.pos.y > 1, 'jumps');
+    ok(ar.frames.length > 0 && ar.playback(0).length === 3, 'replay frames kept');
+    me.spawn({ x: -12, y: .6, z: 0 }); bot.spawn({ x: 12, y: .6, z: 0 }); ar.ball.place({ x: 0, y: 1.2, z: 18 }); ar.ball.setVel(0, 0, 25); for (let i = 0; i < 60; i++) { w8.step(1 / 60); ar.update(1 / 60); }
+    ok(goals === 1 && ar.score[0] === 1, 'a goal counts: ' + ar.score.join('-'));
+    ar.kickoff(); ar.ball.setVel(0, 10, 4); const path = ar.predict(2); ok(path.length > 30 && path.some(p => p.bounce), 'ball path predicted with bounces');
+    const inp = chaseBall(bot, ar); ok(typeof inp.throttle === 'number' && typeof inp.steer === 'number', 'the simple opponent drives');
+    ar.ball.place({ x: 14, y: 1.5, z: 0 }); ar.ball.setVel(8, 0, 0); for (let i = 0; i < 40; i++) { w8.step(1 / 60); ar.update(1 / 60); } ok(Math.abs(ar.ball.pos.x) < 15.5, 'the curved walls keep the ball in');
+
+    const { Props, Areas, Chunks, simplify } = gs.props, sc = new T.Scene();
+    const geo = new T.IcosahedronGeometry(1, 3), low = simplify(geo, .2); ok(low.attributes.position.count < geo.attributes.position.count, 'simplify makes a lighter shape');
+    const pr = new Props(sc); pr.kind('rock', geo, new T.MeshStandardMaterial(), { lod: [20, 50] });
+    const ids = pr.scatter('rock', 500, { x0: -100, z0: -100, x1: 100, z1: 100 }, { gap: 2, seed: 4 }); pr.done();
+    ok(ids.length === 500 && pr.count('rock') === 500, 'scattered 500 props'); ok(pr.near('rock', { x: 0, y: 0, z: 0 }, 15).length > 0, 'finds nearby props');
+    const rr = new T.WebGLRenderer({ canvas: document.createElement('canvas') }), cam = new T.PerspectiveCamera(60, 1, .1, 300); cam.position.set(0, 20, 60); cam.lookAt(0, 0, 0); sc.add(new T.DirectionalLight()); const f0 = performance.now(); for (let i = 0; i < 5; i++) rr.render(sc, cam); ok(true, 'drew 500 props x5 in ' + (performance.now() - f0).toFixed(0) + ' ms');
+    const ga = new T.Group(), gb = new T.Group(), gc = new T.Group(); const areas = new Areas().add('a', ga, { min: { x: 0, y: 0, z: 0 }, max: { x: 10, y: 5, z: 10 } }).add('b', gb, { min: { x: 10, y: 0, z: 0 }, max: { x: 20, y: 5, z: 10 } }).add('c', gc, { min: { x: 20, y: 0, z: 0 }, max: { x: 30, y: 5, z: 10 } }).link('a', 'b').link('b', 'c');
+    areas.update({ x: 5, y: 1, z: 5 }); ok(ga.visible && gb.visible && !gc.visible, 'areas hide rooms you cannot see');
+    let made = 0; const ch = new Chunks(sc, { size: 10, radius: 1, perFrame: 9, make: () => { made++; return new T.Group(); } }); ch.update({ x: 0, y: 0, z: 0 }); ok(ch.count === 9, 'chunks built round the player');
+    ch.update({ x: 100, y: 0, z: 0 }); ok(ch.count === 9 && made === 18, 'far chunks dropped, new ones built');
+
+    const ears = new gs.sound.Ears(); ears.place({ x: 0, y: 0, z: 0 }); ears.tone(440, { x: 5, y: 0, z: 0 }); ears.noise(.2, { x: -5, y: 0, z: 0 }); ears.play('boom', { x: 0, y: 0, z: -10 });
+    const eng = ears.loop({ x: 2, y: 0, z: 0 }); eng.move({ x: 3, y: 0, z: 0 }).pitch(120); eng.stop(); ok(ears.heard({ x: 2, y: 0, z: 0 }) > ears.heard({ x: 30, y: 0, z: 0 }), '3D sounds play and fall off with distance');
+    const tune = gs.sound.music({ tempo: 140, lead: 'C5 E5 G5 E5', drums: 'k h s h', lead2: 'C6 . G5 .', layers: { drums: .3, lead2: .7 } }).start();
+    tune.intensity(.5); ok(tune.level === .5, 'music intensity brings in layers'); tune.stop();
   }
 } catch (err) { out.push('FAIL threw ' + (err && err.stack || err)); }
 window.result = out;

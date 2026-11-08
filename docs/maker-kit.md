@@ -46,6 +46,19 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Cars and karts that drift and boost, laps | `gs.vehicles`, `World3D.vehicle()` | [Game kits](#game-kits) |
 | A 3D level from a text map | `gs.level3d` | [Game kits](#game-kits) |
 | Time of day, rain, snow, lightning | `gs.sky` | [Game kits](#game-kits) |
+| Guns, recoil, health that comes back, explosions | `gs.combat` | [Action and adventure kits](#action-and-adventure-kits) |
+| Enemies that take cover, flank and call out | `gs.tactics` | [Action and adventure kits](#action-and-adventure-kits) |
+| Hang from ledges, shimmy, climb, swing on ropes | `gs.climb` | [Action and adventure kits](#action-and-adventure-kits) |
+| Run, aim, hang and climb poses on a 3D figure | `gs.poses` | [Action and adventure kits](#action-and-adventure-kits) |
+| Mission scripts, objectives, checkpoints | `gs.missions` | [Action and adventure kits](#action-and-adventure-kits) |
+| Cutscenes, quick-time prompts | `gs.cutscene`, `gs.prompts` | [Action and adventure kits](#action-and-adventure-kits) |
+| Break walls into pieces, slice things in two | `gs.destruction` (three-pinata) | [Action and adventure kits](#action-and-adventure-kits) |
+| Light meter, takedowns, bodies, disguises | `gs.stealth` | [Action and adventure kits](#action-and-adventure-kits) |
+| Grappling hook, zip line, hacking puzzles | `gs.gadgets` | [Action and adventure kits](#action-and-adventure-kits) |
+| Ball games with boosting, flipping cars | `gs.arena` | [Action and adventure kits](#action-and-adventure-kits) |
+| Chapters, stars, collectibles, unlocks | `gs.campaign` | [Action and adventure kits](#action-and-adventure-kits) |
+| Sounds placed in 3D, music that builds up | `gs.sound.Ears`, `music({ layers })` | [Action and adventure kits](#action-and-adventure-kits) |
+| Thousands of trees and rocks, rooms, big worlds | `gs.props` (InstancedMesh2) | [Action and adventure kits](#action-and-adventure-kits) |
 
 ## What `gs` has, and what it doesn't
 
@@ -907,3 +920,88 @@ the sky, sun, fill light and fog, and brings out stars (`physical: true` uses th
 sky for Next Gen). `Weather(view, { kind: 'rain' | 'snow' | 'storm' })` falls around the camera;
 storms flash lightning, and `onFlash(far)` is your cue for thunder. In AR the camera feed is the sky,
 so use `Weather` alone.
+
+## Action and adventure kits
+
+For shooters, stealth, climbing adventures, spy games and ball games with cars. As with every kit,
+these give answers (hits, orders, where the camera goes, who scored) and your game draws the lot,
+including its own HUD and menus. The few `draw...()` helpers below are plain starting points you can
+ignore.
+
+**Weapons and damage** (`gs.combat`): `Gun({ rate, mag, reload, spread, recoil, pellets, falloff })`:
+`gun.pull(from, dir, held)` gives the shots fired this frame (spread that blooms and settles,
+shotgun pellets, full auto or one per tap), `gun.kick` is the recoil to add to your camera, and
+`damageAt(distance, head)` covers range falloff and headshots. `Shots` flies slower shots (rockets,
+arrows) and asks your `hits()` what each one met; `arc` and `lob` give grenade throw lines.
+`Health({ regen, delay, armour, downed })` heals after a quiet spell, soaks hits with armour, can go
+down before dying, and keeps the direction of each hit (`hits[].angle`) for damage arrows.
+`Markers` times hit markers. `Explosives` are barrels and mines that set each other off.
+
+**Cover and squads** (`gs.tactics`): `CoverMap(cols, rows, blocked)` finds every spot beside a wall and
+which way it faces; `find(from, threat)` picks cover that blocks a threat (or flanks it), `peek()`
+says where to lean out. `Squad(members, { cover, sees })` gives each enemy an order each think
+(`move`, `shoot`, `throw`, `hold`) with roles: some pin you down while others move up or flank, a
+grenade flushes you out of cover you've camped in, the hurt fall back, and they call out
+(`on('call')`: contact, reloading, man down) for your barks. `Route(points)` is an ally who leads
+and waits for you.
+
+**Climbing** (`gs.climb`): `Ledges.fromLevel(level3d)` finds every edge you can hang from (or `add()`
+your own). `Climber` grabs a ledge in reach, shimmies, turns corners, climbs up, leaps to the next
+handhold the way you push, drops or kicks off. `Rope` is a swing you pump higher. `climber.pos` and
+`climber.state` drive your character and its poses.
+
+**Poses** (`gs.poses`, 3D): `figure()` builds a simple jointed person and `Rig` blends poses on it:
+idle, walk, run, sprint, crouch, sneak, aim, jump, fall, land, hang, shimmy, climb, swing, cover,
+punch, takedown, downed, wave, sit, or your own. Walk and run cycles follow `speed` so feet don't
+slide; `upper('aim')` aims over the legs. Works on your own models too (pass their joints).
+
+**Missions** (`gs.missions`): write a mission as a script that reads like the plan:
+`Mission(function* (m) { m.objective('Reach the roof'); yield m.until(() => roof.has(me)); m.checkpoint();
+m.say('Go!', { who: 'Ivo' }); yield m.wait(2); ... m.complete(); })`. `zone()` makes areas, `all()` and
+`any()` wait for several things, `restart()` returns to the last checkpoint after a loss (skipping
+the lines already heard), and `save()`/`load()` keep it between sessions.
+
+**Cutscenes** (`gs.cutscene`): `Cutscene([{ at, cam: [points], look, time }, { at, say, who }, { at, do }])`
+moves the camera along smooth paths, shows lines and letterbox bars, runs actions on cue and can be
+skipped. Put your camera at `scene.shot` each frame. Camera shakes follow Reduce motion.
+
+**Quick-time prompts** (`gs.prompts`): `Prompts().start([{ kind: 'tap', x, y }, { kind: 'swipe', dir: 'left' },
+{ kind: 'hold', hold: 1 }, { kind: 'mash', count: 8 }])` checks taps, swipes, holds and mashing in
+time; `timeScale` slows the world while one shows; `ease` gives the player more time.
+
+**Breaking things** (`gs.destruction`, 3D, three-pinata): `shatter(mesh, { pieces, at, world })` breaks
+any mesh into real pieces (more near where it was hit) that fly with `gs.physics3d`; `slice(mesh, point,
+normal)` cuts one in two; `Rubble` fades old pieces so phones stay fast.
+
+**Stealth extras** (`gs.stealth`, on top of `gs.senses`): `lightAt(p, lamps)` is a light meter (walls
+cast shadows) to feed the guards' eyes, `Takedown.check()` finds a guard you're behind, `Bodies` get
+found and raise the alarm unless you hide them, `Floors` make gravel loud and carpet quiet, and
+`Disguise` lets you walk past some guards until you do something odd.
+
+**Gadgets** (`gs.gadgets`): `Grapple` (fire, swing, reel in), `Zipline`, and three hacking puzzles:
+`Wires` (turn tiles till power reaches every one; always solvable), `Lock` (stop the marker in the
+gap, pin by pin) and `Code` (repeat the sequence).
+
+**Ball games with cars** (`gs.arena`, Rapier through `gs.physics3d`): `Arena(world, { w, l, goal, ball })`
+builds the walls, curved ramps, ceiling and goals, keeps the score and clock (with overtime), adds
+punch to touches, has boost pads, `predict()`s the ball's path for a landing marker, and keeps a
+few seconds of replay (`playback(t)`). `BallCar` is a real suspension car with boost, jump, a second
+jump that flips you the way you push, and air control. `chaseBall(car, arena)` is a simple
+opponent to start from.
+
+**Campaigns** (`gs.campaign`): `Campaign(chapters, { extras }).attach(api)` keeps which missions are
+open (in order, or by stars), up to three stars each (score targets or named challenges), best
+scores, collectibles and extras that unlock at a star count, saved compactly with `api.save()`.
+
+**3D sound and music layers** (`gs.sound`): `Ears` puts sounds in the world with the browser's own 3D
+audio (left/right and in front/behind in headphones, quieter with distance, `muffled` for behind a
+wall). `ears.place(camera.position, forward)` each frame, then `ears.play('boom', pos)`,
+`ears.tone()`, `ears.zzfx(pos, ...)`, and `ears.loop(pos)` for engines that follow something.
+`music({ ..., drums2, lead2, layers: { drums2: .3, lead2: .7 } })` builds up with `tune.intensity(x)`:
+quiet while sneaking, full when the fight starts.
+
+**Bigger levels on phones** (`gs.props`, 3D, InstancedMesh2): `Props` draws thousands of the same thing
+(trees, rocks, crates) in one go, skips the ones off screen and swaps far ones for simpler shapes
+made for you (`simplify()`, three's SimplifyModifier). `scatter()` spreads them over ground with
+gaps and keep-out zones. `Areas` hides rooms you can't see into, and `Chunks` builds a big world
+around the player a piece at a time and drops what's far away.

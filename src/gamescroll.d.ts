@@ -93,12 +93,20 @@ export interface SoundPart {
   sounds: Record<'coin' | 'jump' | 'hurt' | 'hit' | 'boom' | 'laser' | 'shoot' | 'powerup' | 'select' | 'blip' | 'pop' | 'splash' | 'click' | 'win' | 'lose' | 'levelup' | 'countdown', SoundFx> & Record<string, SoundFx>;
   /** A note name ('C5', 'F#3') to Hz. */
   freq(note: string | number): number;
-  tone(f: number, o?: { len?: number; wave?: OscillatorType; vol?: number; slide?: number; attack?: number; at?: number }): void;
-  noise(len?: number, o?: { vol?: number; from?: number; to?: number; filter?: BiquadFilterType; q?: number; at?: number }): void;
+  tone(f: number | string, o?: { len?: number; wave?: OscillatorType; vol?: number; slide?: number; attack?: number; at?: number; out?: AudioNode }): void;
+  noise(len?: number, o?: { vol?: number; from?: number; to?: number; filter?: BiquadFilterType; q?: number; at?: number; out?: AudioNode }): void;
   /** Plays a tune like 'C5 E5 G5 - C6' ('-' is a rest). */
   notes(seq: string, o?: { len?: number; gap?: number; wave?: OscillatorType; vol?: number }): void;
   /** Background music from patterns; start it in update(), not reset(). */
-  music(o?: { tempo?: number; vol?: number; swing?: number; lead?: string; bass?: string; drums?: string; [part: string]: Loose }): { stop(): void; pause(): void; resume(): void; [k: string]: Loose };
+  music(o?: { tempo?: number; vol?: number; swing?: number; lead?: string; bass?: string; drums?: string; layers?: Record<string, number>; [part: string]: Loose }): { start(): Loose; stop(): void; pause(): void; resume(): void; speed(x: number): Loose; layer(name: string, level?: number, fade?: number): Loose; intensity(x: number, fade?: number): Loose; readonly level: number; readonly playing: boolean; [k: string]: Loose };
+  /** 3D sound: the listener follows the camera; sounds play at points in the world (HRTF in headphones). */
+  Ears: new (o?: { ref?: number; max?: number; rolloff?: number; hrtf?: boolean; flat?: boolean }) => {
+    place(pos: { x: number; y: number; z?: number }, forward?: { x: number; y: number; z: number }, up?: { x: number; y: number; z: number }): Loose; place2d(x: number, y: number, facing?: number): Loose;
+    tone(f: number | string, p: { x: number; y: number; z?: number }, o?: Loose): Loose; noise(len: number, p: { x: number; y: number; z?: number }, o?: Loose): Loose; zzfx(p: { x: number; y: number; z?: number }, ...params: (number | undefined)[]): Loose;
+    play(name: string, p: { x: number; y: number; z?: number }, pitch?: number, o?: { muffled?: boolean }): Loose;
+    loop(p: { x: number; y: number; z?: number }, wave?: OscillatorType, hz?: number, o?: { vol?: number; muffled?: boolean }): { move(p: { x: number; y: number; z?: number }): Loose; pitch(hz: number): Loose; volume(v: number): Loose; stop(): void };
+    heard(p: { x: number; y: number; z?: number }): number;
+  };
   /** ZzFX sound from its numbers (zzfx.micro). */
   zzfx(...params: number[]): void;
   zsound(...params: number[]): () => void;
@@ -702,6 +710,142 @@ export interface SkyPart {
   };
 }
 
+// ---------- round 7: action, stealth, traversal, missions, sport, big levels ----------
+export interface P3 { x: number; y: number; z?: number }
+type On<T> = { on(ev: string, fn: (...a: Loose[]) => void): T };
+export interface Shot { from: P3; dir: P3; range: number; speed: number; damageAt(distance: number, head?: boolean): number }
+export interface Gun {
+  damage: number; rate: number; mag: number; reserve: number; reload: number; ammo: number; kick: { pitch: number; yaw: number };
+  justFired: boolean; empty: boolean; readonly reloading: number; readonly spreadNow: number;
+  pull(from: P3, dir: P3, pressed?: boolean): Shot[]; update(dt: number): Gun; startReload(): boolean; damageAt(distance?: number, head?: boolean): number;
+  save(): Loose; load(d: Loose): Gun; [k: string]: Loose;
+}
+export interface Health {
+  hp: number; max: number; armour: number; down: boolean; dead: boolean; hits: { angle: number; amount: number; life: number }[]; readonly frac: number; readonly hurting: boolean;
+  hurt(amount: number, o?: { from?: P3; at?: P3; facing?: number }): number; heal(n: number): number; addArmour(n: number): Health; revive(share?: number): Health; update(dt: number): Health; reset(): Health;
+}
+export interface CombatPart {
+  Gun: new (o?: { damage?: number; rate?: number; mag?: number; reserve?: number; reload?: number; spread?: number; bloom?: number; maxSpread?: number; settle?: number; pellets?: number; auto?: boolean; recoil?: number; sideways?: number; recover?: number; range?: number; falloff?: [number, number, number]; head?: number; speed?: number; rng?: () => number }) => Gun;
+  Shots: new (o?: { gravity?: number }) => { list: Loose[]; add(s: Shot, extra?: Loose): Loose; update(dt: number, hits: (shot: Loose, from: P3, to: P3) => Loose): Loose[] };
+  arc(from: P3, vel: P3, gravity?: number, o?: { steps?: number; dt?: number; ground?: (p: P3) => boolean }): P3[];
+  lob(from: P3, to: P3, time?: number, gravity?: number): P3;
+  Health: new (o?: { max?: number; regen?: number; delay?: number; armour?: number; maxArmour?: number; absorb?: number; downed?: boolean; bleed?: number }) => Health;
+  hitFrom(from: P3, at: P3, facing?: number): number;
+  Markers: new () => { list: Loose[]; add(head?: boolean, kill?: boolean): Loose; update(dt: number): Loose; readonly showing: boolean };
+  Explosives: new (o?: { fuse?: number; radius?: number; damage?: number }) => On<Loose> & { list: Loose[]; add(o: Loose): Loose; light(b: Loose, now?: boolean): Loose; boom(b: Loose): Loose; near(p: P3, r?: number): Loose; update(dt: number): Loose };
+}
+export interface CoverSpot { x: number; y: number; col: number; row: number; nx: number; ny: number; low: boolean; by: Loose }
+export interface TacticsPart {
+  CoverMap: new (cols: number, rows: number, blocked: (c: number, r: number) => boolean, o?: { size?: number; x0?: number; y0?: number; low?: (c: number, r: number) => boolean }) => {
+    spots: CoverSpot[]; size: number; protects(spot: CoverSpot, threat: P3): boolean;
+    find(from: P3, threat: P3, o?: { near?: number; band?: [number, number]; flank?: number; who?: Loose; sees?: (a: P3, b: P3) => boolean }): CoverSpot | null;
+    take(spot: CoverSpot | null, who: Loose): CoverSpot | null; free(who: Loose): Loose; peek(spot: CoverSpot, threat: P3): P3; at(col: number, row: number): CoverSpot | null;
+  };
+  Squad: new (members: Loose[], o?: { cover?: Loose; sees?: (m: Loose, t: P3) => boolean; range?: number; grenades?: number; camp?: number; think?: number; aggression?: number; rng?: () => number }) => On<Loose> & {
+    members: Loose[]; readonly left: Loose[]; update(dt: number, target: P3): Loose; hurt(m: Loose): Loose; reloading(m: Loose): Loose;
+  };
+  Route: new (points: P3[], o?: { leash?: number; reach?: number }) => On<Loose> & { points: P3[]; i: number; readonly point: P3; readonly done: boolean; update(dt: number, ally: P3, player: P3): Loose };
+}
+export interface ClimbPart {
+  Ledges: { new (): { list: Loose[]; add(a: P3, b: P3, normal: { x: number; z: number }, o?: Loose): Loose; closest(p: P3, filter?: (l: Loose) => boolean): Loose }; fromLevel(level: Loose, o?: { min?: number }): Loose };
+  Climber: new (ledges: Loose, o?: { height?: number; reach?: number; shimmy?: number; leap?: number; upTime?: number; leapTime?: number; out?: number }) => {
+    state: 'free' | 'hang' | 'shimmy' | 'up' | 'leap' | 'swing'; pos: P3; facing: number; ledge: Loose; events: string[]; launch: P3 | null; fling: P3 | null;
+    grab(feet: P3, vy?: number): boolean; update(dt: number, input?: { x?: number; y?: number; jump?: boolean }): Loose; leapOrKick(x: number, y: number): Loose; letGo(up?: number, kick?: boolean): Loose; swing(rope: Loose, vel?: P3): Loose;
+  };
+  Rope: new (anchor: P3, length?: number, o?: { gravity?: number; pump?: number; damping?: number }) => { anchor: P3; length: number; catch(feet: P3, vel: P3, height?: number): Loose; update(dt: number, push?: number): Loose; readonly hands: P3; feet(height?: number): P3; release(): P3 };
+}
+export interface Mission {
+  objectives: { text: string; at: P3 | null; done: boolean }[]; lines: { text: string; who: string | null; life: number }[]; flags: Record<string, Loose>; time: number;
+  done: boolean; failed: string | false; readonly current: { text: string; at: P3 | null } | null; readonly replaying: boolean;
+  update(dt: number): Mission; restart(fresh?: boolean): Mission; wait(s: number): Loose; until(test: () => boolean): Loose; all(...w: Loose[]): Loose; any(...w: Loose[]): Loose;
+  objective(text: string, o?: { at?: P3; keep?: boolean }): Loose; say(text: string, o?: { who?: string; time?: number }): void; checkpoint(name?: string): Loose; flag(name: string, v?: Loose): Mission;
+  complete(): void; fail(reason?: string): void; save(): Loose; load(s: Loose): Mission; on(ev: 'objective' | 'say' | 'checkpoint' | 'complete' | 'fail' | 'restart', fn: (...a: Loose[]) => void): Mission;
+}
+export interface MissionsPart {
+  zone(at: P3 | { x: number; y: number; w: number; h: number }, r?: number | null): { has(p: P3): boolean; any(list: P3[]): boolean; count(list: P3[]): number };
+  Mission: new (script: (m: Mission) => Generator<Loose, void, Loose>, o?: { save?: (d: Loose) => void; load?: () => Loose }) => Mission;
+}
+export interface CutsceneStep { at?: number; cam?: P3[]; look?: P3 | ((t: number) => P3); time?: number; ease?: 'linear' | 'in' | 'out' | 'inOut'; say?: string; who?: string; do?: (c: Loose) => void; shake?: number; bars?: number }
+export interface CutscenePart {
+  along(points: P3[], u: number): P3;
+  Cutscene: new (steps: CutsceneStep[], o?: { bars?: number; skippable?: boolean }) => On<Loose> & {
+    playing: boolean; done: boolean; bars: number; line: { text: string; who: string | null } | null; shot: { x: number; y: number; z: number; look: P3 } | null; readonly progress: number;
+    update(dt: number): Loose; skip(): Loose; reset(): Loose; drawBars(c: CanvasRenderingContext2D, w: number, h: number, colour?: string): void; drawLine(c: CanvasRenderingContext2D, w: number, h: number, o?: Loose): void;
+  };
+}
+export interface Prompt { kind: 'tap' | 'hold' | 'swipe' | 'mash'; x?: number; y?: number; time?: number; dir?: 'up' | 'down' | 'left' | 'right'; hold?: number; count?: number; [k: string]: Loose }
+export interface PromptsPart {
+  Prompts: new (o?: { radius?: number; swipe?: number }) => On<Loose> & {
+    active: boolean; timeScale: number; passed: number; readonly now: Prompt | null; readonly left: number;
+    start(list: Prompt[], o?: { slow?: number; ease?: number }): Loose; update(dt: number): Loose; down(x: number, y: number): void; move(x: number, y: number): void; up(): void; cancel(): Loose;
+    draw(c: CanvasRenderingContext2D, w: number, h: number, o?: { colour?: string; ink?: string }): void;
+  };
+}
+export interface StealthPart {
+  lightAt(p: Pt2, lights: { x: number; y: number; r?: number; i?: number; cone?: number; dir?: number }[], o?: { ambient?: number; sees?: (light: Pt2, p: Pt2) => boolean }): number;
+  Takedown: { check<T>(player: Pt2, guards: T[], o?: { reach?: number; behind?: number; moods?: string[] }): T | null; front(player: Pt2, g: Loose, o?: { reach?: number }): boolean };
+  Bodies: new (o?: { range?: number }) => On<Loose> & { list: Loose[]; add(x: number, y: number, who?: Loose): Loose; carry(b: Loose): Loose; drop(b: Loose, x: number, y: number): Loose; hide(b: Loose): Loose; near(p: Pt2, reach?: number): Loose[]; update(dt: number, guards: Loose[], sees?: (g: Loose, b: Loose) => boolean): Loose };
+  Floors: new (kinds?: Record<string, number>, at?: (p: Pt2) => string | null, o?: { walk?: number; run?: number }) => { noise(p: Pt2, speed: number, o?: { sneak?: number; runSpeed?: number }): number };
+  Disguise: new (o?: { fools?: Record<string, string[]>; close?: number }) => { wearing: string | null; wear(kind: string): Loose; off(): Loose; blow(seconds?: number): Loose; update(dt: number): Loose; fooling(g: Loose, player?: Pt2): boolean; light(g: Loose, lit: number, player?: Pt2): number };
+}
+type Pt2 = { x: number; y: number };
+export interface GadgetsPart {
+  Grapple: new (o?: { range?: number; reel?: number; swing?: boolean; flyTime?: number; min?: number }) => {
+    attached: boolean; flying: number; point: P3 | null; length: number; arrived?: boolean; miss: { from: P3; to: P3 } | null;
+    fire(from: P3, dir: P3, ray: (from: P3, dir: P3, max: number) => { point: P3 } | null): boolean; update(dt: number, pos: P3, vel: P3, o?: { reel?: boolean }): P3; release(): Loose;
+  };
+  Zipline: new (a: P3, b: P3, o?: { gravity?: number; drag?: number; grab?: number; hang?: number }) => { riding: boolean; done?: boolean; t: number; speed: number; near(p: P3, handsUp?: number): boolean; ride(p?: P3 | null, speed?: number): Loose; update(dt: number): Loose; closest(p: P3): { t: number; point: P3; d: number }; readonly hands: P3; readonly pos: P3; readonly vel: P3 };
+  Wires: new (cols?: number, rows?: number, o?: { seed?: number }) => { cols: number; rows: number; cells: number[]; moves: number; readonly solved: boolean; get(c: number, r: number): number; turn(c: number, r: number): Loose; lit(c: number, r: number): boolean };
+  Lock: new (o?: { pins?: number; speed?: number; gap?: number; shrink?: number; seed?: number }) => { pin: number; pins: number; a: number; at: number; gap: number; failed: boolean; readonly solved: boolean; update(dt: number): Loose; stop(): boolean; reset(): Loose };
+  Code: new (o?: { keys?: number; start?: number; seed?: number }) => { seq: number[]; i: number; failed: boolean; readonly done: boolean; press(k: number): boolean; grow(): Loose; retry(): Loose };
+}
+export interface CampaignMission { id: string; name?: string; stars?: (number | string)[]; collect?: number; needs?: { stars?: number; done?: string }; state?: 'locked' | 'open' | 'done'; got?: number; best?: number | null; found?: number; [k: string]: Loose }
+export interface CampaignPart {
+  Campaign: new (chapters: { id: string; name?: string; needs?: { stars?: number; done?: string }; missions: CampaignMission[]; [k: string]: Loose }[], o?: { extras?: Record<string, number> }) => On<Loose> & {
+    chapters: Loose[]; missions: CampaignMission[]; readonly stars: number; readonly maxStars: number; readonly progress: number; readonly unlocked: Record<string, boolean>;
+    attach(api: Loose, key?: string): Loose; clear(save?: boolean): Loose; done(id: string): boolean; best(id: string): number | null; starsOf(id: string): number; starList(id: string): boolean[];
+    state(id: string): 'locked' | 'open' | 'done'; open(id: string): boolean; next(): CampaignMission | null; has(extra: string): boolean;
+    finish(id: string, o?: { score?: number; stars?: boolean[] }): { stars: number; newStars: number; best: number | null; unlocked: string[] } | null;
+    collect(id: string, i: number): boolean; picked(id: string, i: number): boolean; collected(id: string): number; pack(): Loose; unpack(d: Loose): Loose;
+  };
+}
+export interface BallCar {
+  team: number; boost: number; maxBoost: number; readonly pos: P3; readonly vel: P3; readonly rot: Loose; readonly speed: number; readonly grounded: boolean; readonly boosting: boolean;
+  readonly forward: P3; readonly up: P3; readonly right: P3; readonly upsideDown: boolean;
+  control(i: { throttle?: number; steer?: number; brake?: boolean; boost?: boolean; jump?: boolean; pitch?: number; yaw?: number; roll?: number }): BallCar; update(dt: number): BallCar; spawn(s: P3 & { facing?: number }): BallCar; rightUp(): BallCar; remove(): void;
+}
+export interface ArenaPart {
+  Arena: new (world: Loose, o?: { w?: number; l?: number; h?: number; curve?: number; segments?: number; goal?: { w?: number; h?: number; d?: number }; ball?: Loose; ballR?: number; bounce?: number; time?: number; punch?: number; replay?: number; pads?: boolean }) => On<Loose> & {
+    ball: Loose; cars: Loose[]; score: [number, number]; clock: number; overtime: boolean; over: boolean; wait: number; pads: { x: number; z: number; big: boolean; wait: number }[]; spawns: (P3 & { facing: number })[][]; lastTouch: Loose; frames: Loose[];
+    restart(): Loose; kickoff(countdown?: number): Loose; inGoal(p: P3): number; update(dt: number): Loose; predict(seconds?: number, step?: number): (P3 & { t: number; bounce: boolean })[]; danger(seconds?: number): number;
+    playback(t: number): { p: P3; q: Loose }[] | null; readonly replayLength: number; readonly clockText: string;
+  };
+  BallCar: new (world: Loose, mesh: Loose, o?: { team?: number; at?: P3; wheels?: Loose[]; power?: number; steer?: number; top?: number; boostTop?: number; maxBoost?: number; boostUse?: number; boostPush?: number; jump?: number; dodge?: number; air?: number; start?: number; w?: number; h?: number; l?: number }) => BallCar;
+  chaseBall(car: BallCar, arena: Loose, o?: { skill?: number }): { throttle: number; steer: number; boost: boolean; jump: boolean };
+}
+export interface PosesPart {
+  POSES: Record<string, Loose>;
+  Rig: new (parts: Loose, o?: { fade?: number; height?: number; poses?: Record<string, Loose> }) => { state: string; play(name: string, o?: { fade?: number }): Loose; upper(name: string | null): Loose; add(name: string, fn: Loose, rate?: number): Loose; update(dt: number, o?: { speed?: number; aim?: number; turn?: number }): Loose };
+  figure(o?: { body?: string; skin?: string; legs?: string; shoes?: string; hair?: string; mat?: (colour: string) => Loose; scale?: number; shadows?: boolean }): Loose;
+}
+export interface DestructionPart {
+  shatter(mesh: Loose, o?: { pieces?: number; at?: P3; flat?: boolean; inside?: Loose; world?: Loose; push?: number; seed?: number; density?: number; radius?: number }): Loose[];
+  slice(mesh: Loose, point: P3, normal: P3, o?: { inside?: Loose }): Loose[];
+  Rubble: new (scene?: Loose, o?: { max?: number; life?: number; shrink?: number }) => { add(pieces: Loose | Loose[]): Loose; update(dt: number): Loose; clear(): Loose; readonly count: number };
+}
+export interface PropsPart {
+  simplify(geometry: Loose, keep?: number): Loose;
+  Props: new (scene: Loose, o?: { renderer?: Loose; shadows?: boolean }) => {
+    kind(name: string, geometry: Loose, material: Loose, o?: { lod?: (number | [number, Loose])[]; keep?: number[]; shadows?: boolean; shadowFar?: number; capacity?: number }): Loose;
+    mesh(name: string): Loose; add(name: string, x: number, y: number, z: number, o?: { rot?: number | P3; scale?: number | P3; color?: string }): number;
+    move(name: string, id: number, x: number, y: number, z: number): Loose; remove(name: string, id: number): Loose; hide(name: string, id: number, hidden?: boolean): Loose;
+    scatter(name: string, count: number, area: { x0: number; z0: number; x1: number; z1: number } | ((rnd: () => number) => { x: number; z: number }), o?: { gap?: number; seed?: number; y?: (x: number, z: number) => number; keepOut?: (x: number, z: number) => boolean; scale?: [number, number]; spin?: boolean }): number[];
+    done(o?: { margin?: number }): Loose; near(name: string, p: P3, r: number): { id: number; x: number; y: number; z: number; d: number }[]; count(name?: string): number; clear(): Loose;
+  };
+  Areas: new (o?: { depth?: number }) => { current: string | null; add(name: string, object: Loose, box?: Loose): Loose; link(a: string, b: string): Loose; at(p: P3): string | null; update(p: P3): Loose; readonly shown: string[] };
+  Chunks: new (scene: Loose, o: { size?: number; radius?: number; make: (cx: number, cz: number) => Loose; drop?: (o: Loose, cx: number, cz: number) => void; perFrame?: number }) => { update(p: P3): Loose; ready(p: P3): boolean; clear(): Loose; readonly count: number };
+}
+
 export interface GS {
   sound: SoundPart; device: DevicePart; util: UtilPart; math: MathPart; palettes: PalettesPart;
   juice: JuicePart; effects: { Feel: typeof Feel }; controls: ControlsPart; pad: PadPart; moves: MovesPart;
@@ -711,6 +855,8 @@ export interface GS {
   tweak: TweakFn; brains: BrainsPart;
   board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart;
   level3d: Level3dPart; sky: SkyPart;
+  combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
+  stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;
   /** three.js itself. */
