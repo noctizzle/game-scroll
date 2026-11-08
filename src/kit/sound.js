@@ -10,6 +10,8 @@
 // Everything respects the player's Sound & haptics settings (sound on/off, volume, music on/off). Music stops by itself when the round ends or the
 // player swipes to another game, but stop it in your own game-over code too if it should end sooner.
 import { sfx, sound, audio } from '../sfx.js';
+import { buildSamples, SAMPLE_RATE } from './zzfx.js';
+import { lazy } from './lazy.js';
 
 /* ---------- notes ---------- */
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -108,8 +110,50 @@ export const sounds = {
 };
 export { sfx };   // the classic single beep, re-exported so one import covers everything
 
+/* ---------- ZzFX: design your own sound effects ---------- */
+// Design a sound on https://killedbyapixel.github.io/ZzFX/ (move the sliders, press play), copy the
+// numbers it shows, and play them: zzfx(...[,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17]). Sounds are
+// built once and cached, so playing the same one again is cheap.
+const zcache = new Map();
+/** Plays a ZzFX sound (the numbers from the ZzFX designer). Returns nothing. */
+export function zzfx(...params) {
+  if (sound.muted || !sound.volume) return;
+  const a = audio(); if (!a) return;
+  try {
+    const key = params.join(',');
+    let buf = zcache.get(key);
+    if (!buf) {
+      const data = buildSamples(...params);
+      buf = a.ctx.createBuffer(1, data.length, SAMPLE_RATE); buf.getChannelData(0).set(data);
+      if (zcache.size > 64) zcache.delete(zcache.keys().next().value);
+      zcache.set(key, buf);
+    }
+    const src = a.ctx.createBufferSource(), g = a.ctx.createGain();
+    src.buffer = buf; g.gain.value = .3; src.connect(g); g.connect(a.out); src.start();
+  } catch { /* audio unavailable */ }
+}
+/** Makes a reusable sound from ZzFX numbers: const zap = zsound(...numbers); zap(); zap(1.5) plays it higher. */
+export function zsound(...params) {
+  return (pitch = 1) => { const p = [...params]; if (pitch !== 1) p[2] = (p[2] ?? 220) * pitch; zzfx(...p); };
+}
+
+/* ---------- Tone.js: real synths, effects and sequencing (for music games) ---------- */
+// Tone.js (tonejs.github.io, MIT) is big, so it loads the first time a game asks for it: call
+// Tone() in make() or reset() (the app waits while it loads, like physics). It plays through the
+// app's audio, so the player's volume and mute apply.
+//   const T = gs.sound.Tone();
+//   const synth = new T.PolySynth(T.Synth).toDestination();  synth.triggerAttackRelease(['C4', 'E4', 'G4'], '8n');
+const toneLib = lazy('Tone.js', () => import('tone').then(T => {
+  const a = audio(); if (!a) throw new Error('No audio on this device');
+  T.setContext(a.ctx);
+  const d = T.getDestination(); d.output.disconnect(); d.output.connect(a.out);
+  return T;
+}));
+/** The Tone.js library (loads it the first time). */
+export function Tone() { return toneLib.get(); }
+
 /* ---------- music ---------- */
-const playing = new Set();
+const playing = new Set(), held = new Set();   // tunes playing now, and tunes paused mid-way
 const DRUM = {
   k: (at, v) => { tone(150, { len: .12, wave: 'sine', vol: .14 * v, slide: -110, at }); },          // kick
   s: (at, v) => { noise(.12, { vol: .07 * v, from: 5000, to: 1500, filter: 'bandpass', q: .7, at }); },   // snare
@@ -121,7 +165,7 @@ const VOICE = { lead: ['square', .028], bass: ['triangle', .07], pad: ['sine', .
  * music({ tempo, steps, lead, bass, pad, arp, drums, vol, swing }): a looping tune. Each part is a
  * line of steps (eighth notes at the tempo): note names, '.' for a rest, '-' to hold the previous
  * note. drums use k (kick), s (snare), h (hi-hat), c (crash). Parts can be different lengths.
- * Returns { start(), stop(), speed(x), playing }. Keep tunes short and quiet: it plays under the game.
+ * Returns { start(), stop(), pause(), resume(), speed(x), playing }. Keep tunes short and quiet: it plays under the game.
  */
 export function music({ tempo = 120, vol = 1, swing = 0, ...parts } = {}) {
   const tracks = [];
@@ -149,13 +193,19 @@ export function music({ tempo = 120, vol = 1, swing = 0, ...parts } = {}) {
   }
   const m = {
     get playing() { return !!timer; },
-    start() { if (timer) return m; step = 0; next = 0; schedule(); timer = setInterval(schedule, 40); playing.add(m); return m; },
-    stop() { clearInterval(timer); timer = 0; playing.delete(m); return m; },
+    start() { if (timer) return m; step = 0; next = 0; schedule(); timer = setInterval(schedule, 40); playing.add(m); held.delete(m); return m; },
+    stop() { clearInterval(timer); timer = 0; playing.delete(m); held.delete(m); return m; },
+    /** Holds the tune where it is (resume() carries on from the same step). The app does this on pause. */
+    pause() { if (!timer) return m; clearInterval(timer); timer = 0; playing.delete(m); held.add(m); return m; },
+    resume() { if (timer || !held.has(m)) return m; held.delete(m); next = 0; schedule(); timer = setInterval(schedule, 40); playing.add(m); return m; },
     /** Plays faster (x > 1) or slower, for rising tension. */
     speed(x) { rate = Math.max(.25, Math.min(4, x)); return m; },
   };
   return m;
 }
 /** Stops every tune. The app calls it when a round ends or the player leaves a game. */
-export function stopMusic() { for (const m of [...playing]) m.stop(); }
-if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => { if (document.hidden) stopMusic(); });
+export function stopMusic() { for (const m of [...playing, ...held]) m.stop(); }
+/** Holds every playing tune; resumeMusic() carries them on. The app calls these when a game pauses. */
+export function pauseMusic() { for (const m of [...playing]) m.pause(); }
+export function resumeMusic() { for (const m of [...held]) m.resume(); }
+if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => { if (document.hidden) pauseMusic(); });

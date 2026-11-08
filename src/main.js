@@ -20,6 +20,11 @@ import { services } from './kit/services.js';
 import { initWallet, toast, shopHTML, bindShop } from './kit/wallet-ui.js';
 
 import { haptic } from './kit/device.js';
+import { pollPads } from './kit/gamepad.js';
+import { stopVision } from './kit/vision.js';
+import { stopMoves } from './kit/motion.js';
+// Things a game may leave running (music, the camera for face tracking, motion moves): stopped when a round ends or the player leaves.
+const stopKits=()=>{stopMusic();stopVision();stopMoves()};
 import { remote } from './remote.js';
 import { openSettings } from './settings.js';
 import { nativeARProbe, nativeARSupported } from './kit/native-ar.js';
@@ -30,7 +35,7 @@ import { speed, fpsFor, tick as tickHz } from './kit/speed.js';
 import { history } from './history.js';
 import { savesFor } from './saves.js';
 import { geoFor, roundStarted, roundEnded } from './geo.js';
-import { stopMusic } from './kit/sound.js';
+import { stopMusic, pauseMusic, resumeMusic } from './kit/sound.js';
 import { makeDebug } from './debug.js';
 import { shareGame, onSharedGame } from './share.js';
 import BUNDLED from 'virtual:bundled-games';
@@ -50,6 +55,18 @@ if (STREAM) remote.init(meta => { const g = { likes: 300 + hash(meta.id) % 6000,
 const feed=document.getElementById('feed');
 let slides=[],active=null,filter='all',lastId=null,io;
 
+// Makes the game. A game whose kit is still loading (the physics engine is a few MB, so it loads the
+// first time it's needed) throws an error carrying e.kitLoading: show a "loading" screen until it's in,
+// then make the game again.
+function bootGame(s){
+  try{s.game=s.def.make(s.api);s.game.reset();s.loading=false}
+  catch(e){
+    if(!e||!e.kitLoading)throw e;
+    s.loading=true;
+    s.game={reset(){},update(){},draw(c){const w=s.w||s.def.w,h=s.h||s.def.h;c.fillStyle='#111';c.fillRect(0,0,w,h);c.fillStyle='#bbb';c.font=`${Math.round(Math.min(w,h)/14)}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText('Loading…',w/2,h/2)}};
+    e.kitLoading.then(()=>{bootGame(s);s.dirty=true;renderOverlay(s)},err=>console.warn('kit failed to load',err));
+  }
+}
 function makeSlide(def){
   const el=document.createElement('section');el.className='slide '+(def.retro?'retro':'modern')+(def.era==='console'?' console':def.era==='nextgen'?' console nextgen':def.era==='ar'?' console nextgen ar':'');
   if(def.retro){const p=PAL[def.pal||'moss'];p.forEach((c,i)=>el.style.setProperty('--lcd'+i,c));el.style.setProperty('--shell',SHELL[def.pal||'moss']);}el.setAttribute('aria-label',def.title);
@@ -72,15 +89,15 @@ function makeSlide(def){
   const s={def,el,canvas:el.querySelector('canvas'),screen:el.querySelector('.screen'),overlay:el.querySelector('.overlay'),scoreEl:el.querySelector('.score'),
     state:'ready',score:0,overAt:0,dirty:true,w:def.w,h:def.h};
   s.ctx=s.canvas.getContext('2d');
-  s.game=def.make(s.api={
+  s.api={
     score:n=>{s.score=n;s.scoreEl.textContent=n;if(def.goal&&n>=def.goal)win(s)},
     over:()=>gameOver(s),
     win:()=>win(s),                                     // for games with a natural win (cleared the board, etc.)
     has:id=>!!(s.run&&s.run.items.has(id)),             // is this shop item active for the current run?
     ...savesFor(def.id),                                // save(data) / load(fallback) / clearSave(): this game's own save slot
     ...geoFor(def),                                     // location() / watchLocation(cb): rounded, only during a round (src/geo.js)
-  });
-  s.game.reset();
+  };
+  bootGame(s);
   // like
   const likeBtn=el.querySelector('.like'),liked=rating(def.id)>0||(rating(def.id)===0&&store.get('gs_like_'+def.id,false));
   // Shared counts come from the hearts backend; dev/test builds without it keep the old local number.
@@ -116,8 +133,8 @@ function openInfo(s){
   const d=s.def;
   if(!infoDlg){infoDlg=document.createElement('dialog');infoDlg.className='info';document.body.appendChild(infoDlg);
     infoDlg.addEventListener('click',e=>{if(e.target===infoDlg)infoDlg.close()});
-    infoDlg.addEventListener('close',()=>{const t=infoDlg._s;if(t){t.paused=false;lastT=performance.now();perf.gap()}})}
-  infoDlg._s=s;if(s.state==='playing')s.paused=true;
+    infoDlg.addEventListener('close',()=>{const t=infoDlg._s;if(t&&t.pauseWhy==='info')resumeGame(t)})}
+  infoDlg._s=s;pauseGame(s,'info');
   const kind=d.era==='console'?'Classic · Console game':d.era==='nextgen'?'Next Gen · Console game':d.era==='ar'?'AR 3D game: uses your camera and motion sensor':d.era==='advance'?'Advance-style pocket game':d.era==='color'?'Colour pocket game':d.retro?'Dot-matrix pocket game':'Phone game';
   infoDlg.innerHTML=`<div class="info-card"><button class="info-x" aria-label="Close">✕</button>
     <span class="tag">${d.tag}</span><h2>${d.title}</h2><div class="info-by">Created by <b>${creatorOf(d)}</b></div><div class="info-k">${kind}</div>
@@ -156,8 +173,35 @@ function goalHTML(d){
     :`<div class="ov-goal">Score ${d.goal} to win <b>◆${w?r:r*2}</b>${w?'':' (first win pays double)'}</div>`;
 }
 
+// Pause and resume. A round pauses when the app goes to the background (a call, the home button,
+// another app), while the How to play card is open, or on Escape / a controller's Start button. The
+// game hears about it through its optional pause() / resume() hooks (stop timers, the mic...), music
+// holds where it is, and the player taps "Carry on" to continue (the card resumes by itself on close).
+function pauseGame(s,why='away'){
+  if(!s||s.state!=='playing'||s.paused)return;
+  s.paused=true;s.pauseWhy=why;pauseMusic();
+  try{s.game.pause?.()}catch(e){console.error(s.def.id,e)}
+  if(why!=='info'){
+    let el=s.screen.querySelector('.pause-ov');
+    if(!el){el=document.createElement('div');el.className='overlay pause-ov';s.screen.appendChild(el);el.onclick=e=>{e.stopPropagation();resumeGame(s)}}
+    el.innerHTML=`<div class="ov-k">Paused</div><div class="ov-title">${s.def.title}</div><button class="play">${s.def.retro?'CONTINUE':'Carry on'}</button>`;
+    el.hidden=false;
+  }
+}
+function resumeGame(s){
+  if(!s||!s.paused)return;
+  s.paused=false;s.pauseWhy=null;const el=s.screen.querySelector('.pause-ov');if(el)el.hidden=true;
+  lastT=performance.now();perf.gap();
+  if(s.state!=='playing')return;
+  try{s.game.resume?.()}catch(e){console.error(s.def.id,e)}
+  resumeMusic();
+}
+function clearPause(s){s.paused=false;s.pauseWhy=null;const el=s.screen.querySelector('.pause-ov');if(el)el.hidden=true}
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&active)pauseGame(active,'away')});
+
 function startGame(s){
-  if(active!==s)return;
+  if(active!==s||s.loading)return;
+  clearPause(s);
   // Boosts the player owns for this game are used up on this run; unlocks stay on.
   s.run={items:new Set()};
   for(const it of s.def.shop||[])if(it.kind==='unlock'?progress.owned(s.def.id,it)>0:progress.use(s.def.id,it))s.run.items.add(it.id);
@@ -179,14 +223,14 @@ function awardTrophies(s){
   for(const t of checkTrophies()){toast(s.el,`🏆 ${t.name}`,'trophy');services.unlock(t.id);(s.trophies||=[]).push(t)}
 }
 function gameOver(s){
-  if(s.state!=='playing')return;
-  s.state='over';s.overAt=Date.now();stopMusic();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
+  if(s.state!=='playing')return;clearPause(s);
+  s.state='over';s.overAt=Date.now();stopKits();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(progress.score(s.def.id,s.score))s.newBest=true;
   awardTrophies(s);services.reportRun(s.def);
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){stopMusic();roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function resetSlide(s){stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
 function goPrev(s){
   const i=slides.indexOf(s);if(i<=0)return;
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
@@ -330,7 +374,7 @@ function openShared(id){
 }
 function setActive(s){
   if(active===s)return;
-  stopMusic();if(active&&active.state!=='ready')resetSlide(active);
+  stopKits();if(active&&active.state!=='ready')resetSlide(active);
   feed.classList.remove('locked');active=s;speed.game=s.def;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);
   topUp();schedulePrune();
 }
@@ -367,6 +411,7 @@ const DBG=import.meta.env.MODE==='bundled'?makeDebug():null;
 let lastT=performance.now();
 function frame(now){
   requestAnimationFrame(frame);
+  pollPads(padInput);
   tickHz(now);
   const s=active;
   // Frame rate per game and phone (src/kit/speed.js): on a 120 Hz screen a 60 fps game skips every
@@ -389,14 +434,26 @@ function frame(now){
   }
 }
 
-/* keyboard (desktop preview) */
-addEventListener('keydown',e=>{
-  const s=active;if(!s)return;
-  if(s.state==='playing'){if(s.game.key){s.game.key(e.key,true)}if([' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))e.preventDefault();return}
-  if(e.key===' '||e.key==='Enter'){e.preventDefault();if(Date.now()-s.overAt>550)startGame(s)}
-  else if(e.key==='ArrowDown'||e.key==='PageDown'){e.preventDefault();goNext(s)}
-});
-addEventListener('keyup',e=>{const s=active;if(s&&s.state==='playing'&&s.game.key)s.game.key(e.key,false)});
+/* keyboard (desktop preview) and game controllers (src/kit/gamepad.js turns pads into these keys) */
+function keyInput(k,down){
+  const s=active;if(!s)return false;
+  if(down&&k==='Escape'&&s.state==='playing'){s.paused?resumeGame(s):pauseGame(s,'key');return true}
+  if(s.state==='playing'){if(s.paused){if(down&&(k===' '||k==='Enter'))resumeGame(s);return true}if(s.game.key)s.game.key(k,down);return[' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(k)}
+  if(!down)return false;
+  if(k===' '||k==='Enter'){if(Date.now()-s.overAt>550)startGame(s);return true}
+  if(k==='ArrowDown'||k==='PageDown'){goNext(s);return true}
+  if(k==='ArrowUp'||k==='PageUp'){goPrev(s);return true}
+  return false;
+}
+function padInput(kind,k,down){
+  const s=active;if(!s)return;lastGameInput=performance.now();
+  if(kind==='start'){if(s.state==='playing'){s.paused?resumeGame(s):pauseGame(s,'pad')}else if(Date.now()-s.overAt>550)startGame(s);return}
+  keyInput(k,down);
+}
+addEventListener('keydown',e=>{if(e.repeat&&active&&active.state!=='playing')return;if(keyInput(e.key,true))e.preventDefault()});
+addEventListener('keyup',e=>{keyInput(e.key,false)});
+
+
 
 // Folding/unfolding a phone, rotating, or split-screen all arrive as a resize. Refit every
 // canvas and keep the current game snapped in place so a running game is not lost.

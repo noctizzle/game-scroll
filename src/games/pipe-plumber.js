@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Tap pipes to turn them so the water reaches the drain. The water starts flowing when the countdown hits zero.
 const R = PAL.ice, W = 160, H = 160, N = 6, CS = 22, OX = 14, OY = 20, Nb = 1, E = 2, S = 4, Wb = 8;

@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Five days running a lemonade stand. Each morning, read the forecast, then set how many cups to make
 // and what to charge. Hot days sell more and people pay more; rain keeps them home. Make the most money.

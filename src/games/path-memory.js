@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // A path lights up across the grid, one square at a time. Then retrace it by tapping the squares
 // in the same order. Each round the path gets one step longer. One wrong square ends it.

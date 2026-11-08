@@ -1,7 +1,8 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // Whack the critters as they pop up. Leave the ones in helmets alone. 40 seconds, three bumps allowed.
 const R = PAL.rose, W = 160, H = 160, HOLES = [...Array(9)].map((_, i) => ({ x: 30 + (i % 3) * 50, y: 46 + (i / 3 | 0) * 40 }));

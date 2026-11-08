@@ -83,8 +83,9 @@ npm run dev</code></pre>
 <h2 id="file">2. Write your game</h2>
 <p><b>Quickest start:</b> <code>npm run new my-game --style pocket</code> writes a small game that already plays, in any style (<code>phone</code>, <code>pocket</code>, <code>color</code>, <code>advance</code>, <code>console</code>, <code>nextgen</code> or <code>ar</code>). Then make it your own.</p>
 <p>Or start from scratch: create <code>src/games/tap-bubbles.js</code> (the file name must match the game's <code>id</code>). This is a complete, working game you can start from:</p>
-<pre><code>import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+<pre><code>import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
 
 const W = 360, H = 640;
 
@@ -169,10 +170,11 @@ export default {
 <p>AR · 3D is the newest style. The back camera fills the screen and the phone's motion sensor turns the 3D camera, so a saucer, a bin or a hoop stays put in the room while the player moves their phone around. Shadows fall on the real floor. It's "look-around" AR: players turn, tilt and look up and down on the spot, but walking isn't tracked.</p>
 <p>The games in the feed now show what works: <b>Saucer Swarm</b> (turn to aim, tap to zap saucers swooping round the room), <b>Bin Flick</b> (flick paper balls into a bin on your floor) and <b>Hoop Drone</b> (fly a tiny drone through glowing hoops wherever you point).</p>
 <h3>The AR kit</h3>
-<p>AR games use <code>src/kit/ar3d.js</code>, built on the Next Gen HD renderer, so you get real materials, reflections and shadows. A minimal AR game looks like this:</p>
-<pre><code>import { want } from '../kit/device.js';
-import { ARView, arNote, FLOOR } from '../kit/ar3d.js';
-import { pbr, rbox, THREE } from '../kit/hd3d.js';
+<p>AR games use <code>gs.ar</code>, built on the Next Gen HD renderer, so you get real materials, reflections and shadows. A minimal AR game looks like this:</p>
+<pre><code>import gs from '../gamescroll.js';
+const { want } = gs.device;
+const { ARView, arNote, FLOOR } = gs.ar;
+const { pbr, rbox, THREE } = gs.hd;
 
 function make(api) {
   want('motion');                      // iPhones ask for motion access on the Play tap
@@ -208,16 +210,20 @@ export default {
 <p>Test the fallback path with the usual checks (<code>smoke</code>, <code>fold</code>, <code>sweep</code>), then try it on a real phone, because the camera and motion sensor only work there. The full reference, including how to fake a camera in a headless browser, is in <a href="https://github.com/robthewizzuk/game-scroll/blob/main/docs/ar-3d.md">docs/ar-3d.md</a>.</p>
 
 <h2 id="phone">4. Sound, haptics and phone sensors</h2>
-<p>Import shared helpers from the app; it hands them to streamed games. A game can't import any other app code.</p>
+<p>Everything the app offers games comes through one import, <code>import gs from '../gamescroll.js'</code>. A game can't import any other app code. The main parts:</p>
 <ul>
-  <li><code>src/kit/sound.js</code>: ready-made sounds like <code>sounds.coin()</code> and <code>sounds.boom()</code>, explosions, jingles and looping music.</li>
-  <li><code>src/kit/juice.js</code>: particles, screen shake, smooth movement and "+10" pop-ups.</li>
-  <li><code>src/kit/controls.js</code>: thumbsticks, buttons, two-thumb layouts, and tap, hold and swipe detection.</li>
-  <li><code>src/kit/physics2d.js</code>: balls and boxes that bounce, stack and collide.</li>
-  <li><code>src/sfx.js</code>: <code>sfx(freq, duration, type, volume)</code> for short synth sounds. Respects mute.</li>
-  <li><code>src/kit/device.js</code>: <code>haptic()</code>, <code>buzz()</code>, <code>tilt()</code>, <code>onShake()</code>, <code>heading()</code>, <code>faceDown()</code>, <code>startMic()</code>, <code>startCamera()</code>.</li>
-  <li><code>src/kit/geo.js</code>: <code>distance()</code>, <code>bearing()</code>, <code>offset()</code>, <code>toLocal()</code> and <code>cellId()</code> for location games.</li>
-  <li><code>src/util.js</code> and <code>src/palettes.js</code>: maths helpers, pixel sprites, palettes.</li>
+  <li><code>gs.sound</code>: <code>sfx()</code> beeps, ready-made sounds like <code>sounds.coin()</code>, sounds you design with ZzFX, looping music, and Tone.js synths.</li>
+  <li><code>gs.effects</code>: one-call moments like <code>feel.coin()</code>, <code>feel.hit()</code> and <code>feel.boom()</code> (particles, shake, sound and haptics together).</li>
+  <li><code>gs.juice</code>: particles, screen shake, smooth movement and "+10" pop-ups.</li>
+  <li><code>gs.controls</code> and <code>gs.pad</code>: thumbsticks, buttons, tap, hold and swipe, and game controllers.</li>
+  <li><code>gs.physics</code> and <code>gs.physics3d</code>: real 2D and 3D physics (Rapier) with hinges, ropes, springs and a walking character.</li>
+  <li><code>gs.ai</code>: enemies that chase, flee, flock and find their way round walls (Yuka).</li>
+  <li><code>gs.pixel</code>: crisp pixel text and sprites drawn from text.</li>
+  <li><code>gs.moves</code>: swing, punch, throw, flip and twist the phone.</li>
+  <li><code>gs.vision</code>: play with your face or hands (MediaPipe, all on the phone).</li>
+  <li><code>gs.device</code>: <code>haptic()</code>, <code>buzz()</code>, <code>tilt()</code>, <code>onShake()</code>, <code>heading()</code>, <code>startMic()</code>, <code>startCamera()</code>.</li>
+  <li><code>gs.math</code>, <code>gs.util</code>, <code>gs.geo</code>, <code>gs.palettes</code>: seeded random, daily seeds, smooth noise, timers, palettes and location maths.</li>
+  <li><code>gs.toon</code>, <code>gs.hd</code>, <code>gs.ar</code>, <code>gs.fx3d</code>: the 3D kits, plus 3D text, 3D particles and screen effects.</li>
 </ul>
 <p>The <a href="https://github.com/robthewizzuk/game-scroll/blob/main/docs/maker-kit.md">maker kit guide</a> explains all of these with examples.</p>
 <p>Sensors return nothing in the browser or when a player says no, so <b>every sensor game needs a touch fallback</b>: drag instead of tilt, tap instead of shout. Stop the mic or camera when the round ends. Location, camera and mic data must never leave the phone.</p>
@@ -230,7 +236,7 @@ export default {
 api.location().then(here => {
   // { lat: 51.51, lon: -0.13, accuracy: 1100, real: true, precision: 'coarse' }
   // or the stand-in { lat: 0, lon: 0, real: false, reason: 'denied' | 'off' | 'unavailable' | 'not-playing' }
-  buildLevel(here.real ? cellId(here, 2000) : dailySeed);   // cellId from src/kit/geo.js
+  buildLevel(here.real ? cellId(here, 2000) : dailySeed);   // cellId from gs.geo
 });</code></pre>
 <ul>
   <li><b>Rounded for you.</b> <code>'coarse'</code> (use this unless you truly need more) rounds to about 1 km. <code>'precise'</code> rounds to about 10 m, for games played by walking, and a maintainer checks it's needed.</li>

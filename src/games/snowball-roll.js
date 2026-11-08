@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // Roll a snowball down the slope. It grows on fresh snow and shrinks on bare patches. Small balls
 // shatter on fences, big ones smash through. Rocks stop anything. Drag to steer.

@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A gauntlet of four-second micro games, back to back. Each one flashes a single word telling
 // you what to do: tap, catch, dodge, pop, stop, rub, plug, flick or wait. Win to keep going;

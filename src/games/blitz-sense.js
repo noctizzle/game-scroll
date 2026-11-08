@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic, want, tilt, calibrateTilt, onShake, startMic, stopMic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic, want, tilt, calibrateTilt, onShake, startMic, stopMic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // More four-second micro games, but these use the phone itself. Tilt to roll a ball into the hole,
 // blow to pop a balloon, shake a fizzy can, keep a tray level, hush when the baby sleeps, steer

@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // A pocket-sized mine field. Tap to dig, hold to plant a flag. Numbers count the bombs touching
 // that square. Your first dig is always safe. Clear a board to get a new, slightly nastier one.

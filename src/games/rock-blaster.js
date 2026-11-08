@@ -1,6 +1,7 @@
-import { rnd, disc } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { rnd, disc } = gs.util;
+const { PAL } = gs.palettes;
 
 // Fixed turret in the middle: touch to aim and fire at rocks drifting in from every side. Big rocks split.
 const R = PAL.ice, W = 160, H = 160, CX = 80, CY = 80;

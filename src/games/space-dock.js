@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // Fly your capsule into the station's docking port. Hold on the screen and the thruster pushes
 // AWAY from your finger, so touch behind the ship to push it forward. Arrive slow and lined up. Fuel is limited.

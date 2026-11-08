@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // A daily switch puzzle generated from your neighbourhood: everyone within a few kilometres gets the same boards today.
 // Tapping a lamp flips it and its four neighbours. Turn every lamp off. Solve as many boards as you can in 90 seconds.

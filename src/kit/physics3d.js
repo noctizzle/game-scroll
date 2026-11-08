@@ -1,0 +1,299 @@
+// 3D physics for Console, Next Gen and AR games: real rigid bodies, collisions, ray casts and a
+// character mover, from Rapier (rapier.rs, free, Apache-2.0). It works in the same units as your
+// three.js scene (metres, y up), and keeps your meshes in step with their bodies.
+//
+//   const { World3D } = gs.physics3d;
+//   reset() {
+//     phys = new World3D({ gravity: -20 });               // make it in make() or reset(), like 2D physics
+//     phys.ground(levelMesh);                             // solid, never moves: floors, walls, ramps (any mesh)
+//     crate = phys.box(crateMesh, 1, 1, 1);               // a falling crate that tumbles; the mesh follows it
+//     hero = phys.mover(heroMesh, { radius: .4, height: 1.8 });   // walks, climbs steps and slopes, can't go through walls
+//   }
+//   update(dt) {
+//     hero.walk(stickX * 6, stickY * 6);                  // metres per second along x and z
+//     if (tapped && hero.grounded) hero.jump(8);
+//     phys.step(dt);                                      // moves everything and updates the meshes
+//   }
+//   phys.onHit((a, b, speed) => { if (speed > 4) gs.effects... });
+//   const hit = phys.ray(from, dir, 50);                  // { thing, point, normal, distance } or null
+//
+// Like 2D physics the engine loads the first time a game needs it (the app waits for it).
+
+import { lazy } from './lazy.js';
+const engine = lazy('The 3D physics engine', () => import('@dimforge/rapier3d-compat').then(async m => {
+  const r = m.default?.init ? m.default : m;
+  await r.init();
+  return r;
+}));
+let R = null;
+export const loadPhysics3D = () => engine.load().then(r => (R = r));
+export const physics3DReady = () => engine.ready;
+
+const V = (x = 0, y = 0, z = 0) => ({ x, y, z });
+const vec = v => Array.isArray(v) ? V(v[0], v[1], v[2]) : V(v?.x, v?.y, v?.z);
+const ALL = 0xffff;
+
+/** One body. pos and vel are plain { x, y, z }; set them with place() and setVel(). mesh follows it. */
+class Body3 {
+  constructor(world, body, collider, kind, mesh, tag) {
+    this.world = world; this.body = body; this.collider = collider; this.kind = kind; this.mesh = mesh || null; this.tag = tag; this.dead = false;
+    body.userData = this;
+  }
+  get pos() { return this.body.translation(); }
+  get vel() { return this.body.linvel(); }
+  get spin() { return this.body.angvel(); }
+  get speed() { const v = this.body.linvel(); return Math.hypot(v.x, v.y, v.z); }
+  get fixed() { return this.body.isFixed(); }
+  get sleeping() { return this.body.isSleeping(); }
+  get mass() { return this.body.mass(); }
+  place(x, y, z, quat) {
+    const p = typeof x === 'object' ? vec(x) : V(x, y, z), q = typeof x === 'object' ? y : quat;
+    if (this.body.isKinematic()) { this.body.setNextKinematicTranslation(p); if (q) this.body.setNextKinematicRotation(q); }
+    else { this.body.setTranslation(p, true); if (q) this.body.setRotation(q, true); }
+    return this;
+  }
+  setVel(x, y, z) { this.body.setLinvel(typeof x === 'object' ? vec(x) : V(x, y, z), true); return this; }
+  setSpin(x, y, z) { this.body.setAngvel(typeof x === 'object' ? vec(x) : V(x, y, z), true); return this; }
+  /** An instant change of speed in metres per second: push(0, 6, 0) is a hop. */
+  push(x, y, z) { const m = this.body.mass(), v = typeof x === 'object' ? vec(x) : V(x, y, z); this.body.applyImpulse(V(v.x * m, v.y * m, v.z * m), true); return this; }
+  /** Spins it up (radians per second about each axis). */
+  twist(x, y, z) { const s = this.body.angvel(); this.body.setAngvel(V(s.x + x, s.y + y, s.z + z), true); return this; }
+  touching() {
+    const out = [];
+    this.world.world.contactPairsWith(this.collider, c => { const t = c.parent()?.userData; if (t && t !== this) out.push(t); });
+    return out;
+  }
+  remove() { this.world.remove(this); }
+  sync() {
+    if (!this.mesh) return;
+    const p = this.body.translation(), q = this.body.rotation();
+    this.mesh.position.set(p.x, p.y, p.z); this.mesh.quaternion.set(q.x, q.y, q.z, q.w);
+  }
+}
+
+/** A character that walks into walls without going through them, climbs steps and slopes and stays on the ground. */
+class Mover {
+  constructor(world, mesh, { radius = .4, height = 1.8, step = .35, slope = 50, gravity, at } = {}) {
+    this.world = world; this.mesh = mesh || null; this.radius = radius; this.height = height;
+    const p = at ? vec(at) : mesh ? vec(mesh.position) : V();
+    this.half = Math.max(0, height / 2 - radius);   // mesh and `at` are the feet; the body is the middle
+    this.body = world.world.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(p.x, p.y + height / 2, p.z));
+    this.collider = world.world.createCollider(R.ColliderDesc.capsule(this.half, radius), this.body);
+    this.body.userData = this; this.tag = 'mover'; this.kind = 'mover'; this.dead = false;
+    this.ctl = world.world.createCharacterController(.02);
+    this.ctl.enableAutostep(step, radius * .5, true);
+    this.ctl.enableSnapToGround(step);
+    this.ctl.setMaxSlopeClimbAngle(slope * Math.PI / 180);
+    this.ctl.setApplyImpulsesToDynamicBodies(true);
+    this.gravity = gravity ?? world.gravity.y;
+    this.vx = 0; this.vy = 0; this.vz = 0; this.grounded = false; this.dx = 0; this.dz = 0;
+    world.movers.push(this);
+  }
+  get pos() { return this.body.translation(); }
+  /** Walks at (vx, vz) metres per second this frame (call every update; 0, 0 stands still). */
+  walk(vx, vz) { this.vx = vx; this.vz = vz; return this; }
+  /** Jumps at `speed` metres per second (only does anything on the ground unless force is true). */
+  jump(speed = 7, force = false) { if (this.grounded || force) { this.vy = speed; this.grounded = false; } return this; }
+  /** Feet position. */
+  get feet() { const p = this.body.translation(); return V(p.x, p.y - this.height / 2, p.z); }
+  /** Moves it straight to (x, y, z), its feet. */
+  place(x, y, z) { const p = typeof x === 'object' ? vec(x) : V(x, y, z); p.y += this.height / 2; this.body.setTranslation(p, true); this.body.setNextKinematicTranslation(p); this.vy = 0; return this; }
+  move(dt) {
+    this.vy += this.gravity * dt;
+    if (this.grounded && this.vy < 0) this.vy = Math.max(this.vy, -2);
+    const want = V(this.vx * dt, this.vy * dt, this.vz * dt);
+    this.ctl.computeColliderMovement(this.collider, want, undefined, undefined, c => c !== this.collider && !c.isSensor());
+    const m = this.ctl.computedMovement(), p = this.body.translation();
+    this.grounded = this.ctl.computedGrounded();
+    if (this.grounded && this.vy < 0) this.vy = 0;
+    if (want.y > 0 && m.y < want.y * .5) this.vy = 0;   // hit a ceiling
+    this.dx = m.x; this.dz = m.z;
+    this.body.setNextKinematicTranslation(V(p.x + m.x, p.y + m.y, p.z + m.z));
+  }
+  sync() {
+    if (!this.mesh) return;
+    const p = this.body.translation(); this.mesh.position.set(p.x, p.y - this.height / 2, p.z);
+  }
+  remove() { this.world.remove(this); }
+}
+
+export class World3D {
+  /** gravity: metres per second² (negative is down), or { x, y, z }. */
+  constructor({ gravity = -20 } = {}) {
+    R = engine.get();
+    this.R = R;
+    this.gravity = typeof gravity === 'number' ? V(0, gravity, 0) : vec(gravity);
+    this.world = new R.World(this.gravity);
+    this.events = new R.EventQueue(true);
+    this.bodies = []; this.movers = []; this.hits = []; this.joints = [];
+  }
+  make(mesh, desc, o, kind) {
+    const D = o.fixed ? R.RigidBodyDesc.fixed() : o.moving ? R.RigidBodyDesc.kinematicPositionBased() : R.RigidBodyDesc.dynamic();
+    const p = o.at ? vec(o.at) : mesh ? vec(mesh.position) : V();
+    D.setTranslation(p.x, p.y, p.z).setLinearDamping(o.drag ?? 0).setAngularDamping(o.spinDrag ?? .05).setGravityScale(o.gravity ?? 1).setCcdEnabled(!!o.bullet);
+    if (mesh?.quaternion) D.setRotation({ x: mesh.quaternion.x, y: mesh.quaternion.y, z: mesh.quaternion.z, w: mesh.quaternion.w });
+    if (o.vel) { const v = vec(o.vel); D.setLinvel(v.x, v.y, v.z); }
+    if (o.noSpin) D.lockRotations();
+    const body = this.world.createRigidBody(D);
+    desc.setDensity(o.density ?? 1).setFriction(o.friction ?? .5).setRestitution(o.bounce ?? .1).setSensor(!!o.sensor)
+      .setActiveEvents(R.ActiveEvents.COLLISION_EVENTS);
+    if (o.group) { const bit = 1 << Math.max(0, Math.min(14, o.group)); desc.setCollisionGroups(((bit & ALL) << 16) | (ALL & ~bit)); }
+    const collider = this.world.createCollider(desc, body);
+    const b = new Body3(this, body, collider, kind, mesh, o.tag);
+    this.bodies.push(b); b.sync();
+    return b;
+  }
+  /**
+   * Options for every body: bounce, friction, density, fixed, moving (you place() it: lifts, doors),
+   * sensor (reports hits, doesn't push: pickups, goals), bullet (fast), noSpin, drag, gravity
+   * (multiplier), vel, group (1-14: same group never collide), at (start position if no mesh), tag.
+   */
+  ball(mesh, r = .5, o = {}) { return this.make(mesh, R.ColliderDesc.ball(r), o, 'ball'); }
+  /** A box of full size w × h × d. */
+  box(mesh, w = 1, h = 1, d = 1, o = {}) { return this.make(mesh, R.ColliderDesc.cuboid(w / 2, h / 2, d / 2), o, 'box'); }
+  /** An upright capsule (pill): good for people and bottles. height includes the round ends. */
+  capsule(mesh, radius = .4, height = 1.8, o = {}) { return this.make(mesh, R.ColliderDesc.capsule(Math.max(0, height / 2 - radius), radius), o, 'capsule'); }
+  /** A dynamic body shaped like the mesh's outline (a convex hull of its points): rocks, gems, odd props. */
+  hull(mesh, o = {}) {
+    const { vertices } = meshData(mesh, false);
+    const desc = R.ColliderDesc.convexHull(vertices); if (!desc) throw new Error('hull() needs a mesh with some volume');
+    return this.make(mesh, desc, o, 'hull');
+  }
+  /** Makes a mesh (and everything inside it) solid and fixed: the level, floors, walls, ramps. */
+  ground(mesh, o = {}) {
+    mesh.updateMatrixWorld?.(true);
+    const { vertices, indices } = meshData(mesh, true);
+    if (!indices.length) return null;
+    return this.make(null, R.ColliderDesc.trimesh(vertices, indices), { ...o, fixed: true, at: V() }, 'ground');
+  }
+  /** A flat floor at height y (endless, invisible). */
+  floor(y = 0, o = {}) { return this.make(null, R.ColliderDesc.cuboid(1000, .5, 1000), { ...o, fixed: true, at: V(0, y - .5, 0) }, 'floor'); }
+  /** A character controller (see Mover above): radius, height, step (tallest step it climbs), slope (degrees), at. */
+  mover(mesh, o = {}) { return new Mover(this, mesh, o); }
+
+  /* joints: a or b null = the fixed world; points are world positions */
+  local(t, p) {
+    const b = t ? t.body : null; p = vec(p);
+    if (!b) return p;
+    const q = b.rotation(), c = b.translation(), d = V(p.x - c.x, p.y - c.y, p.z - c.z);
+    return rotate(d, { x: -q.x, y: -q.y, z: -q.z, w: q.w });
+  }
+  ground0() { return this._g ||= this.world.createRigidBody(R.RigidBodyDesc.fixed()); }
+  joint(data, a, b) {
+    const j = this.world.createImpulseJoint(data, a ? a.body : this.ground0(), b ? b.body : this.ground0(), true);
+    const h = { joint: j, a, b, remove: () => { if (this.world.getImpulseJoint(j.handle)) this.world.removeImpulseJoint(j, true); this.joints = this.joints.filter(x => x !== h); } };
+    this.joints.push(h); return h;
+  }
+  /** A hinge at point p turning about axis (default y: a door). min/max limit the swing (radians); motor spins it. */
+  hinge(a, b, p, axis = V(0, 1, 0), o = {}) {
+    const h = this.joint(R.JointData.revolute(this.local(a, p), this.local(b, p), vec(axis)), a, b);
+    if (o.min != null || o.max != null) h.joint.setLimits(o.min ?? -Math.PI, o.max ?? Math.PI);
+    if (o.motor != null) h.joint.configureMotorVelocity(o.motor, o.strength ?? 50);
+    h.motor = (speed, strength = o.strength ?? 50) => h.joint.configureMotorVelocity(speed, strength);
+    return h;
+  }
+  /** A ball-and-socket at p: things hang and swing any way (chains, wrecking balls, ragdoll joints). */
+  pin(a, b, p) { return this.joint(R.JointData.spherical(this.local(a, p), this.local(b, p)), a, b); }
+  /** Glues b to a where they are now. */
+  weld(a, b) {
+    const p = (b || a).pos, qa = a ? a.body.rotation() : { x: 0, y: 0, z: 0, w: 1 }, qb = b ? b.body.rotation() : { x: 0, y: 0, z: 0, w: 1 };
+    return this.joint(R.JointData.fixed(this.local(a, p), qa, this.local(b, p), qb), a, b);
+  }
+  /** A spring between point pa on a and pb on b. stiffness: bounces per second; damping 0..1. */
+  spring(a, b, pa, pb, { stiffness = 3, damping = .3, length } = {}) {
+    const m = Math.max(.01, Math.min(a && !a.fixed ? a.mass : Infinity, b && !b.fixed ? b.mass : Infinity) || 1), w = 2 * Math.PI * stiffness;
+    const A = vec(pa), B = vec(pb), rest = length ?? Math.hypot(B.x - A.x, B.y - A.y, B.z - A.z);
+    return this.joint(R.JointData.spring(rest, m * w * w, 2 * m * damping * w, this.local(a, A), this.local(b, B)), a, b);
+  }
+  /** A leash: pa and pb can't get further apart than length. */
+  leash(a, b, pa, pb, length) {
+    const A = vec(pa), B = vec(pb);
+    return this.joint(R.JointData.rope(length ?? Math.hypot(B.x - A.x, B.y - A.y, B.z - A.z), this.local(a, A), this.local(b, B)), a, b);
+  }
+
+  remove(t) {
+    if (!t || t.dead) return; t.dead = true;
+    this.joints = this.joints.filter(j => j.a !== t && j.b !== t);
+    this.world.removeRigidBody(t.body);
+    this.bodies = this.bodies.filter(x => x !== t); this.movers = this.movers.filter(x => x !== t);
+  }
+  clear() { for (const t of [...this.bodies, ...this.movers]) this.remove(t); }
+
+  /** First thing along a ray from `from` in direction `dir` (needn't be normalised), up to max metres. */
+  ray(from, dir, max = 100, filter = t => !t.collider.isSensor()) {
+    const o = vec(from), d = vec(dir), l = Math.hypot(d.x, d.y, d.z) || 1, n = V(d.x / l, d.y / l, d.z / l);
+    const hit = this.world.castRayAndGetNormal(new R.Ray(o, n), max, true, undefined, undefined, undefined, undefined,
+      c => { const t = c.parent()?.userData; return !!t && filter(t); });
+    if (!hit) return null;
+    const s = hit.timeOfImpact;
+    return { thing: hit.collider.parent()?.userData || null, point: V(o.x + n.x * s, o.y + n.y * s, o.z + n.z * s), normal: V(hit.normal.x, hit.normal.y, hit.normal.z), distance: s };
+  }
+  /** Every body within radius of a point. */
+  near(p, radius) {
+    const out = new Set(), c = vec(p);
+    this.world.intersectionsWithShape(c, { x: 0, y: 0, z: 0, w: 1 }, new R.Ball(radius), col => { const t = col.parent()?.userData; if (t) out.add(t); return true; });
+    return [...out];
+  }
+  /** Throws everything near p outward (metres per second at the centre). */
+  blast(p, radius, strength = 10) {
+    const c = vec(p);
+    for (const t of this.near(c, radius)) {
+      if (!(t instanceof Body3) || t.fixed || t.body.isKinematic()) continue;
+      const q = t.pos, dx = q.x - c.x, dy = q.y - c.y + .3, dz = q.z - c.z, d = Math.hypot(dx, dy, dz) || 1, k = strength * Math.max(0, 1 - d / radius);
+      if (k > 0) t.push(dx / d * k, dy / d * k, dz / d * k);
+    }
+  }
+  /** fn(a, b, speed) when two things start touching; speed is how fast they met (m/s). Safe to remove things in it. */
+  onHit(fn) { this.hits.push(fn); return this; }
+
+  step(dt) {
+    if (!(dt > 0)) return;
+    dt = Math.min(dt, 1 / 15);
+    const n = Math.max(1, Math.ceil(dt * 60 - .01)), h = dt / n;
+    const before = new Map();
+    if (this.hits.length) for (const t of this.bodies) if (!t.fixed) before.set(t, t.body.linvel());
+    const started = [];
+    this.world.timestep = h;
+    for (let i = 0; i < n; i++) {
+      for (const m of this.movers) m.move(h);
+      this.world.step(this.events);
+      this.events.drainCollisionEvents((h1, h2, on) => { if (on) started.push([h1, h2]); });
+    }
+    for (const t of this.bodies) t.sync();
+    for (const m of this.movers) m.sync();
+    for (const [h1, h2] of started) {
+      const c1 = this.world.getCollider(h1), c2 = this.world.getCollider(h2); if (!c1 || !c2) continue;
+      const a = c1.parent()?.userData, b = c2.parent()?.userData; if (!a || !b || a.dead || b.dead) continue;
+      const va = before.get(a) || V(), vb = before.get(b) || V();
+      const speed = Math.hypot(vb.x - va.x, vb.y - va.y, vb.z - va.z);
+      for (const fn of this.hits) fn(a, b, speed);
+    }
+    for (const t of [...this.bodies]) if (!t.fixed && Math.abs(t.pos.y) > 1e4) this.remove(t);
+  }
+}
+
+function rotate(v, q) {   // v rotated by quaternion q
+  const ix = q.w * v.x + q.y * v.z - q.z * v.y, iy = q.w * v.y + q.z * v.x - q.x * v.z, iz = q.w * v.z + q.x * v.y - q.y * v.x, iw = -q.x * v.x - q.y * v.y - q.z * v.z;
+  return V(ix * q.w + iw * -q.x + iy * -q.z - iz * -q.y, iy * q.w + iw * -q.y + iz * -q.x - ix * -q.z, iz * q.w + iw * -q.z + ix * -q.y - iy * -q.x);
+}
+
+// Every triangle of a mesh and its children, in world space (or the mesh's own space for hulls).
+function meshData(root, world) {
+  const verts = [], idx = [];
+  root.updateMatrixWorld?.(true);
+  const inv = world ? null : root.matrixWorld?.clone?.().invert();
+  root.traverse?.(o => {
+    if (!o.isMesh || !o.geometry?.attributes?.position) return;
+    const pos = o.geometry.attributes.position, base = verts.length / 3, m = o.matrixWorld.clone();
+    if (inv) m.premultiply(inv);
+    const e = m.elements;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      verts.push(e[0] * x + e[4] * y + e[8] * z + e[12], e[1] * x + e[5] * y + e[9] * z + e[13], e[2] * x + e[6] * y + e[10] * z + e[14]);
+    }
+    const index = o.geometry.index;
+    if (index) for (let i = 0; i < index.count; i++) idx.push(base + index.getX(i));
+    else for (let i = 0; i < pos.count; i++) idx.push(base + i);
+  });
+  return { vertices: new Float32Array(verts), indices: new Uint32Array(idx) };
+}

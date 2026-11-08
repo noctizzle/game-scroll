@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A hungry tyrant lizard stomps through the valley. Tap to snap your jaws at whatever is in front;
 // swipe up to leap. Small grazers and darting lizards fill your belly and make you grow. Don't

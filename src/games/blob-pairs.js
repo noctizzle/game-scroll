@@ -1,5 +1,6 @@
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
 
 // Pairs of jelly blobs drop into a well. Slide them with your finger, tap to spin, flick down to
 // drop. Four or more touching blobs of one colour pop, and blobs that fall into new groups pop as

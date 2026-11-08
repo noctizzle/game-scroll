@@ -1,6 +1,7 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { onShake, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { onShake, haptic } = gs.device;
+const { rnd } = gs.util;
 
 // A push-your-luck dice duel against the house. Shake the phone (or tap ROLL) to roll: every roll adds
 // to your pot, but a 1 wipes the pot and ends your turn. BANK to keep it. First to 40 wins.

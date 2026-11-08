@@ -1,6 +1,7 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
 
 // A match-three with no swapping: drag a whole row or column and it slides round like a loop.
 // Line up three or more of a kind to clear them. A slide that makes no match springs back for free. 20 slides.

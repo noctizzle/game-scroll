@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { haptic, want, tilt, calibrateTilt } from '../kit/device.js';
-import { HDView, Particles, pbr, rbox, surface, speckle, sun, THREE } from '../kit/hd3d.js';
-import { sounds, noise, tone } from '../kit/sound.js';
+import gs from '../gamescroll.js';
+const { sounds, noise, tone } = gs.sound;
+const { haptic, want, tilt, calibrateTilt } = gs.device;
+const { clamp, rnd } = gs.util;
+const { HDView, Particles, pbr, rbox, surface, speckle, sun, THREE } = gs.hd;
 const { Group, Mesh, InstancedMesh, Object3D, Vector3, BufferGeometry, BufferAttribute, ConeGeometry, CylinderGeometry, TorusGeometry, BoxGeometry, SphereGeometry, PlaneGeometry, MeshBasicMaterial, AdditiveBlending, Color } = THREE;
 
 // Canyon Ace: fly a jet low through a winding desert canyon. Tilt the phone to fly (or drag like a

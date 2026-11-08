@@ -1,7 +1,8 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
+const { PAL } = gs.palettes;
 
 // Is the sum right or wrong? Tap the left half for YES and the right half for NO.
 // Sums get harder and the timer gets shorter. One wrong answer or timeout ends it.

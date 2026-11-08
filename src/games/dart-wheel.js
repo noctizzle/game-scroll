@@ -1,6 +1,7 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { rnd } = gs.util;
 
 // Tap to throw darts into the spinning wheel. Hit a dart that's already there and the run ends. Fill the quota to break the wheel.
 const W = 360, H = 640, CX = W / 2, CY = 230, RAD = 78, DL = 64, THROW_Y = 560;

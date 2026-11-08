@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Drag the crane along its rail to swing the wrecking ball, and smash the tower down before time
 // runs out. Bricks you knock loose fly off; anything left hanging in the air drops. Glass panes score double.

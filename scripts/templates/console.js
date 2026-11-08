@@ -1,11 +1,12 @@
 // __TITLE__: a starter Classic · Console game made with `npm run new`. Change anything you like.
 // Real-time cel-shaded 3D (src/kit/toon3d.js, see docs/console-3d.md) with game logic in plain 2D
 // units. Shows the on-screen joystick, juice for the 2D effects on top, and sounds.
-import { haptic } from '../kit/device.js';
-import { View, G, part, grp, blob } from '../kit/toon3d.js';
-import { Juice } from '../kit/juice.js';
-import { sounds } from '../kit/sound.js';
-import { Stick, Keys } from '../kit/controls.js';
+import gs from '../gamescroll.js';
+const { sounds } = gs.sound;
+const { haptic } = gs.device;
+const { Juice } = gs.juice;
+const { Stick, Keys } = gs.controls;
+const { View, G, part, grp, blob } = gs.toon;
 
 let W = 192, H = 160;
 

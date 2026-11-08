@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Fence off the field. Drag to move; leaving claimed ground draws a line. Get back to claimed ground to fill the area
 // the spark is NOT in. If the spark touches your line, you're out. Claim 75% to clear the level.

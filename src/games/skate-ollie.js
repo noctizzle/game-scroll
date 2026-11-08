@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Skate down the street. Tap to ollie over cones, benches and gaps. While in the air, swipe left or right
 // to spin a kickflip, up for a grab: each trick scores if it finishes before you land.

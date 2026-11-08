@@ -1,8 +1,9 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { backdrop, glow } from '../kit/gfx.js';
-import { brick, stud, BRICK_KEYS } from '../kit/bricks.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { backdrop, glow } = gs.gfx;
+const { brick, stud, BRICK_KEYS } = gs.bricks;
 
 // A little builder walks right toward the flag, stopping at anything in the way. Press and hold a
 // pile of bouncing bricks to build what's needed: a bridge over a gap, steps up a ledge, a lever

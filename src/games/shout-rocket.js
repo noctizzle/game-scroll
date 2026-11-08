@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { startMic, stopMic, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { startMic, stopMic, haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Your voice is the throttle: make noise to climb, go quiet to fall, and fly through the rings. Holding the screen also thrusts.
 const W = 360, H = 640, RX = 90;

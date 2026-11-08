@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Vertical space shooter. Drag anywhere to fly; your ship fires on its own. Catch the P orbs to
 // widen your shot. A hit knocks your power down a level, and a hit with no power left ends the run.

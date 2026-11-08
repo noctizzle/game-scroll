@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { startCamera, stopCamera, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { startCamera, stopCamera, haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Point your camera at something in the real world that matches the colour card and tap to snap it.
 // Without a camera you hunt through a painted scene instead (drag to look around).

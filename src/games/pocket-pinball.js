@@ -1,7 +1,8 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
+const { PAL } = gs.palettes;
 
 // One-table pinball: tap and hold the left or right half of the screen to flip. Hit bumpers and lanes. Three balls.
 const R = PAL.ice, W = 160, H = 160, BR = 3, G = 160;

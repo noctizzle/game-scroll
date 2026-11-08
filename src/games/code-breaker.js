@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Crack a hidden code of four symbols (six kinds, repeats allowed) in eight tries. After each guess,
 // a black pip means right symbol, right place; a white pip means right symbol, wrong place.

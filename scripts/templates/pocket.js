@@ -1,10 +1,11 @@
 // __TITLE__: a starter Dot matrix (Pocket) game made with `npm run new`. Change anything you like.
 // Four shades only, crisp pixels. Shows the controls kit (a slider stick), pixel juice and music.
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
-import { Juice } from '../kit/juice.js';
-import { sounds, music } from '../kit/sound.js';
-import { Stick, Keys } from '../kit/controls.js';
+import gs from '../gamescroll.js';
+const { sounds, music } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
+const { Juice } = gs.juice;
+const { Stick, Keys } = gs.controls;
 
 const R = PAL.moss;            // R[0] darkest ... R[3] lightest (the background)
 let W = 160, H = 160;

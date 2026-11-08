@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // A shooting gallery with a rubber band. Drag back from the bottom to aim and stretch, let go to fire.
 // Tins slide along three shelves; knock them off. A bigger stretch flies straighter. 15 bands.

@@ -1,11 +1,12 @@
 // __TITLE__: a starter Next Gen · Console game made with `npm run new`. Change anything you like.
 // Modern HD 3D (src/kit/hd3d.js, see docs/nextgen-3d.md): PBR materials, real shadows, bloom and
 // GPU particles. Shows the two-thumb layout (stick + boost button), sounds and 2D juice for the HUD.
-import { haptic } from '../kit/device.js';
-import { HDView, Particles, pbr, rbox, sun, surface, speckle, THREE } from '../kit/hd3d.js';
-import { Juice } from '../kit/juice.js';
-import { sounds } from '../kit/sound.js';
-import { twoThumb, Keys } from '../kit/controls.js';
+import gs from '../gamescroll.js';
+const { sounds } = gs.sound;
+const { haptic } = gs.device;
+const { Juice } = gs.juice;
+const { twoThumb, Keys } = gs.controls;
+const { HDView, Particles, pbr, rbox, sun, surface, speckle, THREE } = gs.hd;
 
 let W = 300, H = 300;
 const ARENA = 9;   // metres from the centre to the edge

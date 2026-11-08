@@ -1,6 +1,7 @@
-import { clamp, rnd, pix } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { clamp, rnd, pix } = gs.util;
+const { PAL } = gs.palettes;
 
 // Fixed shooter: drag to move your cannon, it fires on its own. Clear each marching formation before it lands.
 const R = PAL.amber, W = 160, H = 160, PY = 146;

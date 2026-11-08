@@ -1,7 +1,8 @@
-import { sfx } from '../sfx.js';
-import { haptic, want } from '../kit/device.js';
-import { ARView, arNote, FLOOR } from '../kit/ar3d.js';
-import { pbr, THREE } from '../kit/hd3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic, want } = gs.device;
+const { pbr, THREE } = gs.hd;
+const { ARView, arNote, FLOOR } = gs.ar;
 const { Group, Mesh, BoxGeometry, PlaneGeometry, EdgesGeometry, LineSegments, LineBasicMaterial, MeshBasicMaterial, DoubleSide } = THREE;
 
 // AR Lab: a test scene for native AR (not in the feed; open it from Settings > AR test).

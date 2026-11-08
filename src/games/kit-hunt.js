@@ -1,8 +1,9 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { backdrop, box, shadow, glow } from '../kit/gfx.js';
-import { brick, stud, BRICK_KEYS } from '../kit/bricks.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { backdrop, box, shadow, glow } = gs.gfx;
+const { brick, stud, BRICK_KEYS } = gs.bricks;
 
 // Five kit pieces are hidden inside the brick furniture in this room. Hold and drag your finger
 // around to use the detector: the meter climbs, it beeps faster and your phone buzzes harder as

@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Customers line up with burger orders. Tap the ingredients to stack them in the order on the ticket,
 // then tap SERVE. Quick service earns tips. A wrong burger goes in the bin; three walk-outs and you're closed.

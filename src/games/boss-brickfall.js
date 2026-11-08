@@ -1,9 +1,10 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { ball, glow, backdrop } from '../kit/gfx.js';
-import { brick, stud, brick3d, BRICK, BRICK_KEYS } from '../kit/bricks.js';
-import { View, G, part, grp, blob, toon, THREE } from '../kit/toon3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { ball, glow, backdrop } = gs.gfx;
+const { brick, stud, brick3d, BRICK, BRICK_KEYS } = gs.bricks;
+const { View, G, part, grp, blob, toon, THREE } = gs.toon;
 const { Group } = THREE;
 const coreA = toon('#f8e040', { glow: 1 }), coreB = toon('#f8a020', { glow: 1 }), coreOff = toon('#404048');
 

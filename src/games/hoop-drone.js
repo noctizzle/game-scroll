@@ -1,8 +1,9 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic, want } from '../kit/device.js';
-import { ARView, arNote, FLOOR } from '../kit/ar3d.js';
-import { Particles, pbr, rbox, THREE } from '../kit/hd3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic, want } = gs.device;
+const { clamp, rnd } = gs.util;
+const { Particles, pbr, rbox, THREE } = gs.hd;
+const { ARView, arNote, FLOOR } = gs.ar;
 const { Group, Mesh, TorusGeometry, CylinderGeometry, IcosahedronGeometry, ConeGeometry, Vector3 } = THREE;
 
 // Hoop Drone: a tiny racing drone buzzes round your room and flies wherever you point the phone.

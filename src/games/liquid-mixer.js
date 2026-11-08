@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Hold the paint taps to pour red, yellow, blue and white into the glass, then serve when it
 // matches the sample. Paint mixes like paint (blue + yellow makes green). Score under 75% and you're done.

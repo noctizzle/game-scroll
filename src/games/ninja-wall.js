@@ -1,7 +1,8 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // Climb a shaft by leaping between two walls. Tap to jump across. Spikes grow out of the walls
 // and birds fly across the gap. Tapping mid-air does nothing, so time each leap.

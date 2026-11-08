@@ -4,32 +4,56 @@ Ready-made tools for making games feel good, so you can spend your time on the i
 plumbing. Everything here is built into the app, made in code (no image or sound files), and works
 in every style. The `npm run new` templates use all of it, so they are the quickest way to see it.
 
-| You want | Use | Module |
+Games use all of it through one import, `gs`:
+
+```js
+import gs from '../gamescroll.js';
+const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
+```
+
+| You want | Use | Section |
 | --- | --- | --- |
 | A working game to start from | `npm run new my-game --style pocket` | [Starter templates](#starter-templates) |
 | To remember things between plays | `api.save(data)`, `api.load(fallback)` | [Save slots](#save-slots) |
-| A level from where the player is, or walking to play | `api.location()`, `api.watchLocation(cb)` | [Location](#location) + `src/kit/geo.js` |
-| Particles, screen shake, smooth movement, "+10" pop-ups | `Juice`, `ease`, `Tweens` | [`src/kit/juice.js`](#juice) |
-| Explosions, jingles, music, ready-made sounds | `sounds`, `noise`, `notes`, `music` | [`src/kit/sound.js`](#sound) |
-| A thumbstick, buttons, tap / hold / swipe | `Stick`, `Button`, `Gestures`, `twoThumb` | [`src/kit/controls.js`](#controls) |
-| Things that fall, bounce, stack and collide | `World` | [`src/kit/physics2d.js`](#physics) |
+| To pause cleanly | `pause()` / `resume()` hooks | [Pause and resume](#pause-and-resume) |
+| A level from where the player is, or walking to play | `api.location()`, `gs.geo` | [Location](#location) |
+| Coin, hit, boom, hurt... in one line | `gs.effects.Feel` | [Effects](#effects) |
+| Particles, screen shake, smooth movement, "+10" pop-ups | `gs.juice` | [Juice](#juice) |
+| Explosions, jingles, music, designed sounds, synths | `gs.sound` | [Sound](#sound) |
+| A thumbstick, buttons, tap / hold / swipe | `gs.controls` | [Controls](#controls) |
+| Game controllers, analog sticks, rumble | `gs.pad` | [Game controllers](#game-controllers) |
+| Swing, punch, throw, flip, twist the phone | `gs.moves` | [Motion moves](#motion-moves) |
+| Crisp pixel text, sprites drawn from text | `gs.pixel` | [Pixel text and sprites](#pixel-text-and-sprites) |
+| Things that spin, tumble, hinge, swing on ropes | `gs.physics` (Rapier) | [Physics](#physics) |
+| 3D bodies, level collisions, a walking character | `gs.physics3d` (Rapier) | [3D physics](#3d-physics) |
+| Enemies that chase, flee, flock, find a path | `gs.ai` (Yuka) | [AI](#ai) |
+| Seeded random, daily seed, smooth noise, timers | `gs.math` | [Maths](#maths) |
+| 3D text, 3D particles, outlines, glitch, trails | `gs.fx3d` | [3D extras](#3d-extras) |
+| Play with your face or your hands | `gs.vision` (MediaPipe) | [Face and hands](#face-and-hands) |
 | To see frame rate, hitboxes, slow motion | press `` ` `` in `npm run dev` | [Debug overlay](#debug-overlay) |
 
-## Which shared code a game may use
+## What `gs` has, and what it doesn't
 
-A game may import only these modules (the list lives in `src/game-modules.js`):
+`gs` is a frozen object with one group per job: `sound`, `device`, `util`, `math`, `palettes`,
+`juice`, `effects`, `controls`, `pad`, `moves`, `pixel`, `gfx`, `bricks`, `physics`, `physics3d`,
+`ai`, `toon` (Classic Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo` and `THREE`.
+It is the only thing a game may import (`src/game-modules.js`); `npm run games` refuses anything
+else and the PR check flags it.
 
-`src/sfx.js`, `src/util.js`, `src/palettes.js`, `src/kit/device.js`, `src/kit/gfx.js`,
-`src/kit/bricks.js`, `src/kit/toon3d.js`, `src/kit/hd3d.js`, `src/kit/ar3d.js`, `src/kit/juice.js`,
-`src/kit/sound.js`, `src/kit/controls.js`, `src/kit/physics2d.js`, `src/kit/geo.js`.
+Everything else (credits, saved progress, settings, hearts, raw storage, the unrounded location)
+belongs to the app and isn't on `gs`. Save with `api.save()`, find the player with `api.location()`.
 
-Everything else (credits, saved progress, settings, hearts) belongs to the app. The streamed app
-doesn't hand it to games at all, `npm run games` refuses to build a game that imports it, and the PR
-check flags it. `store` from `util.js` (raw storage) is held back too: use your save slot instead.
-So is the old `location()` from `device.js`: use `api.location()`.
+`gs` sends each call to the right place underneath: our own kits, or the best free library for the
+job (Rapier for physics, Yuka for AI, MediaPipe for faces and hands, Tone.js, ZzFX, three.quarks,
+troika-three-text, simplex-noise). If we swap a library later, games don't change.
 
-A game that uses a newer kit, `api.save` or `api.location` is only offered to app versions that have it; older apps
-skip it until they update.
+**Big parts load when first used.** Physics, 3D physics, 3D extras, face tracking and Tone.js are a
+few MB, so the app loads them the first time a game needs them. Create those things in `make()` or
+`reset()`: if the library isn't in yet, the app shows "Loading…" on the card and makes your game
+again once it is. Don't create them later (in `update()` or a tap), or the game will stop with an error.
+
+Each streamed game lists the parts of `gs` it uses, so an app version that doesn't have one yet
+skips the game until it updates.
 
 ## Starter templates
 
@@ -49,7 +73,7 @@ recognisably the template won't be merged.
 | `phone` | Tap targets; juice (particles, shake, pop-ups, hit-stop, tweens), sounds, a save slot |
 | `pocket` | Catch game in four shades; slider stick, pixel juice, looping music |
 | `color` | Runner; tap to jump and hold for a big jump (gestures) |
-| `advance` | Tower of crates; 2D physics, a save slot for the best tower |
+| `advance` | Tower of crates that tumble; real 2D physics (Rapier), pixel text, a save slot for the best tower |
 | `console` | Cel-shaded 3D gem hunt; floating thumbstick |
 | `nextgen` | HD 3D rolling ball; two-thumb layout (stick + boost button), GPU sparks, shadows |
 | `ar` | Balloons in your room; tap to pop, drag to look when there's no gyro |
@@ -83,7 +107,7 @@ For games built from where the player is (a daily puzzle shared with everyone ne
 live in this park) or played by walking about. Declare how precise you need it, then ask during play:
 
 ```js
-import { cellId, distance, offset } from '../kit/geo.js';
+const { cellId, distance, offset } = gs.geo;
 
 function make(api) {
   let here = null, asked = false;
@@ -120,7 +144,7 @@ export default { id: 'park-hunt', /* ... */ location: 'coarse', make };   // 'pr
   `cellId` if you need to remember a place.
 - There are no map tiles yet: draw the area yourself (paths, a grid, a compass to a target).
 
-`src/kit/geo.js` has the maths: `distance(a, b)` in metres, `bearing(a, b)` in degrees from north,
+`gs.geo` has the maths: `distance(a, b)` in metres, `bearing(a, b)` in degrees from north,
 `offset(p, east, north)`, `toLocal(origin, p)` → `{ x, y }` metres for drawing, and `cellId(p, metres)`,
 a whole number that is the same for everyone in the same square (to seed "what spawns here today").
 
@@ -129,7 +153,7 @@ app with a fake GPS position.
 
 ## Juice
 
-`import { Juice, ease, lerp, approach, pulse, Tweens, Particles, Shake, Popups } from '../kit/juice.js';`
+`const { Juice, ease, lerp, approach, pulse, Tweens, Particles, Shake, Popups } = gs.juice;`
 
 The `Juice` object bundles the lot. Use `new Juice({ pixel: true })` in Pocket, Color and Advance
 games so effects snap to whole pixels.
@@ -161,7 +185,7 @@ fx.tween(card, { x: 200, s: 1 }, .4, ease.outBack).then(() => {});
 
 ## Sound
 
-`import { sounds, noise, notes, tone, music, freq } from '../kit/sound.js';`
+`const { sounds, noise, notes, tone, music, freq, zzfx, zsound, Tone, sfx } = gs.sound;`
 
 ```js
 sounds.coin();  sounds.coin(1 + combo * .05);    // optional pitch: rising combos
@@ -183,10 +207,17 @@ tune.start(); tune.speed(1.2); tune.stop();
 - Start music in `update()`, not in `reset()` (reset also runs while the game waits in the feed).
   The app stops all music when a round ends or the player moves to another game.
 - Everything respects the player's Sound & haptics settings (sound, volume, music). `sfx()` still works as before.
+- **Your own sound effects with ZzFX**: design one on the [ZzFX page](https://killedbyapixel.github.io/ZzFX/)
+  (move the sliders, press play), copy the list of numbers and play it: `zzfx(...[,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17])`.
+  `const zap = zsound(...numbers); zap(); zap(1.5)` keeps one to play again (1.5 = higher).
+- **Real synths with Tone.js** (for music and rhythm games): `const T = Tone()` in `make()` or `reset()`
+  (it loads first), then anything from [tonejs.github.io](https://tonejs.github.io/):
+  `new T.PolySynth(T.Synth).toDestination().triggerAttackRelease(['C4', 'E4', 'G4'], '8n')`. It plays
+  through the app's volume and mute.
 
 ## Controls
 
-`import { Stick, Button, Gestures, route, twoThumb, Keys } from '../kit/controls.js';`
+`const { Stick, Button, Gestures, route, twoThumb, Keys } = gs.controls;`
 
 Every control takes `down(x, y, id)`, `move(x, y, pressed, id)`, `up(x, y, id)`, just like your game,
 so you can pass input straight through. Fingers are tracked by id, so two thumbs work together.
@@ -219,27 +250,211 @@ update() { g.update(); }   // needed for hold
 
 ## Physics
 
-`import { World } from '../kit/physics2d.js';`
-
-Balls and upright boxes that fall, bounce, roll, stack and collide.
+`const { Physics } = gs.physics;` Real 2D rigid-body physics from [Rapier](https://rapier.rs): shapes
+spin and tumble, and you can join them with hinges, springs, ropes, welds and sliders. Slingshots,
+bridges, wrecking balls, ragdolls, cars, stacking, pinball. Everything is in your game's units
+(pixels, y down); angles are radians, clockwise on screen, so `c.rotate(t.angle)` just works.
 
 ```js
-const world = new World({ gravity: 900, walls: [0, 0, W, H] });   // walls: false for an open world
-world.box(W / 2, H - 10, W, 20, { fixed: true });                  // boxes: centre x, y, width, height
-const ball = world.circle(100, 40, 12, { bounce: .7 });
-world.onHit((a, b, speed) => { if (speed > 150) sounds.hit(); });   // b is null for a wall
-update(dt) { world.step(dt); }
-draw(c) { for (const b of world.bodies) /* draw at b.x, b.y using b.r or b.w, b.h, and b.angle for balls */ ; }
-debug(c) { world.debugDraw(c); }                                     // outlines in the debug overlay
+reset() {
+  phys = new Physics({ gravity: 900, walls: [0, 0, W, H] });   // in make() or reset(): the engine loads first
+  crate = phys.box(100, 50, 30, 30, { bounce: .2 });           // centre x, y, width, height
+  ball = phys.circle(200, 40, 12, { bounce: .6 });
+  phys.hinge(null, flipper, 80, 500, { min: -.5, max: .5 });  // null = pinned to the world
+  phys.rope(null, 180, 0, ball, 180, 200);                     // a rope from the ceiling to the ball
+  phys.onHit((a, b, speed, x, y) => { if (speed > 200) feel.hit(x, y); });
+}
+update(dt) { phys.step(dt); }
+draw(c) { for (const t of phys.things) { phys.path(c, t); c.fill(); } }   // or draw art at t.x, t.y, t.angle
+debug(c) { phys.debugDraw(c); }
 ```
 
-- Body options: `bounce` (0..1), `friction` (0..1), `mass` or `density`, `fixed`, `sensor` (reports
-  hits, doesn't push), `gravity` (multiplier: 0 floats, -1 rises), `drag`, `tag` (yours to use).
-- `b.push(ix, iy)` kicks a body; or set `b.vx`, `b.vy` directly. `world.remove(b)`.
-- `world.at(x, y)` finds the body under a finger (pick things up), `world.near(x, y, r)` lists the
-  bodies in a circle, `world.blast(x, y, radius, strength)` throws things outward.
-- Boxes don't rotate, so towers stay steady. Settled bodies go to sleep and cost almost nothing.
-- Keep it to a few hundred bodies on phones.
+- **Shapes**: `circle(x, y, r)`, `box(x, y, w, h)`, `poly(x, y, [[x, y], ...])` (convex),
+  `line([[x, y], ...], { loop })` (fixed ground, hills, ramps), `walls(x, y, w, h)`.
+- **Options**: `bounce`, `friction`, `density`, `fixed`, `moving` (you `place()` it: platforms,
+  paddles), `sensor` (pickups, goals), `bullet` (fast things), `noSpin` (players), `angle`, `spin`,
+  `vx`, `vy`, `drag`, `gravity` (multiplier), `group` (1-14: same group never collide), `tag`.
+- **A thing**: read or set `x`, `y`, `angle`, `vx`, `vy`, `spin`; `place(x, y, angle)`,
+  `push(ix, iy)` (an instant kick: `push(0, -400)` jumps), `force(fx, fy)` (every frame: thrusters,
+  wind), `twist(amount)`, `touching()`, `onGround()`, `remove()`.
+- **Joints**: `hinge(a, b, x, y, { min, max, motor })`, `spring(a, b, ax, ay, bx, by, { stiffness, damping })`,
+  `leash(...)`, `weld(a, b, x, y)`, `slider(a, b, x, y, dx, dy, { min, max, motor })`,
+  `wheel(car, tyre, x, y)`, `rope(a, x1, y1, b, x2, y2, { links })`. Each returns a handle with `remove()`.
+- **Drag with a finger**: `g = phys.grab(x, y)` in `down`, `g.move(x, y)` in `move`, `g.release()` in `up`.
+- **Ask the world**: `at(x, y)`, `inBox(x, y, w, h)`, `ray(x1, y1, x2, y2)` → `{ thing, x, y, nx, ny, distance }`,
+  `blast(x, y, radius, strength)`. Things made this frame show up in these after the next `step()`.
+- The raw engine is there too: `phys.R` and `phys.world` (Rapier works in metres: `phys.toWorld(px)`).
+- The old simple engine is still there as `gs.physics.World` (balls and upright boxes, no joints).
+
+## 3D physics
+
+`const { World3D } = gs.physics3d;` Rapier in 3D, in your three.js scene's units (metres, y up). It
+keeps your meshes in step with their bodies.
+
+```js
+reset() {
+  phys = new World3D({ gravity: -20 });
+  phys.ground(levelGroup);                                  // any meshes: solid and fixed (floors, walls, ramps)
+  crate = phys.box(crateMesh, 1, 1, 1);                     // falls and tumbles; crateMesh follows it
+  hero = phys.mover(heroMesh, { radius: .4, height: 1.8 }); // walks into walls, climbs steps and slopes
+}
+update(dt) { hero.walk(stick.x * 6, stick.y * 6); if (tapped) hero.jump(8); phys.step(dt); }
+```
+
+- Bodies: `ball(mesh, r)`, `box(mesh, w, h, d)`, `capsule(mesh, r, height)`, `hull(mesh)` (shaped
+  like the mesh), `ground(mesh)`, `floor(y)`. Same options as 2D (`bounce`, `fixed`, `moving`,
+  `sensor`, `noSpin`, `group`...), plus `at` for a body with no mesh.
+- A body: `pos`, `vel`, `place(x, y, z)`, `setVel()`, `push(x, y, z)`, `twist()`, `touching()`, `remove()`.
+- The mover: `walk(vx, vz)` every frame, `jump(speed)`, `grounded`, `feet`, `place()`.
+- `ray(from, dir, max)` → `{ thing, point, normal, distance }` (aiming, line of sight, "what's under me"),
+  `near(p, r)`, `blast(p, r, strength)`, `onHit((a, b, speed) => ...)`.
+- Joints: `hinge(a, b, p, axis, { min, max, motor })`, `pin(a, b, p)` (ball and socket), `weld(a, b)`,
+  `spring(a, b, pa, pb)`, `leash(a, b, pa, pb, length)`.
+
+## AI
+
+`const { Crowd, NavGrid, Brain } = gs.ai;` Steering and path finding from [Yuka](https://mugen87.github.io/yuka/),
+in your game's 2D units.
+
+```js
+reset() {
+  crowd = new Crowd();
+  bat = crowd.add(50, 50, { speed: 120 }).chase(player);    // anything with x, y
+  sheep = crowd.add(200, 300, { speed: 60 }).wander().flock();
+  nav = new NavGrid(20, 30, 16, (cx, cy) => level[cy][cx] === '#');
+  guard = crowd.add(40, 40).hunt(player, nav);                // goes round the walls, re-plans as you move
+}
+update(dt) { crowd.update(dt); }                             // read bat.x, bat.y, bat.angle
+```
+
+- Steering: `seek`, `arrive`, `flee(target, panic)`, `chase`, `pursue(agent)`, `evade(agent)`,
+  `wander()`, `follow(route, loop)`, `separate()`, `flock()`, `stop()`. They combine: `.wander().flee(cat)`.
+- `NavGrid`: `path(x1, y1, x2, y2)` → `[{ x, y }, ...]` or null, `sees(x1, y1, x2, y2)` (line of sight),
+  `set(cx, cy, wall)` (doors, towers), `blocked(x, y)`.
+- `Brain(start, { state: { enter, update(dt), exit } })`: `go(name)`, `is(name)`, `time` in the state.
+- All of Yuka is there as `gs.ai.YUKA` (fuzzy logic, goals, vision cones, nav meshes).
+
+## Maths
+
+`const { rng, daily, noise2, fbm, vec, overlap, Grid, Timers } = gs.math;`
+
+- `rng(seed)` → `r()` 0..1, `r.int(a, b)`, `r.range(a, b)`, `r.pick(list)`, `r.shuffle(list)`, `r.chance(p)`.
+  Same seed, same numbers: levels everyone shares.
+- `daily('my-game')`: today's seed (the same for every player all day). `rng(daily('my-game'))` makes a daily challenge.
+- `noise2(x, y)`, `noise3(x, y, z)`: smooth noise -1..1 (simplex-noise) for hills, caves, clouds,
+  wobble. `fbm(x, y, octaves)` is rougher and more natural. `noiseSeed(seed)`, `makeNoise(seed)`.
+- `vec.add / sub / scale / len / dist / norm / dot / angle / fromAngle / rotate / lerp` on `{ x, y }`,
+  `angleDiff(a, b)`, `wrap(v, max)`.
+- `overlap.circles / boxes / circleBox / pointInBox / pointInCircle / lineCircle`.
+- `Grid(cell)`: find nearby things fast (hundreds of bullets): `clear()`, `add(t)`, `near(x, y, r)`.
+- `Timers`: `after(sec, fn)`, `every(sec, fn)`, `update(dt)`. They run on game time, so they stop
+  when the game pauses (setTimeout doesn't).
+
+## Effects
+
+`const { Feel } = gs.effects;` The sight, sound and buzz of common moments in one call.
+
+```js
+const feel = new Feel();                 // new Feel({ pixel: true }) for pixel styles
+reset()    { feel.clear(); }
+update(dt) { feel.update(dt); if (feel.frozen) return; }
+draw(c)    { feel.begin(c); /* the world */ feel.end(c, W, H); }
+feel.coin(x, y); feel.hit(x, y, { power: .8 }); feel.boom(x, y, { size: 1.5 }); feel.hurt(x, y);
+feel.jump(x, y); feel.land(x, y, speed); feel.shoot(x, y); feel.powerup(x, y); feel.combo(n, x, y);
+feel.score(x, y, 50); feel.win(x, y); feel.lose(); feel.click(); feel.play(zzfxNumbers);
+```
+
+`feel.juice` is the Juice underneath, for your own particles and tweens.
+
+## Pixel text and sprites
+
+`const { text, measure, sprite, anim, tiles } = gs.pixel;`
+
+```js
+text(c, 'SCORE 120', 4, 4, { size: 2, color: '#fff' });                       // 3×5 font, always crisp
+text(c, 'GAME OVER', W / 2, 80, { font: 'big', align: 'center', outline: '#000' });   // 8×8 font
+const hero = sprite(`
+  ..kk..
+  .kyyk.
+  ..kk..`, { k: '#000', y: '#fd0' });     // one letter per pixel, '.' is clear
+hero.draw(c, x, y, { scale: 3, flip: true, outline: '#fff' });
+const red = hero.recolor({ y: '#f33' });
+const walk = anim([frameA, frameB], palette, 8);  walk.draw(c, x, y, time, { scale: 3 });
+```
+
+Sprites and text are drawn once and cached. `sprite.solid(px, py)` is for pixel-perfect hits;
+`tiles(art, palette, 8, 8)` cuts a tile sheet.
+
+## Game controllers
+
+A pad already works in every game: the d-pad and left stick are the arrow keys, A is Space, B is
+`x`, X is `z`, Y is `c`, Start pauses. In the feed, A plays and up / down move between games. For
+analog control:
+
+```js
+const { pad, pads, rumble } = gs.pad;
+const p = pad();                         // null with no controller
+if (p) { ship.vx = p.x * 200; if (p.pressed('a')) fire(); if (p.rt > .5) boost(); }
+rumble(.6, 200);
+```
+
+`p.x, p.y, p.rx, p.ry` (sticks, with a dead zone), `p.lt, p.rt` (triggers), `held / pressed /
+released(name)` for `a b x y l r start select up down left right`. `pads()` lists every controller.
+
+## Motion moves
+
+`const { Moves } = gs.moves;`
+
+```js
+reset() { moves = new Moves(); moves.on('swing', m => slash(m.dir, m.power)); moves.on('flip', () => flip()); }
+update(dt) { moves.update(); }   // moves are handed to your handlers here
+```
+
+Moves: `swing` (`dir` left / right / up / down), `punch`, `throw`, `flip` (forward / back),
+`twist` (left / right), `knock`, `shake`, and `any`. Each has `power` 0..1. `new Moves({ sensitivity: 1.3 })`
+fires more easily. On iPhones the player is asked for motion access when they tap Play.
+
+## 3D extras
+
+`const { text3d, Particles3D, outline, glitch, trails, focus, pixelate } = gs.fx3d;` (make them in
+`make()` or `reset()`: they load first).
+
+- `text3d('PLAYER 1', { size, color, font: 'bold' | 'regular' | 'pixel', outline, face: true })`:
+  sharp text in the 3D world ([troika-three-text](https://protectwise.github.io/troika/troika-three-text/)).
+- `fx = new Particles3D(scene)`, then `fx.fire(pos)`, `fx.smoke(pos)`, `fx.magic(pos)`, `fx.snow(pos)`
+  (keep going: `.stop()`, `.remove()`, `.at(pos)`) and `fx.boom(pos)`, `fx.sparks(pos)` (one-off), or
+  your own with `fx.make(pos, { ... })`. Call `fx.update(dt)` every frame ([three.quarks](https://github.com/Alchemist0823/three.quarks)).
+- Next Gen views only: `outline(view, objects, { color })`, `glitch(view)`, `trails(view, .85)`,
+  `focus(view, { focus: 10 })` (depth of field), `pixelate(view, 4)`. Each returns a pass with `remove()`.
+
+## Face and hands
+
+`const { Face, Hands } = gs.vision;` Face and hand tracking with the front camera, from Google's
+[MediaPipe](https://ai.google.dev/edge/mediapipe). It all runs on the phone: no picture leaves it.
+
+```js
+reset() { face = new Face(); }           // loads the library first
+update(dt) {
+  if (!face.running) face.start();       // asks for the front camera the first time
+  face.update();
+  if (face.found) { ship.x = face.x * W; if (face.mouth > .5) chomp(); if (face.blink) jump(); }
+}
+```
+
+- `Face`: `found`, `x`, `y` (0..1, mirrored like a selfie), `size`, `yaw`, `pitch`, `roll`, `mouth`,
+  `smile`, `blink`, `winkLeft`, `winkRight`, `brows`, `points` (478), `shapes` (52 expressions by name).
+- `Hands`: `list` of `{ x, y, tipX, tipY, pinch, pinchX, pinchY, open, fist, point, side, points }`, `first`.
+- `ready` is true once the camera and model are running; `failed` holds the error if the player
+  said no to the camera. The app stops the camera when the round ends.
+- The models (4 MB face, 8 MB hands, plus a 14 MB engine) download from our games server the
+  first time; `npm run ml` fetches them for `npm run dev`.
+
+## Pause and resume
+
+The app pauses a game when the player opens How to play, switches apps, or presses Escape or a
+controller's Start, and shows a "Carry on" button. `update()` simply stops being called, and
+music is held. If your game has its own timers or sounds outside `update()`, add `pause()` and
+`resume()` to your game object. Use `gs.math.Timers` rather than `setTimeout` and you won't need to.
 
 ## Debug overlay
 
@@ -258,4 +473,4 @@ store apps.
 The panel shows frames per second, how long your `update()` and `draw()` take, the game's size,
 score and state. For hitboxes, give your game object a `debug(c)` method that outlines whatever you
 like in game units; it is drawn on top while hitboxes are on. A physics game can just call
-`world.debugDraw(c)`.
+`phys.debugDraw(c)`.

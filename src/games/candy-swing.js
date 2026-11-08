@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A sweet hangs on one or two ropes. Swipe across a rope to cut it, timing the cut so the sweet
 // flies into the jar. Every level is checked to have a winning cut before you see it. Three drops and you're out.

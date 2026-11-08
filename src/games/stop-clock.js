@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Stop the stopwatch exactly on the target time. After the first few, the display blanks out
 // part-way so you have to count in your head. Within a tenth scores; three bigger misses end it.

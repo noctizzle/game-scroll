@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A tiny monster-catching adventure. Pick a starter, walk through tall grass, and battle the wild
 // critters that jump out. Weaken them and throw a jar to catch them for your team. Ember beats

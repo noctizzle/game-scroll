@@ -1,7 +1,8 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // You run along the floor or the ceiling of a tunnel. Tap to flip gravity and fall to the other side.
 // Spikes line both surfaces, so flip at the right moment. You can only flip while touching a surface.

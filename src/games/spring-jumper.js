@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // Bounce along rooftops on a pogo stick. You hop forward on your own; hold to squeeze the spring
 // and let go for a bigger jump. Wide gaps need big jumps, and too big overshoots short roofs.

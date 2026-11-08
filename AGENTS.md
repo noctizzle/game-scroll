@@ -1,0 +1,151 @@
+# Game Scroll: instructions for AI coding tools
+
+Game Scroll is a phone app where you scroll a feed of quick mini games, like a short-video feed
+but every card is playable. Each game is **one file in `src/games/`**. These instructions are for
+AI tools (Claude Code, Codex, Gemini CLI, Copilot, Cursor...) helping someone make or fix a game.
+The human-facing guide is [CONTRIBUTING.md](CONTRIBUTING.md); the kit reference is
+[docs/maker-kit.md](docs/maker-kit.md).
+
+## Making a game: the steps
+
+1. Pick an idea that plays differently from the games already in `src/games/` (look at their
+   `title`, `tag` and `hint`) and from `docs/game-ideas.md`. A new mechanic, not a reskin.
+2. Start from a template: `npm run new <id> --style <phone|pocket|color|advance|console|nextgen|ar>`.
+   It writes `src/games/<id>.js`, a small working game. Then change it into the new game.
+3. Write the game (rules below). Use `gs` for everything shared.
+4. Check it, and fix whatever fails:
+   ```bash
+   node scripts/game-lint.mjs <id>          # forbidden code (network, storage, eval...)
+   npm run games                             # builds streamed files; fails on bad imports or a missing gs part
+   npm run build:bundled && node scripts/smoke.cjs <id>   # plays it with random input; fails on any error
+   node scripts/fold.cjs <id>                # survives folding / unfolding the screen
+   ```
+   For Console and Next Gen games also run `node scripts/sweep.cjs <id>`.
+5. Only change files in `src/games/` (and optionally tick the idea in `docs/game-ideas.md`). Shared
+   code (`src/kit/`, `src/gamescroll.js`, `src/main.js`...) ships inside the app: change it only when
+   asked to, in a separate PR.
+
+## The rules (a game that breaks one won't be merged)
+
+- **Original.** Genres and mechanics are fine; recreating a specific existing game (its name,
+  characters, art, music, levels or look, even renamed) is not. Invent names and characters.
+- **One file, drawn in code.** No image, font, sound or data files. Draw on the canvas; make sounds
+  with `gs.sound`.
+- **Only `gs`.** The one import is `import gs from '../gamescroll.js'`. No other imports, no
+  `fetch`, `XMLHttpRequest`, `WebSocket`, `localStorage`, `indexedDB`, `eval`, `new Function`,
+  `import()`, `window.open`, Capacitor or `navigator.geolocation`. Save with `api.save()`, find the
+  player with `api.location()`.
+- **Touch first.** Fully playable with touch alone. Sensors (tilt, mic, camera, face, motion moves)
+  need a touch fallback.
+- **Quick.** One sentence of hint explains it; a round lasts about 20 seconds to 3 minutes.
+- **Family friendly.** Cartoon action is fine; no gore, hate, real-money gambling.
+- `goal` is required: the score that counts as a win (a decent player reaches it in about a minute).
+
+## A game file
+
+```js
+import gs from '../gamescroll.js';
+const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects, { clamp, rnd } = gs.util;
+
+const W = 360, H = 640;
+
+function make(api) {
+  const feel = new Feel();
+  let things, score, t;
+  return {
+    reset() { things = []; score = 0; t = 0; feel.clear(); },   // ALL round state here
+    update(dt) {                                               // dt in seconds
+      feel.update(dt); if (feel.frozen) return;
+      t += dt;
+      // ...move things, spawn, check for game over: api.over()
+    },
+    draw(c) {                                                  // draw the whole frame, W x H units
+      c.fillStyle = '#123'; c.fillRect(0, 0, W, H);
+      feel.begin(c); /* the world */ feel.end(c, W, H);
+      // HUD
+    },
+    down(x, y, id) { /* already in game units */ score++; api.score(score); feel.coin(x, y); },
+    move(x, y, pressed, id) {},
+    up(x, y, id) {},
+    key(k, isDown) {},                                         // optional: desktop keys and controllers
+  };
+}
+
+export default {
+  id: 'my-game',                  // = the file name
+  title: 'My Game',
+  tag: 'Casual · Reflex',         // '<Style> · <Genre>'
+  retro: false,                   // style fields: see "Styles" below
+  w: W, h: H,
+  goal: 30,
+  hint: 'Tap the ... before they ... Miss three and it is over.',
+  creator: 'Your Name',
+  make,
+};
+```
+
+`api`: `score(n)`, `over()`, `win()`, `has(itemId)`, `save(data)` / `load(fallback)` / `clearSave()`
+(2 KB JSON), `location()` / `watchLocation(cb)` (needs `location: 'coarse'` or `'precise'` in the
+definition). Optional game methods: `fx(dt)` (effects behind the game-over screen), `resize(w, h)`
+(fluid games with `maxW`, `maxH`), `debug(c)`, `pause()`, `resume()`.
+
+The app draws the start and game-over screens and the score. The game only draws play.
+
+## Styles
+
+| Style | Fields | Tag | Size | Use |
+| --- | --- | --- | --- | --- |
+| Phone (Casual) | `retro: false` | `Casual ·` | 360 × 640 | any colours, smooth |
+| Dot matrix (Pocket) | `retro: true, pal: 'moss'` | `Pocket ·` | 160 × 160 | exactly 4 shades: `gs.palettes.PAL[pal]` |
+| Color (Pocket) | `retro: true, era: 'color', pal: 'lemon'` | `Color ·` | 160 × 160..192 | `gs.palettes.C16` |
+| Advance (Pocket) | `retro: true, era: 'advance', pal: 'grape'` | `Advance ·` | 176 × 176 | rich pixel colours, sprites |
+| Classic Console (3D) | `retro: true, era: 'console', pal: 'grape'` | `Console ·` | 192 × 160 | `gs.toon` cel-shaded 3D |
+| Next Gen (HD 3D) | `retro: true, era: 'nextgen', pal: 'grape'` | `Next Gen ·` | 300 × 300 | `gs.hd` PBR, shadows, bloom |
+| AR · 3D | `retro: true, era: 'ar', pal: 'grape'` | `AR ·` | 300 × 460 | `gs.ar` camera + gyro |
+
+Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pixel positions and
+`gs.pixel` for text and sprites. 3D: copy the matching template; docs are `docs/console-3d.md`,
+`docs/nextgen-3d.md`, `docs/ar-3d.md`.
+
+## What's on `gs` (use it rather than writing your own)
+
+- `gs.effects.Feel`: `coin`, `hit`, `boom`, `hurt`, `jump`, `land`, `shoot`, `powerup`, `combo`,
+  `score`, `win`, `lose`, `click`: particles + shake + sound + haptics in one call.
+- `gs.juice`: `Juice` (particles, shake, pop-ups, flash, hit-stop, tweens), `ease`, `lerp`, `approach`, `pulse`.
+- `gs.sound`: `sfx(f, d, type, vol, slide)`, `sounds.coin()` etc., `noise()`, `notes('C5 E5 G5')`,
+  `music({ tempo, lead, bass, drums })`, `zzfx(...numbers)`, `zsound()`, `Tone()` (Tone.js; lazy).
+- `gs.device`: `haptic('light'|'medium'|'heavy'|'tick'|'success'|'warning'|'error')`, `buzz()`,
+  `tilt()` + `want('motion')`, `calibrateTilt()`, `onShake(cb)`, `heading()`, `faceDown()`,
+  `startMic()`/`stopMic()`, `startCamera()`/`stopCamera()`.
+- `gs.controls`: `Stick`, `Button`, `Gestures` (tap, doubleTap, hold, swipe), `twoThumb(W, H)`, `Keys`, `route()`.
+- `gs.pad`: `pad()` (analog sticks, triggers, `pressed('a')`), `pads()`, `rumble()`. Pads also arrive as keys.
+- `gs.moves.Moves`: `on('swing'|'punch'|'throw'|'flip'|'twist'|'knock'|'shake', fn)`, `update()` each frame.
+- `gs.pixel`: `text(c, str, x, y, { size, font: 'small'|'big', align, color, outline })`,
+  `sprite(art, palette)`, `anim(frames, palette, fps)`, `tiles()`.
+- `gs.physics.Physics` (Rapier 2D; lazy): `circle`, `box`, `poly`, `line`, `walls`, `hinge`, `spring`,
+  `rope`, `weld`, `slider`, `wheel`, `grab`, `ray`, `at`, `blast`, `onHit`, `step(dt)`, `path(c, t)`.
+- `gs.physics3d.World3D` (Rapier 3D; lazy): `ball`, `box`, `capsule`, `hull`, `ground(mesh)`,
+  `floor`, `mover()` (walking character), `ray`, joints, `step(dt)` syncs meshes.
+- `gs.ai`: `Crowd` (`add(x, y).chase(t) / flee / wander / follow(route) / flock / hunt(t, nav)`),
+  `NavGrid` (`path`, `sees`), `Brain` (state machine), `YUKA`.
+- `gs.math`: `rng(seed)`, `daily(salt)`, `noise2`, `noise3`, `fbm`, `vec`, `overlap`, `Grid`, `Timers`, `angleDiff`, `wrap`.
+- `gs.util`: `clamp`, `rnd`, `pix`, `disc`, `hash`, `fmt`, `flickTracker`. `gs.palettes`: `PAL`, `SHELL`, `C16`.
+- `gs.gfx` (shaded 2D shapes, glow, backdrops), `gs.bricks` (toy bricks), `gs.geo` (location maths).
+- `gs.toon` (Console 3D: `View`, `G`, `part`, `grp`, `blob`, `toon`), `gs.hd` (Next Gen: `HDView`,
+  `pbr`, `rbox`, `surface`, `speckle`, `Particles`, `sun`, `spot`), `gs.ar` (`ARView`, `FLOOR`, `arNote`), `gs.THREE`.
+- `gs.fx3d` (lazy): `text3d()`, `Particles3D` (`fire`, `smoke`, `sparks`, `boom`, `magic`, `snow`),
+  `outline`, `glitch`, `trails`, `focus`, `pixelate`.
+- `gs.vision` (lazy): `Face` (`x`, `y`, `yaw`, `mouth`, `smile`, `blink`...), `Hands` (`pinch`, `open`, `point`...).
+
+**Lazy parts** (physics, physics3d, fx3d, vision, Tone): create them in `make()` or `reset()`, never
+later. The app shows "Loading…" and remakes the game once the library is in.
+
+## Common mistakes
+
+- Round state set in `make()` instead of `reset()`, so "Play again" doesn't start clean.
+- Using `Date.now()` or `setTimeout` for game timing: use `dt` and `gs.math.Timers` (they pause with the game).
+- Starting music in `reset()` (it also runs while the card waits in the feed): start it in `update()`.
+- Drawing in screen pixels: always draw in `w` × `h` game units; input is already converted.
+- Forgetting a touch fallback for tilt, mic, camera, face or motion.
+- Pocket games with more than 4 shades, or smooth (non-integer) positions in pixel styles.
+- A `goal` nobody can reach, or a game that scores with no input.

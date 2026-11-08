@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Your balloon floats up on its own and can't be touched. Your finger is a shield: push the falling
 // blocks, rolling balls and spinning bars out of its way. One touch of anything and it pops.

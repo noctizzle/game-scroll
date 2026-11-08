@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Top-down dungeon crawl. Hold and drag to walk toward your finger; tap to swing your sword that way.
 // Clear every monster to open the door at the top, then step through to the next room.

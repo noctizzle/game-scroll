@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Three doors per room. Each door's sign hints at what's behind it, but signs only tell the odds.
 // Skulls hide monsters guarding big hoards, chests can be mimics, hearts heal. Go as deep as you dare.

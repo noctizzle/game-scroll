@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Single-screen bomb maze: tap to drop a bomb, drag to walk. Blasts break crates and catch critters. Don't stand in the blast.
 const R = PAL.moss, W = 160, H = 160, GW = 15, GH = 13, CS = 10, OX = 5, OY = 24;

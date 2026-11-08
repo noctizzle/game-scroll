@@ -29,6 +29,10 @@
     "catalogue-test": "node scripts/catalogue-test.mjs",
     "location-test": "vite build --mode bundled && node scripts/location-test.cjs",
     "site": "node scripts/build-site.mjs",
+    "ml": "node scripts/fetch-ml.mjs",
+    "kit-test": "node scripts/kit-test.mjs",
+    "kit-browser": "node scripts/kit-browser.cjs",
+    "ai-prompt": "node scripts/ai-prompt.mjs",
     "store-shots": "vite build --mode bundled && node scripts/store-shots.cjs"
   },
   "devDependencies": {
@@ -46,10 +50,20 @@
     "@capacitor/ios": "^8.5.3",
     "@capacitor/motion": "^8.0.1",
     "@capacitor/share": "^8.0.3",
-    "@fontsource/press-start-2p": "^5.2.5",
-    "@fontsource/rubik": "^5.2.5",
+    "@dimforge/rapier2d-compat": "^0.21.0",
+    "@dimforge/rapier3d-compat": "^0.21.0",
+    "@fontsource/press-start-2p": "5.2.7",
+    "@fontsource/rubik": "5.2.8",
+    "@mediapipe/tasks-vision": "1.2.2",
     "game-services": "file:plugins/game-services",
     "native-ar": "file:plugins/native-ar",
-    "three": "^0.180.0"
+    "postprocessing": "6.39.6",
+    "simplex-noise": "4.0.3",
+    "three": "^0.180.0",
+    "three.quarks": "0.16.0",
+    "tone": "15.1.22",
+    "troika-three-text": "0.53.1",
+    "yuka": "0.7.8",
+    "zzfx": "1.4.0"
   }
 }

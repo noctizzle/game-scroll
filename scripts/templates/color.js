@@ -1,10 +1,11 @@
 // __TITLE__: a starter Color (Pocket) game made with `npm run new`. Change anything you like.
 // Bright 16-colour pixels. Shows gestures (tap to jump, hold to jump higher), pixel juice and sounds.
-import { C16 } from '../palettes.js';
-import { haptic } from '../kit/device.js';
-import { Juice } from '../kit/juice.js';
-import { sounds } from '../kit/sound.js';
-import { Gestures } from '../kit/controls.js';
+import gs from '../gamescroll.js';
+const { sounds } = gs.sound;
+const { haptic } = gs.device;
+const { C16 } = gs.palettes;
+const { Juice } = gs.juice;
+const { Gestures } = gs.controls;
 
 let W = 160, H = 176;
 const GROUND = () => H - 24;

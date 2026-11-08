@@ -1,4 +1,5 @@
-import { sfx } from '../sfx.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
 
 // Rows of tiles scroll down; tap the lit tile in each row before it leaves the screen. Tapping an empty cell ends the run.
 const W = 360, H = 640, COLS = 4, CW = W / COLS, TH = 150;

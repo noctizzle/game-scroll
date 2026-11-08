@@ -1,6 +1,7 @@
-import { PAL } from '../palettes.js';
-import { clamp, rnd, pix } from '../util.js';
-import { sfx } from '../sfx.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { clamp, rnd, pix } = gs.util;
+const { PAL } = gs.palettes;
 
 // Hold to climb through a scrolling cave.
 function make(api, p) {

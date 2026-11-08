@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Drop fruit into the jar. Two of the same that touch merge into the next size up. Don't let the pile cross the line.
 const W = 360, H = 640, L = 36, RGT = W - 36, BOT = 600, LINE = 170, G = 1500;

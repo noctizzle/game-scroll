@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { startMic, stopMic, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { startMic, stopMic, haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Blow into the mic to put out the birthday candles. Trick candles (striped) relight unless
 // every candle is out at the same moment. No mic? Tap a candle to puff at it.

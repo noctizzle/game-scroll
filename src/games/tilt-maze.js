@@ -1,6 +1,7 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { tilt, calibrateTilt, want, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { tilt, calibrateTilt, want, haptic } = gs.device;
+const { clamp } = gs.util;
 
 // Tilt the phone to roll a marble through a fresh maze to the hole. Each maze adds time. No tilt sensor? Drag instead.
 const W = 360, H = 640, C = 7, Rw = 11, CS = 46, OX = (W - C * CS) / 2, OY = 92, BR = 11;

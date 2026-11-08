@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { View, G, part, grp, blob, flat, THREE } from '../kit/toon3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { View, G, part, grp, blob, flat, THREE } = gs.toon;
 const { Group } = THREE;
 
 // Top-down stealth. Hold to creep toward your finger and reach the exit hatch. Guards patrol with

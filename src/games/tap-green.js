@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A reaction test with tricks. Wait while the screen is red, then tap the instant it turns green.
 // Fake-outs flash other colours later on. Tap early or on a fake and the run ends. Faster taps score more.

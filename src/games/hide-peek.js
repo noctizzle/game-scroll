@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { faceDown, want, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { faceDown, want, haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Raid the cookie jar while the cook isn't looking. Keep the phone face up to grab cookies. When you
 // hear and feel the cook turning round, lay the phone face DOWN to hide. A double buzz means the coast

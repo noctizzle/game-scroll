@@ -1,8 +1,9 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { View, G, part, grp, blob, THREE } from '../kit/toon3d.js';
-import { backdrop } from '../kit/gfx.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { backdrop } = gs.gfx;
+const { View, G, part, grp, blob, THREE } = gs.toon;
 const { Group } = THREE;
 
 // Weed beetles are marching across your vegetable patch. Tap the glowing dew drops to collect

@@ -474,6 +474,12 @@ export class HDView {
       const F = P.final; P.ao.enabled = T.ao; F.strength = this.bloom; F.scale = T.bloom; F.setFxaa(!T.msaa);
       F.final.uniforms.t.value = this.t % 10; F.final.uniforms.hurt.value = this.hurt;
     }
+    // extra effects a game added (gs.fx3d: outline, glitch, trails, depth of field, pixelate) go between the scene and the final pass
+    if (!this.clearBg) {
+      const ex = this.extras || [];
+      cp.passes = ex.length ? [P.render, P.ao, ...ex, P.final] : [P.render, P.ao, P.final];
+      for (const p of ex) if (p.cw !== pw || p.ch !== ph) { p.setSize(pw, ph); p.cw = pw; p.ch = ph; }
+    }
     if (!this.warmed) this.warm();
     // shadows: redraw the maps only when a shadow caster or a shadow light moved (or the tier, view or map changed)
     this.scene.updateMatrixWorld();

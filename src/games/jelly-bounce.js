@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // A jelly on a trampoline. Tap right as it squashes into the mat to bounce higher; a sloppy tap
 // loses height. Collect the stars hanging at different heights. Drag sideways in the air to drift.

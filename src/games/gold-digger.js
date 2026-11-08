@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Dig down through the dirt for gold. Tap left, right or below the miner to dig that way. Boulders
 // fall when you dig out what holds them up, so don't stand under one. Your lamp oil runs low as you go.

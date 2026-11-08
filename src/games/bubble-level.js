@@ -1,7 +1,8 @@
-import { clamp, rnd, disc } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { tilt, calibrateTilt, want, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { tilt, calibrateTilt, want, haptic } = gs.device;
+const { clamp, rnd, disc } = gs.util;
+const { PAL } = gs.palettes;
 
 // A spirit level: tilt the phone to steer the bubble into the wandering ring and keep it there. No tilt sensor? Drag.
 const R = PAL.ice, W = 160, H = 160, CX = 80, CY = 84, RAD = 62;

@@ -1,6 +1,7 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { rnd } = gs.util;
 
 // Turn-based war on a tiny map. Tap one of your blue units to see where it can go, tap a square to
 // move, then tap a red unit in range to attack (or anywhere to wait). Forests slow movement but

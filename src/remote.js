@@ -15,7 +15,8 @@
 // than the one it already has, and checks every game file's full SHA-256 against it. So someone who
 // got write access to the games host still couldn't get their own code to run in the app.
 
-import { GAME_MODULES, HIDDEN, API_FEATURES, LOCATION_LEVELS } from './game-modules.js';
+import { API_FEATURES, LOCATION_LEVELS, hasAll } from './game-modules.js';
+import gs from './gamescroll.js';
 
 export const BASE = String(import.meta.env.VITE_GAMES_URL || '').replace(/\/+$/, '');
 export const CACHE_MAX = 100;
@@ -26,17 +27,11 @@ export const SIGNED = !!PUBKEY;
 // older build is never used.
 const MANIFEST_KEY = SIGNED ? 'gs_catalogue' : 'gs_manifest', INDEX_KEY = 'gs_cache_index';
 
-// The app's shared code, handed to downloaded games so they use the same sound, haptics, 3D kits...
-// Only the modules in src/game-modules.js are handed over, minus their HIDDEN exports: app-only code
-// (the wallet, saved progress, settings) is never reachable from a game.
-const KIT = {};
-const ALL = import.meta.glob(['./*.js', '!./main.js', '!./remote.js', './kit/*.js'], { eager: true });
-for (const mod of GAME_MODULES) {
-  const m = ALL['./' + mod]; if (!m) continue;
-  const hide = HIDDEN[mod] || [], out = {};
-  for (const k of Object.keys(m)) if (!hide.includes(k)) out[k] = m[k];
-  KIT[mod] = Object.freeze(out);
-}
+// The app's shared code, handed to downloaded games: only gs (src/gamescroll.js), which leaves out
+// everything app-only (the wallet, saved progress, settings).
+// It carries gs's parts at the top level as well as default, so it works however the bundler reads
+// the default import (as module.default, or as the whole module).
+const KIT = { 'gamescroll.js': Object.freeze({ __esModule: true, ...gs, default: gs }) };
 // Not a module: the api features this app gives games in make(api) (see API_FEATURES).
 KIT['@api'] = Object.fromEntries(API_FEATURES.map(k => [k, true]));
 
@@ -86,7 +81,7 @@ const known = new Map();   // id -> the app's entry for it (metadata, likes)
 
 // Can this app run the game? It must only use shared exports this build actually has.
 function compatible(g) {
-  for (const [mod, names] of Object.entries(g.needs || {})) { const m = KIT[mod]; if (!m || names.some(n => !(n in m))) return false; }
+  for (const [mod, names] of Object.entries(g.needs || {})) { const m = KIT[mod]; if (!m || !hasAll(mod === 'gamescroll.js' ? m.default : m, names)) return false; }
   // A location level this app doesn't know (a future one) would get no location at all: skip the game.
   if (g.meta && g.meta.location !== undefined && !LOCATION_LEVELS.includes(g.meta.location)) return false;
   return true;

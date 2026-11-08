@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Pump up a bottle rocket and launch it. More pressure flies higher, but every bottle has a burst
 // point you can only feel (the pump gets stiff and the phone rumbles). Drag to steer through rings. Three launches.

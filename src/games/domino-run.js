@@ -1,8 +1,9 @@
-import { clamp, rnd } from '../util.js';
-import { haptic, want } from '../kit/device.js';
-import { ARView, arNote, FLOOR } from '../kit/ar3d.js';
-import { Particles, pbr, rbox, surface, speckle, THREE } from '../kit/hd3d.js';
-import { sounds, tone } from '../kit/sound.js';
+import gs from '../gamescroll.js';
+const { sounds, tone } = gs.sound;
+const { haptic, want } = gs.device;
+const { clamp, rnd } = gs.util;
+const { Particles, pbr, rbox, surface, speckle, THREE } = gs.hd;
+const { ARView, arNote, FLOOR } = gs.ar;
 const { Group, Mesh, Vector3, Vector2, Raycaster, Plane, OctahedronGeometry, CylinderGeometry, CircleGeometry, RingGeometry } = THREE;
 
 // Domino Run: draw a path across your real floor with your finger and dominoes pop up along it.

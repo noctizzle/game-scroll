@@ -1,5 +1,6 @@
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
 
 // Tap two matching tiles to clear them, but only if a path with at most two turns joins them through empty space.
 const W = 360, H = 640, C = 6, Rn = 8, CS = 52, OX = (W - C * CS) / 2, OY = 130;

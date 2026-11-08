@@ -1,8 +1,9 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
-import { backdrop } from '../kit/gfx.js';
-import { brick, BRICK_KEYS } from '../kit/bricks.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { rnd } = gs.util;
+const { backdrop } = gs.gfx;
+const { brick, BRICK_KEYS } = gs.bricks;
 
 // Speed-build from the instruction booklet. The booklet shows the model and flashes the next
 // brick it needs. Find that exact brick (colour AND length) in the tray and tap it. The right

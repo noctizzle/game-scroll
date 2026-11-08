@@ -1,7 +1,8 @@
-import { clamp } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp } = gs.util;
+const { PAL } = gs.palettes;
 
 // Side-view dirt bike. Hold to throttle (and lean back in the air); let go to lean forward. Land level with the slope.
 // Each checkpoint flag adds time.

@@ -1,8 +1,9 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic, want } from '../kit/device.js';
-import { ARView, arNote, FLOOR } from '../kit/ar3d.js';
-import { Particles, pbr, THREE } from '../kit/hd3d.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic, want } = gs.device;
+const { rnd } = gs.util;
+const { Particles, pbr, THREE } = gs.hd;
+const { ARView, arNote, FLOOR } = gs.ar;
 const { Group, Mesh, SphereGeometry, TorusGeometry, CylinderGeometry, ConeGeometry, Vector3 } = THREE;
 
 // Saucer Swarm: flying saucers invade your room. They come in from in front and the sides, circle

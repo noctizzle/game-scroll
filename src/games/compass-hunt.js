@@ -1,7 +1,8 @@
-import { clamp, rnd, disc } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { heading, want, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { heading, want, haptic } = gs.device;
+const { clamp, rnd, disc } = gs.util;
+const { PAL } = gs.palettes;
 
 // A signal appears somewhere around you. Physically turn until it's dead ahead and hold steady to lock on. No compass? Drag sideways to turn.
 const R = PAL.mint, W = 160, H = 160, CX = 80, CY = 86, RAD = 58;

@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { onShake, want, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { onShake, want, haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Shake the phone (or tap fast) to build fizz. When the timer runs out the pressure must sit inside the green zone.
 const W = 360, H = 640, BX = 130, BY = 150, BW = 100, BH = 360;

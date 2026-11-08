@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { tilt, calibrateTilt, want, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { tilt, calibrateTilt, want, haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Ski downhill through the gates. Drag left and right to carve (or tilt the phone).
 // Every gate cleared speeds you up. Miss three gates or hit a tree and the run ends.

@@ -1,5 +1,6 @@
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
 
 // Pour coloured balls between tubes until every tube holds one colour. Each solved rack adds time and a colour.
 const W = 360, H = 640, CAP = 4;

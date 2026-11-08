@@ -20,7 +20,8 @@ The kit is `src/kit/toon3d.js`; toy-brick helpers are `brick3d` / `stud3d` in `s
 ## Writing a Console game
 
 ```js
-import { View, G, part, grp, blob } from '../kit/toon3d.js';
+import gs from '../gamescroll.js';
+const { View, G, part, grp, blob } = gs.toon;
 
 let v3;
 function view3d() {

@@ -1,7 +1,8 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { startMic, stopMic, haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { startMic, stopMic, haptic } = gs.device;
+const { clamp, rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // Sneak through the castle. Hold to creep forward; the longer you hold, the faster and noisier
 // your footsteps. Guards wake if the noise gets too loud near them, and that includes the real

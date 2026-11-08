@@ -13,7 +13,7 @@ export function setSound(patch) {
   Object.assign(sound, patch);
   sound.volume = Math.max(0, Math.min(1, +sound.volume || 0));
   store.set('gs_muted', !!sound.muted); store.set('gs_volume', sound.volume); store.set('gs_music', !!sound.music);
-  if (master) master.gain.value = sound.volume;
+  if (master) master.gain.value = sound.muted ? 0 : sound.volume;
 }
 
 /** The app's one shared AudioContext and its master volume (null if audio is unavailable). Kit use only. */
@@ -21,7 +21,7 @@ export function audio() {
   try {
     if (!actx) {
       actx = new (window.AudioContext || window.webkitAudioContext)();
-      master = actx.createGain(); master.gain.value = sound.volume; master.connect(actx.destination);
+      master = actx.createGain(); master.gain.value = sound.muted ? 0 : sound.volume; master.connect(actx.destination);
     }
     if (actx.state === 'suspended') actx.resume?.();
     return { ctx: actx, out: master };

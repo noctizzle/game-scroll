@@ -1,6 +1,7 @@
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { PAL } = gs.palettes;
 
 // Four hens lay eggs that roll down four ramps. Tap a corner to move the basket under that ramp.
 // Eggs speed up as you go. Three broken eggs ends it. A classic LCD handheld idea, with its own art.

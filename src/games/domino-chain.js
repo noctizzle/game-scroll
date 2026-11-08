@@ -1,6 +1,7 @@
-import { clamp, rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { clamp, rnd } = gs.util;
 
 // Draw a line of dominoes from the start tile with one stroke, passing close to the bells, then
 // watch them topple. You only have so many dominoes, and they can't stand on the rocks.

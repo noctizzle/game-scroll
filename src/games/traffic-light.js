@@ -1,7 +1,8 @@
-import { rnd } from '../util.js';
-import { sfx } from '../sfx.js';
-import { PAL } from '../palettes.js';
-import { haptic } from '../kit/device.js';
+import gs from '../gamescroll.js';
+const { sfx } = gs.sound;
+const { haptic } = gs.device;
+const { rnd } = gs.util;
+const { PAL } = gs.palettes;
 
 // You run the lights at a crossroads. Tap to switch which road has green (there's a short amber
 // in between). Cars stuck at a red too long lose patience. Three angry drivers and you're fired.

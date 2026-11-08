@@ -113,6 +113,11 @@ function startSensors() {
       if (jerk > 28 && now - lastShake > 250) { lastShake = now; shakeCbs.forEach(cb => cb(jerk)); }
     }
     lastAcc = { x: a.x, y: a.y, z: a.z };
+    if (motionCbs.size) {
+      const l = e.acceleration, r = e.rotationRate || {};
+      const m = { gx: a.x, gy: a.y, gz: a.z, ax: l?.x ?? null, ay: l?.y ?? null, az: l?.z ?? null, ra: r.alpha || 0, rb: r.beta || 0, rg: r.gamma || 0, dt: (e.interval || 16) > 1 ? (e.interval || 16) / 1000 : e.interval, t: performance.now() };
+      motionCbs.forEach(cb => cb(m));
+    }
   });
 }
 if (!window.DeviceMotionEvent?.requestPermission) { /* Android/desktop: no prompt needed */ motionAllowed = true; startSensors(); }
@@ -121,6 +126,13 @@ if (!window.DeviceMotionEvent?.requestPermission) { /* Android/desktop: no promp
 export function tilt() { return tiltState.ok ? { x: tiltState.x, y: tiltState.y } : null; }
 /** Make the current phone angle the new "flat". Call from a game's reset(). */
 export function calibrateTilt() { tiltState.base = null; }
+const motionCbs = new Set();
+/**
+ * Raw motion readings (kit use: gs.moves turns these into swings, punches and flips). cb gets
+ * { gx, gy, gz (m/s² with gravity), ax, ay, az (without gravity, or null), ra, rb, rg (rotation,
+ * degrees/s about the phone's z, x and y axes), dt, t }. Returns an unsubscribe function.
+ */
+export function onMotion(cb) { want('motion'); motionCbs.add(cb); return () => motionCbs.delete(cb); }
 /** Subscribe to shakes; returns an unsubscribe function. */
 export function onShake(cb) { shakeCbs.add(cb); return () => shakeCbs.delete(cb); }
 /** Raw phone orientation for AR (src/kit/ar3d.js): { alpha, beta, gamma } in degrees plus the screen
