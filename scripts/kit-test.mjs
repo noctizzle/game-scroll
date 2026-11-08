@@ -458,3 +458,103 @@ console.log('physics ok');
   assert.equal(plan.pick({ x: 0 }), 2); assert.equal(plan.action, 'right'); assert.equal(plan.pick({ x: 6 }), 0);
   console.log('brains: copy, trust, drift, win rate, rules, limits, waves, plans ok');
 }
+
+// ---- round 6 game kits
+{
+  const { Board } = await import('../src/kit/board.js');
+  let n = 0; const b = new Board(6, 6, { fill: () => ({ kind: n++ % 4 }) });
+  b.settle(); assert.equal(b.matches().length, 0, 'settle leaves no matches');
+  const g = new Board(5, 1); ['a', 'a', 'a', 'b', 'a'].forEach((k, c) => g.put(c, 0, { kind: k }));
+  const m = g.matches(); assert.equal(m.length, 1); assert.equal(m[0].size, 3);
+  const s = new Board(4, 1); [2, 2, null, 4].forEach((k, c) => k && s.put(c, 0, { kind: k }));
+  const r = s.slide('left', { merge: (a, c) => a.kind === c.kind && { kind: a.kind * 2 } });
+  assert.ok(r.moved); assert.equal(s.get(0, 0).kind, 4); assert.equal(s.get(1, 0).kind, 4); assert.equal(s.get(2, 0), null);
+  const f = new Board(3, 3); for (let r2 = 0; r2 < 3; r2++) for (let c = 0; c < 3; c++) f.put(c, r2, { kind: c < 2 ? 'x' : 'y' });
+  assert.equal(f.flood(0, 0).length, 6, 'flood fill finds the connected group');
+  console.log('board: settle, matches, slide and merge, flood ok');
+}
+{
+  const { Fighter, Battle, Bag, xpFor, levelFor, gainXp, loot } = await import('../src/kit/battle.js');
+  let i = 0; const rng = () => [.5, .9, .3, .7][i++ % 4];
+  const hero = new Fighter({ name: 'Pip', hp: 30, atk: 8, def: 4, spd: 6, type: 'leaf' }), goo = new Fighter({ name: 'Goo', hp: 18, atk: 5, def: 2, spd: 3, type: 'water' });
+  const fight = new Battle([[hero], [goo]], { types: { leaf: { water: 2 } }, rng });
+  assert.equal(fight.turn, hero, 'faster fighter goes first');
+  assert.ok(fight.preview(hero, goo, { power: 10, type: 'leaf' }) > fight.preview(goo, hero, { power: 10, type: 'water' }), 'type bonus');
+  let hits = 0; fight.on('hit', () => hits++);
+  for (let k = 0; k < 20 && fight.over == null; k++) { const who = fight.turn; fight.act(who, { move: { power: 10, type: who.type }, target: fight.foes(who)[0] }); }
+  assert.equal(fight.over, 0, 'hero side wins'); assert.ok(hits > 0);
+  const bag = new Bag({ potion: { heal: 10 } }); bag.add('potion', 2); assert.ok(bag.take('potion')); assert.equal(bag.count('potion'), 1);
+  assert.equal(levelFor(xpFor(5)), 5); const f2 = new Fighter({ hp: 10 }); assert.equal(gainXp(f2, xpFor(3)), 2); assert.equal(f2.maxHp, 16);
+  assert.equal(loot([{ id: 'a', w: 1 }, { id: 'b', w: 3 }], () => .9).id, 'b');
+  console.log('battle: turn order, types, a whole fight, bag, levels, loot ok');
+}
+{
+  const { cost, afford, short, Earner } = await import('../src/kit/idle.js');
+  assert.ok(Math.abs(cost(15, 1.15, 0, 2) - (15 + 15 * 1.15)) < 1e-9);
+  const n = afford(15, 1.15, 3, 500); assert.ok(cost(15, 1.15, 3, n) <= 500 && cost(15, 1.15, 3, n + 1) > 500, 'afford is exact');
+  assert.equal(short(999), '999'); assert.equal(short(1234567), '1.23M'); assert.equal(short(1e36), '1.00aa');
+  const e = new Earner({ farm: { base: 10, rate: 2 } }, 100); assert.ok(e.buy('farm')); e.update(5); assert.ok(Math.abs(e.money - (90 + 10)) < 1e-9);
+  assert.equal(e.catchUp(10, .5), 10);
+  console.log('idle: cost, afford, short, Earner ok');
+}
+{
+  const { Turns, Split } = await import('../src/kit/party.js');
+  const t = new Turns({ players: 3 }); t.ready(); t.add(5).next(); assert.ok(t.waiting); t.ready().out().next();
+  assert.equal(t.player.index, 2); t.ready().next(); assert.equal(t.player.index, 0); assert.equal(t.round, 2);
+  t.ready().next(); assert.equal(t.player.index, 2, 'a knocked-out player is skipped'); assert.equal(t.leader.index, 0);
+  const s = new Split(360, 640, { players: 2 }); assert.equal(s.who(10, 600), 0); assert.equal(s.who(10, 10), 1);
+  const l = s.local(1, 10, 10); assert.equal(l.x, 350); assert.equal(l.y, 310);
+  console.log('party: turns, knock-outs, rounds, split screen ok');
+}
+{
+  const { Chart } = await import('../src/kit/rhythm.js');
+  const ch = new Chart(`x . x = | = . . x\n. x . . | . . x .`, { bpm: 120, per: 2 });
+  assert.equal(ch.notes.length, 5); assert.equal(ch.lanes, 2);
+  assert.equal(ch.hit(0, 0.02).result, 'perfect'); assert.equal(ch.hit(1, .25 + .07).result, 'good'); assert.equal(ch.hit(0, 2), null);
+  assert.equal(ch.notes.find(n => n.lane === 0 && n.time === .5).hold, .25 * 2, 'holds join on');
+  assert.equal(ch.missed(5).length, 3); assert.equal(ch.combo, 0); assert.equal(ch.best, 2);
+  console.log('rhythm: chart, perfect/good, holds, misses, combo ok');
+}
+{
+  const { Shapes, Stroke, simplify } = await import('../src/kit/strokes.js');
+  const shapes = new Shapes(); let ok = 0;
+  const arc = (k, f) => Array.from({ length: k }, (_, i) => f(i / (k - 1)));
+  const tests = { circle: arc(40, u => [200 + Math.cos(u * 6.28) * 80, 300 + Math.sin(u * 6.28) * 70]), line: arc(20, u => [100 + u * 200, 300 + u * 30]), wave: arc(40, u => [100 + u * 200, 300 + Math.sin(u * 12.5) * 25]) };
+  for (const [k, pts] of Object.entries(tests)) if (shapes.match(pts).name === k) ok++;
+  assert.equal(ok, 3, 'recognises circle, line and wave');
+  const st = new Stroke(); for (let i = 0; i < 50; i++) st.add(Math.cos(i / 49 * 6.3) * 60, Math.sin(i / 49 * 6.3) * 60); assert.ok(st.closed && Math.abs(st.turns) > .8, 'a loop is closed with about one turn');
+  assert.equal(simplify([[0, 0], [5, .1], [10, 0]], 1).length, 2);
+  console.log('strokes: shapes, loops, simplify ok');
+}
+{
+  const { Car, Kart, Laps } = await import('../src/kit/vehicles.js');
+  const car = new Car({ top: 200 }); for (let i = 0; i < 120; i++) car.update(1 / 60, { throttle: 1 });
+  assert.ok(car.speed > 150 && car.x > 100 && Math.abs(car.y) < 1, 'car drives straight ahead');
+  const a0 = car.angle; for (let i = 0; i < 30; i++) car.update(1 / 60, { throttle: 1, steer: 1 }); assert.ok(car.angle > a0, 'steers right');
+  for (let i = 0; i < 30; i++) car.update(1 / 60, { throttle: 1, steer: 1, drift: true }); assert.ok(car.drifting && car.slide > 10, 'drifts and slides');
+  for (let i = 0; i < 20; i++) car.update(1 / 60, { throttle: 1, steer: 1, drift: true }); car.update(1 / 60, { throttle: 1 }); assert.ok(car.boostLeft > 0, 'a long drift boosts on release');
+  const kart = new Kart(); kart.hop(); let landed = false; for (let i = 0; i < 60; i++) { kart.update(1 / 60, { throttle: 1 }); landed ||= kart.landed; }
+  assert.ok(landed && kart.onGround && kart.z < -1, 'kart hops, lands and drives along -z');
+  const race = new Laps([[0, 0], [100, 0], [100, 100]], { radius: 20, laps: 1 }), r = { x: 0, y: 0 }; race.join(r);
+  for (const [x, y] of [[100, 0], [100, 100], [0, 0]]) { r.x = x; r.y = y; race.update(r); } assert.ok(r.done && r.lap === 1, 'a lap counts');
+  console.log('vehicles: car, drift boost, kart hop, laps ok');
+}
+{
+  const { Drag } = await import('../src/kit/drag.js');
+  const d = new Drag({ accept: (p, s) => p.kind === s.kind }); let drops = 0, rejects = 0; d.on('drop', () => drops++).on('reject', () => rejects++);
+  const red = d.piece({ x: 10, y: 10, w: 20, h: 20, kind: 'r' }), sr = d.slot({ x: 100, y: 100, w: 30, h: 30, kind: 'r' }), sb = d.slot({ x: 200, y: 100, w: 30, h: 30, kind: 'b' });
+  d.down(10, 10); d.move(200, 100); d.up(200, 100); assert.equal(rejects, 1); for (let i = 0; i < 60; i++) d.update(1 / 60); assert.equal(red.x, 10, 'rejected piece slides home');
+  d.down(10, 10); d.move(102, 98); d.up(102, 98); for (let i = 0; i < 60; i++) d.update(1 / 60);
+  assert.equal(drops, 1); assert.equal(sr.piece, red); assert.equal(red.x, 100, 'dropped piece snaps into the slot'); assert.equal(sb.piece, null);
+  console.log('drag: reject and home, drop and snap ok');
+}
+{
+  const { dungeon, cave, maze, islands, pattern, fov, loadGen } = await import('../src/kit/gen.js');
+  await loadGen();
+  const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });
+  assert.equal(a.text, b2.text, 'same seed, same dungeon'); assert.ok(a.text.includes('S') && a.text.includes('E') && a.rooms.length > 1);
+  assert.ok(cave(40, 30, { seed: 1 }).text.includes('.')); assert.ok(maze(21, 21, { seed: 1 }).grid.length === 21); assert.ok(/[~.^]/.test(islands(32, 32, { seed: 3 }).text));
+  const pt = pattern('..#..\n.###.\n..#..\n.....', 16, 16, { seed: 2 }); assert.ok(pt && pt.grid.length === 16);
+  const seen = fov('#####\n#...#\n#...#\n#####', 2, 1, 5); assert.ok(seen.has('3,2') && seen.has('0,0'));
+  console.log('gen: dungeon (seeded), cave, maze, islands, pattern, fov ok');
+}

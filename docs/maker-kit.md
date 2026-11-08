@@ -35,13 +35,25 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Sliders to tune numbers while you play | `gs.tweak` | [Hot reload and tweak sliders](#hot-reload-and-tweak-sliders) |
 | A save that survives a game update | `save: { version, migrate }` | [Save slots](#save-slots) |
 | Is my game fast enough for phones? | `npm run budget my-game` | [Speed budget](#speed-budget) |
+| Match-3, 2048 sliding, flood fill on a grid | `gs.board` | [Game kits](#game-kits) |
+| Turn-based fights, items, XP and loot | `gs.battle` | [Game kits](#game-kits) |
+| Dungeons, caves, mazes, islands, tile patterns | `gs.gen` (rot.js, WaveFunctionCollapse) | [Game kits](#game-kits) |
+| Drag pieces into slots, reorder a list | `gs.drag` | [Game kits](#game-kits) |
+| Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
+| Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
+| Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
+| Draw a shape to cast it, drawn lines as ramps | `gs.strokes` | [Game kits](#game-kits) |
+| Cars and karts that drift and boost, laps | `gs.vehicles`, `World3D.vehicle()` | [Game kits](#game-kits) |
+| A 3D level from a text map | `gs.level3d` | [Game kits](#game-kits) |
+| Time of day, rain, snow, lightning | `gs.sky` | [Game kits](#game-kits) |
 
 ## What `gs` has, and what it doesn't
 
 `gs` is a frozen object with one group per job: `sound`, `device`, `util`, `math`, `palettes`,
 `juice`, `effects`, `controls`, `pad`, `moves`, `pixel`, `gfx`, `bricks`, `physics`, `physics3d`,
 `ai`, `things`, `rounds`, `pacing`, `aim`, `senses`, `prefs`, `camera2d`, `tiles`, `movers`, `anim`, `story`,
-`replay`, `look2d`, `camera`, `nav3d`, `characters`, `toon` (Classic
+`replay`, `look2d`, `brains`, `tweak`, `board`, `battle`, `gen`, `drag`, `idle`, `party`, `rhythm`,
+`strokes`, `vehicles`, `level3d`, `sky`, `camera`, `nav3d`, `characters`, `toon` (Classic
 Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo` and `THREE`.
 It is the only thing a game may import (`src/game-modules.js`); `npm run games` refuses anything
 else and the PR check flags it.
@@ -51,7 +63,7 @@ belongs to the app and isn't on `gs`. Save with `api.save()`, find the player wi
 
 `gs` sends each call to the right place underneath: our own kits, or the best free library for the
 job (Rapier for physics, Yuka for AI, Recast for 3D path finding, MediaPipe for faces and hands,
-Tone.js, ZzFX, three.quarks, troika-three-text, simplex-noise). If we swap a library later, games don't change.
+Tone.js, ZzFX, three.quarks, troika-three-text, simplex-noise, rot.js, WaveFunctionCollapse). If we swap a library later, games don't change.
 
 **Big parts load when first used.** Physics, 3D physics, 3D path finding, 3D extras, face tracking and Tone.js are a
 few MB, so the app loads them the first time a game needs them. Create those things in `make()` or
@@ -831,3 +843,67 @@ the whole frame through effects: call `screen.apply(c)` last in `draw`. Effects:
 `zoomBlur`, `blur`, `outline`, `grayscale`, with their pixi-filters options. Reduce motion turns off
 the shaky ones. `Batch(W, H)` draws thousands of sprites with WebGL: `batch.texture(sprite)`,
 `batch.add(tex, x, y)`, `batch.draw(c)`.
+
+## Game kits
+
+Kits for the things many kinds of game share. Each one does the sums and keeps the state; your game
+draws everything and sets the rules. Every file in `src/kit/` starts with a worked example.
+
+**Boards** (`gs.board.Board(cols, rows, { fill })`): match-3, merge, 2048 and block puzzles. `matches()`
+finds lines (L and T shapes come back as one group), `clear()`, `fall()` and `refill()` drop and top
+up, `settle()` starts a board with no matches, `hint()` finds a swap that makes one, `shuffle()`.
+`slide('left', { merge })` does 2048 moves and `flood(col, row)` finds a connected group. Each piece
+gets a drawn `x`, `y` that glides to its cell (`board.update(dt)`, `board.busy`).
+
+**Battles** (`gs.battle`): `Fighter` (hp, atk, def, spd, luck, type), `Battle([[hero], [foes]], { types })`
+for turn order by speed, damage with type bonuses and critical hits, and statuses (poison, burn,
+regen, stun, sleep, shield, or your own). `battle.act(who, { move, item, target })`, `battle.turn`,
+`battle.over`, and events (`on('hit')`, `on('faint')`). `Bag` holds items and saves with `api.save()`;
+`xpFor`, `levelFor`, `gainXp` and `loot` cover levelling and drops.
+
+**Made levels** (`gs.gen`, rot.js and WaveFunctionCollapse, loaded on first use: call them in `make()` or
+`reset()`): `dungeon`, `cave`, `maze`, `islands`, `heightmap` and `pattern(sample)` (new maps that look
+like a small example). They give the same text `gs.tiles.TileMap.fromText()` reads, with `S` start and
+`E` exit marks. Pass a `seed` (`gs.math.daily()` for a level of the day). `fov(map, col, row, r)` is
+what a hero can see.
+
+**Drag and drop** (`gs.drag.Drag({ snap, accept })`): add pieces and slots, pass down/move/up through,
+and pieces lift, snap into slots you `accept`, or slide home. With `list: { x, y, axis }` the pieces
+form a row you reorder by dragging.
+
+**Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
+`Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran
+on this phone (at most a week), for money earned while away.
+
+**Pass-and-play** (`gs.party`): `Turns({ players, names })` keeps whose go it is, scores and rounds,
+with a hand-over pause (`turns.waiting`, `turns.ready()`, `turns.cover(c, W, H)`). `Split(W, H, { players,
+facing })` splits the screen between players at once, turning the far half round for a player
+sitting opposite (great on an unfolded phone laid flat).
+
+**Rhythm** (`gs.rhythm`): `Beat({ bpm })` keeps time with the sound card, so it stays in step with
+`gs.sound.music`. `Chart` reads notes written as text (one line per lane, `x` a note, `=` a hold) and
+judges taps as Perfect, Good or Miss, with combo and accuracy. `Calibrate` measures the player's tap
+lag (screens and Bluetooth headphones add delay) and every chart allows for it.
+
+**Drawn shapes** (`gs.strokes`): `Stroke` records a smoothed finger line. `Shapes` recognises circle,
+line, triangle, square, check, caret, zigzag, heart, star, spiral, wave, cross, or shapes you add as
+points, drawn any size and either way round. `match()` gives `{ name, score, sure }`. `toPhysics()`
+turns a drawn line into a `gs.physics` ramp or a falling object.
+
+**Vehicles** (`gs.vehicles`): `Car` (top-down) and `Kart` (3D) are arcade handling without a physics
+engine: grip, slides, a drift you hold for a boost, surfaces (`surface: .1` is ice), hops and ground
+following. `Laps(checkpoints)` counts laps, places racers and gives computer drivers somewhere to aim.
+For real suspension and cars that can roll over, `World3D.vehicle(mesh, { wheels })` in
+`gs.physics3d` uses Rapier's ray-cast vehicle: `car.drive(throttle, steer, brake)`, `car.speed`,
+`car.upsideDown`, `car.rightUp()`.
+
+**3D levels from text** (`gs.level3d.Level3D(text, { size, wall, look })`): the same text maps in 3D.
+`#` walls, `.` floor, `1`-`9` raised floors, `~` water, `=` low walls, spaces as holes, letters as
+marks (`find('P')`). Rows of the same block merge, so a big map is a few meshes. `level.solid(world)`
+makes it solid in `gs.physics3d`; `height(x, z)` gives the floor height for a `Kart`.
+
+**Sky and weather** (`gs.sky`): `Sky(view, { time, speed })` moves the sun through the day, colours
+the sky, sun, fill light and fog, and brings out stars (`physical: true` uses three.js's physical
+sky for Next Gen). `Weather(view, { kind: 'rain' | 'snow' | 'storm' })` falls around the camera;
+storms flash lightning, and `onFlash(far)` is your cue for thunder. In AR the camera feed is the sky,
+so use `Weather` alone.

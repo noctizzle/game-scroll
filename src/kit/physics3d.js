@@ -119,6 +119,60 @@ class Mover {
   remove() { this.world.remove(this); }
 }
 
+/**
+ * A car with real suspension (Rapier's ray-cast vehicle): the chassis is a dynamic box that can roll
+ * over, bounce off things and land jumps; four (or more) wheels are rays under it. drive() each frame.
+ * wheels: meshes to spin and steer (optional, in the order front-left, front-right, back-left, back-right).
+ */
+class Vehicle3 {
+  constructor(world, mesh, { w = 1.6, h = .5, l = 3, density = 1, wheels = [], radius = .38, rest = .35, travel = .3,
+    stiffness = 30, damping = 4, grip = 2.5, power = 12, brakes = .3, steer = .5, at, tag = 'car' } = {}) {
+    this.world = world; this.mesh = mesh || null; this.wheelMeshes = wheels; this.power = power; this.brakes = brakes; this.maxSteer = steer;
+    this.chassis = world.box(mesh, w, h, l, { density, at, tag, drag: .1, spinDrag: .6 });
+    this.ctl = world.world.createVehicleController(this.chassis.body);
+    // a low centre of mass keeps it on its wheels in turns and under power (arcade, not a sim)
+    const m = this.chassis.body.mass(); this.chassis.body.setAdditionalMassProperties(m, V(0, -h * 1.2, 0), V(m * l * l / 12, m * (w * w + l * l) / 12, m * w * w / 12), { x: 0, y: 0, z: 0, w: 1 }, true);
+    this.ctl.indexUpAxis = 1; this.ctl.setIndexForwardAxis = 2;   // y up, the car's nose along -z (three.js forward); Rapier names this setter oddly
+    const x = w / 2 - .05, y = -h / 2, z = l / 2 - radius * .9;
+    for (const [px, pz] of [[-x, -z], [x, -z], [-x, z], [x, z]]) {
+      this.ctl.addWheel(V(px, y, pz), V(0, -1, 0), V(-1, 0, 0), rest, radius);
+      const i = this.ctl.numWheels() - 1;
+      this.ctl.setWheelSuspensionStiffness(i, stiffness); this.ctl.setWheelSuspensionCompression(i, damping * .2); this.ctl.setWheelSuspensionRelaxation(i, damping * .25);
+      this.ctl.setWheelMaxSuspensionTravel(i, travel); this.ctl.setWheelFrictionSlip(i, grip); this.ctl.setWheelSideFrictionStiffness(i, 1);
+    }
+    this.throttle = 0; this.steerNow = 0; this.braking = false; this.radius = radius;
+    world.vehicles.push(this);
+  }
+  /** throttle -1..1, steer -1..1 (left is -1), brake true/false. Call every update. */
+  drive(throttle = 0, steer = 0, brake = false) { this.throttle = throttle; this.steerTo = steer; this.braking = brake; return this; }
+  /** Metres per second forward (negative going backwards). */
+  get speed() { return -this.ctl.currentVehicleSpeed(); }
+  /** True while any wheel touches the ground. */
+  get grounded() { for (let i = 0; i < this.ctl.numWheels(); i++) if (this.ctl.wheelIsInContact(i)) return true; return false; }
+  /** True when it's on its roof or side (offer a "flip back" button). */
+  get upsideDown() { const q = this.chassis.body.rotation(); return 1 - 2 * (q.x * q.x + q.z * q.z) < .3; }
+  /** Puts it back upright where it is, a little above the ground. */
+  rightUp(lift = 1) { const p = this.chassis.pos; this.chassis.place(p.x, p.y + lift, p.z, { x: 0, y: 0, z: 0, w: 1 }); this.chassis.setVel(0, 0, 0).setSpin(0, 0, 0); return this; }
+  step(h) {
+    this.steerNow += ((this.steerTo || 0) * this.maxSteer - this.steerNow) * Math.min(1, h * 10);
+    for (let i = 0; i < this.ctl.numWheels(); i++) {
+      if (i < 2) this.ctl.setWheelSteering(i, -this.steerNow);
+      this.ctl.setWheelEngineForce(i, -this.throttle * this.power * this.chassis.body.mass() / 4);   // power: metres per second² of push, all four wheels
+      this.ctl.setWheelBrake(i, this.braking ? this.brakes * this.chassis.body.mass() : 0);
+    }
+    this.ctl.updateVehicle(h, undefined, undefined, c => c !== this.chassis.collider && !c.isSensor());
+  }
+  sync() {
+    this.wheelMeshes.forEach((m, i) => {
+      if (!m || i >= this.ctl.numWheels()) return;
+      const len = this.ctl.wheelSuspensionLength(i) ?? 0, cp = this.ctl.wheelChassisConnectionPointCs(i);
+      m.position.set(cp.x, cp.y - len, cp.z);
+      m.rotation.set(this.ctl.wheelRotation(i) ?? 0, i < 2 ? this.ctl.wheelSteering(i) ?? 0 : 0, 0, 'YXZ');
+    });
+  }
+  remove() { if (this.ctl) { try { this.world.world.removeVehicleController(this.ctl); } catch (_) { /* gone */ } this.ctl = null; } this.world.vehicles = this.world.vehicles.filter(v => v !== this); this.chassis.remove(); }
+}
+
 export class World3D {
   /** gravity: metres per second² (negative is down), or { x, y, z }. */
   constructor({ gravity = -20 } = {}) {
@@ -128,7 +182,7 @@ export class World3D {
     this.world = new R.World(this.gravity);
     this.events = new R.EventQueue(true);
     own(this);   // freed when the card leaves the feed (src/kit/cleanup.js)
-    this.bodies = []; this.movers = []; this.hits = []; this.joints = [];
+    this.bodies = []; this.movers = []; this.hits = []; this.joints = []; this.vehicles = [];
   }
   /** Free the physics engine's memory for this world. The app does this when the card leaves the
    *  feed; a game can call it too, when it drops a world. Don't use the world afterwards. */
@@ -136,6 +190,7 @@ export class World3D {
     if (!this.world) return;
     try { this.events.free(); } catch (_) { /* already gone */ }
     for (const m of this.movers) if (m.ctl) try { this.world.removeCharacterController(m.ctl); } catch (_) { /* already gone */ }
+    for (const v of this.vehicles) if (v.ctl) try { this.world.removeVehicleController(v.ctl); } catch (_) { /* already gone */ }
     this.world.free(); this.world = null;
   }
   make(mesh, desc, o, kind) {
@@ -181,6 +236,8 @@ export class World3D {
   floor(y = 0, o = {}) { return this.make(null, R.ColliderDesc.cuboid(1000, .5, 1000), { ...o, fixed: true, at: V(0, y - .5, 0) }, 'floor'); }
   /** A character controller (see Mover above): radius, height, step (tallest step it climbs), slope (degrees), at. */
   mover(mesh, o = {}) { return new Mover(this, mesh, o); }
+  /** A car with suspension (see Vehicle3 above): w, h, l chassis size, wheels (meshes, children of mesh), power, grip, steer, at. */
+  vehicle(mesh, o = {}) { return new Vehicle3(this, mesh, o); }
 
   /* joints: a or b null = the fixed world; points are world positions */
   local(t, p) {
@@ -313,11 +370,13 @@ export class World3D {
     this.world.timestep = h;
     for (let i = 0; i < n; i++) {
       for (const m of this.movers) m.move(h);
+      for (const v of this.vehicles) v.step(h);
       this.world.step(this.events);
       this.events.drainCollisionEvents((h1, h2, on) => { if (on) started.push([h1, h2]); });
     }
     for (const t of this.bodies) t.sync();
     for (const m of this.movers) m.sync();
+    for (const v of this.vehicles) v.sync();
     for (const [h1, h2] of started) {
       const c1 = this.world.getCollider(h1), c2 = this.world.getCollider(h2); if (!c1 || !c2) continue;
       const a = c1.parent()?.userData, b = c2.parent()?.userData; if (!a || !b || a.dead || b.dead) continue;

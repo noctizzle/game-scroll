@@ -38,6 +38,16 @@
 //   gs.replay    Ghost (record and race a run; packs for api.save), Recorder / Replayer (whole rounds)
 //   gs.look2d    Lights (with shadows off walls), Screen (CRT, bloom, glitch...; lazy), Batch (fast WebGL sprites; lazy)
 //   gs.brains    Tiny Brains: small neural networks that learn as you play, with guard rails (Brain, Wave, Imagine)
+//   gs.board     grid boards: match, fall and refill, slide and merge, flood fill, hints
+//   gs.battle    turn-based battles: fighters, moves, types, status effects, items (Bag), XP and loot
+//   gs.gen       levels made by code: dungeons, caves, mazes, islands, heightmaps, tile patterns, field of view
+//   gs.drag      drag, drop and snap pieces into slots; reorderable lists
+//   gs.idle      idle maths: rising prices, affordable counts, short big numbers, Earner (and api.away())
+//   gs.party     pass-and-play turns with a hand-over screen, and split-screen halves for two to four
+//   gs.rhythm    a beat clock in step with the music, note charts, Perfect/Good/Miss, tap-lag calibration
+//   gs.strokes   drawn lines and gesture shapes (circle, zigzag, star... or your own), lines into physics
+//   gs.vehicles  arcade Car (top-down drift) and Kart (3D, hops and drift boosts), Laps and places
+//   gs.level3d   3D levels from text maps, solid in physics3d        gs.sky  time of day, rain, snow, storms
 //   gs.tweak     live sliders for tuning numbers while you play (npm run dev only; the starting values elsewhere)
 //   gs.prefs     the player's Reduce motion setting (read only): reduceMotion, motion
 //   gs.camera    3D camera rigs: chase, shoulder, first person, top, side, orbit, rail; no wall clipping
@@ -82,6 +92,15 @@ import * as replay from './kit/replay.js';
 import * as look2d from './kit/look2d.js';
 import { tweak } from './kit/tweak.js';
 import * as brains from './kit/brains.js';
+import * as board from './kit/board.js';
+import * as battle from './kit/battle.js';
+import * as gen from './kit/gen.js';
+import * as drag from './kit/drag.js';
+import * as idle from './kit/idle.js';
+import * as party from './kit/party.js';
+import * as rhythm from './kit/rhythm.js';
+import * as strokes from './kit/strokes.js';
+import * as vehicles from './kit/vehicles.js';
 import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
@@ -94,6 +113,7 @@ export const HIDDEN = {
   pad: ['pollPads'],
   vision: ['stopVision'],
   hd: ['currentView'],
+  gen: ['loadGen'],
 };
 
 function pick(name, ...mods) {
@@ -106,10 +126,10 @@ function pick(name, ...mods) {
 // code). The app loads the parts a streamed game needs before running it, so games don't notice;
 // if a part isn't in yet, reading it throws StillLoading and the app shows "Loading…".
 const GROUPS = {
-  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'THREE'],
+  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'level3d', 'sky', 'THREE'],
     load: () => import('./gs-3d.js').then(m => ({ toon: pick('toon', m.toon), hd: pick('hd', m.hd), ar: pick('ar', m.ar), bricks: pick('bricks', m.bricks),
       physics3d: pick('physics3d', m.physics3d), fx3d: pick('fx3d', m.fx3d), camera: pick('camera', m.camera), nav3d: pick('nav3d', m.nav3d),
-      characters: pick('characters', m.characters), THREE: m.THREE })) },
+      characters: pick('characters', m.characters), level3d: pick('level3d', m.level3d), sky: pick('sky', m.sky), THREE: m.THREE })) },
   ai: { parts: ['ai'], load: () => import('./kit/ai.js').then(m => ({ ai: pick('ai', m) })) },
 };
 const groupOf = {}; for (const [g, d] of Object.entries(GROUPS)) for (const p of d.parts) groupOf[p] = g;
@@ -168,6 +188,15 @@ const core = {
   look2d: pick('look2d', look2d),
   tweak,
   brains: pick('brains', brains),
+  board: pick('board', board),
+  battle: pick('battle', battle),
+  gen: pick('gen', gen),
+  drag: pick('drag', drag),
+  idle: pick('idle', idle),
+  party: pick('party', party),
+  rhythm: pick('rhythm', rhythm),
+  strokes: pick('strokes', strokes),
+  vehicles: pick('vehicles', vehicles),
 };
 const gs = {};
 for (const [k, v] of Object.entries(core)) Object.defineProperty(gs, k, { value: v, enumerable: true });

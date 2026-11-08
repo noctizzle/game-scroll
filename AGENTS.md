@@ -88,7 +88,7 @@ export default {
 };
 ```
 
-`api`: `score(n)`, `over()`, `win()`, `has(itemId)`, `save(data)` / `load(fallback)` / `clearSave()`
+`api`: `score(n)`, `over()`, `win()`, `has(itemId)`, `away()` (seconds since it last ran), `save(data)` / `load(fallback)` / `clearSave()`
 (2 KB JSON; changing its shape? add `save: { version, migrate(data, from) }` to the definition), `location()` / `watchLocation(cb)` (needs `location: 'coarse'` or `'precise'` in the
 definition). Optional game methods: `snapshot()` / `restore(data)` (keep a round across hot reload), `fx(dt)` (effects behind the game-over screen), `resize(w, h)`
 (fluid games with `maxW`, `maxH`), `debug(c)`, `pause()`, `resume()`.
@@ -150,6 +150,13 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.look2d`: `Lights` (darkness, coloured lights, shadows off walls), `Screen` (lazy: crt, bloom, grade,
   glitch, film, shockwave...), `Batch` (lazy: thousands of WebGL sprites).
 - `gs.brains` (Tiny Brains): `Brain(api, { inputs, actions, teacher, limits, rules })` learns as you play with guard rails (`act`, `feel`, `result`), `Wave` (each enemy an experiment), `Imagine` (tries moves ahead).
+- `gs.board.Board` (match, fall, refill, `slide` 2048-style, `flood`, `hint`), `gs.battle` (`Fighter`, `Battle`
+  turn order + types + statuses, `Bag`, `gainXp`, `loot`), `gs.gen` (lazy: `dungeon`, `cave`, `maze`, `islands`,
+  `pattern`, `fov`; seeded, same text as TileMap), `gs.drag.Drag` (pieces, slots, snap, lists), `gs.idle`
+  (`cost`, `afford`, `short`, `Earner`; `api.away()` for time away), `gs.party` (`Turns` with hand-over, `Split`
+  screens), `gs.rhythm` (`Beat`, `Chart`, `Calibrate`), `gs.strokes` (`Stroke`, `Shapes` recogniser, `toPhysics`),
+  `gs.vehicles` (`Car`, `Kart`, `Laps`; `World3D.vehicle()` for suspension), `gs.level3d.Level3D(text)`, `gs.sky`
+  (`Sky` time of day, `Weather` rain/snow/storm).
 - `gs.tweak(name, { speed: 3, grip: [.8, 0, 1] })`: live sliders in `npm run dev` (starting values elsewhere); read fields where used.
 - `gs.prefs` (read only): the player's Reduce motion setting, `reduceMotion`, `motion`. Shake, flash and
   camera kicks already follow it; scale your own big effects by `gs.prefs.motion`.
