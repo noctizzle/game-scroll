@@ -30,7 +30,7 @@
 //   gs.pacing    spawners, waves with breathers, a difficulty director
 //   gs.aim       touch aim assist: sticky aim, pull onto targets, auto fire
 //   gs.senses    enemy sight cones, hearing, memory and moods (calm, suspicious, alert, searching)
-//   gs.prefs     the player's comfort settings (read only): reduceMotion, aimAssist, motion
+//   gs.prefs     the player's Reduce motion setting (read only): reduceMotion, motion
 //   gs.camera    3D camera rigs: chase, shoulder, first person, top, side, orbit, rail; no wall clipping
 //   gs.nav3d     3D path finding on a walkable map made from your level (Recast)
 //   gs.characters  heads that look, limbs that reach (IK), feet that step, springy hit reactions

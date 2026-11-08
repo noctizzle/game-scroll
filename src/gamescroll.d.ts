@@ -313,8 +313,8 @@ export interface SensesPart {
   Noises: new () => { list: { x: number; y: number; loud: number; age: number }[]; make(x: number, y: number, loud?: number): Loose; update(dt: number): Loose; clear(): Loose };
 }
 
-/** The player's comfort settings (read only). The kits already apply them. */
-export interface PrefsPart { readonly reduceMotion: boolean; readonly aimAssist: number; /** 1 normally, smaller with Reduce motion: scale your own shakes and flashes by it. */ readonly motion: number }
+/** The player's Reduce motion setting (read only). The kits already apply it. */
+export interface PrefsPart { readonly reduceMotion: boolean; /** 1 normally, smaller with Reduce motion: scale your own shakes and flashes by it. */ readonly motion: number }
 
 // ---------- 3D and AI parts (load on first use; the app loads them before a game that needs them) ----------
 

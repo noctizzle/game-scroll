@@ -139,8 +139,8 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.camera.CameraRig` (3D): `chase`, `shoulder`, `first`, `top`, `side`, `orbit`, `rail`, `fixed`; walls, blends, `shake`, `kick`.
 - `gs.nav3d.NavMesh3D` (lazy): 3D paths made from your level meshes, `crowd()` agents.
 - `gs.characters`: `lookAt`, `reach` (two-bone IK), `Steps` (feet that plant), `Wobble`; ragdolls are `World3D.ragdoll()`.
-- `gs.prefs` (read only): the player's comfort settings, `reduceMotion`, `aimAssist`, `motion`. Shake,
-  flash, camera kicks and AimAssist already follow them; scale your own big effects by `gs.prefs.motion`.
+- `gs.prefs` (read only): the player's Reduce motion setting, `reduceMotion`, `motion`. Shake, flash and
+  camera kicks already follow it; scale your own big effects by `gs.prefs.motion`.
 - `gs.math`: `rng(seed)`, `daily(salt)`, `noise2`, `noise3`, `fbm`, `vec`, `overlap`, `Grid`, `Timers`, `angleDiff`, `wrap`.
 - `gs.util`: `clamp`, `rnd`, `pix`, `disc`, `hash`, `fmt`, `flickTracker`. `gs.palettes`: `PAL`, `SHELL`, `C16`.
 - `gs.gfx` (shaded 2D shapes, glow, backdrops), `gs.bricks` (toy bricks), `gs.geo` (location maths).

@@ -280,19 +280,16 @@ console.log('physics ok');
   assert.ok(log.includes('a') && log.includes('b') && log.includes('pa') && log.includes('ra'), 'cleanup hooks all run ' + log);
   console.log('cleanup ok');
 }
-// comfort settings: Reduce motion softens shake and flash; aim assist strength comes from Settings
+// Reduce motion softens shake and flash
 {
   const { setPrefs, prefs } = await import('../src/kit/prefs.js');
   const { Shake, Juice } = await import('../src/kit/juice.js');
-  const { AimAssist } = await import('../src/kit/aim.js');
   const a = new Shake(); a.add(6); const full = a.trauma;
-  setPrefs({ reduceMotion: true, aim: 'off' });
+  setPrefs({ reduceMotion: true });
   const b = new Shake(); b.add(6);
   assert.ok(b.trauma < full * .5, 'reduce motion: smaller shake ' + b.trauma + ' vs ' + full);
   const j = new Juice(); j.flash('#fff', .4); assert.ok(j.fl.a < .2, 'reduce motion: softer flash');
-  assert.equal(new AimAssist().strength, 0, 'aim assist off from Settings');
-  assert.equal(new AimAssist({ strength: .7 }).strength, .7, 'a game can still set its own');
   assert.ok(Object.isFrozen(prefs), 'games cannot change prefs');
-  setPrefs({ reduceMotion: false, aim: 'normal' });
+  setPrefs({ reduceMotion: false });
   console.log('prefs ok');
 }

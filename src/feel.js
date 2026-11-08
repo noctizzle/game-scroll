@@ -1,15 +1,17 @@
 // Sound & haptics sheet, opened from the 🔊 button in the top bar (and from Settings).
-// Sound: on/off, volume, music on/off. Haptics: on/off and strength. Saved on this device.
+// Sound: on/off, volume, music on/off. Haptics: on/off and strength. Motion: reduce motion.
+// Saved on this device.
 import { sound, setSound, sfx } from './sfx.js';
 import { hapticSettings, setHaptics, haptic, canBuzz } from './kit/device.js';
 import { stopMusic } from './kit/sound.js';
+import { prefSettings, setPrefs } from './kit/prefs.js';
 
 const STRENGTH = [['light', 'Light'], ['normal', 'Normal'], ['strong', 'Strong']];
 
 /** The top-bar icon for the current settings. */
 export const feelIcon = () => sound.muted || !sound.volume ? '🔇' : sound.volume < .5 ? '🔉' : '🔊';
 
-/** The sound and haptics controls as HTML (two set-row sections), for a sheet or the Settings list. */
+/** The sound, haptics and motion controls as HTML (set-row sections), for a sheet or the Settings list. */
 export function feelHTML() {
   const vol = Math.round(sound.volume * 100), soundOff = sound.muted, hapOff = !hapticSettings.on;
   const vibe = canBuzz() || hapOff;
@@ -25,6 +27,11 @@ export function feelHTML() {
       <label class="set-toggle"><input type="checkbox" class="feel-hap"${hapOff ? '' : ' checked'}> Vibration</label>
       <div class="qa-actions set-fps feel-str${hapOff ? ' off' : ''}" role="group" aria-label="Vibration strength">${STRENGTH.map(([v, n]) => `<button data-str="${v}" aria-pressed="${hapticSettings.strength === v}"${hapticSettings.strength === v ? ' class="on"' : ''}${hapOff ? ' disabled' : ''}>${n}</button>`).join('')}</div>
       <p class="qa-help">Games that are played by feel (like Buzz Code) switch to on-screen flashes when vibration is off.</p>
+    </section>
+    <section class="set-row">
+      <h3>Motion</h3>
+      <label class="set-toggle"><input type="checkbox" class="feel-motion"${prefSettings.reduceMotion ? ' checked' : ''}> Reduce motion</label>
+      <p class="qa-help">Softens screen shake, flashes and camera jolts in every game.</p>
     </section>`;
 }
 
@@ -41,6 +48,7 @@ export function bindFeel(root, { render, changed }) {
   vol.addEventListener('change', () => sfx(660, .08, 'triangle', .06, 220));    // a sample beep at the new volume
   q('.feel-music').addEventListener('change', e => { setSound({ music: e.target.checked }); });
   q('.feel-hap').addEventListener('change', e => { setHaptics({ on: e.target.checked }); haptic('medium'); render(); });
+  q('.feel-motion').addEventListener('change', e => setPrefs({ reduceMotion: e.target.checked }));
   root.querySelectorAll('.feel-str button').forEach(b => b.addEventListener('click', () => {
     setHaptics({ strength: b.dataset.str }); haptic('medium'); render();
   }));
