@@ -14,13 +14,14 @@
 //  - v.persp(fov): a free perspective camera (runners, racers) the game moves itself; use
 //    v.toScreen(x, y, z) to place 2D HUD effects over 3D things.
 import {
-  WebGLRenderer, Scene, Color, Fog, OrthographicCamera, PerspectiveCamera, DirectionalLight, HemisphereLight,
+  Scene, Color, Fog, OrthographicCamera, PerspectiveCamera, DirectionalLight, HemisphereLight,
   MeshToonMaterial, MeshBasicMaterial, ShaderMaterial, Mesh, Group, DataTexture, NearestFilter, RGBAFormat,
   BoxGeometry, SphereGeometry, CylinderGeometry, ConeGeometry, CapsuleGeometry, TorusGeometry, PlaneGeometry,
   CircleGeometry, RingGeometry, BufferGeometry, BufferAttribute, OctahedronGeometry, DodecahedronGeometry, IcosahedronGeometry, DoubleSide, Vector2, Vector3, SRGBColorSpace,
   WebGLRenderTarget, DepthTexture, UnsignedIntType, MeshNormalMaterial,
 } from 'three';
 
+import { makeRenderer, copyFrame } from './gpu.js';
 export * as THREE from 'three';
 
 /* ---------- shared renderer ---------- */
@@ -29,9 +30,8 @@ function renderer() {
   if (R || broken) return R;
   try {
     const cv = document.createElement('canvas');
-    R = new WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+    R = makeRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true });
     R.outputColorSpace = SRGBColorSpace; R.setPixelRatio(1);
-    cv.addEventListener('webglcontextlost', e => e.preventDefault());
   } catch (e) { broken = true; R = null; }
   return R;
 }
@@ -293,7 +293,7 @@ export class View {
       if (fog) inkU.fade.value.set(fog.near, fog.far); else inkU.fade.value.set(1e9, 2e9);
       r.autoClear = false; r.render(inkQuad, inkCam); r.autoClear = true;
     }
-    c.save(); c.imageSmoothingEnabled = true; c.drawImage(cv, 0, 0, pw, ph, 0, 0, w, h); c.restore();
+    c.save(); c.imageSmoothingEnabled = true; copyFrame(R, c, 0, 0, pw, ph, 0, 0, w, h); c.restore();
   }
 }
 
