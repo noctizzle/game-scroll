@@ -567,7 +567,7 @@ export interface BrainsPart {
   /** Learns the player's habits and guesses their next move (board, card, rhythm, turn games). */
   Predict: typeof Predict;
   /** Tries moves ahead with your game's own step function. */
-  Imagine: new <S>(o: { actions: number | string[]; step(state: S, action: number, dt: number): S; score(state: S): number; depth?: number; dt?: number; tries?: number; budget?: number; /** Always try every move: the same pick on every phone. */ fixed?: boolean; brain?: Brain; see?(state: S): number[] }) => { pick(state: S): number; readonly action: number | string; /** Rounds of tries the last pick used. */ readonly tried: number };
+  Imagine: new <S>(o: { actions: number | string[]; step(state: S, action: number, dt: number): S; score(state: S): number; depth?: number; dt?: number; tries?: number; budget?: number; /** Always try every move: the same pick on every phone. */ fixed?: boolean; /** Switch planning off on low phones or when picks average over maxMs. */ auto?: boolean; maxMs?: number; /** The move while planning is off. */ fallback?(state: S): number | string; brain?: Brain; see?(state: S): number[] }) => { pick(state: S): number; readonly action: number | string; /** Rounds of tries the last pick used. */ readonly tried: number; /** Planning (false once auto switched it off). */ on: boolean; /** Why it's off: 'low phone' | 'too slow' | ''. */ why: string; /** Smoothed ms per pick. */ readonly cost: number };
   packWeights(sizes: number[], w: ArrayLike<number>): string;
   unpackWeights(s: string): { sizes: number[]; w: Float32Array } | null;
 }

@@ -33,6 +33,7 @@
 // Runs on the phone's CPU in plain JavaScript (a decision takes microseconds).
 
 import { rng } from './math.js';
+import { phoneClass } from './speed.js';
 
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 const MAX_PARAMS = 1200;   // keeps a brain (and its starting copy) inside the game's brain slot
@@ -416,16 +417,24 @@ export class Wave {
  * By default it plans for at most `budget` ms, so a slow phone tries fewer moves. fixed: true always
  * tries every move `tries` times, so it picks the same on every phone (for replays and daily runs);
  * plan.tried says how many rounds of tries the last pick used.
+ *
+ * auto: true switches planning off on phones that can't afford it: at once on a low phone (see
+ * src/kit/speed.js), or when picks keep taking longer than maxMs (default: budget) on average.
+ * plan.on says whether it's planning (plan.why says why not). While off, pick() asks
+ * fallback(state) for the move, or the brain (with see), or keeps the last move.
  */
 export class Imagine {
-  constructor({ actions, step, score, depth = 24, dt = 1 / 30, tries = 2, budget = 2, fixed = false, brain = null, see = null }) {
+  constructor({ actions, step, score, depth = 24, dt = 1 / 30, tries = 2, budget = 2, fixed = false, auto = false, maxMs = budget, fallback = null, brain = null, see = null }) {
     this.n = Array.isArray(actions) ? actions.length : actions; this.names = Array.isArray(actions) ? actions : null;
-    Object.assign(this, { step, score, depth, dt, tries, budget, fixed, brain, see });
-    this.r = rng(99); this.last = 0; this.tried = 0;
+    Object.assign(this, { step, score, depth, dt, tries, budget, fixed, auto, maxMs, fallback, brain, see });
+    this.r = rng(99); this.last = 0; this.tried = 0; this.cost = 0; this.picks = 0;
+    this.on = true; this.why = '';
+    if (auto) { let k = 'mid'; try { k = phoneClass(); } catch (_) {} if (k === 'low') { this.on = false; this.why = 'low phone'; } }
   }
   get action() { return this.names ? this.names[this.last] : this.last; }
   pick(state) {
-    const t0 = this.fixed ? 0 : performance.now(), totals = new Float64Array(this.n), counts = new Uint16Array(this.n), hold = Math.max(1, this.depth / 3 | 0);
+    if (!this.on) return this.instead(state);
+    const start = performance.now(), t0 = this.fixed ? 0 : start, totals = new Float64Array(this.n), counts = new Uint16Array(this.n), hold = Math.max(1, this.depth / 3 | 0);
     this.tried = 0;
     outer: for (let t = 0; t < this.tries; t++, this.tried = t) for (let a = 0; a < this.n; a++) {
       let s = state, sum = 0;
@@ -444,6 +453,21 @@ export class Imagine {
       if (this.see) b.net.learn(this.see(state), best, .03 * b.rate);   // the brain learns from the plan
       if (this.r() < Math.max(b.limits.minNoise, (1 - b.skill) * .3)) a = Math.floor(this.r() * this.n);   // the skill dial
       if (b.rules) { const x = this.see ? this.see(state) : []; a = b.index(b.rules(x, this.names ? this.names[a] : a) ?? a); }
+    }
+    this.last = a;
+    // what a pick costs on this phone (measured only: it never changes the pick)
+    const took = performance.now() - start;
+    this.picks++; this.cost = this.picks === 1 ? took : this.cost + (took - this.cost) * .1;
+    if (this.auto && this.picks >= 10 && this.cost > this.maxMs) { this.on = false; this.why = 'too slow'; }
+    return a;
+  }
+  /** The move while planning is off: the game's fallback, else the brain, else the last move. */
+  instead(state) {
+    let a = this.last;
+    if (this.fallback) { const f = this.fallback(state); a = typeof f === 'number' ? f | 0 : this.names ? Math.max(0, this.names.indexOf(f)) : 0; }
+    else if (this.brain && this.see) {
+      const x = this.see(state); a = argmax(this.brain.net.run(x));
+      if (this.brain.rules) a = this.brain.index(this.brain.rules(x, this.names ? this.names[a] : a) ?? a);
     }
     this.last = a; return a;
   }

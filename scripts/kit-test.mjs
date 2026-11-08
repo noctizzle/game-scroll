@@ -488,6 +488,16 @@ console.log('physics ok');
   slow.pick({ x: 0 }); assert.equal(slow.tried, 4, 'fixed plans try everything');
   const quick = new Imagine({ actions: 3, tries: 4, budget: 0, step: slow.step, score: slow.score });
   quick.pick({ x: 0 }); assert.ok(quick.tried < 4, 'budgeted plans stop early: ' + quick.tried);
+  // Imagine auto: a phone too slow for plans switches them off and uses the fallback
+  const heavy = new Imagine({ actions: ['a', 'b'], tries: 1, depth: 4, auto: true, maxMs: .01, fallback: () => 'b', step: (s) => { const t = performance.now(); while (performance.now() - t < .05); return s; }, score: () => 0 });
+  heavy.on = true; heavy.why = '';   // (Node counts as a low phone: no graphics chip)
+  for (let i = 0; i < 12; i++) heavy.pick({});
+  assert.ok(!heavy.on && heavy.why === 'too slow', 'auto switches off: ' + heavy.why);
+  assert.equal(heavy.pick({}), 1); assert.equal(heavy.action, 'b');
+  const light = new Imagine({ actions: 2, auto: true, step: s => s, score: () => 0 });
+  assert.equal(light.why, 'low phone', 'a low phone never plans'); light.on = true;
+  for (let i = 0; i < 12; i++) light.pick({});
+  assert.ok(light.on, 'cheap plans stay on');
   // Wave.unsure: copies of one brain agree; very different minds don't
   const ub = new Brain({ name: 'u', inputs: 2, actions: 3, share: false }), uw = new Wave(ub, { change: .001 });
   const u1 = uw.mind(), u2 = uw.mind();

@@ -774,6 +774,11 @@ const a = plan.pick(car);
 records replays or runs a daily seed, add `fixed: true`: it then always tries every move `tries`
 times and picks the same on every phone (`plan.tried` says how many rounds the last pick used).
 
+`auto: true` switches planning off on phones that can't afford it: at once on a low phone, or once
+picks average longer than `maxMs` (default: `budget`). `plan.on` says whether it's planning and
+`plan.why` why not. While it's off, `pick()` uses `fallback(state)`, or the brain (with `see`), so
+the game keeps working the same way, just less cleverly.
+
 **Predict: learning the player's habits.** For board, card, rhythm and turn games. It counts what the
 player did after their last move, last two and last three, and learns which of those to believe. A
 few dozen moves are enough to spot a habit; a player who really is random doesn't fool it into
