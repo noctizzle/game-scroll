@@ -168,9 +168,9 @@ function slot(api, name) {
  *   drift       how far each number may move from the brain it started as (1)
  *   share       join shared learning: a fresh brain starts from the average of everyone's (true)
  *   even        even steps: each number learns at a speed scaled to its own recent steps, so one
- *               learn speed suits any game's inputs (false; changes how the brain learns, so try it)
+ *               learn speed suits any game's inputs (true)
  *   odds        learn the player's real win chance at each skill level, and set the skill where
- *               that chance is the target (false); winChance(skill) reads it
+ *               that chance is the target (true); winChance(skill) reads it
  */
 export class Brain {
   constructor(api, opts = {}) {
@@ -184,8 +184,8 @@ export class Brain {
     this.target = clamp(opts.target ?? .6, .2, .9);
     this.rate = opts.learn ?? 1;
     this.drift = opts.drift ?? 1;
-    this.even = !!opts.even; this.net.even = this.even;
-    this.useOdds = !!opts.odds;
+    this.even = opts.even !== false; this.net.even = this.even;
+    this.useOdds = opts.odds !== false;
     this.teacher = opts.teacher || null;
     this.rules = opts.rules || null;
     this.slot = slot(api, this.name);

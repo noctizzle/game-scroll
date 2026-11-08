@@ -794,11 +794,11 @@ the game's brain slot (`name`, default `'habits'`); `forget()` clears it. It onl
 decides how often to use it, so keep it inside the same guard rails (counter a habit some of the
 time, less when the player is losing).
 
-**Two options to try (off by default, as they change how a brain behaves):**
+**Built in (both on; `false` turns either off):**
 
-- `even: true`: even steps. Each number learns at a speed scaled to its own recent steps (like
-  RMSprop), so one `learn` speed suits any game's inputs, tiny or large. Playtest before you ship it.
-- `odds: true`: the brain learns the player's real chance of winning at each skill level from round
+- `even`: even steps. Each number learns at a speed scaled to its own recent steps (like RMSprop),
+  so one `learn` speed suits any game's inputs, tiny or large.
+- `odds`: the brain learns the player's real chance of winning at each skill level from round
   results, and moves the skill to where that chance is `target`, rather than only reacting after
   losses. `bot.winChance(skill)` reads it. The losing-streak relief still applies on top.
 

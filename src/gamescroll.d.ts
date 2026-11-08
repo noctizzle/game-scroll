@@ -518,9 +518,9 @@ export interface BrainOptions {
   drift?: number;
   /** Shared learning: start from everyone's average brain (true). */
   share?: boolean;
-  /** Even steps: each number's step scaled to its own recent steps (false). */
+  /** Even steps: each number's step scaled to its own recent steps (true). */
   even?: boolean;
-  /** Learn the player's real win chance at each skill level and aim the skill at the target (false). */
+  /** Learn the player's real win chance at each skill level and aim the skill at the target (true). */
   odds?: boolean;
 }
 /** A Tiny Brain that learns as you play, with guard rails. */
