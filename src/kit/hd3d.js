@@ -423,9 +423,13 @@ export class HDView {
   }
   placeLamps(spots, x, y, z, t = 0) {
     const n = tier().lights, near = spots.map(s => [s, (s.x - x) ** 2 + (s.z - z) ** 2 + (s.y - y) ** 2]).sort((a, b) => a[1] - b[1]);
+    // A light switching on or off changes how many lights every material is built for, so three.js
+    // rebuilds all their shaders: a stutter each time a lamp came into or left range. So the pooled
+    // lights stay switched on (the tier sets how many) and a spare one just goes dark.
     this.lamps.forEach((l, i) => {
-      const s = near[i]?.[0]; l.visible = i < n && !!s;
+      const s = near[i]?.[0]; l.visible = i < n;
       if (!l.visible) return;
+      if (!s) { l.intensity = 0; return; }
       l.position.set(s.x, s.y, s.z); l.color.set(s.col || '#ffd8a0');
       const fl = s.flick ? (Math.sin(t * 31 + s.x * 7) > .6 || Math.sin(t * 3.1 + s.z) > .95 ? .25 : 1) : 1;
       // fade the furthest light in/out so swapping which lamps are lit never pops
