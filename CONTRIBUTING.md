@@ -424,6 +424,14 @@ something newer, older apps skip it until they update.
 
 Games that turn out weak or broken in play testing may be benched (hidden) or removed later.
 
+### Adding a library (shared code only)
+
+Games never add packages, but a change to the shared code sometimes does. Every package in
+`package.json` `dependencies` ships inside the app, so it must also be listed, with its licence, in
+`src/licences.js`: that list is what players see under Settings › Licence › Open-source parts. Run
+`npm run licences` to check; the pull request check runs it too and fails until the new package is
+listed with the licence its own `package.json` gives.
+
 ## Licence of your contribution
 
 Game Scroll is licensed under the [PolyForm Shield License 1.0.0](LICENSE). In short: you may read,

@@ -19,7 +19,7 @@ import { API_FEATURES, LOCATION_LEVELS, hasAll } from './game-modules.js';
 import gs from './gamescroll.js';
 
 export const BASE = String(import.meta.env.VITE_GAMES_URL || '').replace(/\/+$/, '');
-export const CACHE_MAX = 100;
+export const CACHE_MAX = 1000;
 // Base64 SPKI public key for ECDSA P-256. Empty = the old unsigned manifest.json (before the key exists).
 const PUBKEY = String(import.meta.env.VITE_CATALOGUE_KEY || '').trim();
 export const SIGNED = !!PUBKEY;
