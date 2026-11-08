@@ -386,3 +386,26 @@ console.log('physics ok');
   assert.ok(tw.done && ticks === 7, 'typewriter ' + ticks);
   console.log('story ok');
 }
+
+// save versions: old saves go through migrate(), a newer save is kept safe
+{
+  globalThis.localStorage ??= (() => { const m = new Map(); return { getItem: k => m.has(k) ? m.get(k) : null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }; })();
+  const { savesFor, _resetSaves } = await import('../src/saves.js');
+  _resetSaves();
+  const v1 = savesFor({ id: 'sv-test' });
+  assert.ok(v1.save({ coins: 5 }), 'v1 saves');
+  const calls = [];
+  const v2 = savesFor({ id: 'sv-test', save: { version: 2, migrate: (d, from) => { calls.push(from); return { gold: d.coins * 10 }; } } });
+  assert.deepEqual(v2.load({}), { gold: 50 }, 'migrated to v2');
+  assert.deepEqual(v2.load({}), { gold: 50 }, 'migration kept (runs once)');
+  assert.deepEqual(calls, [1], 'migrate got from=1 once');
+  assert.deepEqual(v1.load('fallback'), 'fallback', 'older game copy gets the fallback for a newer save');
+  assert.equal(v1.save({ coins: 1 }), false, 'older game copy cannot overwrite a newer save');
+  assert.deepEqual(v2.load({}), { gold: 50 }, 'newer save untouched');
+  const bad = savesFor({ id: 'sv-test', save: { version: 3, migrate: () => { throw new Error('x'); } } });
+  assert.equal(bad.load('fb'), 'fb', 'failed migrate gives the fallback');
+  const none = savesFor({ id: 'sv-test', save: { version: 3 } });
+  assert.equal(none.load('fb'), 'fb', 'no migrate gives the fallback');
+  _resetSaves();
+  console.log('saves: versions + migrate ok');
+}

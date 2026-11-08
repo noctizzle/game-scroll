@@ -23,6 +23,8 @@ let owner = null;
 const owned = new WeakMap();
 /** Run fn with `o` as the owner of whatever it makes. */
 export function ownedBy(o, fn) { const prev = owner; owner = o; try { return fn(); } finally { owner = prev; } }
+/** The card being made or reset right now (null outside make() / reset()). */
+export const currentOwner = () => owner;
 /** Kits call this for something that needs freeing: obj.free() runs when its owner is released. */
 export function own(obj) {
   if (!owner) return;

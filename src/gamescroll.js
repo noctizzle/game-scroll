@@ -37,6 +37,7 @@
 //   gs.story     Story (branching dialogue in ink; lazy) and Typewriter text
 //   gs.replay    Ghost (record and race a run; packs for api.save), Recorder / Replayer (whole rounds)
 //   gs.look2d    Lights (with shadows off walls), Screen (CRT, bloom, glitch...; lazy), Batch (fast WebGL sprites; lazy)
+//   gs.tweak     live sliders for tuning numbers while you play (npm run dev only; the starting values elsewhere)
 //   gs.prefs     the player's Reduce motion setting (read only): reduceMotion, motion
 //   gs.camera    3D camera rigs: chase, shoulder, first person, top, side, orbit, rail; no wall clipping
 //   gs.nav3d     3D path finding on a walkable map made from your level (Recast)
@@ -78,6 +79,7 @@ import * as anim from './kit/anim.js';
 import * as story from './kit/story.js';
 import * as replay from './kit/replay.js';
 import * as look2d from './kit/look2d.js';
+import { tweak } from './kit/tweak.js';
 import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
@@ -162,6 +164,7 @@ const core = {
   story: pick('story', story),
   replay: pick('replay', replay),
   look2d: pick('look2d', look2d),
+  tweak,
 };
 const gs = {};
 for (const [k, v] of Object.entries(core)) Object.defineProperty(gs, k, { value: v, enumerable: true });

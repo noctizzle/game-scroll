@@ -20,7 +20,8 @@ The human-facing guide is [CONTRIBUTING.md](CONTRIBUTING.md); the kit reference 
    npm run build:bundled && node scripts/smoke.cjs <id>   # plays it with random input; fails on any error
    node scripts/fold.cjs <id>                # survives folding / unfolding the screen
    ```
-   For Console and Next Gen games also run `node scripts/sweep.cjs <id>`.
+   For Console and Next Gen games also run `node scripts/sweep.cjs <id>`. `node scripts/budget.cjs <id>`
+   checks frame time and memory on a slowed CPU (the PR check runs it too).
 5. Only change files in `src/games/` (and optionally tick the idea in `docs/game-ideas.md`). Shared
    code (`src/kit/`, `src/gamescroll.js`, `src/main.js`...) ships inside the app: change it only when
    asked to, in a separate PR.
@@ -88,8 +89,8 @@ export default {
 ```
 
 `api`: `score(n)`, `over()`, `win()`, `has(itemId)`, `save(data)` / `load(fallback)` / `clearSave()`
-(2 KB JSON), `location()` / `watchLocation(cb)` (needs `location: 'coarse'` or `'precise'` in the
-definition). Optional game methods: `fx(dt)` (effects behind the game-over screen), `resize(w, h)`
+(2 KB JSON; changing its shape? add `save: { version, migrate(data, from) }` to the definition), `location()` / `watchLocation(cb)` (needs `location: 'coarse'` or `'precise'` in the
+definition). Optional game methods: `snapshot()` / `restore(data)` (keep a round across hot reload), `fx(dt)` (effects behind the game-over screen), `resize(w, h)`
 (fluid games with `maxW`, `maxH`), `debug(c)`, `pause()`, `resume()`.
 
 The app draws the start and game-over screens and the score. The game only draws play.
@@ -148,6 +149,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.replay`: `Ghost` (record a run, `pack()` for `api.save`, race it), `Recorder` / `Replayer` (whole rounds).
 - `gs.look2d`: `Lights` (darkness, coloured lights, shadows off walls), `Screen` (lazy: crt, bloom, grade,
   glitch, film, shockwave...), `Batch` (lazy: thousands of WebGL sprites).
+- `gs.tweak(name, { speed: 3, grip: [.8, 0, 1] })`: live sliders in `npm run dev` (starting values elsewhere); read fields where used.
 - `gs.prefs` (read only): the player's Reduce motion setting, `reduceMotion`, `motion`. Shake, flash and
   camera kicks already follow it; scale your own big effects by `gs.prefs.motion`.
 - `gs.math`: `rng(seed)`, `daily(salt)`, `noise2`, `noise3`, `fbm`, `vec`, `overlap`, `Grid`, `Timers`, `angleDiff`, `wrap`.

@@ -123,7 +123,7 @@ export default {
   hint: 'Pop the bubbles before they float away. Miss three and it is over.',
   make,
 };</code></pre>
-<p>Then jump straight to it: open the browser console and run <code>__gs.only('tap-bubbles')</code>. Press <code>`</code> (backquote) for the debug overlay: frame rate, slow motion, frame stepping and hitboxes.</p>
+<p>Then jump straight to it: open the browser console and run <code>__gs.only('tap-bubbles')</code>. Press <code>`</code> (backquote) for the debug overlay: frame rate, slow motion, frame stepping and hitboxes. Save your file and the game reloads in place, and <code>gs.tweak({ speed: 3 })</code> gives you sliders to tune numbers while you play.</p>
 
 <h3>What your game gets and gives</h3>
 <table>
@@ -225,6 +225,7 @@ export default {
   <li><code>gs.camera2d</code>, <code>gs.tiles</code>, <code>gs.movers</code>: 2D cameras, levels written as text, jumps that feel right.</li>
   <li><code>gs.anim</code>, <code>gs.story</code>, <code>gs.replay</code>: animation states, story dialogue (ink), ghosts and replays.</li>
   <li><code>gs.look2d</code>: lights and shadows, old-TV and bloom effects, thousands of fast sprites.</li>
+  <li><code>gs.tweak</code>: live sliders for your numbers while you play (only in <code>npm run dev</code>).</li>
   <li><code>gs.camera</code>, <code>gs.nav3d</code>, <code>gs.characters</code>: 3D cameras, 3D path finding, heads that look and feet that step.</li>
   <li><code>gs.vision</code>: play with your face or hands (MediaPipe, all on the phone).</li>
   <li><code>gs.device</code>: <code>haptic()</code>, <code>buzz()</code>, <code>tilt()</code>, <code>onShake()</code>, <code>heading()</code>, <code>startMic()</code>, <code>startCamera()</code>.</li>

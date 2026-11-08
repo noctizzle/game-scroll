@@ -21,6 +21,7 @@ export const OPEN_SOURCE = [
   { name: 'ink (inkjs)', for: 'story dialogue, by inkle', licence: 'MIT', spdx: 'MIT', packages: ['inkjs'] },
   { name: 'three-gpu-pathtracer', for: 'photo mode (path tracing)', licence: 'MIT', spdx: 'MIT', packages: ['three-gpu-pathtracer'] },
   { name: 'three-mesh-bvh', for: 'photo mode (path tracing)', licence: 'MIT', spdx: 'MIT', packages: ['three-mesh-bvh'] },
+  { name: 'lil-gui', for: 'live tweak sliders for game makers (dev builds only)', licence: 'MIT', spdx: 'MIT', packages: ['lil-gui'] },
   { name: 'Tone.js', for: 'music', licence: 'MIT', spdx: 'MIT', packages: ['tone'] },
   { name: 'ZzFX', for: 'sound effects, by Frank Force', licence: 'MIT', spdx: 'MIT', vendored: 'src/kit/zzfx.js' },
   { name: 'simplex-noise', for: 'noise for terrain and motion', licence: 'MIT', spdx: 'MIT', packages: ['simplex-noise'] },

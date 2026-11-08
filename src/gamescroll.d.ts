@@ -20,8 +20,8 @@ export interface GameApi {
   win(): void;
   /** Does the player own this shop item? */
   has(itemId: string): boolean;
-  /** Saves up to 2 KB of JSON for this game. */
-  save(data: unknown): void;
+  /** Saves up to 2 KB of JSON for this game. False if it wasn't saved (too big, or a newer version of the game saved last). */
+  save(data: unknown): boolean;
   load<T>(fallback: T): T;
   clearSave(): void;
   /** The player's rounded position (needs `location` in the definition), or null. */
@@ -49,6 +49,10 @@ export interface Game {
   debug?(c: Ctx): void;
   pause?(): void;
   resume?(): void;
+  /** Hot reload (npm run dev): what to carry over to the new code. Return plain data. */
+  snapshot?(): unknown;
+  /** Hot reload: called on the new game, after reset(), with what snapshot() returned. */
+  restore?(data: unknown): void;
   [more: string]: Loose;
 }
 
@@ -71,6 +75,8 @@ export interface GameDef {
   pal?: string;
   creator?: string;
   location?: 'coarse' | 'precise';
+  /** Save versions: raise version when the save's shape changes; migrate turns an older save into the new shape. */
+  save?: { version: number; migrate?(data: Loose, from: number): unknown };
   make(api: GameApi): Game;
   [more: string]: Loose;
 }
@@ -458,12 +464,21 @@ export interface CharactersPart {
 }
 export interface AiPart { Crowd: new (...a: Loose[]) => Loose; NavGrid: new (...a: Loose[]) => Loose; Brain: new (...a: Loose[]) => Loose; YUKA: Loose }
 
+/** A tweak spec value: a number, [value, min, max, step?], a boolean, a '#colour', [choice, ...choices], or a function (a button). */
+export type TweakSpec = Record<string, number | [number, number, number, number?] | boolean | string | string[] | (() => void)>;
+/** Live sliders (npm run dev only); elsewhere it returns the starting values. Read the fields where they're used. */
+export interface TweakFn {
+  (name: string, spec: TweakSpec): Record<string, Loose>;
+  (spec: TweakSpec): Record<string, Loose>;
+}
+
 export interface GS {
   sound: SoundPart; device: DevicePart; util: UtilPart; math: MathPart; palettes: PalettesPart;
   juice: JuicePart; effects: { Feel: typeof Feel }; controls: ControlsPart; pad: PadPart; moves: MovesPart;
   pixel: PixelPart; gfx: GfxPart; physics: PhysicsPart; vision: VisionPart; geo: GeoPart;
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
+  tweak: TweakFn;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;
   /** three.js itself. */

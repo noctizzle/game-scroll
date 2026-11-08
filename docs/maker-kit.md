@@ -31,6 +31,9 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | 3D text, 3D particles, outlines, glitch, trails | `gs.fx3d` | [3D extras](#3d-extras) |
 | Play with your face or your hands | `gs.vision` (MediaPipe) | [Face and hands](#face-and-hands) |
 | To see frame rate, hitboxes, slow motion | press `` ` `` in `npm run dev` | [Debug overlay](#debug-overlay) |
+| Sliders to tune numbers while you play | `gs.tweak` | [Hot reload and tweak sliders](#hot-reload-and-tweak-sliders) |
+| A save that survives a game update | `save: { version, migrate }` | [Save slots](#save-slots) |
+| Is my game fast enough for phones? | `npm run budget my-game` | [Speed budget](#speed-budget) |
 
 ## What `gs` has, and what it doesn't
 
@@ -106,6 +109,28 @@ function make(api) {
   save, so they follow the player to a new phone. If two phones saved, the newer save wins.
 - Save at moments that matter (a level cleared, game over), not every frame.
 - Best scores and credits are already saved by the app: don't keep them in your save.
+
+**Changing what you save.** When an update changes the shape of your save, give it a version and
+say how to turn an old save into the new one, so players keep their progress:
+
+```js
+export default {
+  // ...
+  save: {
+    version: 2,                                   // was 1 (no `save` field means version 1)
+    migrate(data, from) {                         // runs once, the first time the new game loads it
+      if (from < 2) data = { level: data.level, stars: [] };
+      return data;
+    },
+  },
+};
+```
+
+- `migrate(data, from)` gets the old save and its version and returns the new one, which is kept.
+  Handle every older version (`if (from < 2) ...; if (from < 3) ...`).
+- If it throws or returns `undefined`, `load()` gives your fallback and the old save stays as it is.
+- A save written by a newer version of your game (the player's other phone already has the update)
+  is left alone: `load()` gives the fallback and `save()` returns `false` until this phone updates.
 
 ## Location
 
@@ -624,6 +649,56 @@ The panel shows frames per second, how long your `update()` and `draw()` take, t
 score and state. For hitboxes, give your game object a `debug(c)` method that outlines whatever you
 like in game units; it is drawn on top while hitboxes are on. A physics game can just call
 `phys.debugDraw(c)`.
+
+## Hot reload and tweak sliders
+
+In `npm run dev`, saving your game file swaps the new code into the card you're playing, in about a
+second: the page doesn't reload, the feed stays where it is, and the debug overlay stays on. A round
+in progress starts again at once, or carries on if your game says what to keep:
+
+```js
+return {
+  snapshot() { return { score, level, hero: { x: hero.x, y: hero.y } }; },   // plain data
+  restore(s) { score = s.score; level = s.level; hero.x = s.hero.x; hero.y = s.hero.y; api.score(score); },
+  // ...
+};
+```
+
+`restore()` runs on the new code, after `reset()`. Changes to kit or app files still reload the page.
+
+**Tweak sliders.** `gs.tweak` puts sliders for your numbers on screen (lil-gui) while you play:
+
+```js
+const T = gs.tweak('Car', {
+  speed: 3,                      // a number: a slider from 0 to 3 times it
+  grip: [.8, 0, 1, .01],         // [value, min, max, step]
+  drift: true,                   // a tick box
+  paint: '#ff8800',              // a colour
+  mode: ['easy', 'easy', 'hard'],// [value, ...choices]
+});
+// read T.speed where it's used (in update or draw), so a slider change shows on the next frame
+```
+
+- Call it in `make()` or `reset()`. Each game on screen shows only its own panel.
+- **Copy values** puts the current numbers on the clipboard (and in the console) as a `gs.tweak`
+  call to paste back into your file.
+- Values you changed survive hot reload. Change a number in the file and the file's number wins.
+- The store apps and test builds show no panel: `gs.tweak` just returns the starting values, so the
+  call can stay in your game.
+
+## Speed budget
+
+`npm run budget my-game` plays your game for a few seconds with random taps on a CPU slowed to about
+a mid-range phone, and fails it if:
+
+- `update()` + `draw()` take more than three quarters of a 60 fps frame (12.5 ms) on its slowest
+  frames (the 95th percentile). For Console, Next Gen and AR games only `update()` counts, with a
+  budget of 8.3 ms: a headless browser draws 3D far slower than a phone's GPU.
+- JavaScript memory keeps growing (more than 40 MB held after the run): something is kept every
+  frame or round.
+
+When a game is over budget it lists the functions that took the most time, with their file and
+line. Pull requests that change a game run it automatically.
 
 ## 2D cameras, tile levels and movement
 
