@@ -47,6 +47,11 @@ const RULES = [
   [/\b__(gs|hd)\b/, 'uses the app\'s test hooks (__$1)'],
   [/\bdocument\s*\.\s*(querySelector|querySelectorAll|getElementById|getElementsBy\w+|body|documentElement)\b/, 'reaches into the app\'s page (document.$1)'],
 ];
+// Warnings: allowed, but worth a look. They don't fail the check.
+const WARN_RULES = [
+  // the 3D is moving to WebGPU later (docs/webgpu-move.md); shaders written for WebGL won't move with it
+  [/\b(ShaderMaterial|RawShaderMaterial|onBeforeCompile|ShaderChunk|ShaderLib)\b/, "writes its own WebGL shader ($1). It won't carry over to WebGPU: prefer the kit's materials (gs.hd.pbr, gs.toon, stock three.js materials) and its looks (v.air, v.grade, gs.outdoors)"],
+];
 // Checked with the text of strings blanked out too, so a hint that says "window" isn't flagged.
 // Games never need any of these: gs and api cover it, and document only for createElement('canvas').
 const CODE_RULES = [
@@ -77,7 +82,10 @@ export function lint(file) {
       if (m) out.push({ line: i + 1, why: why.replace('$1', m[1] || m[0]).replace('$2', m[2] || ''), code: lines[i].trim().slice(0, 120) });
     }
   };
-  lines.forEach((line, i) => { flag(RULES, line, i); flag(CODE_RULES, code[i] ?? '', i); });
+  lines.forEach((line, i) => {
+    flag(RULES, line, i); flag(CODE_RULES, code[i] ?? '', i);
+    for (const [re, why] of WARN_RULES) { const m = (code[i] ?? '').match(re); if (m) out.push({ line: i + 1, warn: true, why: why.replace('$1', m[1] || m[0]), code: lines[i].trim().slice(0, 120) }); }
+  });
   // Shared modules: only the ones games are given (src/game-modules.js), without their hidden exports.
   const SRC = join(ROOT, 'src');
   src.split('\n').forEach((line, i) => {
@@ -97,15 +105,16 @@ const files = args.length
   ? args.map(a => a.endsWith('.js') ? resolve(a) : join(GAMES, a + '.js'))
   : readdirSync(GAMES).filter(f => f.endsWith('.js')).sort().map(f => join(GAMES, f));
 
-let flagged = 0;
+let flagged = 0, warned = 0;
 for (const f of files) {
   const hits = lint(f), rel = 'src/games/' + basename(f);
   for (const h of hits) {
+    if (h.warn) { warned++; console.log(`${rel}:${h.line}  warning: ${h.why}\n    ${h.code}`); if (process.env.GITHUB_ACTIONS) console.log(`::warning file=${rel},line=${h.line}::${h.why}`); continue; }
     flagged++;
     console.log(`${rel}:${h.line}  ${h.why}\n    ${h.code}`);
     // GitHub shows these on the pull request's Files tab, next to the line.
     if (process.env.GITHUB_ACTIONS) console.log(`::error file=${rel},line=${h.line}::${h.why}. Games must not touch the network, storage or native features directly; a maintainer has to review this line.`);
   }
 }
-console.log(`${files.length} game file(s) checked, ${flagged} line(s) flagged`);
+console.log(`${files.length} game file(s) checked, ${flagged} line(s) flagged${warned ? `, ${warned} warning(s)` : ''}`);
 process.exit(flagged ? 1 : 0);

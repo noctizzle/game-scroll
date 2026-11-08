@@ -25,9 +25,9 @@
 //    small down/up-sampling chain at half resolution and below.
 //  - shadow maps are only redrawn when something that casts a shadow (or a light) has moved.
 import {
-  WebGLRenderer, Scene, Color, FogExp2, PerspectiveCamera, HemisphereLight, PointLight, SpotLight, DirectionalLight,
+  Scene, Color, FogExp2, PerspectiveCamera, HemisphereLight, PointLight, SpotLight, DirectionalLight,
   MeshStandardMaterial, MeshPhysicalMaterial, ShaderMaterial, BufferGeometry, BufferAttribute, Points, AdditiveBlending, NormalBlending,
-  CanvasTexture, RepeatWrapping, SRGBColorSpace, NoColorSpace, PCFSoftShadowMap, ACESFilmicToneMapping, HalfFloatType,
+  CanvasTexture, RepeatWrapping, SRGBColorSpace, NoColorSpace, PCFShadowMap, ACESFilmicToneMapping, HalfFloatType,
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
   OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4, DataTexture, RGBAFormat, ShaderChunk,
   LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion,
@@ -43,6 +43,8 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { SGSR } from './sgsr.js';
+import { lookPatch } from './looks.js';
+import { makeRenderer, copyFrame } from './gpu.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -127,11 +129,10 @@ function renderer() {
   if (R || broken) return R;
   try {
     const cv = document.createElement('canvas');
-    R = new WebGLRenderer({ canvas: cv, alpha: true, antialias: false, preserveDrawingBuffer: false, powerPreference: 'high-performance', stencil: false });
+    R = makeRenderer({ canvas: cv, alpha: true, antialias: false, preserveDrawingBuffer: false, stencil: false });
     R.setPixelRatio(1); R.outputColorSpace = SRGBColorSpace;
     R.toneMapping = ACESFilmicToneMapping; R.toneMappingExposure = 1;
-    R.shadowMap.enabled = true; R.shadowMap.type = PCFSoftShadowMap; R.shadowMap.autoUpdate = false;   // redrawn only when something moved
-    cv.addEventListener('webglcontextlost', e => e.preventDefault());
+    R.shadowMap.enabled = true; R.shadowMap.type = PCFShadowMap; R.shadowMap.autoUpdate = false;   // redrawn only when something moved
     const pm = new PMREMGenerator(R); envTex = pm.fromScene(new RoomEnvironment(), .04).texture; pm.dispose();
   } catch (e) { broken = true; R = null; }
   return R;
@@ -162,7 +163,11 @@ const UP = `uniform sampler2D tDiffuse; uniform vec2 px; uniform float k; varyin
   void main(){ vec3 c = texture2D(tDiffuse, vUv + vec2(-2. * px.x, 0.)).rgb + texture2D(tDiffuse, vUv + vec2(2. * px.x, 0.)).rgb + texture2D(tDiffuse, vUv + vec2(0., -2. * px.y)).rgb + texture2D(tDiffuse, vUv + vec2(0., 2. * px.y)).rgb;
     c += 2. * (texture2D(tDiffuse, vUv + vec2(-px.x, -px.y)).rgb + texture2D(tDiffuse, vUv + vec2(px.x, -px.y)).rgb + texture2D(tDiffuse, vUv + vec2(-px.x, px.y)).rgb + texture2D(tDiffuse, vUv + px).rgb);
     gl_FragColor = vec4(c / 12. * k, 1.); }`;
-const FINAL = `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, bloom; uniform vec2 px; varying vec2 vUv;
+// The final pass's effects, each a named piece of the one shader (so the pass stays a single
+// full-screen draw on phones, and each piece can be ported to a WebGPU node on its own). They run
+// in this order; FINAL is them joined. Uniforms: the pass's own (FinalPass below).
+export const FINAL_EFFECTS = [
+  { name: 'head', what: 'uniforms, the tone mapping three leaves out under SGSR, helpers', glsl: `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, bloom; uniform vec2 px; varying vec2 vUv;
   uniform float gradeOn, sat, con, glare, aspect; uniform vec3 lo, hi, sunCol; uniform vec2 sunUV;
   // (three.js adds its tone mapping and sRGB helpers to every ShaderMaterial drawn to the screen; when
   // SGSR upscales after this pass, it draws into a buffer and three leaves tone mapping out, so here it is)
@@ -178,9 +183,11 @@ const FINAL = `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, b
   float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
   vec3 tex(vec2 p){ return texture2D(tDiffuse, p).rgb; }
   float luma(vec3 c){ float l = dot(c, vec3(.299, .587, .114)); return l / (1. + l); }
-  void main(){
+` },
+  { name: 'main', what: 'start', glsl: `  void main(){
     vec2 d = vUv - .5; float r2 = dot(d, d);
-  #ifdef FXAA
+` },
+  { name: 'smooth', what: 'edge smoothing (FXAA, no MSAA) or lens fringing', glsl: `  #ifdef FXAA
     // light edge smoothing: find the edge direction from the four diagonal neighbours, blur along it
     vec3 cM = tex(vUv); float lM = luma(cM), lNW = luma(tex(vUv + vec2(-1., -1.) * px)), lNE = luma(tex(vUv + vec2(1., -1.) * px)),
       lSW = luma(tex(vUv + vec2(-1., 1.) * px)), lSE = luma(tex(vUv + vec2(1., 1.) * px));
@@ -199,15 +206,18 @@ const FINAL = `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, b
     vec2 off = d * r2 * .012;
     vec3 col = vec3(tex(vUv + off).r, tex(vUv).g, tex(vUv - off).b);
   #endif
-    col += texture2D(tBloom, vUv).rgb * bloom;
-    // the game's colour grade (v.grade): saturation, contrast round mid grey, a tint for the shadows and one for the highlights
+` },
+  { name: 'bloom', what: 'bloom', glsl: `    col += texture2D(tBloom, vUv).rgb * bloom;
+` },
+  { name: 'grade', what: 'colour grade (v.grade)', glsl: `    // the game's colour grade (v.grade): saturation, contrast round mid grey, a tint for the shadows and one for the highlights
     if (gradeOn > .5) {
       float l = dot(col, vec3(.2126, .7152, .0722));
       col = max(mix(vec3(l), col, sat), 0.);
       col = pow(col / .18 + 1e-5, vec3(con)) * .18;
       col *= mix(lo, hi, smoothstep(.15, .85, clamp(log2(l / .18 + 1e-4) * .16 + .5, 0., 1.)));
     }
-    // sun glare (v.glare): a soft bloom round the sun and two faint lens ghosts, only while the sun itself shows
+` },
+  { name: 'glare', what: 'sun glare (v.glare)', glsl: `    // sun glare (v.glare): a soft bloom round the sun and two faint lens ghosts, only while the sun itself shows
     if (glare > 0.) {
       vec3 s0 = texture2D(tDiffuse, sunUV).rgb + texture2D(tDiffuse, sunUV + vec2(.006, 0.)).rgb + texture2D(tDiffuse, sunUV - vec2(.006, 0.)).rgb + texture2D(tDiffuse, sunUV + vec2(0., .008)).rgb + texture2D(tDiffuse, sunUV - vec2(0., .008)).rgb;
       float seen = smoothstep(1.5, 6., dot(s0, vec3(.2126, .7152, .0722)) * .2);
@@ -215,13 +225,20 @@ const FINAL = `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, b
       float gl = exp(-dot(q, q) * 14.) * .5 + exp(-length(q) * 6.) * .22 + smoothstep(.06, .045, length(g1)) * .05 + smoothstep(.1, .08, length(g2)) * .035;
       col += sunCol * gl * glare * seen;
     }
-    col = ACESFilmicToneMapping(col);
+` },
+  { name: 'tone', what: 'ACES tone mapping and sRGB', glsl: `    col = ACESFilmicToneMapping(col);
     col = sRGBTransferOETF(vec4(col, 1.)).rgb;
-    col *= 1. - vig * smoothstep(.12, .62, r2 * 1.6);
-    col += (h(vUv / px + t) - .5) * .035;
-    col = mix(col, col * vec3(1.25, .45, .4) + vec3(.12, 0., 0.), hurt * smoothstep(.04, .4, r2));
-    gl_FragColor = vec4(col, 1.);
-  }`;
+` },
+  { name: 'vignette', what: 'vignette', glsl: `    col *= 1. - vig * smoothstep(.12, .62, r2 * 1.6);
+` },
+  { name: 'grain', what: 'film grain', glsl: `    col += (h(vUv / px + t) - .5) * .035;
+` },
+  { name: 'hurt', what: 'hurt tint (v.hurt)', glsl: `    col = mix(col, col * vec3(1.25, .45, .4) + vec3(.12, 0., 0.), hurt * smoothstep(.04, .4, r2));
+` },
+  { name: 'out', what: 'end', glsl: `    gl_FragColor = vec4(col, 1.);
+  }` },
+];
+const FINAL = FINAL_EFFECTS.map(e => e.glsl).join('');
 const MIPS = 5;
 class FinalPass extends Pass {
   constructor() {
@@ -475,33 +492,33 @@ vec3 gsAir(vec3 col, vec3 wp){
   return mix(col, mix(gsAirC, gsAirSun, pow(s, 6.) * .9), 1. - (1. - haze) * (1. - mist));
 }
 `;
+// The air is one named look effect (src/kit/looks.js) so the WebGPU port can swap it for a node.
+const AIR_WET = `#ifdef USE_FOG
+  if (gsAirOn > .5 && gsWet > 0.) { vec3 gn = transpose(mat3(viewMatrix)) * normal; float w = gsWet * (.3 + .7 * smoothstep(.15, .85, gn.y));
+    roughnessFactor = mix(roughnessFactor, .12, w * .8); diffuseColor.rgb *= 1. - w * .3; }
+#endif
+`;
+const airSpec = (lit, wets) => ({
+  uniforms: AIR,
+  check: sh => sh.fragmentShader.includes('#include <fog_fragment>') && sh.vertexShader.includes('#include <fog_vertex>'),
+  vertexHead: 'varying vec3 gsW;\n',
+  vertex: [['#include <fog_vertex>', 'after', '\n#ifdef USE_FOG\n  gsW = transpose(mat3(viewMatrix)) * (mvPosition.xyz - viewMatrix[3].xyz);\n#endif']],
+  fragment: [
+    ['void main() {', 'before', AIR_GLSL],
+    ['#include <fog_fragment>', 'replace', () => '#ifdef USE_FOG\n  if (gsAirOn > .5) gl_FragColor.rgb = gsAir(gl_FragColor.rgb, gsW); else {\n' + ShaderChunk.fog_fragment + '\n  }\n#endif'],
+    ...(lit ? [['#include <lights_fragment_begin>', 'replace', () => '#ifdef USE_FOG\n  float gsShade = gsAirOn > .5 && gsCloud.y > 0. ? gsShadeAt(gsW) : 1.;\n#else\n  float gsShade = 1.;\n#endif\n'
+      + ShaderChunk.lights_fragment_begin.replace('getDirectionalLightInfo( directionalLight, directLight );', 'getDirectionalLightInfo( directionalLight, directLight ); directLight.color *= gsShade;')]] : []),
+    ...(wets ? [['#include <emissivemap_fragment>', 'before', AIR_WET]] : []),
+  ],
+});
+const airSpecs = [[false, false], [true, false], [true, true]].map(([l, w]) => airSpec(l, w));
 const airDone = new WeakSet();
 function airPatch(m) {
   if (!m || airDone.has(m)) return;
   airDone.add(m);
   if (m.isShaderMaterial || m.isRawShaderMaterial || m.fog === false || m.isMeshDepthMaterial || m.isMeshDistanceMaterial || m.isShadowMaterial) return;
   const lit = m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial || m.isMeshToonMaterial, wets = m.isMeshStandardMaterial;
-  const base = m.onBeforeCompile, baseKey = m.customProgramCacheKey;
-  m.onBeforeCompile = function (sh, r) {
-    base.call(this, sh, r);
-    if (!sh.fragmentShader.includes('#include <fog_fragment>') || !sh.vertexShader.includes('#include <fog_vertex>')) return;
-    Object.assign(sh.uniforms, AIR);
-    sh.vertexShader = 'varying vec3 gsW;\n' + sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n#ifdef USE_FOG\n  gsW = transpose(mat3(viewMatrix)) * (mvPosition.xyz - viewMatrix[3].xyz);\n#endif');
-    let f = sh.fragmentShader.replace('void main() {', AIR_GLSL + 'void main() {')
-      .replace('#include <fog_fragment>', '#ifdef USE_FOG\n  if (gsAirOn > .5) gl_FragColor.rgb = gsAir(gl_FragColor.rgb, gsW); else {\n' + ShaderChunk.fog_fragment + '\n  }\n#endif');
-    if (lit) f = f.replace('#include <lights_fragment_begin>', '#ifdef USE_FOG\n  float gsShade = gsAirOn > .5 && gsCloud.y > 0. ? gsShadeAt(gsW) : 1.;\n#else\n  float gsShade = 1.;\n#endif\n'
-      + ShaderChunk.lights_fragment_begin.replace('getDirectionalLightInfo( directionalLight, directLight );', 'getDirectionalLightInfo( directionalLight, directLight ); directLight.color *= gsShade;'));
-    if (wets) f = f.replace('#include <emissivemap_fragment>', `#ifdef USE_FOG
-  if (gsAirOn > .5 && gsWet > 0.) { vec3 gn = transpose(mat3(viewMatrix)) * normal; float w = gsWet * (.3 + .7 * smoothstep(.15, .85, gn.y));
-    roughnessFactor = mix(roughnessFactor, .12, w * .8); diffuseColor.rgb *= 1. - w * .3; }
-#endif
-#include <emissivemap_fragment>`);
-    sh.fragmentShader = f;
-  };
-  // three caches programs by this key; the default key is the source of onBeforeCompile, so ask the
-  // material's own key with its own onBeforeCompile in place
-  m.customProgramCacheKey = function () { const cur = this.onBeforeCompile; this.onBeforeCompile = base; try { return baseKey.call(this) + '|gsair'; } finally { this.onBeforeCompile = cur; } };
-  m.needsUpdate = true;
+  lookPatch(m, 'air', airSpecs[wets ? 2 : lit ? 1 : 0]);
 }
 const airOf = o => { if (o.material) { if (Array.isArray(o.material)) for (const m of o.material) airPatch(m); else airPatch(o.material); } };
 
@@ -934,8 +951,8 @@ export class HDView {
     if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = shadows; HD.info.upscaled = up; }
     if (direct) { c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, c.canvas.width, c.canvas.height); c.restore(); return; }
     c.save(); c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
-    if (baking) { c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'destination-over'; c.drawImage(cv, 0, 0, ow, oh, 0, 0, c.canvas.width, c.canvas.height); }
-    else c.drawImage(cv, 0, 0, ow, oh, 0, 0, w, h);
+    if (baking) { c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'destination-over'; copyFrame(r, c, 0, 0, ow, oh, 0, 0, c.canvas.width, c.canvas.height); }
+    else copyFrame(r, c, 0, 0, ow, oh, 0, 0, w, h);
     c.restore();
   }
 }

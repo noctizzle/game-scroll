@@ -1,0 +1,37 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#000">
+<script type="module">
+// Fixed 3D scenes drawn with the kit (Next Gen with air, grade, glare, shadows, AO, bloom; Classic
+// Console toon + ink), for scripts/look-compare.cjs to compare two versions of the engine (or,
+// later, WebGPU against WebGL) pixel by pixel. Everything here is seeded: no randomness, no time.
+import gs, { loadParts } from '../../src/gamescroll.js';
+await loadParts();
+const T = gs.THREE, out = {};
+window.__hd.force = 3; window.__hd.upscale = false;
+function nextgen(tier) {
+  window.__hd.force = tier;
+  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .002, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 4, 9); v.cam.lookAt(0, 1, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 18, [-.45, 1, .35]); v.scene.add(sun, sun.target); v.sun = sun;
+  const ground = new T.Mesh(new T.PlaneGeometry(60, 60).rotateX(-Math.PI / 2), gs.hd.pbr('#6a7a58', { rough: .9 })); ground.receiveShadow = true; v.scene.add(ground);
+  const cols = ['#c44', '#4a8', '#48c', '#cc4', '#a6c'];
+  for (let i = 0; i < 5; i++) { const m = new T.Mesh(gs.hd.rbox(1, 1.6, 1), gs.hd.pbr(cols[i], { rough: .3 + i * .1, metal: i % 2 })); m.position.set(-3 + i * 1.5, .8, -i * .7); m.rotation.y = i * .4; m.castShadow = m.receiveShadow = true; v.scene.add(m); }
+  const glow = new T.Mesh(new T.SphereGeometry(.4, 24, 16), gs.hd.pbr('#fff', { glow: 3, glowCol: '#ffb040' })); glow.position.set(1.5, 2.5, 0); v.scene.add(glow);
+  v.air({ haze: .002, mist: .004, mistFall: .3, wet: .3 }); v.grade = { saturation: 1.1, contrast: 1.05, shadows: '#e8f0ff', highlights: [1.06, 1, .92] }; v.glare = .6;
+  v.t = 0; v.render(x, 240, 320); v.t = 0; v.render(x, 240, 320);
+  return c.toDataURL();
+}
+function consoleScene() {
+  const { View, part, G } = gs.toon, v = new View(), c = document.createElement('canvas'); c.width = 192; c.height = 160; const x = c.getContext('2d');
+  v.board(192, 160, .9);
+  for (let i = 0; i < 4; i++) { const m = part(new T.BoxGeometry(24, 24, 24), ['#e44', '#4c4', '#46e', '#ec4'][i], { x: -60 + i * 40, y: 12, ry: i * .5 }); v.scene.add(m); }
+  v.scene.add(part(new T.SphereGeometry(16, 20, 14), '#fa6', { y: 16, z: 30 }));
+  v.render(x, 192, 160);
+  return c.toDataURL();
+}
+try {
+  for (const t of [0, 1, 2, 3]) out['nextgen-tier' + t] = nextgen(t);
+  out.console = consoleScene();
+} catch (e) { out.error = String(e && e.stack || e); }
+window.__hd.force = null;
+window.result = out;
+</script>
