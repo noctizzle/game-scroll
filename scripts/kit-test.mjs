@@ -280,6 +280,33 @@ console.log('physics ok');
   assert.ok(log.includes('a') && log.includes('b') && log.includes('pa') && log.includes('ra'), 'cleanup hooks all run ' + log);
   console.log('cleanup ok');
 }
+// a card's subscriptions end when it leaves the feed; a failed lazy load can be tried again
+{
+  const { ownedBy, onRelease, release } = await import('../src/kit/cleanup.js');
+  const card = {}, log = [];
+  ownedBy(card, () => onRelease(() => log.push('off')));
+  assert.equal(onRelease(() => log.push('stray')), null, 'nothing to tie to outside make() / reset()');
+  release(card); release(card);
+  assert.deepEqual(log, ['off'], 'onRelease runs once when the card goes');
+  const { lazy } = await import('../src/kit/lazy.js');
+  let tries = 0;
+  const lib = lazy('flaky', () => { if (++tries === 1) throw new Error('offline'); return 'lib'; });
+  let e1 = null; try { lib.get(); } catch (e) { e1 = e; }
+  assert.ok(e1?.kitLoading, 'first get starts the load');
+  await e1.kitLoading.then(() => assert.fail('should fail'), () => {});
+  let e2 = null; try { lib.get(); } catch (e) { e2 = e; }
+  assert.ok(e2?.kitLoading, 'after a failure, the next get loads again (not the old error)');
+  assert.equal(await e2.kitLoading, 'lib'); assert.equal(lib.get(), 'lib', 'second try works');
+  console.log('release + lazy retry ok');
+}
+// a game's reward and shop prices can't break the wallet
+{
+  const { rewardOf, fairPrice, MAX_REWARD } = await import('../src/kit/progress.js');
+  assert.equal(rewardOf(undefined), 10); assert.equal(rewardOf(0), 0); assert.equal(rewardOf(25), 25);
+  assert.equal(rewardOf(1e9), MAX_REWARD); assert.equal(rewardOf(-50), 0); assert.equal(rewardOf('10'), 10); assert.equal(rewardOf('x'), 0); assert.equal(rewardOf(7.9), 7);
+  assert.ok(fairPrice(25) && !fairPrice(0) && !fairPrice(-5) && !fairPrice('25') && !fairPrice(2.5) && !fairPrice(NaN), 'prices are whole numbers 1 and up');
+  console.log('wallet limits ok');
+}
 // Reduce motion softens shake and flash
 {
   const { setPrefs, prefs } = await import('../src/kit/prefs.js');

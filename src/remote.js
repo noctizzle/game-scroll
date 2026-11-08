@@ -131,11 +131,23 @@ async function openCatalogue(env) {
 }
 let savedBuilt = 0;   // build time of the catalogue in use; an older one (a replayed old catalogue) is refused
 
+// Names a game file never needs (games get all of this through gs and api, and scripts/game-lint.mjs
+// flags them in review). The game's code runs with each of these set to undefined, so a plain
+// reference to one does nothing. It's one more layer, not a sandbox: games share the app's page,
+// and what keeps them out of the rest is review, the lint, the signed catalogue and the CSP.
+export const SHADOWED = ['window', 'self', 'globalThis', 'top', 'parent', 'frames', 'opener', 'open', 'location', 'navigator',
+  'localStorage', 'sessionStorage', 'indexedDB', 'caches', 'cookieStore', 'fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource',
+  'WebTransport', 'RTCPeerConnection', 'Worker', 'SharedWorker', 'importScripts', 'postMessage', 'BroadcastChannel', 'Capacitor',
+  'Function', '__gs', '__hd'];
+
 function evaluate(id, code) {
   const module = { exports: {} };
   const require = spec => { const m = spec.startsWith('gs:') && spec[3] !== '@' && KIT[spec.slice(3)]; if (!m) throw new Error('missing shared module ' + spec); return m; };
+  // The game is the inner function, so its own top-level names (a `let top`) never clash with the
+  // shadowed ones. Strict, as the module it was written as (and so `this` is never the window).
   // sourceURL names the file in error reports (src/perf.js) instead of an anonymous function.
-  new Function('require', 'module', 'exports', code + '\n//# sourceURL=games/' + String(id).replace(/[^a-z0-9-]/g, '') + '.js')(require, module, module.exports);
+  const wrap = new Function(...SHADOWED, 'return function (require, module, exports) { \'use strict\';\n' + code + '\n}\n//# sourceURL=games/' + String(id).replace(/[^a-z0-9-]/g, '') + '.js');
+  wrap()(require, module, module.exports);
   const def = module.exports.default;
   if (!def || def.id !== id || typeof def.make !== 'function') throw new Error('bad game file for ' + id);
   return def;

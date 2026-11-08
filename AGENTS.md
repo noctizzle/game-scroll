@@ -18,6 +18,7 @@ The human-facing guide is [CONTRIBUTING.md](CONTRIBUTING.md); the kit reference 
    node scripts/game-lint.mjs <id>          # forbidden code (network, storage, eval...)
    npm run games                             # builds streamed files; fails on bad imports or a missing gs part
    npm run build:bundled && node scripts/smoke.cjs <id>   # plays it with random input; fails on any error
+   node scripts/stream-smoke.mjs <id>        # plays it streamed, the way the store apps run it
    node scripts/fold.cjs <id>                # survives folding / unfolding the screen
    ```
    For Console and Next Gen games also run `node scripts/sweep.cjs <id>`. `node scripts/budget.cjs <id>`

@@ -133,9 +133,33 @@ export const HIDDEN = {
   ui: ['loadUI'],
 };
 
+// App state some kits keep on an exported object: games get a look, not a lever (one game pinning
+// the 3D quality would pin it for every game after it).
+const VIEWS = { hd: { HD: readOnly } };
+
 function pick(name, ...mods) {
-  const hide = HIDDEN[name] || [], out = {};
-  for (const m of mods) for (const k of Object.keys(m)) if (!hide.includes(k) && !(k in out)) out[k] = m[k];
+  const hide = HIDDEN[name] || [], view = VIEWS[name] || {}, out = {};
+  for (const m of mods) for (const k of Object.keys(m)) if (!hide.includes(k) && !(k in out)) out[k] = view[k] ? view[k](m[k]) : lock(m[k]);
+  return Object.freeze(out);
+}
+
+// Every game shares these objects, so they're frozen: a game that writes to gs.palettes.PAL or
+// gs.sound.sounds would otherwise change it for the app and for every game after it. Plain data
+// only (objects and arrays, all the way down); classes, functions and libraries stay as they are.
+const plain = x => {
+  if (!x || typeof x !== 'object' || x[Symbol.toStringTag] === 'Module') return false;
+  const p = Object.getPrototypeOf(x);
+  return p === Object.prototype || p === Array.prototype || p === null;
+};
+function lock(x) {
+  if (!plain(x) || Object.isFrozen(x)) return x;
+  Object.freeze(x);
+  for (const k of Object.keys(x)) { const d = Object.getOwnPropertyDescriptor(x, k); if ('value' in d) lock(d.value); }
+  return x;
+}
+function readOnly(o) {
+  const out = {};
+  for (const k of Object.keys(o)) Object.defineProperty(out, k, { enumerable: true, get() { const v = o[k]; return v && typeof v === 'object' ? Object.freeze({ ...v }) : v; } });
   return Object.freeze(out);
 }
 

@@ -23,6 +23,7 @@ const RULES = [
   [/\b(import\s*\(|importScripts)/, 'loads code: dynamic import'],
   [/\b(Worker|SharedWorker)\s*\(|\bserviceWorker\b/, 'background worker'],
   [/\bcreateElement\s*\(\s*['"`](script|iframe|img|link|a|form|object|embed|video|audio|source)['"`]/i, 'creates a <$1> element (can load from the network)'],
+  [/\bcreateElement\s*\(\s*(?!['"`](canvas|script|iframe|img|link|a|form|object|embed|video|audio|source)['"`])/i, 'creates an element other than a <canvas> (games draw on canvases only)'],
   [/\.\s*(src|href|srcset|action|srcObject)\s*=(?!=)|setAttribute\s*\(\s*['"`](src|href|srcset|action)/, 'sets a src/href (can load from the network)'],
   [/\b(innerHTML|outerHTML|insertAdjacentHTML|document\.write)\b/, 'writes raw HTML ($1)'],
   [/\b((?:window|document)\s*\.\s*location|location\s*\.\s*(?:href|assign|replace|reload)|window\s*\.\s*open)\b/, 'navigation: $1'],
@@ -46,20 +47,37 @@ const RULES = [
   [/\b__(gs|hd)\b/, 'uses the app\'s test hooks (__$1)'],
   [/\bdocument\s*\.\s*(querySelector|querySelectorAll|getElementById|getElementsBy\w+|body|documentElement)\b/, 'reaches into the app\'s page (document.$1)'],
 ];
+// Checked with the text of strings blanked out too, so a hint that says "window" isn't flagged.
+// Games never need any of these: gs and api cover it, and document only for createElement('canvas').
+const CODE_RULES = [
+  [/(?<![\w$.])(window|navigator)\b(?!\s*:)/, 'reaches the app\'s window ($1)'],
+  [/(?<![\w$.])document\s*(?:\[|\.\s*(?!createElement\b)(\w+))/, 'reaches into the app\'s page (document.$1)'],
+  [/\b(ownerDocument|defaultView|getRootNode|contentWindow|contentDocument)\b/, 'reaches the app\'s page or window ($1)'],
+  [/\.\s*constructor\b/, 'reaches a constructor (a way to run code from a string)'],
+  [/\.\s*prototype\b|\bsetPrototypeOf\b/, 'changes built-in objects (prototype), which every game and the app share'],
+  [/\b(Object|Array|Math|JSON|Date|Promise|Number|String|console|performance)\s*\.\s*(\w+)\s*=(?!=)/, 'replaces a built-in ($1.$2), which every game and the app share'],
+];
 
 // Blank out comments but keep line numbers, so a comment like "// no fetch here" isn't flagged.
 const stripComments = s => s
   .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
   .replace(/(^|[^:\\'"`])\/\/.*$/gm, (m, p) => p + ' '.repeat(m.length - p.length));
 
+// Blank the text inside strings (keeping the quotes and line numbers). Template strings with ${...}
+// are left as they are, so code inside them is still checked.
+const stripStrings = s => s
+  .replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"/g, m => m[0] + ' '.repeat(m.length - 2) + m[0])
+  .replace(/`(?:[^`\\$]|\\[^]|\$(?!\{))*`/g, m => m.replace(/[^\n]/g, (c, i) => (i === 0 || i === m.length - 1 ? '`' : ' ')));
+
 export function lint(file) {
-  const src = stripComments(readFileSync(file, 'utf8')), out = [];
-  src.split('\n').forEach((line, i) => {
-    for (const [re, why] of RULES) {
-      const m = line.match(re);
-      if (m) out.push({ line: i + 1, why: why.replace('$1', m[1] || m[0]), code: line.trim().slice(0, 120) });
+  const src = stripComments(readFileSync(file, 'utf8')), code = stripStrings(src).split('\n'), out = [];
+  const lines = src.split('\n'), flag = (rules, text, i) => {
+    for (const [re, why] of rules) {
+      const m = text.match(re);
+      if (m) out.push({ line: i + 1, why: why.replace('$1', m[1] || m[0]).replace('$2', m[2] || ''), code: lines[i].trim().slice(0, 120) });
     }
-  });
+  };
+  lines.forEach((line, i) => { flag(RULES, line, i); flag(CODE_RULES, code[i] ?? '', i); });
   // Shared modules: only the ones games are given (src/game-modules.js), without their hidden exports.
   const SRC = join(ROOT, 'src');
   src.split('\n').forEach((line, i) => {

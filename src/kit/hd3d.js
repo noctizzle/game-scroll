@@ -115,7 +115,8 @@ export const HD = {
   direct: typeof navigator === 'undefined' || !navigator.webdriver,
 };
 const tier = () => TIERS[HD.tier];
-if (typeof window !== 'undefined') window.__hd = HD;   // test hook: __hd.force = 3 pins ultra
+// test hook: __hd.force = 3 pins ultra. Dev and test builds and test browsers only, not the store apps.
+if (typeof window !== 'undefined' && (import.meta.env?.MODE !== 'production' || navigator.webdriver)) window.__hd = HD;
 
 /* ---------- shared renderer + post chain ---------- */
 let R = null, broken = false, comp = null, P = {}, envTex = null, compKey = '';
