@@ -4,7 +4,7 @@ const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, disc } = gs.util;
 
-// Pocket Kart: a flat-plane scaling kart racer in the style of early-2000s handhelds. Three laps
+// Pocket Kart: a flat-plane scaling kart racer in the style of early-2000s handhelds. Two laps
 // against five rival drivers on one of four hand-laid tracks, each with its own scenery and
 // landmarks. You start at the back of the grid. Rivals follow a real racing line, brake for
 // corners, pick a side to overtake, sometimes block and sometimes make mistakes. Points are
@@ -132,7 +132,10 @@ export function buildTrack(th) {
   for (let n = 0, made = 0; n < 2500 && made < 230; n++) { const i = R() * PTS | 0, p = line[i], s = R() < .5 ? -1 : 1, dd = HALF + 30 + R() ** 1.6 * 260, x = p.x + p.nx * s * dd, y = p.y + p.ny * s * dd;
     if (free(x, y, 28)) { const k = pick(); add(k, x, y); made++;
       if (k === 'tree' || k === 'pine' || k === 'palm') for (let m = 0; m < 3; m++) { const a = R() * 6.3, r = 16 + R() * 20, xx = x + Math.cos(a) * r, yy = y + Math.sin(a) * r; if (free(xx, yy, 28)) { add(k, xx, yy); made++; } } } }
-  return { th, line, len, seg, off, vlim, tex, col, grid, props, name: th.name };
+  // the same colours packed as 32-bit pixels (ABGR, the byte order of ImageData on phones) for drawing
+  const col32 = new Uint32Array(N * N), O = C(th.outer);
+  for (let k = 0; k < N * N; k++) col32[k] = 0xff000000 | col[k * 3 + 2] << 16 | col[k * 3 + 1] << 8 | col[k * 3];
+  return { th, line, len, seg, off, vlim, tex, col, col32, outer32: (0xff000000 | O[2] << 16 | O[1] << 8 | O[0]) >>> 0, grid, props, name: th.name };
 }
 
 /* ---------- pixel sprites ---------- */
@@ -238,7 +241,7 @@ function pano(th) {
 function make(api) {
   const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   let trk, karts, me, t, raceT, go, msg, held, flash, shake, finished, endT, results, camA, parts, wrongT, lastPlace, themeI = Math.random() * THEMES.length | 0;
-  let img = null, mini = null;
+  let img = null, img32 = null, mini = null, best = {}, draftT = 0;
   const at = (x, y) => { const cx = x / CELL | 0, cy = y / CELL | 0; return cx < 0 || cy < 0 || cx >= N || cy >= N ? GROUND : trk.tex[cy * N + cx]; };
   const P = i => trk.line[((i % PTS) + PTS) % PTS];
   function nearest(x, y, from) { let best = from, bd = 1e12; for (let k = -14; k <= 14; k++) { const i = (from + k + PTS) % PTS, p = trk.line[i], d = (p.x - x) ** 2 + (p.y - y) ** 2; if (d < bd) { bd = d; best = i; } } return best; }
@@ -253,7 +256,7 @@ function make(api) {
     const g = at(k.x, k.y);
     if (g === WATER) { k.sink = .9; k.v = 0; if (k === me) { haptic('heavy'); sfx(300, .4, 'triangle', .05, -240); say('SPLASH!', 1, '#88c8f8'); } return; }
     if (g === BOOST && k.boost < .6) { k.boost = 1; if (k === me) { haptic('medium'); sfx(520, .3, 'sawtooth', .04, 600); } }
-    let top = SURF[g][0] * k.d.top * (k.band || 1); if (k.boost) top = Math.max(top, 196); top = Math.min(top, cap);
+    let top = SURF[g][0] * k.d.top * (k.band || 1) * (k.draft || 1); if (k.boost) top = Math.max(top, 196); top = Math.min(top, cap);
     k.v += (k.v < top ? (k.boost ? 220 : 72) : -170) * dt; k.v = clamp(k.v, 0, 200);
     k.st += (steer - k.st) * Math.min(1, dt * 10);
     k.a += k.st * dt * (1.4 + k.v / 120) * .9;
@@ -267,11 +270,13 @@ function make(api) {
   }
   function lapDone(k) {
     k.lap++;
-    if (k.lap >= LAPS && !k.done) { k.done = true; k.doneT = raceT; if (k === me) finish(); }
+    if (k.lap >= LAPS && !k.done) { k.done = true; k.doneT = raceT; if (k === me) finish(true); }
     else if (k === me && k.lap > 0) { if (k.lap === LAPS - 1) { say('FINAL LAP!', 1.6, '#f86868'); sfx(660, .15, 'square', .05); later(() => sfx(990, .25, 'square', .05), 140); } else say(`LAP ${k.lap + 1}`, 1.2); haptic('success'); }
   }
-  function finish() {
+  function finish(crossed) {
     finished = true; endT = 3.6; const place = order().indexOf(me) + 1, pts = POINTS[place - 1];
+    newBest = false; const was = best[trk.name];
+    if (crossed && (!was || raceT < was)) { best[trk.name] = +raceT.toFixed(2); newBest = !!was; api.save({ best }); }
     say(place === 1 ? 'YOU WIN!' : `${place}${SUFFIX[place - 1]} PLACE`, 3, place <= 3 ? '#f8d838' : '#f8f8f0');
     haptic(place <= 3 ? 'success' : 'warning'); sfx(place <= 3 ? 1046 : 392, .4, 'square', .05, place <= 3 ? 400 : -100);
     if (live) api.score(pts);
@@ -301,13 +306,22 @@ function make(api) {
       if ((a === me || b === me) && !me.bumpT) { me.bumpT = .3; haptic('medium'); sfx(150, .08, 'square', .05); shake = .15; } }
     me.bumpT = Math.max(0, (me.bumpT || 0) - 1 / 60);
   }
-  let live = true;
+  let live = true, newBest = false;
+  const clock = s => `${s / 60 | 0}:${(s % 60).toFixed(1).padStart(4, '0')}`;
   function step(dt, auto) {
     raceT += dt;
     for (const k of karts) if (k === me && !auto) {
       const target = held ? held.s : 0; drive(k, target, 999, dt);
     } else ai(k, dt);
     bumps();
+    // slipstream: tuck in right behind a rival for a moment and you pull up to them faster
+    if (!auto) {
+      let behind = false; for (const o of karts) { if (o === me || o.sink > 0) continue; const gap = (prog(o) - prog(me)) * trk.seg; if (gap > 10 && gap < 46 && Math.abs(latOf(o) - latOf(me)) < 8) behind = true; }
+      draftT = behind && me.v > 90 ? draftT + dt : Math.max(0, draftT - dt * 2);
+      const was = me.draft > 1; me.draft = draftT > .5 ? 1.1 : 1;
+      if (me.draft > 1 && !was) { sfx(300, .25, 'sawtooth', .025, 200); haptic('light'); }
+      if (me.draft > 1 && Math.random() < .5) parts.push({ x: (Math.random() - .5) * 30, y: -10 - Math.random() * 10, vx: 0, vy: 40, l: .25, c: '#f8f8f0a0' });
+    }
     if (me.rough && me.v > 50 && (raceT * 20 | 0) % 3 === 0 && !auto) haptic('tick');
     if (me.rough || me.boost) for (let n = 0; n < 2; n++) parts.push({ x: (Math.random() - .5) * 18, y: 0, vx: (Math.random() - .5) * 30, vy: -10 - Math.random() * 20, l: .4, c: me.boost ? (Math.random() < .5 ? '#f8d030' : '#f86020') : me.rough === .5 ? '#f0f0f0' : trk.th.run });
     for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 60 * dt; p.l -= dt; } parts = parts.filter(p => p.l > 0);
@@ -325,7 +339,7 @@ function make(api) {
       const lineup = [...DRIVERS].sort(() => Math.random() - .5);
       karts = [...lineup, YOU].map((d, j) => { const g = trk.grid[j]; return { d, x: g.x, y: g.y, a: g.a, md: g.a, v: 0, st: 0, idx: g.idx, frac: 0, lap: -1, lat: (j & 1 ? 1 : -1) * 13, boost: 0, sink: 0, wob: 0, passT: 0, done: false, si: [...DRIVERS, YOU].indexOf(d) }; });
       for (const k of karts) k.d = { ...k.d, bias: k.d === YOU ? 0 : (Math.random() - .5) * 8 };
-      me = karts[5]; t = 0; raceT = 0; go = 3.2; msg = null; held = null; flash = 0; shake = 0; finished = false; endT = 0; results = null; camA = me.a; parts = []; wrongT = 0; lastPlace = 6; live = true;
+      me = karts[5]; best = api.load({ best: {} }).best || {}; draftT = 0; newBest = false; t = 0; raceT = 0; go = 3.2; msg = null; held = null; flash = 0; shake = 0; finished = false; endT = 0; results = null; camA = me.a; parts = []; wrongT = 0; lastPlace = 6; live = true;
     },
     resize(w, h) { W = w; H = h; img = null; },
     update(dt) { timers.update(dt);
@@ -350,16 +364,20 @@ function make(api) {
       const pv = pano(th), srcW = 1024 * 2 * Math.atan(W / 2 / f) / (Math.PI * 2), sc = W / srcW, ph = 56 * sc, px0 = (((camA / (Math.PI * 2)) * 1024 - srcW / 2) % 1024 + 1024) % 1024;
       const seg1 = Math.min(srcW, 1024 - px0); c.drawImage(pv, px0, 0, seg1, 56, 0, hy - ph, seg1 * sc, ph); if (seg1 < srcW) c.drawImage(pv, 0, 0, srcW - seg1, 56, seg1 * sc, hy - ph, (srcW - seg1) * sc + 1, ph);
       // ground plane
-      const gh = H - hy; if (!img || img.width !== W || img.height !== gh) img = c.createImageData(W, gh);
-      const out = img.data, col = trk.col, haze = hex(th.haze), outer = hex(th.outer);
+      // ground plane: one packed 32-bit colour per pixel, stepping through the map in tile units
+      const gh = H - hy; if (!img || img.width !== W || img.height !== gh) { img = c.createImageData(W, gh); img32 = new Uint32Array(img.data.buffer); }
+      const out = img32, col = trk.col32, haze = hex(th.haze), outer = trk.outer32, FOG = 10;
       for (let sy = 0; sy < gh; sy++) {
-        const rd = camH * f / (sy + 1), sc2 = rd / f; let wx = cx + ca * rd + sa * (W / 2) * sc2, wy = cy + sa * rd - ca * (W / 2) * sc2; const stx = -sa * sc2, sty = ca * sc2;
-        const fog = sy < 10 ? 1 - sy / 10 : 0;
-        for (let sx = 0, o = sy * W * 4; sx < W; sx++, wx += stx, wy += sty, o += 4) {
-          let r, gg, b; const ix = wx / CELL | 0, iy = wy / CELL | 0;
-          if (wx < 0 || wy < 0 || ix >= N || iy >= N) { r = outer[0]; gg = outer[1]; b = outer[2]; } else { const k = (iy * N + ix) * 3; r = col[k]; gg = col[k + 1]; b = col[k + 2]; }
-          if (fog) { r += (haze[0] - r) * fog; gg += (haze[1] - gg) * fog; b += (haze[2] - b) * fog; }
-          out[o] = r; out[o + 1] = gg; out[o + 2] = b; out[o + 3] = 255;
+        const rd = camH * f / (sy + 1), sc2 = rd / f / CELL; let u = (cx + ca * rd) / CELL + sa * (W / 2) * sc2, v = (cy + sa * rd) / CELL - ca * (W / 2) * sc2; const su = -sa * sc2, sv = ca * sc2;
+        let o = sy * W; const end = o + W;
+        if (sy >= FOG) {
+          for (; o < end; o++, u += su, v += sv) out[o] = u >= 0 && v >= 0 && u < N && v < N ? col[(v | 0) * N + (u | 0)] : outer;
+        } else {   // the far rows fade into the haze
+          const fog = 1 - sy / FOG;
+          for (; o < end; o++, u += su, v += sv) {
+            const p = u >= 0 && v >= 0 && u < N && v < N ? col[(v | 0) * N + (u | 0)] : outer, r = p & 255, gg = p >> 8 & 255, b = p >> 16 & 255;
+            out[o] = 0xff000000 | (b + (haze[2] - b) * fog) << 16 | (gg + (haze[1] - gg) * fog) << 8 | (r + (haze[0] - r) * fog);
+          }
         }
       }
       c.putImageData(img, ox | 0, hy);
@@ -401,13 +419,13 @@ function make(api) {
   function hud(c) {
     const ord = order(), place = ord.indexOf(me) + 1;
     // place and lap
-    c.fillStyle = '#10101890'; c.fillRect(2, 2, 46, 30);
+    c.fillStyle = '#10101890'; c.fillRect(2, 2, 46, 39);
     text(c, `${place}`, 5, 17, place === 1 ? '#f8d838' : place <= 3 ? '#f8f8f0' : '#f8a868', 12); text(c, SUFFIX[place - 1], 19, 10, '#f8f8f0'); text(c, '/6', 19, 18, '#a8a8b8');
-    text(c, `LAP ${clamp(me.lap + 1, 1, LAPS)}/${LAPS}`, 5, 28, '#f8f8f0');
+    text(c, `LAP ${clamp(me.lap + 1, 1, LAPS)}/${LAPS}`, 5, 28, '#f8f8f0'); text(c, clock(go > 0 ? 0 : finished ? me.doneT || raceT : raceT), 5, 38, '#a8a8b8');
     // who is just ahead and just behind, with a time gap
     const ahead = ord[place - 2], behind = ord[place];
     const gap = (a, b) => Math.abs(prog(a) - prog(b)) * trk.seg / Math.max(70, me.v);
-    let gy = 40; for (const [o, sign] of [[ahead, '-'], [behind, '+']]) { if (!o || go > 0 || finished) continue; c.fillStyle = '#10101890'; c.fillRect(2, gy - 7, 70, 9); c.fillStyle = o.d.col; c.fillRect(4, gy - 5, 4, 5); text(c, `${o.d.name.slice(0, 5)}`, 10, gy, '#f8f8f0'); text(c, `${sign}${o.done ? '--' : gap(o, me).toFixed(1)}`, 71, gy, sign === '-' ? '#f8a868' : '#b8f878', 6, 'right'); gy += 10; }
+    let gy = 50; for (const [o, sign] of [[ahead, '-'], [behind, '+']]) { if (!o || go > 0 || finished) continue; c.fillStyle = '#10101890'; c.fillRect(2, gy - 7, 70, 9); c.fillStyle = o.d.col; c.fillRect(4, gy - 5, 4, 5); text(c, `${o.d.name.slice(0, 5)}`, 10, gy, '#f8f8f0'); text(c, `${sign}${o.done ? '--' : gap(o, me).toFixed(1)}`, 71, gy, sign === '-' ? '#f8a868' : '#b8f878', 6, 'right'); gy += 10; }
     // minimap
     const M = Math.round(clamp(W * .27, 40, 64)), mx = W - M - 3, my = 3;
     if (!mini || mini.width !== M) mini = mk(M, M, (mc) => { mc.fillStyle = '#101018a0'; mc.fillRect(0, 0, M, M); const sc = (M - 6) / WORLD; mc.strokeStyle = '#f8f8f0'; mc.lineWidth = 2.5; mc.beginPath(); trk.line.forEach((p, i) => i ? mc.lineTo(3 + p.x * sc, 3 + p.y * sc) : mc.moveTo(3 + p.x * sc, 3 + p.y * sc)); mc.closePath(); mc.stroke(); mc.strokeStyle = trk.th.road; mc.lineWidth = 1.2; mc.stroke(); const p0 = trk.line[0]; mc.fillStyle = '#f8d838'; mc.fillRect(2 + p0.x * sc, 2 + p0.y * sc, 2, 2); });
@@ -419,16 +437,19 @@ function make(api) {
       for (let i = 0; i < 3; i++) { c.fillStyle = 3 - i >= n && n <= 3 ? '#f83838' : '#402020'; disc(c, W / 2 - 13 + i * 13, H * .36 + 7, 4); }
       c.fillStyle = '#101018c0'; c.fillRect(0, H * .36 - 16, W, 11); text(c, trk.name, W / 2, H * .36 - 8, '#f8f8f0', 6, 'center');
       if (go > 1.2) { c.fillStyle = '#101018c0'; c.fillRect(0, H - 22, W, 11); text(c, 'HOLD LEFT / RIGHT', W / 2, H - 14, '#f8d838', 6, 'center'); } }
+    if (me.draft > 1 && !finished) text(c, 'SLIPSTREAM', W / 2, H - 6, (t * 8 | 0) % 2 ? '#88d8f8' : '#f8f8f0', 6, 'center');
     if (wrongT > .6 && (t * 3 | 0) % 2) text(c, 'WRONG WAY', W / 2, H * .45, '#f84848', 8, 'center');
     if (msg) text(c, msg.txt, W / 2, H * .42, msg.col, msg.txt.length > 9 ? 8 : 12, 'center');
-    if (finished) { const bw = 104, bh = 76, bx = (W - bw) / 2 | 0, by = H * .48 | 0; c.fillStyle = '#101018d8'; c.fillRect(bx, by, bw, bh); c.fillStyle = '#f8d838'; c.fillRect(bx, by, bw, 1);
-      ord.forEach((k, i) => { const y = by + 10 + i * 11; text(c, `${i + 1}`, bx + 5, y, i < 3 ? '#f8d838' : '#a8a8b8'); c.fillStyle = k.d.col; c.fillRect(bx + 16, y - 5, 5, 5); text(c, k.d.name, bx + 25, y, k === me ? '#b8f878' : '#f8f8f0'); text(c, `+${POINTS[i]}`, bx + bw - 4, y, k === me ? '#b8f878' : '#a8a8b8', 6, 'right'); }); }
+    if (finished) { const bw = 104, bh = 86, bx = (W - bw) / 2 | 0, by = Math.min(H * .48, H - bh - 2) | 0; c.fillStyle = '#101018d8'; c.fillRect(bx, by, bw, bh); c.fillStyle = '#f8d838'; c.fillRect(bx, by, bw, 1);
+      ord.forEach((k, i) => { const y = by + 10 + i * 11; text(c, `${i + 1}`, bx + 5, y, i < 3 ? '#f8d838' : '#a8a8b8'); c.fillStyle = k.d.col; c.fillRect(bx + 16, y - 5, 5, 5); text(c, k.d.name, bx + 25, y, k === me ? '#b8f878' : '#f8f8f0'); text(c, `+${POINTS[i]}`, bx + bw - 4, y, k === me ? '#b8f878' : '#a8a8b8', 6, 'right'); });
+      const b = best[trk.name];
+      text(c, newBest ? `NEW BEST ${clock(b)}` : `${clock(me.doneT || raceT)}  BEST ${b ? clock(b) : '--'}`, W / 2, by + bh - 6, newBest && (t * 4 | 0) % 2 ? '#f8d838' : '#f8f8f0', 6, 'center'); }
   }
   return self;
 }
 
 export default {
   id: 'pocket-kart', title: 'Pocket Kart', tag: 'Advance · Racing', retro: true, era: 'advance', pal: 'grape', w: 160, h: 160, maxW: 240, maxH: 280, goal: 6,
-  hint: 'Three laps against five rivals; you start at the back. Hold the left or right side to steer. Stay on the road, hit the orange boost pads, and watch the chevrons for sharp bends. Finish on the podium to win.',
+  hint: 'Two laps against five rivals; you start at the back. Hold the left or right side to steer. Stay on the road, hit the orange boost pads, tuck in behind a rival to slipstream, and watch the chevrons for sharp bends. Finish on the podium to win.',
   make,
 };
