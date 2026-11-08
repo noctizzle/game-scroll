@@ -242,7 +242,7 @@ function gameOver(s){
   s.state='over';s.overAt=Date.now();stopKits();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(progress.score(s.def.id,s.score))s.newBest=true;
   awardTrophies(s);services.reportRun(s.def);
-  s.rank=null;const round=s.overAt;boards.submit(s.def.id,s.score).then(r=>{if(r&&s.state==='over'&&s.overAt===round){s.rank=r;if(!s.overlay.hidden)renderOverlay(s)}});
+  s.rank=null;const round=s.overAt;boards.submit(s.def.id,s.score,(s.overAt-s.startAt)/1000).then(r=>{if(r&&s.state==='over'&&s.overAt===round){s.rank=r;if(!s.overlay.hidden)renderOverlay(s)}});
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }

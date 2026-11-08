@@ -6,7 +6,7 @@
 //                     iOS:     first time { keyId, attestation }, later { keyId, assertion }  (App Attest)
 //                     Android: { token }                                                     (Play Integrity)
 //   POST /heart       body { device, game, on } (+ "Authorization: Bearer <session>") -> { game, n }
-//   POST /score, GET /board   leaderboards, all time and today (see scores.js)
+//   POST /score, GET /board   leaderboards, all time and today, with quick fairness checks (see scores.js)
 //   POST /brain, GET /brain   Tiny Brains shared learning: everyone's average brain (see brains.js)
 //   POST /stats, GET /stats   anonymous play stats (see stats.js)
 //   POST /perf, GET /perf, GET /perf/report   anonymous frame timing and crash reports (see perf.js)
@@ -23,7 +23,7 @@ import { unb64, b64u } from './util.js';
 import { cleanBatch, saveBatch, totals, prune } from './stats.js';
 import { sharePage, idFromPath } from './sharepage.js';
 import { cleanPerf, savePerf, perfTotals, prunePerf, perfPage } from './perf.js';
-import { cleanScore, saveScore, board, pruneScores } from './scores.js';
+import { cleanScore, cleanSecs, checkScore, saveScore, board, pruneScores } from './scores.js';
 import { cleanBrain, saveBrain, sharedBrain, pruneBrains, NAME_RE, SHAPE_RE } from './brains.js';
 
 // Browsers may call the API only from the app itself and the test website. (Not a security
@@ -232,13 +232,16 @@ async function writer(env, req, device, kind) {
 async function postScore(env, ctx, req) {
   const b = await body(req, MAX_BODY['/score']);
   if (!b) return json(req, { error: 'bad request' }, 400);
-  const { device, game } = b, score = cleanScore(b.score);
+  const { device, game } = b, score = cleanScore(b.score), secs = cleanSecs(b.secs);
   if (typeof device !== 'string' || !DEVICE_RE.test(device)) return json(req, { error: 'bad device' }, 400);
   if (typeof game !== 'string' || !GAME_RE.test(game)) return json(req, { error: 'bad game' }, 400);
   if (score == null) return json(req, { error: 'bad score' }, 400);
+  if (secs == null) return json(req, { error: 'bad secs' }, 400);
   const no = await writer(env, req, device, 's'); if (no) return no;
   const ids = await gameIds(env);
   if (ids && !ids.has(game)) return json(req, { error: 'unknown game' }, 404);
+  const why = await checkScore(env.DB, game, device, score, secs, ids?.get(game)?.meta || null);
+  if (why) return json(req, { error: 'score not counted', why }, 422, { 'Cache-Control': 'no-store' });
   const res = await saveScore(env.DB, game, device, score);
   if (Math.random() < .01) ctx.waitUntil(pruneScores(env.DB));
   return json(req, res, 200, { 'Cache-Control': 'no-store' });
