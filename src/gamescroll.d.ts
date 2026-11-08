@@ -538,7 +538,7 @@ export interface BrainMind { act(see: number[], dt?: number): number; readonly a
 export interface BrainsPart {
   Net: typeof TinyNet;
   Brain: typeof Brain;
-  /** Every enemy in a wave is an experiment: wave.mind() per enemy, mind.done() when it leaves. */
+  /** Every enemy in a wave is an experiment: wave.mind() per enemy (each with its own reaction time and action), mind.done() when it leaves. */
   Wave: new (brain: Brain, o?: { change?: number }) => { mind(): BrainMind };
   /** Tries moves ahead with your game's own step function. */
   Imagine: new <S>(o: { actions: number | string[]; step(state: S, action: number, dt: number): S; score(state: S): number; depth?: number; dt?: number; tries?: number; budget?: number; brain?: Brain; see?(state: S): number[] }) => { pick(state: S): number; readonly action: number | string };

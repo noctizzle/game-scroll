@@ -480,6 +480,12 @@ console.log('physics ok');
   for (let i = 0; i < 60; i++) { m1.act([1, 0], 1 / 60); m1.feel(1); m2.act([1, 0], 1 / 60); }
   m1.done(); m2.done();
   assert.ok(wb.net.w.some((v, i) => v !== w0[i]), 'a finished pair changes the brain');
+  // minds that act in the same frame each make their own choice, on their own reaction timer
+  const sb = new Brain({ name: 'squad', inputs: 1, actions: ['left', 'right'], teacher: see => see[0] < 0 ? 'left' : 'right', limits: { react: .5, perSecond: 100, minNoise: 0 }, share: false }), sw = new Wave(sb, { change: 0 });
+  const lefty = sw.mind(), righty = sw.mind();
+  for (let i = 0; i < 30; i++) { lefty.act([-1], 1 / 60); righty.act([1], 1 / 60); }
+  assert.ok(lefty.action === 'left' && righty.action === 'right', 'each mind decides for itself: ' + lefty.action + ' ' + righty.action);
+  assert.equal(sb.last, -1, "minds don't change the brain's own choice");
   // Imagine: picks the move that gets to the goal
   const plan = new Imagine({ actions: ['left', 'stay', 'right'], step: (s, a, dt) => ({ x: s.x + (a - 1) * dt * 5 }), score: s => -Math.abs(s.x - 3) });
   assert.equal(plan.pick({ x: 0 }), 2); assert.equal(plan.action, 'right'); assert.equal(plan.pick({ x: 6 }), 0);
