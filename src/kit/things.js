@@ -117,3 +117,82 @@ export class Things {
   }
   clear() { this.list = []; this.byTag.clear(); this.dirty = false; }
 }
+
+/* ---------- parent and child: things that move with other things ---------- */
+// A tank's turret turns with the tank, a rider sits on a horse, a planet's moon circles it while the
+// planet circles the sun. Each Node has x, y, angle and scale relative to its parent; the root's
+// are in game units. Call root.update() once a frame (after moving things) and read each node's
+// place in the game: wx, wy, wangle, wscale.
+//   const tank = new Node({ x: 180, y: 500 }), turret = tank.add(new Node({ y: -6 })), gun = turret.add(new Node({ x: 18 }));
+//   update(dt) { tank.angle += steer * dt; turret.angle = aimAngle - tank.angle; tank.update(); shoot from gun.wx, gun.wy }
+//   draw(c) { tank.draw(c, (c, n) => { ...draw n in its own space, e.g. c.fillRect(-8, -8, 16, 16)... }); }
+// node.toWorld(x, y) and node.toLocal(x, y) convert points; node.hit(x, y) tests a tap against its
+// r (circle) or w and h (box centred on it), rotated with it. Nodes are plain objects too, so you can
+// give them any other fields, and add them to Things (tags, hits) using wx and wy where you need
+// their place in the world.
+export class Node {
+  constructor({ x = 0, y = 0, angle = 0, scale = 1, ...rest } = {}) {
+    Object.assign(this, rest); this.x = x; this.y = y; this.angle = angle; this.scale = scale;
+    this.parent = null; this.children = []; this.visible = rest.visible ?? true;
+    this.wx = x; this.wy = y; this.wangle = angle; this.wscale = scale;
+    this.m = [1, 0, 0, 1, x, y];
+  }
+  /** Adds a child (taking it from any old parent) and returns it. */
+  add(child) { child.parent?.remove(child); child.parent = this; this.children.push(child); child.update(); return child; }
+  remove(child) { const i = this.children.indexOf(child); if (i >= 0) this.children.splice(i, 1); child.parent = null; return child; }
+  /** Moves the node to a new parent, keeping where it is on screen (a rider jumping off the horse: attach(null)). */
+  attach(parent) {
+    this.update();
+    const { wx, wy, wangle, wscale } = this;
+    if (this.parent) this.parent.remove(this);
+    if (parent) {
+      parent.update(); const p = parent.toLocal(wx, wy);
+      this.x = p.x; this.y = p.y; this.angle = wangle - parent.wangle; this.scale = wscale / parent.wscale; parent.add(this);
+    } else { this.x = wx; this.y = wy; this.angle = wangle; this.scale = wscale; this.update(); }
+    return this;
+  }
+  /** Works out wx, wy, wangle, wscale for this node and everything under it. */
+  update() {
+    const c = Math.cos(this.angle) * this.scale, s = Math.sin(this.angle) * this.scale, p = this.parent;
+    if (p) {
+      const [a, b, cc, d, e, f] = p.m;
+      this.m = [a * c + cc * s, b * c + d * s, a * -s + cc * c, b * -s + d * c, a * this.x + cc * this.y + e, b * this.x + d * this.y + f];
+      this.wangle = p.wangle + this.angle; this.wscale = p.wscale * this.scale;
+    } else { this.m = [c, s, -s, c, this.x, this.y]; this.wangle = this.angle; this.wscale = this.scale; }
+    this.wx = this.m[4]; this.wy = this.m[5];
+    for (const k of this.children) k.update();
+    return this;
+  }
+  /** A point in this node's own space, in game units. */
+  toWorld(x, y) { const [a, b, c, d, e, f] = this.m; return { x: a * x + c * y + e, y: b * x + d * y + f }; }
+  /** A point in game units, in this node's own space. */
+  toLocal(x, y) {
+    const [a, b, c, d, e, f] = this.m, det = a * d - b * c || 1e-9, px = x - e, py = y - f;
+    return { x: (d * px - c * py) / det, y: (-b * px + a * py) / det };
+  }
+  /** Does a point in game units touch this node (r, or w and h, in its own units)? */
+  hit(x, y) {
+    const p = this.toLocal(x, y);
+    if (this.r != null) return p.x * p.x + p.y * p.y <= this.r * this.r;
+    if (this.w != null) return Math.abs(p.x) <= this.w / 2 && Math.abs(p.y) <= (this.h ?? this.w) / 2;
+    return false;
+  }
+  /** Every node from here down (this one first). */
+  each(fn) { fn(this); for (const k of this.children) k.each(fn); return this; }
+  /** The top-most node under a point (children drawn later count as on top), or null. */
+  pick(x, y) { for (let i = this.children.length - 1; i >= 0; i--) { const n = this.children[i].visible && this.children[i].pick(x, y); if (n) return n; } return this.hit(x, y) ? this : null; }
+  /** Draws this node and its children (children on top, in the order added), each in its own space, under whatever transform the canvas already has (a camera). */
+  draw(c, fn) {
+    const t = c.getTransform?.(), B = t ? [t.a, t.b, t.c, t.d, t.e, t.f] : [1, 0, 0, 1, 0, 0];
+    return this.drawUnder(c, fn, B);
+  }
+  drawUnder(c, fn, B) {
+    if (!this.visible) return this;
+    const [a, b, cc, d, e, f] = B, m = this.m;
+    c.save();
+    c.setTransform(a * m[0] + cc * m[1], b * m[0] + d * m[1], a * m[2] + cc * m[3], b * m[2] + d * m[3], a * m[4] + cc * m[5] + e, b * m[4] + d * m[5] + f);
+    fn(c, this); c.restore();
+    for (const k of this.children) k.drawUnder(c, fn, B);
+    return this;
+  }
+}

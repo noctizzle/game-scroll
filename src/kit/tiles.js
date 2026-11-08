@@ -28,6 +28,19 @@ const DEFAULT_LEGEND = {
   '.': {}, ' ': {},
 };
 
+// The 47 joined-corner masks of the "blob" tile set, numbered 0..46 in rising mask order, so
+// BLOB_INDEX[mask] is the piece to draw (masks from edges(): corners only set when both sides join).
+const BLOB_MASKS = [];
+for (let m = 0; m < 256; m++) {
+  const n = m & 1, e = m & 4, s = m & 16, w = m & 64;
+  if ((m & 2 && !(n && e)) || (m & 8 && !(s && e)) || (m & 32 && !(s && w)) || (m & 128 && !(n && w))) continue;
+  BLOB_MASKS.push(m);
+}
+const BLOB_INDEX = new Int8Array(256).fill(-1);
+BLOB_MASKS.forEach((m, i) => { BLOB_INDEX[m] = i; });
+/** The 47 blob masks in order (BLOB_MASKS[i] is piece i's 8-bit mask), for drawing your own tile sheet. */
+export { BLOB_MASKS };
+
 export class TileMap {
   /** cols × rows tiles of size units, all empty. */
   constructor(cols, rows, { size = 16, legend = {} } = {}) {
@@ -152,6 +165,30 @@ export class TileMap {
   sees(x0, y0, x1, y1) { return !this.ray(x0, y0, x1, y1); }
   /** rows of true (open) / false (wall): new gs.ai.NavGrid from it for paths. */
   walkable() { const out = []; for (let ty = 0; ty < this.rows; ty++) { const r = []; for (let tx = 0; tx < this.cols; tx++) r.push(!this.solid(tx, ty)); out.push(r); } return out; }
+  /**
+   * Auto-tiling: which neighbours of (tx, ty) are the same kind, so your draw function can pick the
+   * right edge, corner or middle piece. same: a string of characters that join up ('#=' : walls join
+   * walls), a function (ch, tx, ty) => true, or left out (same character). Outside the map counts as
+   * joined (edge: false to make it count as open).
+   *   const t = map.edges(tx, ty);   t.n, t.e, t.s, t.w (and t.ne, t.se, t.sw, t.nw)
+   *   t.mask: 4-bit (n 1, e 2, s 4, w 8): 16 pieces, for simple walls and paths
+   *   t.blob: 0..46: the 47-piece set (corners only count when both sides next to them join)
+   *   t.blob8: the raw 8-bit mask (n 1, ne 2, e 4, se 8, s 16, sw 32, w 64, nw 128) the blob comes from
+   * Read it in draw(): map.draw(c, (c, ch, x, y, s, tx, ty) => drawWall(c, x, y, s, map.edges(tx, ty).mask)).
+   */
+  edges(tx, ty, same = null, { edge = true } = {}) {
+    const me = this.get(tx, ty);
+    const join = (x, y) => {
+      if (!this.inside(x, y)) return edge;
+      const ch = this.cells[y * this.cols + x];
+      return typeof same === 'function' ? !!same(ch, x, y) : typeof same === 'string' ? same.includes(ch) : ch === me;
+    };
+    const n = join(tx, ty - 1), e = join(tx + 1, ty), s = join(tx, ty + 1), w = join(tx - 1, ty);
+    const ne = n && e && join(tx + 1, ty - 1), se = s && e && join(tx + 1, ty + 1), sw = s && w && join(tx - 1, ty + 1), nw = n && w && join(tx - 1, ty - 1);
+    const mask = (n ? 1 : 0) | (e ? 2 : 0) | (s ? 4 : 0) | (w ? 8 : 0);
+    const blob8 = (n ? 1 : 0) | (ne ? 2 : 0) | (e ? 4 : 0) | (se ? 8 : 0) | (s ? 16 : 0) | (sw ? 32 : 0) | (w ? 64 : 0) | (nw ? 128 : 0);
+    return { n, e, s, w, ne, se, sw, nw, mask, blob8, blob: BLOB_INDEX[blob8] };
+  }
   /**
    * Calls draw(c, ch, x, y, size, tx, ty) for every non-empty tile on screen (all of them without
    * a camera). Your function draws the tile; the map only finds them.

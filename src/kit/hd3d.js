@@ -30,7 +30,10 @@ import {
   CanvasTexture, RepeatWrapping, SRGBColorSpace, NoColorSpace, PCFSoftShadowMap, ACESFilmicToneMapping, HalfFloatType,
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
   OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4, DataTexture, RGBAFormat, ShaderChunk,
+  LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion,
 } from 'three';
+import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
+import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
 import { SSRPass } from 'three/examples/jsm/postprocessing/SSRPass.js';
 import { HorizontalBlurShader } from 'three/examples/jsm/shaders/HorizontalBlurShader.js';
 import { VerticalBlurShader } from 'three/examples/jsm/shaders/VerticalBlurShader.js';
@@ -257,6 +260,51 @@ class FinalPass extends Pass {
   }
   dispose() { for (const m of this.mips) m.dispose(); for (const m of [this.bright, this.down, this.up, this.final]) m.dispose(); this.quad.dispose(); }
 }
+// Sun shafts (v.shafts): light streaming past trees, through windows and round a hill top. A small
+// pass of its own (so it can be swapped for a WebGPU node later without touching the final pass):
+// the bright sky near the sun is picked out at quarter size, smeared towards the sun, and added
+// back on top. Where something blocks the sky, the streak has a gap: that's the shaft.
+const SHAFT_MASK = `uniform sampler2D tDiffuse; uniform vec2 sunUV; uniform float aspect, thr; varying vec2 vUv;
+  void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb; float l = dot(c, vec3(.2126, .7152, .0722));
+    vec2 q = (vUv - sunUV) * vec2(aspect, 1.); float near = exp(-dot(q, q) * 3.);
+    gl_FragColor = vec4(c * smoothstep(thr, thr * 2.2, l) * near, 1.); }`;
+const SHAFT_BLUR = `uniform sampler2D tDiffuse; uniform vec2 sunUV; uniform float decay, density; varying vec2 vUv;
+  #define N 24
+  void main(){ vec2 d = (vUv - sunUV) * density / float(N); vec2 p = vUv; vec3 sum = vec3(0.); float w = 1.;
+    for (int i = 0; i < N; i++) { p -= d; sum += texture2D(tDiffuse, p).rgb * w; w *= decay; }
+    gl_FragColor = vec4(sum / float(N) * 2.2, 1.); }`;
+const SHAFT_ADD = `uniform sampler2D tDiffuse, tShaft; uniform float strength; uniform vec3 tint; varying vec2 vUv;
+  void main(){ gl_FragColor = vec4(texture2D(tDiffuse, vUv).rgb + texture2D(tShaft, vUv).rgb * tint * strength, 1.); }`;
+class ShaftsPass extends Pass {
+  constructor() {
+    super(); this.needsSwap = true; this.strength = 0;
+    this.mask = qmat(SHAFT_MASK, { tDiffuse: { value: null }, sunUV: { value: new Vector2(.5, .5) }, aspect: { value: 1 }, thr: { value: 1.1 } });
+    this.blur = qmat(SHAFT_BLUR, { tDiffuse: { value: null }, sunUV: { value: new Vector2(.5, .5) }, decay: { value: .955 }, density: { value: .9 } });
+    this.add = qmat(SHAFT_ADD, { tDiffuse: { value: null }, tShaft: { value: null }, strength: { value: 0 }, tint: { value: new Color(1, .9, .75) } });
+    this.quad = new FullScreenQuad(null); this.a = null; this.b = null;
+  }
+  setSize(w, h) {
+    const bw = Math.max(8, Math.round(w / 4)), bh = Math.max(8, Math.round(h / 4));
+    if (this.a?.width === bw && this.a?.height === bh) return;
+    this.a?.dispose(); this.b?.dispose();
+    const o = { type: HalfFloatType, depthBuffer: false, minFilter: LinearFilter, magFilter: LinearFilter };
+    this.a = new WebGLRenderTarget(bw, bh, o); this.b = new WebGLRenderTarget(bw, bh, o);
+  }
+  /** Where the sun is on screen (0..1) and how much it shows (0 hides the shafts). */
+  aim(uv, aspect, amount, col) { this.mask.uniforms.sunUV.value.copy(uv); this.blur.uniforms.sunUV.value.copy(uv); this.mask.uniforms.aspect.value = aspect; this.amount = amount; if (col) this.add.uniforms.tint.value.copy(col); }
+  pass(r, mat, target) { this.quad.material = mat; r.setRenderTarget(target); this.quad.render(r); }
+  render(r, writeBuffer, readBuffer) {
+    const on = this.strength * (this.amount || 0);
+    if (on > 0 && this.a) {
+      this.mask.uniforms.tDiffuse.value = readBuffer.texture; this.pass(r, this.mask, this.a);
+      this.blur.uniforms.tDiffuse.value = this.a.texture; this.pass(r, this.blur, this.b);
+    }
+    const u = this.add.uniforms; u.tDiffuse.value = readBuffer.texture; u.tShaft.value = this.b?.texture ?? null; u.strength.value = on > 0 ? on : 0;
+    this.pass(r, this.add, this.renderToScreen ? null : writeBuffer);
+  }
+  dispose() { this.a?.dispose(); this.b?.dispose(); for (const m of [this.mask, this.blur, this.add]) m.dispose(); this.quad.dispose(); }
+}
+
 // Ambient occlusion and reflections draw their own depth + normals picture of the scene with one
 // plain material, so anything see-through came out as a solid wall: Suit Ops' light shafts (and any
 // glow, blob shadow, rotor blur or contact-shadow plane) became dark bands fixed to the camera, and
@@ -501,6 +549,18 @@ export class Particles {
 const C_WARM = new Color('#ffe2b8'), GV = new Vector3(), GP = new Vector3(), GW = new Vector3();
 // a grade tint: '#rrggbb', a Color or [r, g, b] (1 = no change)
 const toRGB = (c, out) => { if (c == null) out.set(1, 1, 1); else if (Array.isArray(c)) out.set(c[0], c[1], c[2]); else { const k = c.isColor ? c : new Color(c); out.set(k.r, k.g, k.b); } return out; };
+// decal pictures: drawn once per key and kept (a soft round mark by default)
+const decalTexs = new Map();
+const DEFAULT_DECAL = (c, s) => { const g = c.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2); g.addColorStop(0, '#fff'); g.addColorStop(.55, '#ddd'); g.addColorStop(1, '#000'); c.fillStyle = g; c.fillRect(0, 0, s, s); };
+function decalTex(paint, key) {
+  if (!paint) return null;
+  const k = key || paint; let t = decalTexs.get(k); if (t) return t;
+  const cv = document.createElement('canvas'); cv.width = cv.height = 128; const c = cv.getContext('2d'); paint(c, 128);
+  t = new CanvasTexture(cv); t.colorSpace = key === '_soft' ? NoColorSpace : SRGBColorSpace; t.anisotropy = 4;
+  if (decalTexs.size > 32) { const [k0, t0] = decalTexs.entries().next().value; t0.dispose(); decalTexs.delete(k0); }
+  decalTexs.set(k, t); return t;
+}
+
 export class HDView {
   /**
    * bg: background colour; fog: density of exponential fog (0 = none); env: strength of the
@@ -514,6 +574,7 @@ export class HDView {
     this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
+    this.shafts = 0; this.decals = []; this.probes = []; this.probe = null;
   }
   /**
    * Outdoor air for every lit material in the scene: haze (how thick the air is: .001 is about 1 km of
@@ -540,6 +601,88 @@ export class HDView {
     return a;
   }
   /** The direction towards the sun this view uses for air, glare and cloud shadows. */
+  /**
+   * A mark on a surface: a scorch, a bullet mark, a footprint, paint, a splat. It wraps over the
+   * mesh's shape where it lands (three's DecalGeometry). mesh: what was hit; point and normal: where
+   * and which way it faces (from a ray hit: hit.point, hit.normal). Options: size (metres, or
+   * [w, h, depth]), angle (turn round the normal; default random), colour, paint (c, s) => {} to
+   * draw your own mark on an s x s canvas (cached by key), rough, glow, life (seconds; 0 = stays),
+   * max (oldest go first; default 40). Returns the decal mesh (dispose() removes it early).
+   */
+  decal(mesh, point, normal, { size = .3, angle = Math.random() * Math.PI * 2, colour = '#1a1410', paint = null, key = null, rough = .9, glow = 0, life = 0, max = 40, opacity = 1 } = {}) {
+    if (!mesh?.isMesh) return null;
+    const P0 = point.isVector3 ? point : new Vector3(...point), N0 = (normal?.isVector3 ? normal.clone() : new Vector3(...(normal || [0, 1, 0]))).normalize();
+    mesh.updateMatrixWorld();
+    const look = new Matrix4().lookAt(P0.clone().add(N0), P0, Math.abs(N0.y) > .99 ? new Vector3(0, 0, 1) : new Vector3(0, 1, 0));
+    const rot = new Euler().setFromQuaternion(new Quaternion().setFromRotationMatrix(look).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), angle)));
+    const sz = Array.isArray(size) ? new Vector3(size[0], size[1], size[2] ?? Math.max(size[0], size[1])) : new Vector3(size, size, size);
+    let geo; try { geo = new DecalGeometry(mesh, P0, rot, sz); } catch { return null; }
+    if (!geo.attributes.position?.count) { geo.dispose(); return null; }
+    const map = decalTex(paint, key);
+    const mat = new MeshStandardMaterial({ color: map ? '#ffffff' : colour, map, roughness: rough, metalness: 0, transparent: true, opacity, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, emissive: glow ? new Color(colour) : new Color(0), emissiveIntensity: glow });
+    if (!map) mat.alphaMap = decalTex(DEFAULT_DECAL, '_soft');
+    const d = new Mesh(geo, mat); d.userData.noAO = true; d.receiveShadow = true; d.renderOrder = 2;
+    d.userData.decal = { life, left: life, opacity };
+    this.scene.add(d); this.decals.push(d);
+    while (this.decals.length > max) this.dropDecal(this.decals[0]);
+    d.dispose = () => this.dropDecal(d);
+    return d;
+  }
+  dropDecal(d) { const i = this.decals.indexOf(d); if (i >= 0) this.decals.splice(i, 1); d.removeFromParent(); d.geometry.dispose(); d.material.dispose(); }
+  /** Removes every decal. */
+  clearDecals() { for (const d of [...this.decals]) this.dropDecal(d); }
+  tickDecals(dt) {
+    for (const d of [...this.decals]) {
+      const u = d.userData.decal; if (!u.life) continue;
+      u.left -= dt; if (u.left <= 0) { this.dropDecal(d); continue; }
+      d.material.opacity = u.opacity * Math.min(1, u.left / Math.min(1, u.life * .3));
+    }
+  }
+  /**
+   * Bakes the light at a point into a light probe: how bright and what colour the surroundings are
+   * from every direction (a sunny window, a red neon sign, green grass bouncing light up). Lit
+   * materials nearby then pick up that colour, which makes rooms and caves look lit from inside
+   * instead of flat. Bake once the level is built (in reset(), or after a big change), not every
+   * frame. Several probes blend by where the camera is (or v.probeAt, e.g. the player): give each a
+   * radius. strength scales them; lower the view's amb (hemisphere light) when using probes.
+   * Returns a promise of the probe ({ at, radius, sh }) once its light is read back (a frame or two);
+   * v.clearProbes() removes them all.
+   */
+  bakeLight(at, { radius = 10, strength = 1, size = 32 } = {}) {
+    const r = renderer(); if (!r) return Promise.resolve(null);
+    const pos = at.isVector3 ? at.clone() : new Vector3(...at);
+    const rt = new WebGLCubeRenderTarget(size, { type: HalfFloatType }), cc = new CubeCamera(.05, 400, rt);
+    cc.position.copy(pos); this.scene.add(cc);
+    const was = this.probe?.intensity ?? 0; if (this.probe) this.probe.intensity = 0;   // don't bake the probe into itself
+    const env = this.scene.environment; this.scene.environment = this.env || envTex;
+    try { this.scene.updateMatrixWorld(); cc.update(r, this.scene); } catch { rt.dispose(); return Promise.resolve(null); }
+    finally { this.scene.environment = env; if (this.probe) this.probe.intensity = was; cc.removeFromParent(); r.setRenderTarget(null); }
+    // the read back is async (as it will be on WebGPU): the probe joins once its numbers are in
+    const gen = this.probeGen ||= 1;
+    return LightProbeGenerator.fromCubeRenderTarget(r, rt).then(probe => {
+      rt.dispose();
+      if (!probe?.sh || gen !== this.probeGen) return null;
+      const p = { at: pos, radius, strength, sh: probe.sh };
+      this.probes.push(p);
+      if (!this.probe) { this.probe = new LightProbe(); this.scene.add(this.probe); }
+      this.blendProbes();
+      return p;
+    }, () => { rt.dispose(); return null; });
+  }
+  clearProbes() { this.probeGen = (this.probeGen || 1) + 1; this.probes = []; if (this.probe) { this.probe.removeFromParent(); this.probe = null; } }
+  blendProbes() {
+    const L = this.probe; if (!L || !this.probes.length) return;
+    const at = this.probeAt?.isVector3 ? this.probeAt : this.probeAt ? GV.set(this.probeAt.x || 0, this.probeAt.y || 0, this.probeAt.z || 0) : this.cam.position;
+    const c = L.sh.coefficients; for (const v of c) v.set(0, 0, 0);
+    let sum = 0, strength = 0;
+    for (const p of this.probes) {
+      const d = p.at.distanceTo(at), w = Math.max(0, 1 - d / p.radius) ** 2 + 1e-4 / (1 + d * d);
+      sum += w; strength += p.strength * w;
+      for (let i = 0; i < 9; i++) c[i].addScaledVector(p.sh.coefficients[i], w);
+    }
+    if (sum > 0) { for (const v of c) v.multiplyScalar(1 / sum); L.intensity = strength / sum; }
+  }
   sunDir(out = new Vector3()) { const a = this._air; return a?.sun ? out.copy(a.sun) : this.sun?.dir ? out.copy(this.sun.dir) : this.sun?.isLight ? out.copy(this.sun.position).sub(this.sun.target.position).normalize() : out.set(.4, .8, .3).normalize(); }
   /**
    * Reflections and sky light from a scene of your own (a sky dome, a painted room): it's rendered
@@ -743,6 +886,8 @@ export class HDView {
       if (P.ssr.cw !== pw || P.ssr.ch !== ph) { P.ssr.setSize(pw, ph); P.ssr.cw = pw; P.ssr.ch = ph; }
     }
     for (const cs of this.contacts) cs.update(r, this.scene, T.contact);
+    if (this.decals.length && !baking && !off) this.tickDecals(Math.min(.1, (now - (this.decalT || now)) / 1000)); this.decalT = now;
+    if (this.probes.length > 1) this.blendProbes();
     for (const p of this.parts) p.mat.uniforms.scale.value = ph / (2 * Math.tan(this.cam.fov * Math.PI / 360));
     if (!baking && !off) this.t += 1 / 60;
     if (!this.clearBg) {
@@ -752,17 +897,27 @@ export class HDView {
       const g = this.grade; u.gradeOn.value = g ? 1 : 0;
       if (g) { u.sat.value = g.saturation ?? 1; u.con.value = g.contrast ?? 1; toRGB(g.shadows, u.lo.value); toRGB(g.highlights, u.hi.value); }
       u.glare.value = 0;
-      if (this.glare > 0) {
+      const shafts = this.shafts > 0 && T.shadow > 0;   // not on the lowest tier
+      if (shafts) P.shafts ||= new ShaftsPass();
+      if (P.shafts) P.shafts.amount = 0;
+      if (this.glare > 0 || shafts) {
         const sd = this.sunDir(GV), cam = this.cam; GP.copy(cam.position).addScaledVector(sd, 1000).project(cam);
         cam.getWorldDirection(GW);
-        if (GW.dot(sd) > 0 && Math.abs(GP.x) < 1.6 && Math.abs(GP.y) < 1.6) { u.glare.value = this.glare * Math.min(1, (1.6 - Math.max(Math.abs(GP.x), Math.abs(GP.y))) * 2); u.sunUV.value.set(GP.x * .5 + .5, GP.y * .5 + .5); u.aspect.value = this.W / this.H; u.sunCol.value.copy(this.sun?.color || C_WARM); }
+        if (GW.dot(sd) > 0 && Math.abs(GP.x) < 1.6 && Math.abs(GP.y) < 1.6) {
+          const seen = Math.min(1, (1.6 - Math.max(Math.abs(GP.x), Math.abs(GP.y))) * 2);
+          u.sunUV.value.set(GP.x * .5 + .5, GP.y * .5 + .5); u.aspect.value = this.W / this.H; u.sunCol.value.copy(this.sun?.color || C_WARM);
+          if (this.glare > 0) u.glare.value = this.glare * seen;
+          if (shafts) { P.shafts.strength = Math.min(2, this.shafts); P.shafts.aim(u.sunUV.value, this.W / this.H, seen, this.sun?.color || C_WARM); }
+        }
       }
     }
     // extra effects a game added (gs.fx3d: outline, glitch, trails, depth of field, pixelate) go between the scene and the final pass
     if (!this.clearBg) {
       const ex = this.extras || [];
       const first = ssr ? P.ssr : P.render;
-      cp.passes = up ? [first, P.ao, ...ex, P.final, P.sgsr] : [first, P.ao, ...ex, P.final];
+      const sh = P.shafts && P.shafts.amount > 0 ? [P.shafts] : [];
+      if (sh.length && (P.shafts.cw !== pw || P.shafts.ch !== ph)) { P.shafts.setSize(pw, ph); P.shafts.cw = pw; P.shafts.ch = ph; }
+      cp.passes = up ? [first, P.ao, ...ex, ...sh, P.final, P.sgsr] : [first, P.ao, ...ex, ...sh, P.final];
       P.final.needsSwap = up;   // the final pass writes into the next buffer only when SGSR reads it
       for (const p of ex) if (p.cw !== pw || p.ch !== ph) { p.setSize(pw, ph); p.cw = pw; p.ch = ph; }
     }

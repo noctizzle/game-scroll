@@ -1,0 +1,13 @@
+{
+  "name": "rich-haptics",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Game Scroll's rich haptics: patterns with strength and sharpness over time, on Core Haptics (iPhone) and the vibrator's amplitude control and haptic primitives (Android).",
+  "main": "index.js",
+  "files": ["index.js", "Package.swift", "ios/Sources", "android/src/main", "android/build.gradle"],
+  "capacitor": {
+    "ios": { "src": "ios" },
+    "android": { "src": "android" }
+  },
+  "peerDependencies": { "@capacitor/core": "^8.0.0" }
+}

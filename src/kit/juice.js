@@ -14,6 +14,7 @@
 // For pixel styles (Pocket, Color, Advance) pass new Juice({ pixel: true }): particles are drawn as
 // crisp squares and shake moves in whole pixels.
 
+import { lazy } from './lazy.js';
 import { prefs } from './prefs.js';
 const TAU = Math.PI * 2;
 
@@ -83,6 +84,59 @@ export class Tweens {
   /** Is anything still animating (on this object, if given)? */
   busy(obj) { return this.list.some(t => !obj || t.obj === obj); }
   clear() { this.list = []; }
+}
+
+/* ---------- timelines: steps in order, together and staggered (anime.js) ---------- */
+// For moments with several parts: a title that drops in, then the stars pop one after another, then
+// a button wobbles. Built on anime.js (animejs.com, MIT), which loads the first time a game makes a
+// Timeline (do it in make() or reset()), and driven by your game's dt, so it pauses with the game.
+// Times are in seconds.
+//   const tl = new Timeline({ ease: 'outBack' })
+//     .to(title, { y: 120, duration: .5 })
+//     .to(stars, { s: 1, duration: .3, delay: stagger(.1) }, '+=.1')     // each star .1 s after the last
+//     .to(button, { r: [-.1, .1, 0], duration: .4 }, 'stars')             // keyframes; at the 'stars' label
+//     .label('stars', .5).call(() => sounds.win(), .6);
+//   update(dt) { tl.update(dt); }        tl.done, tl.time, tl.duration, tl.play(), tl.pause(), tl.seek(s), tl.speed = 2
+// Targets are your own objects (or a list of them) and their number fields. Positions: a number of
+// seconds from the start, '+=.2' / '-=.2' after / before the end so far, '<' with the step before,
+// or a label. Eases: anime's names ('outBack', 'inOutQuad', 'outElastic(1, .5)', 'steps(4)'...) or
+// any function from `ease`. Seeking backwards runs call() steps again as it passes them.
+const animeLib = lazy('anime.js', () => import('animejs').then(m => ({ createTimeline: m.createTimeline, stagger: m.stagger })));
+const ms = v => typeof v === 'number' ? v * 1000 : v;
+const pos = p => typeof p === 'number' ? p * 1000 : typeof p === 'string' ? p.replace(/([+-]=)\s*([\d.]+)/, (_, op, n) => op + (+n * 1000)) : p;
+function toMs(params) {
+  const o = { ...params };
+  for (const k of ['duration', 'delay', 'loopDelay']) if (k in o) o[k] = typeof o[k] === 'function' && o[k].secs ? o[k].fn : ms(o[k]);
+  return o;
+}
+/** A delay that grows along a list: stagger(.1) is 0, .1, .2 ... s; options as anime's ({ from: 'center', start }). */
+export function stagger(each, o = {}) {
+  const A = animeLib.get(), fn = A.stagger(each * 1000, o.start != null ? { ...o, start: o.start * 1000 } : o);
+  const f = (...a) => fn(...a); f.secs = true; f.fn = fn; return f;
+}
+export class Timeline {
+  /** defaults: { ease, duration } for every step; loop: true or a number of repeats; alternate: back and forth. */
+  constructor({ loop = false, alternate = false, ...defaults } = {}) {
+    const A = animeLib.get();
+    this.tl = A.createTimeline({ autoplay: false, loop: loop === true ? Infinity : loop || 0, alternate, defaults: toMs(defaults) });
+    this.time = 0; this.speed = 1; this.playing = true;
+  }
+  /** Animates targets' numbers to the values in params (with duration, delay, ease), at position. */
+  to(targets, params, position) { this.tl.add(targets, toMs(params), pos(position)); return this; }
+  /** Runs fn when the timeline passes this point. */
+  call(fn, position) { this.tl.call(fn, pos(position)); return this; }
+  /** Names a point (seconds, or a position string) to place later steps at. */
+  label(name, position) { this.tl.label(name, pos(position)); return this; }
+  /** How long it lasts in seconds (one loop). */
+  get duration() { return this.tl.iterationDuration / 1000; }
+  /** True once it has played to the end (never, if it loops for ever). */
+  get done() { return !!this.tl.completed; }
+  update(dt) { if (!this.playing) return this; this.time = Math.max(0, this.time + dt * this.speed); this.tl.seek(this.time * 1000); return this; }
+  play() { this.playing = true; return this; }
+  pause() { this.playing = false; return this; }
+  /** Jumps to a time in seconds (values update straight away). */
+  seek(t) { this.time = Math.max(0, t); this.tl.seek(this.time * 1000); return this; }
+  restart() { return this.seek(0).play(); }
 }
 
 /* ---------- particles ---------- */

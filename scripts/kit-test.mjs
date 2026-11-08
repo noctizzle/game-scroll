@@ -829,3 +829,67 @@ console.log('physics ok');
   ui.free();
   console.log('ui: flex layout, tap, scroll, focus, keys, culling ok');
 }
+{
+  // round 9: paths, bones, nodes, auto-tiling, two fingers, timelines, haptic patterns, mixer
+  const { Path, Follower } = await import('../src/kit/paths.js');
+  const line = new Path([[0, 0], [100, 0]], { kind: 'line' });
+  assert.equal(line.length, 100); assert.equal(line.at(25).x, 25); assert.equal(line.offset(50, 10).y, 10, 'right of the line');
+  assert.equal(Math.round(line.nearest(40, 30).d), 40);
+  const sq = new Path([[0, 0], [100, 0], [100, 100], [0, 100]], { loop: true, kind: 'line' });
+  const f = new Follower(sq, { speed: 100 }); for (let i = 0; i < 50; i++) f.update(.1);
+  assert.equal(f.lap, 1); assert.ok(Math.abs(f.d - 100) < 1e-6, 'steady speed round a loop');
+  const smooth = new Path([[0, 0], [50, 40], [100, 0]]); assert.ok(Math.abs(smooth.at(0).x) < 1e-9 && Math.abs(smooth.at(smooth.length).x - 100) < 1e-6, 'passes through the ends');
+  const pp = new Follower(line, { speed: 80, end: 'pingpong' }); for (let i = 0; i < 20; i++) pp.update(.1); assert.ok(pp.d >= 0 && pp.d <= 100, 'pingpong stays on');
+  console.log('paths: lengths, offsets, nearest, loops, pingpong ok');
+
+  const { Rig } = await import('../src/kit/bones.js');
+  const r = new Rig().bone('up', { len: 10 }).bone('lo', { parent: 'up', len: 10 }).bone('tail', { parent: 'up', len: 5, wobble: {} });
+  r.update(0); assert.ok(Math.abs(r.world('lo').ex - 20) < 1e-9, 'chain end');
+  assert.ok(r.reach('up', 'lo', 12, 5)); assert.ok(Math.hypot(r.world('lo').ex - 12, r.world('lo').ey - 5) < 1e-6, 'two-bone reach lands');
+  r.flip = true; r.reach('up', 'lo', -12, 5); assert.ok(Math.hypot(r.world('lo').ex + 12, r.world('lo').ey - 5) < 1e-6, 'reach when flipped');
+  r.flip = false; r.clip('c', { len: 1, loop: false, keys: { up: [[0, 0], [1, 1]] }, events: [[.5, 'mid']] }); let mid = 0, ended = 0; r.on('mid', () => mid++).on('end', () => ended++);
+  r.play('c', { fade: 0 }); r.update(.6); assert.equal(mid, 1); assert.ok(Math.abs(r.get('up').angle - .6) < 1e-9, 'clip keys'); r.update(1); assert.equal(ended, 1, 'end once');
+  r.blend({ up: 3 }, { up: -3 }, .5); assert.ok(Math.abs(Math.abs(r.get('up').angle) - Math.PI) < .01, 'blends the short way round');
+  console.log('bones: chains, reach, flip, clips, events, blend ok');
+
+  const { Node } = await import('../src/kit/things.js');
+  const tank = new Node({ x: 100, y: 100, angle: Math.PI / 2 }), gun = tank.add(new Node({ x: 10, r: 3 }));
+  tank.update(); assert.ok(Math.abs(gun.wx - 100) < 1e-9 && Math.abs(gun.wy - 110) < 1e-9, 'child turns with parent');
+  assert.ok(gun.hit(100, 110) && tank.pick(100, 110) === gun, 'hit and pick');
+  gun.attach(null); assert.ok(Math.abs(gun.x - 100) < 1e-9 && Math.abs(gun.y - 110) < 1e-9, 'attach keeps the place');
+  console.log('things: nodes, world places, hits, attach ok');
+
+  const { TileMap, BLOB_MASKS } = await import('../src/kit/tiles.js');
+  assert.equal(BLOB_MASKS.length, 47, '47 blob pieces');
+  const tm = TileMap.fromText('###\n###\n#..'); assert.equal(tm.edges(1, 1).mask, 11); assert.equal(tm.edges(1, 1).blob, BLOB_MASKS.indexOf(tm.edges(1, 1).blob8));
+  assert.equal(tm.edges(2, 2, '.', { edge: false }).mask, 8, 'joins only what you say');
+  console.log('tiles: auto-tiling masks and blob pieces ok');
+
+  const { TwoFingers, Gestures } = await import('../src/kit/controls.js');
+  let taps = 0, pinched = 1, turned = 0, panned = 0;
+  const two = new TwoFingers({ one: new Gestures({ tap: () => taps++ }), pinch: k => { pinched *= k; }, twist: a => { turned += a; }, pan: (dx) => { panned += dx; } });
+  two.down(100, 100, 1); two.up(100, 100, 1); assert.equal(taps, 1, 'one finger still taps');
+  two.down(100, 100, 1); two.down(200, 100, 2); two.move(250, 100, true, 2); assert.ok(Math.abs(pinched - 1.5) < 1e-9 && Math.abs(two.scale - 1.5) < 1e-9, 'pinch');
+  two.move(150, 150, true, 2); assert.ok(turned > 0, 'twist'); two.up(150, 150, 2); two.up(100, 100, 1); assert.equal(taps, 1, 'no stray tap after a pinch'); assert.ok(panned !== 0);
+  console.log('controls: two fingers pinch, twist, pan, one-finger hand-off ok');
+
+  const { Timeline, stagger } = await import('../src/kit/juice.js');
+  let early = null; try { new Timeline(); } catch (e) { early = e; }
+  if (early) { assert.ok(early.kitLoading, 'Timeline loads lazily'); await early.kitLoading; }
+  const o = { x: 0 }, list = [{ s: 0 }, { s: 0 }, { s: 0 }]; let calls = 0;
+  const tl = new Timeline({ ease: 'linear' }).to(o, { x: 100, duration: 1 }).to(list, { s: 1, duration: .2, delay: stagger(.1) }, '+=.1').call(() => calls++, .5);
+  tl.update(.5); assert.ok(Math.abs(o.x - 50) < 1e-6 && calls === 1, 'seconds, game dt');
+  tl.pause().update(1); assert.ok(Math.abs(o.x - 50) < 1e-6, 'paused holds'); tl.play().update(1.5);
+  assert.ok(tl.done && list.every(t => t.s === 1) && o.x === 100, 'staggered steps finish'); assert.ok(Math.abs(tl.duration - 1.5) < 1e-6, 'duration ' + tl.duration);
+  console.log('juice: timelines in seconds, stagger, pause, call ok');
+
+  globalThis.window ??= globalThis; globalThis.addEventListener ??= () => {}; globalThis.removeEventListener ??= () => {};
+  globalThis.localStorage ??= { getItem: () => null, setItem() {}, removeItem() {} };
+  const dev = await import('../src/kit/device.js');
+  assert.ok(dev.hapticPattern('heartbeat') > .1 && dev.hapticPattern([{ at: .2, len: .3, to: 0 }]) === .5 && dev.hapticPattern('nothing') === 0, 'haptic patterns');
+  dev.stopHaptics();
+  const snd = await import('../src/kit/sound.js');
+  snd.mixer.volume('music', .5).duck('music').room('cave').muffle(.5).reset();
+  assert.equal(await snd.say(''), false, 'nothing to say'); assert.equal(snd.talking(), false);
+  console.log('device + sound: haptic patterns, mixer and speech calls ok without audio');
+}

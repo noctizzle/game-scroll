@@ -160,6 +160,22 @@ try {
       const px = ox.getImageData(80, 100, 1, 1).data; ok(px[3] > 0, 'outdoor view renders with air, grade and glare');
       ok(ov.air(false) === null && !ov._air, 'air off');
     }
+    // round 9: decals, light probes and sun shafts on Next Gen
+    {
+      const T3 = gs.THREE, HDh = window.__hd, dv = new HDView({ amb: .1 }), dc = document.createElement('canvas'); dc.width = 160; dc.height = 120; const dx = dc.getContext('2d');
+      dv.cam.position.set(0, 3, 6); dv.cam.lookAt(0, 0, 0); dv.cam.updateMatrixWorld();
+      const sl = gs.hd.sun('#fff', 2, 20, [0, .25, -1]); dv.scene.add(sl, sl.target); dv.sun = sl;
+      const floor = new T3.Mesh(new T3.PlaneGeometry(20, 20).rotateX(-Math.PI / 2), gs.hd.pbr('#888')); dv.scene.add(floor);
+      const red = new T3.Mesh(new T3.BoxGeometry(.2, 4, 4), new T3.MeshBasicMaterial({ color: '#f00' })); red.position.set(1.2, 1, 0); dv.scene.add(red);
+      const d1 = dv.decal(floor, new T3.Vector3(0, 0, 0), new T3.Vector3(0, 1, 0), { size: 1, life: 1 });
+      ok(d1 && d1.geometry.attributes.position.count > 0 && dv.decals.length === 1, 'decal wraps the floor');
+      for (let i = 0; i < 45; i++) dv.decal(floor, new T3.Vector3(i % 5, 0, 0), new T3.Vector3(0, 1, 0), { size: .4, paint: (c, s) => { c.fillStyle = '#fff'; c.fillRect(s / 4, s / 4, s / 2, s / 2); }, key: 'sq' });
+      ok(dv.decals.length === 40, 'decals capped at max: ' + dv.decals.length);
+      const p1 = await dv.bakeLight([0, 1, 0], { radius: 5 }); ok(p1 && dv.probe && dv.probe.sh.coefficients[0].x > dv.probe.sh.coefficients[0].z, 'light probe picks up the red wall');
+      dv.shafts = 1; dv.cam.lookAt(0, 1, -10); dv.cam.updateMatrixWorld(); HDh.force = 3; dv.render(dx, 160, 120); dv.render(dx, 160, 120); HDh.force = null;
+      ok(dx.getImageData(80, 60, 1, 1).data[3] > 0, 'renders with decals, probe and shafts');
+      dv.clearDecals(); dv.clearProbes(); ok(!dv.decals.length && !dv.probe, 'decals and probes cleared');
+    }
     const rain = new Weather(hv, { kind: 'storm', amount: .5 }); let flashes = 0; rain.onFlash = () => flashes++; for (let i = 0; i < 60 * 15; i++) rain.update(1 / 60);
     ok(flashes >= 1 && rain.rainMesh.visible, 'storm rains and flashes: ' + flashes); rain.set('snow', 1); rain.update(.1); ok(rain.snowMesh.visible && !rain.rainMesh.visible, 'snow');
     const w6 = new gs.physics3d.World3D(); w6.floor(0); const car = w6.vehicle(null, { at: { x: 0, y: 1, z: 0 } });
@@ -247,5 +263,10 @@ try {
     ok(Math.abs(ui.node('b').box.w - 2 * ui.node('a').box.w) < 1, 'ui flex grow in the browser'); const cv = document.createElement('canvas').getContext('2d'); ok(gs.ui.wrap(cv, 'one two three four five six', 60).length > 1, 'text wraps'); ui.free();
   }
 } catch (err) { out.push('FAIL threw ' + (err && err.stack || err)); }
+{
+  const { mixer, tone, say, talking } = gs.sound;
+  mixer.room('hall').muffle(.6).volume('music', .4).duck('music', .2, .1); tone(440, { len: .05 }); tone(660, { len: .05, bus: 'alarm' });
+  mixer.reset(); ok(typeof say === 'function' && talking() === false, 'mixer channels, room, muffle and duck run in a real browser');
+}
 window.result = out;
 </script>

@@ -9,7 +9,8 @@
 //
 // Everything respects the player's Sound & haptics settings (sound on/off, volume, music on/off). Music stops by itself when the round ends or the
 // player swipes to another game, but stop it in your own game-over code too if it should end sooner.
-import { sfx, sound, audio } from '../sfx.js';
+import { sfx, sound, audio, setSfxOut } from '../sfx.js';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { buildSamples, SAMPLE_RATE } from './zzfx.js';
 import { lazy } from './lazy.js';
 import { register } from './cleanup.js';
@@ -29,9 +30,9 @@ export function freq(n) {
 /**
  * tone(freq, { len, wave, vol, slide, attack, at }): one note. freq is Hz or a note name.
  * wave: 'square' | 'triangle' | 'sine' | 'sawtooth'. slide: Hz to bend by over the note.
- * at: seconds from now to start it (for scheduling).
+ * at: seconds from now to start it (for scheduling). bus: the mixer channel it plays into (default 'sfx').
  */
-export function tone(f, { len = .1, wave = 'square', vol = .05, slide = 0, attack = .005, at = 0, out = null } = {}) {
+export function tone(f, { len = .1, wave = 'square', vol = .05, slide = 0, attack = .005, at = 0, out = null, bus = null } = {}) {
   if (sound.muted || !sound.volume) return;
   const a = audio(); if (!a) return;
   const hz = freq(f); if (!hz) return;
@@ -41,7 +42,7 @@ export function tone(f, { len = .1, wave = 'square', vol = .05, slide = 0, attac
     if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, hz + slide), t + len);
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-    o.connect(g); g.connect(out || route || a.out); o.start(t); o.stop(t + len + .02);
+    o.connect(g); g.connect(out || route || busIn(bus || playBus)); o.start(t); o.stop(t + len + .02);
   } catch { /* audio unavailable */ }
 }
 
@@ -59,7 +60,7 @@ function noiseBuffer(ctx) {
  * `from` Hz to `to` Hz. High to low = explosion; short and high = hit or snare; long and low = rumble.
  * filter: 'lowpass' (default) | 'highpass' | 'bandpass'.
  */
-export function noise(len = .25, { vol = .08, from = 3000, to = 300, filter = 'lowpass', q = 1, at = 0, attack = 0, out = null } = {}) {
+export function noise(len = .25, { vol = .08, from = 3000, to = 300, filter = 'lowpass', q = 1, at = 0, attack = 0, out = null, bus = null } = {}) {
   if (sound.muted || !sound.volume) return;
   const a = audio(); if (!a) return;
   try {
@@ -68,7 +69,7 @@ export function noise(len = .25, { vol = .08, from = 3000, to = 300, filter = 'l
     f.type = filter; f.Q.value = q; f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(Math.max(40, to), t + len);
     if (attack > 0) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack); } else g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(len, attack + .01));
-    src.connect(f); f.connect(g); g.connect(out || route || a.out); src.start(t); src.stop(t + len + .02);
+    src.connect(f); f.connect(g); g.connect(out || route || busIn(bus || playBus)); src.start(t); src.stop(t + len + .02);
   } catch { /* audio unavailable */ }
 }
 
@@ -89,7 +90,7 @@ export function space({ seconds = 2.4, decay = 3, wet = .35, bright = 5000, pre 
     const n = Math.max(64, Math.floor(seconds * ctx.sampleRate)), ir = ctx.createBuffer(2, n, ctx.sampleRate);
     for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay); }
     cv.buffer = ir; dl.delayTime.value = Math.min(1, pre); lp.type = 'lowpass'; lp.frequency.value = bright; w.gain.value = wet;
-    inp.connect(a.out); inp.connect(tail); tail.connect(dl); dl.connect(cv); cv.connect(lp); lp.connect(w); w.connect(a.out);
+    const to = busIn('sfx'); inp.connect(to); inp.connect(tail); tail.connect(dl); dl.connect(cv); cv.connect(lp); lp.connect(w); w.connect(to);
     const sp = {
       in: inp, tail,
       set({ wet: v, bright: hz } = {}, sec = .3) { const t = ctx.currentTime, k = Math.max(.01, sec / 3); if (v != null) w.gain.setTargetAtTime(v, t, k); if (hz != null) lp.frequency.setTargetAtTime(hz, t, k); return sp; },
@@ -120,7 +121,7 @@ export function bed({ vol = .03, from = 600, filter = 'lowpass', q = .7, gusts =
     const { ctx } = a, src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(), sw = ctx.createGain();
     src.buffer = bedBuffer(ctx); src.loop = true; src.loopStart = Math.random() * 4; f.type = filter; f.frequency.value = from; f.Q.value = q;
     g.gain.value = 0; sw.gain.value = 1;
-    src.connect(f); f.connect(sw); sw.connect(g); g.connect(out || a.out); src.start(ctx.currentTime, Math.random() * 4);
+    src.connect(f); f.connect(sw); sw.connect(g); g.connect(out || busIn('sfx')); src.start(ctx.currentTime, Math.random() * 4);
     // gusts: two slow wobbles that never line up, so the swells don't repeat
     const lfos = [];
     if (gusts > 0) for (const hz of [.07 + Math.random() * .03, .17 + Math.random() * .05]) { const o = ctx.createOscillator(), lg = ctx.createGain(); o.frequency.value = hz; lg.gain.value = gusts * .35; o.connect(lg); lg.connect(sw.gain); o.start(); lfos.push(o); }
@@ -196,7 +197,7 @@ function playZ(params, out) {
       zcache.set(key, buf);
     }
     const src = a.ctx.createBufferSource(), g = a.ctx.createGain();
-    src.buffer = buf; g.gain.value = .3; src.connect(g); g.connect(out || a.out); src.start();
+    src.buffer = buf; g.gain.value = .3; src.connect(g); g.connect(out || busIn(playBus)); src.start();
   } catch { /* audio unavailable */ }
 }
 /** Makes a reusable sound from ZzFX numbers: const zap = zsound(...numbers); zap(); zap(1.5) plays it higher. */
@@ -214,7 +215,7 @@ let toneHeld = false;
 const toneLib = lazy('Tone.js', () => import('tone').then(T => {
   const a = audio(); if (!a) throw new Error('No audio on this device');
   T.setContext(a.ctx);
-  const d = T.getDestination(); d.output.disconnect(); d.output.connect(a.out);
+  const d = T.getDestination(); d.output.disconnect(); d.output.connect(busIn('music'));
   // a game's Tone loops stop with the round and hold on the pause screen
   register('tone', { stop: () => { T.getTransport().stop(); T.getTransport().cancel(); }, pause: () => T.getTransport().state === 'started' && (T.getTransport().pause(), toneHeld = true), resume: () => { if (toneHeld) { toneHeld = false; T.getTransport().start(); } } });
   return T;
@@ -249,7 +250,8 @@ export function music({ tempo = 120, vol = 1, swing = 0, layers = null, ...parts
   let timer = 0, step = 0, next = 0, rate = 1;
   const stepLen = () => 60 / tempo / 2 / rate;
   function noteLen(tr, i) { let n = 1; while (tr.steps[(i + n) % tr.steps.length] === '-' && n < tr.steps.length) n++; return n; }
-  function schedule() {
+  function schedule() { const was = playBus; playBus = 'music'; try { scheduleNow(); } finally { playBus = was; } }
+  function scheduleNow() {
     const a = audio(); if (!a) return;
     const now = a.ctx.currentTime;
     if (next < now) next = now + .03;
@@ -328,8 +330,8 @@ export class Ears {
       if (pn.positionX) { pn.positionX.value = q.x; pn.positionY.value = q.y; pn.positionZ.value = q.z; } else pn.setPosition(q.x, q.y, q.z);
       // with a space, some of each sound also goes into the place's echo (far sounds keep more of it)
       if (this.space?.tail) { const s = a.ctx.createGain(); s.gain.value = this.send; pn.connect(s); s.connect(this.space.tail); }
-      if (!muffled) { pn.connect(a.out); return pn; }
-      const f = a.ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 700; pn.connect(f); f.connect(a.out); return pn;
+      if (!muffled) { pn.connect(busIn('sfx')); return pn; }
+      const f = a.ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 700; pn.connect(f); f.connect(busIn('sfx')); return pn;
     } catch { return null; }
   }
   /** One note at a point (options as tone(), plus muffled: true for behind a wall). */
@@ -366,3 +368,137 @@ export class Ears {
 let route = null;   // while set, tone() and noise() play into this node (for Ears.play)
 const loops = new Set();
 register('ears', { stop: () => { for (const h of [...loops]) h.stop(); const a = audio(); try { a?.ctx.listener.positionX?.setValueAtTime(0, a.ctx.currentTime); } catch { /* ok */ } } });
+
+/* ---------- mixer: channels, ducking, rooms, muffle ---------- */
+// Every game sound goes through a channel ('sfx' for effects, 'music' for music(), Tone.js and
+// layered tunes, 'voice' for your own speech-like sounds), then the shared room and muffle, then
+// the player's volume. Change them any time; they all go back to normal when the round ends.
+//   mixer.volume('music', .4)              // a channel's level (0..1, fades over .1 s)
+//   mixer.duck('music', .3, .8)            // dip the music to 30% for .8 s (then back): big moments, lines
+//   mixer.room('cave')                     // echo for everything: 'none' | 'room' | 'hall' | 'cave' | 'pipe', or { echo, delay, reverb, size }
+//   mixer.muffle(.8)                       // 0..1 dull everything, like hearing it underwater or from inside a box
+//   mixer.channel('alarm').volume(.5)      // your own channel; play into it with tone(f, { bus: 'alarm' }) ...
+// Speech from say() dips the music for you while it talks.
+let playBus = 'sfx';
+const BUSES = ['sfx', 'music', 'voice'];
+let mix = null;
+function impulse(ctx, secs, decay) {
+  const n = Math.max(1, Math.floor(ctx.sampleRate * secs)), b = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** decay; }
+  return b;
+}
+function mixGraph() {
+  const a = audio(); if (!a) return null;
+  if (mix && mix.ctx === a.ctx) return mix;
+  const ctx = a.ctx, input = ctx.createGain(), muffle = ctx.createBiquadFilter(), dry = ctx.createGain(),
+    verb = ctx.createConvolver(), verbGain = ctx.createGain(), delay = ctx.createDelay(1.5), fb = ctx.createGain(), echoGain = ctx.createGain();
+  muffle.type = 'lowpass'; muffle.frequency.value = 20000; muffle.Q.value = .7;
+  input.connect(muffle); muffle.connect(dry); dry.connect(a.out);
+  verbGain.gain.value = 0; muffle.connect(verb); verb.connect(verbGain); verbGain.connect(a.out);
+  echoGain.gain.value = 0; fb.gain.value = 0; muffle.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(echoGain); echoGain.connect(a.out);
+  mix = { ctx, input, muffle, verb, verbGain, delay, fb, echoGain, buses: new Map(), roomKey: '' };
+  for (const b of BUSES) channelNode(b);
+  return mix;
+}
+function channelNode(name) {
+  const m = mixGraph(); if (!m) return null;
+  let g = m.buses.get(name);
+  if (!g) { g = m.ctx.createGain(); g.connect(m.input); m.buses.set(name, g); g.level = 1; }
+  return g;
+}
+/** The input of a channel (kit use: where tone(), noise() and zzfx() play into). */
+function busIn(name) { return channelNode(name || 'sfx') || audio()?.out; }
+setSfxOut(() => busIn('sfx'));
+function setLevel(g, v, fade) { const t = g.context.currentTime; g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(v, t, Math.max(.005, fade / 3)); }
+const ROOMS = {
+  none: { reverb: 0, echo: 0 },
+  room: { reverb: .18, size: .5, echo: 0 },
+  hall: { reverb: .32, size: 1.8, echo: 0 },
+  cave: { reverb: .3, size: 2.6, echo: .25, delay: .32 },
+  pipe: { reverb: .12, size: .4, echo: .4, delay: .09 },
+};
+export const mixer = {
+  /** A channel's volume, 0..1 (default 1), fading over `fade` seconds. */
+  volume(name, v, fade = .1) { const g = channelNode(name); if (g) { g.level = Math.max(0, Math.min(1, +v || 0)); setLevel(g, g.level, fade); } return mixer; },
+  /** Dips a channel to `to` (of its volume) for `hold` seconds, then brings it back over `back` seconds. */
+  duck(name = 'music', to = .3, hold = .6, back = .5) {
+    const g = channelNode(name); if (!g) return mixer;
+    const t = g.context.currentTime, lv = g.level;
+    g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(lv * to, t, .03); g.gain.setTargetAtTime(lv, t + Math.max(0, hold), Math.max(.01, back / 3));
+    return mixer;
+  },
+  /** Echo for everything: a room name, or { reverb 0..1, size (seconds of tail), echo 0..1, delay (seconds) }. */
+  room(r = 'none') {
+    const m = mixGraph(); if (!m) return mixer;
+    const o = typeof r === 'string' ? (ROOMS[r] || ROOMS.none) : { ...ROOMS.none, ...r }, t = m.ctx.currentTime;
+    const key = (o.size || 1).toFixed(2);
+    if (o.reverb > 0 && m.roomKey !== key) { m.verb.buffer = impulse(m.ctx, Math.min(4, o.size || 1), 2.5); m.roomKey = key; }
+    m.verbGain.gain.setTargetAtTime(Math.max(0, Math.min(1, o.reverb || 0)), t, .05);
+    m.delay.delayTime.setTargetAtTime(Math.max(.02, Math.min(1.4, o.delay || .25)), t, .05);
+    m.fb.gain.setTargetAtTime(Math.min(.7, (o.echo || 0) * 1.4), t, .05);
+    m.echoGain.gain.setTargetAtTime(Math.max(0, Math.min(1, o.echo || 0)), t, .05);
+    return mixer;
+  },
+  /** 0..1: how muffled everything sounds (0 clear, 1 deep underwater), fading over `fade` seconds. */
+  muffle(x = 0, fade = .15) {
+    const m = mixGraph(); if (!m) return mixer;
+    const k = Math.max(0, Math.min(1, +x || 0)), hz = 20000 * Math.pow(250 / 20000, k);
+    m.muffle.frequency.setTargetAtTime(hz, m.ctx.currentTime, Math.max(.005, fade / 3));
+    return mixer;
+  },
+  /** A channel of your own (or a built-in one) to set: mixer.channel('alarm').volume(.5). */
+  channel(name) { return { volume: (v, f) => mixer.volume(name, v, f), duck: (...a) => mixer.duck(name, ...a) }; },
+  /** Back to normal: every channel at full volume, no room, no muffle. The app does this between rounds. */
+  reset() {
+    if (!mix) return mixer;
+    for (const g of mix.buses.values()) { g.level = 1; setLevel(g, 1, .05); }
+    mixer.room('none'); mixer.muffle(0, .05);
+    return mixer;
+  },
+};
+register('mixer', { stop: () => mixer.reset() });
+
+/* ---------- speech: text to speech ---------- */
+// Characters that talk out loud, with no sound files: the phone's own voices (iPhone and Android
+// speech, through @capacitor-community/text-to-speech; the browser's speechSynthesis on the web).
+//   say('Watch out!', { pitch: 1.4, rate: 1.1 })      // returns a promise that ends when it's said
+//   say('Bonjour', { lang: 'fr-FR' });  stopTalking();  talking() -> true while speaking
+// pitch .5..2, rate .5..2 (1 normal), volume 0..1 (the player's volume applies on top). Lines are
+// cut at 300 characters. A new line stops the one before. Music dips while it talks. Speech
+// follows the player's mute; it stops when the round ends. Always show the words on screen too
+// (some players play muted, and not every phone has every language).
+const TTS = Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('TextToSpeech') ? registerPlugin('TextToSpeech') : null;
+let talkingNow = 0, talkGen = 0;
+const clampN = (v, lo, hi, d) => Math.max(lo, Math.min(hi, Number.isFinite(+v) ? +v : d));
+export function say(text, { pitch = 1, rate = 1, volume = 1, lang = 'en-GB' } = {}) {
+  text = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  stopTalking();
+  if (!text || sound.muted || !sound.volume) return Promise.resolve(false);
+  const gen = ++talkGen, vol = clampN(volume, 0, 1, 1) * sound.volume;
+  const o = { text, lang: /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(lang) ? lang : 'en-GB', pitch: clampN(pitch, .5, 2, 1), rate: clampN(rate, .5, 2, 1), volume: vol };
+  talkingNow++;
+  const g = channelNode('music');
+  if (g) { const t = g.context.currentTime; g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(g.level * .35, t, .05); }
+  const done = ok => { talkingNow = Math.max(0, talkingNow - 1); if (gen === talkGen && g) setLevel(g, g.level, .4); return ok; };
+  if (TTS) return TTS.speak({ ...o, category: 'ambient', queueStrategy: 0 }).then(() => done(true), () => done(false));
+  const S = globalThis.speechSynthesis, U = globalThis.SpeechSynthesisUtterance;
+  if (!S || !U) return Promise.resolve(done(false));
+  return new Promise(res => {
+    try {
+      const u = new U(o.text); u.lang = o.lang; u.pitch = o.pitch; u.rate = o.rate; u.volume = o.volume;
+      const v = S.getVoices?.().find(x => x.lang === o.lang) || S.getVoices?.().find(x => x.lang?.startsWith(o.lang.slice(0, 2)));
+      if (v) u.voice = v;
+      u.onend = () => res(done(true)); u.onerror = () => res(done(false));
+      S.speak(u);
+    } catch { res(done(false)); }
+  });
+}
+/** Stops speaking straight away. */
+export function stopTalking() {
+  talkGen++;
+  if (talkingNow) { talkingNow = 0; const g = mix?.buses.get('music'); if (g) setLevel(g, g.level, .3); }
+  try { if (TTS) TTS.stop(); else globalThis.speechSynthesis?.cancel(); } catch { /* none */ }
+}
+/** True while a line is being spoken. */
+export const talking = () => talkingNow > 0;
+register('speech', { stop: stopTalking, pause: stopTalking });

@@ -116,13 +116,15 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 
 - `gs.effects.Feel`: `coin`, `hit`, `boom`, `hurt`, `jump`, `land`, `shoot`, `powerup`, `combo`,
   `score`, `win`, `lose`, `click`: particles + shake + sound + haptics in one call.
-- `gs.juice`: `Juice` (particles, shake, pop-ups, flash, hit-stop, tweens), `ease`, `lerp`, `approach`, `pulse`.
+- `gs.juice`: `Juice` (particles, shake, pop-ups, flash, hit-stop, tweens), `Timeline` + `stagger` (anime.js; lazy), `ease`, `lerp`, `approach`, `pulse`.
 - `gs.sound`: `sfx(f, d, type, vol, slide)`, `sounds.coin()` etc., `noise()`, `notes('C5 E5 G5')`,
-  `music({ tempo, lead, bass, drums })`, `zzfx(...numbers)`, `zsound()`, `Tone()` (Tone.js; lazy).
+  `music({ tempo, lead, bass, drums })`, `zzfx(...numbers)`, `zsound()`, `Tone()` (Tone.js; lazy),
+  `mixer` (`volume`, `duck`, `room('cave')`, `muffle`), `say(text, { pitch, rate, lang })` (text to speech).
 - `gs.device`: `haptic('light'|'medium'|'heavy'|'tick'|'success'|'warning'|'error')`, `buzz()`,
+  `hapticPattern([{ at, len, strength, sharpness, to }] | 'heartbeat'|'explosion'|'charge'...)`,
   `tilt()` + `want('motion')`, `calibrateTilt()`, `onShake(cb)`, `heading()`, `faceDown()`,
-  `startMic()`/`stopMic()`, `startCamera()`/`stopCamera()`.
-- `gs.controls`: `Stick`, `Button`, `Gestures` (tap, doubleTap, hold, swipe), `twoThumb(W, H)`, `Keys`, `route()`.
+  `startMic()` (`level()`, `pitch()`, `blow()`, `clapped()`, `whistle()`)/`stopMic()`, `startCamera()`/`stopCamera()`.
+- `gs.controls`: `Stick`, `Button`, `Gestures` (tap, doubleTap, hold, swipe), `TwoFingers` (pinch, twist, pan), `twoThumb(W, H)`, `Keys`, `route()`.
 - `gs.pad`: `pad()` (analog sticks, triggers, `pressed('a')`), `pads()`, `rumble()`. Pads also arrive as keys.
 - `gs.moves.Moves`: `on('swing'|'punch'|'throw'|'flip'|'twist'|'knock'|'shake', fn)`, `update()` each frame.
 - `gs.pixel`: `text(c, str, x, y, { size, font: 'small'|'big', align, color, outline })`,
@@ -134,6 +136,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.ai`: `Crowd` (`add(x, y).chase(t) / flee / wander / follow(route) / flock / hunt(t, nav)`),
   `NavGrid` (`path`, `sees`), `Brain` (state machine), `YUKA`.
 - `gs.things.Things` (game objects): `add(obj, tag)`, `hit(obj, tag)`, `hits(tagA, tagB, fn)`, `near`, `nearest`, `kill`, `reuse`, `each`, `all`.
+  `gs.things.Node`: parent and child places (`add`, `update()`, `wx`/`wy`/`wangle`, `toWorld`, `hit`, `pick`, `attach`, `draw`).
 - `gs.rounds`: `Scenes({ name: { enter, update, draw } }, start)` with `go(name, { fade })`, `cover`, `after()`; `Levels(list)`.
 - `gs.pacing`: `Spawner({ every, fastest, over })`, `Waves([...], { breather })`, `Director` (difficulty that eases off), `ramp`.
 - `gs.aim.AimAssist`: sticky aim, pull onto targets, auto fire (2D angle or 3D direction).
@@ -143,7 +146,9 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.characters`: `lookAt`, `reach` (two-bone IK), `Steps` (feet that plant), `Wobble`; ragdolls are `World3D.ragdoll()`.
 - `gs.camera2d.Camera2D`: follow with a dead zone, look-ahead, zoom, level bounds, `layer()` parallax, `toWorld()`.
 - `gs.tiles.TileMap.fromText(level)`: `#` walls, `-` one-way, `/` `\` slopes, letters as marks (`find('P')`);
-  `move(box, dx, dy)`, `ray`, `sees`, `walkable()`, `draw(c, fn, cam)`.
+  `move(box, dx, dy)`, `ray`, `sees`, `walkable()`, `draw(c, fn, cam)`, `edges(tx, ty)` (auto-tiling: `mask`, `blob`).
+- `gs.paths`: `Path(points, { loop, kind })` (2D/3D; `at`, `offset`, `nearest`, `spaced`, `trace`), `Follower(path, { speed, end })`.
+- `gs.bones.Rig`: 2D bone characters (`bone`, `pose`, `blend`, `clip`/`play`, `reach` IK, `look`, `wobble`, `kick`, `draw`).
 - `gs.movers`: `Platformer` (coyote time, jump buffer, variable jump, wall jump, air jumps), `TopDown`.
 - `gs.anim.Animator`: sprite animation states with frame events (`on('step')`), one-shots with `then`.
 - `gs.story` (lazy): `Story(inkScript)` branching dialogue (`next()`, `choose(i)`, `vars`), `Typewriter`.
@@ -174,13 +179,13 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.math`: `rng(seed)`, `daily(salt)`, `noise2`, `noise3`, `fbm`, `vec`, `overlap`, `Grid`, `Timers`, `angleDiff`, `wrap`.
 - `gs.util`: `clamp`, `rnd`, `pix`, `disc`, `hash`, `fmt`, `flickTracker`. `gs.palettes`: `PAL`, `SHELL`, `C16`.
 - `gs.gfx` (shaded 2D shapes, glow, backdrops), `gs.bricks` (toy bricks), `gs.geo` (location maths).
-- `gs.toon` (Console 3D: `View`, `G`, `part`, `grp`, `blob`, `toon`), `gs.hd` (Next Gen: `HDView`,
+- `gs.toon` (Console 3D: `View`, `G`, `part`, `grp`, `blob`, `toon`), `gs.hd` (Next Gen: `HDView` with `decal`, `bakeLight`, `shafts`,
   `pbr`, `rbox`, `surface`, `speckle`, `Particles`, `sun`, `spot`), `gs.ar` (`ARView`, `FLOOR`, `arNote`), `gs.THREE`.
 - `gs.fx3d` (lazy): `text3d()`, `Particles3D` (`fire`, `smoke`, `sparks`, `boom`, `magic`, `snow`),
   `outline`, `glitch`, `trails`, `focus`, `pixelate`.
 - `gs.vision` (lazy): `Face` (`x`, `y`, `yaw`, `mouth`, `smile`, `blink`...), `Hands` (`pinch`, `open`, `point`...).
 
-**Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `story.Story`, `look2d.Screen`, `look2d.Batch`, `words.Words`, `ui.UI`): create them in `make()` or `reset()`, never
+**Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `story.Story`, `look2d.Screen`, `look2d.Batch`, `words.Words`, `ui.UI`, `juice.Timeline`): create them in `make()` or `reset()`, never
 later. The app shows "Loading…" and remakes the game once the library is in.
 The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `THREE`)
 and `ai`, plus the action kits (`combat`, `tactics`, `climb`, `missions`, `cutscene`, `prompts`, `stealth`, `gadgets`, `campaign`, `arena`) and play kits (`craft`, `soft`, `cards`, `dice`, `words`, `ui`), also load on first use, so the app opens fast. The app loads the ones a game uses before it

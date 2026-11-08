@@ -152,6 +152,65 @@ export class Gestures {
   release() { this.f = null; }
 }
 
+/* ---------- two fingers: pinch, twist, two-finger drag ---------- */
+/**
+ * Pinch to zoom, twist to turn and two-finger drag (pan), with one-finger gestures still working:
+ *   const two = new TwoFingers({
+ *     one: new Gestures({ tap, swipe }),            // optional: gets the touch while only one finger is down
+ *     pinch: (scale, x, y) => {},                   // scale since the last call (1.1 = 10% apart); x, y the midpoint
+ *     twist: (angle, x, y) => {},                   // radians turned since the last call (clockwise is +)
+ *     pan: (dx, dy) => {},                          // how far the midpoint moved
+ *     start: (x, y) => {}, end: (scale, angle) => {},   // totals for the whole gesture
+ *     zone: [x, y, w, h],
+ *   });
+ * Or read two.active, two.scale and two.angle (totals since the second finger landed) and two.x, two.y.
+ * When a second finger lands, the one-finger control is released (no stray tap or swipe). Pass it
+ * through like any control, or into route(). On desktop, the mouse wheel isn't sent to games, so
+ * also offer buttons or a slider for zoom.
+ */
+export class TwoFingers {
+  constructor({ zone = null, one = null, minScale = .002, minTurn = .002, ...cb } = {}) {
+    Object.assign(this, { zone, one, minScale, minTurn, cb });
+    this.f = new Map(); this.active = false; this.scale = 1; this.angle = 0; this.x = 0; this.y = 0; this.oneHas = false;
+  }
+  wants(x, y) { return inZone(this.zone, x, y); }
+  geo() {
+    const [a, b] = [...this.f.values()];
+    return { d: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), a: Math.atan2(b.y - a.y, b.x - a.x), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+  down(x, y, id = 0) {
+    if (this.f.size >= 2 || (!this.f.size && !this.wants(x, y))) return false;
+    this.f.set(id, { x, y });
+    if (this.f.size === 1) { this.oneHas = !!this.one?.down(x, y, id); return true; }
+    if (this.oneHas) { this.one.release?.(); this.oneHas = false; }
+    const g = this.geo(); this.last = g; this.active = true; this.scale = 1; this.angle = 0; this.x = g.x; this.y = g.y;
+    this.cb.start?.(g.x, g.y);
+    return true;
+  }
+  move(x, y, pressed, id = 0) {
+    const p = this.f.get(id); if (!p) return false;
+    p.x = x; p.y = y;
+    if (!this.active) { if (this.oneHas) this.one.move(x, y, pressed, id); return true; }
+    const g = this.geo(), L = this.last;
+    let da = g.a - L.a; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;
+    const k = g.d / L.d;
+    if (Math.abs(k - 1) > this.minScale) { this.scale *= k; this.cb.pinch?.(k, g.x, g.y); L.d = g.d; }
+    if (Math.abs(da) > this.minTurn) { this.angle += da; this.cb.twist?.(da, g.x, g.y); L.a = g.a; }
+    if (g.x !== L.x || g.y !== L.y) { this.cb.pan?.(g.x - L.x, g.y - L.y); L.x = g.x; L.y = g.y; }
+    this.x = g.x; this.y = g.y;
+    return true;
+  }
+  up(x, y, id = 0) {
+    if (!this.f.has(id)) return false;
+    this.f.delete(id);
+    if (this.active) { this.active = false; this.cb.end?.(this.scale, this.angle); this.f.clear(); return true; }   // lift both: no surprise one-finger drag
+    if (this.oneHas) { this.oneHas = false; this.one.up(x, y, id); }
+    return true;
+  }
+  update() { this.one?.update?.(); }
+  release() { if (this.oneHas) this.one.release?.(); this.oneHas = false; this.f.clear(); this.active = false; }
+}
+
 /* ---------- routing ---------- */
 /**
  * Hands each finger to the first control that claims it (in the order given) and keeps it there

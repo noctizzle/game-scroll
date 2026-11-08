@@ -28,6 +28,11 @@ export function audio() {
   } catch { return null; }
 }
 
+// Where game sounds go: kit/sound.js's mixer sets this to its effects channel, so the mixer's volume,
+// muffle and room echo reach sfx() beeps too. Kit use only (hidden from games).
+let sfxBus = null;
+export function setSfxOut(fn) { sfxBus = fn; }
+
 export function sfx(f = 440, d = 0.08, type = 'square', vol = 0.04, slide = 0) {
   if (sound.muted || !sound.volume) return;
   const a = audio(); if (!a) return;
@@ -36,6 +41,6 @@ export function sfx(f = 440, d = 0.08, type = 'square', vol = 0.04, slide = 0) {
     o.type = type; o.frequency.setValueAtTime(f, t);
     if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f + slide), t + d);
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-    o.connect(g); g.connect(a.out); o.start(t); o.stop(t + d + 0.02);
+    o.connect(g); g.connect(sfxBus?.() || a.out); o.start(t); o.stop(t + d + 0.02);
   } catch { /* audio unavailable */ }
 }
