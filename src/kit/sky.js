@@ -14,10 +14,17 @@
 // Sky follows view.cam each frame (a big dome round it, drawn behind everything). In AR the camera
 // feed is the sky, so leave Sky out and use Weather alone. Light: by default Sky drives view.sun and
 // view.hemi when the view has them; pass { sun } for a light you made with gs.hd.sun().
+//
+// Clouds: { clouds: .5 } (cover 0..1; change sky.clouds any time after) draws drifting clouds lit by the sun, with cloudLight and
+// cloudDark colours of your own if you like and gap (0..1) to keep the low sky round the sun clear.
+// On a Next Gen view with v.air() on, the clouds' shadows drift over the ground below and the air takes
+// its colours from the sky. { env: true } (Next Gen) makes reflections and sky light from this sky
+// instead of the kit's soft studio, redone as the sky changes. sky.flash = 1 lights the clouds (lightning).
 
-import { AdditiveBlending, BackSide, BufferAttribute, BufferGeometry, Color, LineBasicMaterial, LineSegments, Mesh, Points, PointsMaterial, ShaderMaterial, SphereGeometry, Vector3 } from 'three';
+import { AdditiveBlending, BackSide, BufferAttribute, BufferGeometry, Color, LineBasicMaterial, LineSegments, Mesh, Points, PointsMaterial, Scene, ShaderMaterial, SphereGeometry, Vector3, Vector4 } from 'three';
 import { Sky as PhysicalSky } from 'three/examples/jsm/objects/Sky.js';
 import { prefs } from './prefs.js';
+import { noiseTex } from './hd3d.js';
 
 const C = c => new Color(c);
 /** The default day: hour -> sky top, horizon, sun colour, sun strength (x the light's own), fill strength. */
@@ -40,22 +47,44 @@ export class Sky {
    * the day. stars: count (0 for none). physical: true uses three.js's physical sky (Next Gen looks).
    * fog: recolour the scene's fog to the horizon (default true). light: false leaves your lights alone.
    */
-  constructor(view, { time = 12, speed = 0, day = DAY, stars = 400, physical = false, fog = true, light = true, sun = view.sun, hemi = view.hemi, tilt = .35 } = {}) {
-    Object.assign(this, { view, time, speed, day, fog, light, sunLight: sun || null, hemi: hemi || null, tilt, physical });
+  constructor(view, { time = 12, speed = 0, day = DAY, stars = 400, physical = false, fog = true, light = true, sun = view.sun, hemi = view.hemi, tilt = .35,
+    clouds = null, cloudLight = null, cloudDark = null, gap = 0, env = false, sunSize = 1 } = {}) {
+    Object.assign(this, { view, time, speed, day, fog, light, sunLight: sun || null, hemi: hemi || null, tilt, physical, clouds: clouds ?? 0, gap, env, flash: 0 });
     this.base = { sun: sun?.intensity ?? 1, amb: hemi?.intensity ?? 1 };
     this.sunDir = new Vector3(); this.top = C('#000'); this.horizon = C('#000'); this.sunCol = C('#fff'); this.night = 0;
+    this.cloudLight = cloudLight ? C(cloudLight) : null; this.cloudDark = cloudDark ? C(cloudDark) : null;
+    this.cLit = C('#fff'); this.cDark = C('#888'); this.envAt = null; this.envT = 0; this.t = 0;
     const R = radiusOf(view.cam);
     if (physical) {
       this.dome = new PhysicalSky(); this.dome.scale.setScalar(R);
       const u = this.dome.material.uniforms; u.turbidity.value = 6; u.rayleigh.value = 1.6; u.mieCoefficient.value = .004; u.mieDirectionalG.value = .8;
     } else {
+      // a gradient from the horizon up, a glow round the sun, the sun itself (on Next Gen bright enough
+      // to bloom) and, when asked for, drifting clouds lit from the sun's side
+      const hd = !!view.envFrom;
       this.dome = new Mesh(new SphereGeometry(1, 32, 16), new ShaderMaterial({
         side: BackSide, depthWrite: false, fog: false,
-        uniforms: { top: { value: this.top }, horizon: { value: this.horizon }, sunCol: { value: this.sunCol }, sunDir: { value: this.sunDir }, size: { value: .9994 } },
+        uniforms: { top: { value: this.top }, horizon: { value: this.horizon }, sunCol: { value: this.sunCol }, sunDir: { value: this.sunDir }, size: { value: 1 - .0006 * sunSize * sunSize },
+          disc: { value: hd ? 24 : 1.5 }, cloud: { value: new Vector4() }, cloudLit: { value: this.cLit }, cloudDark: { value: this.cDark }, noise: { value: clouds != null ? noiseTex() : null } },
+        defines: clouds != null ? { CLOUDS: '' } : {},
         vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w; }',
-        fragmentShader: `varying vec3 vDir; uniform vec3 top, horizon, sunCol, sunDir; uniform float size;
-          void main(){ float h = clamp(vDir.y, -1., 1.); vec3 c = mix(horizon, top, pow(max(h, 0.), .55)); c = mix(c, horizon * .55, clamp(-h * 3., 0., 1.));
-            float s = dot(normalize(vDir), normalize(sunDir)); c += sunCol * (smoothstep(size, size + .0004, s) * 1.5 + pow(max(s, 0.), 24.) * .35);
+        fragmentShader: `varying vec3 vDir; uniform vec3 top, horizon, sunCol, sunDir, cloudLit, cloudDark; uniform float size, disc; uniform vec4 cloud; uniform sampler2D noise;
+          void main(){ vec3 d = normalize(vDir), sd = normalize(sunDir); float h = clamp(d.y, -1., 1.), s = max(dot(d, sd), 0.);
+            vec3 c = mix(horizon, top, pow(max(h, 0.), .55)); c = mix(c, horizon * .55, clamp(-h * 3., 0., 1.));
+            c += sunCol * (pow(s, 24.) * .35 + pow(s, 90.) * .4);
+            float sun = smoothstep(size, size + .0004, s);
+          #ifdef CLOUDS
+            if (h > -.03) {
+              vec2 uv = d.xz / (h + .16) * .2 + cloud.z * vec2(1., .4);
+              float n = texture2D(noise, uv).r * .62 + texture2D(noise, uv * 3.1 + .37).g * .38;
+              float cv = cloud.x * (1. - cloud.y * pow(max(dot(normalize(d.xz + 1e-4), normalize(sd.xz + 1e-4)), 0.), 3.) * (1. - smoothstep(.02, .22, h)));
+              float cov = smoothstep(1. - cv, 1.1 - cv * .62, n), dens = smoothstep(1. - cv, 1.32 - cv * .5, n);
+              vec3 cc = mix(cloudLit, cloudDark, dens * .9) + sunCol * cov * (1. - dens) * (pow(s, 5.) * 2.2 + .18);
+              float a = cov * smoothstep(-.03, .1, h);
+              c = mix(c, cc + cloud.w * vec3(.75, .8, 1.), a * .97); sun *= 1. - a;
+            }
+          #endif
+            c += sunCol * sun * disc + cloud.w * vec3(.25, .27, .32) * (.4 + .6 * max(h, 0.));
             gl_FragColor = vec4(c, 1.); }`,
       }));
       this.dome.scale.setScalar(R);
@@ -63,6 +92,9 @@ export class Sky {
     this.dome.frustumCulled = false; this.dome.renderOrder = -10; this.dome.name = 'sky';
     if (isToon(view)) this.dome.layers.set(1);
     view.scene.add(this.dome);
+    // the view makes the sky's reflections the first time it compiles its shaders (v.warm()), so the
+    // first frame is already lit by this sky
+    if (this.makesEnv) view.envMaker = this.envMaker = () => { if (this.envAt == null) this.makeEnv(); };
     if (stars) {
       const p = new Float32Array(stars * 3);
       for (let i = 0; i < stars; i++) { const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, r = Math.sqrt(1 - u * u); p.set([Math.cos(a) * r, Math.abs(u), Math.sin(a) * r], i * 3); }
@@ -78,9 +110,22 @@ export class Sky {
   get dayPart() { return this.time / 24; }
   update(dt) {
     if (this.speed) this.time = ((this.time + this.speed * dt) % 24 + 24) % 24;
+    this.t += dt;
     const cam = this.view.cam;
     if (cam) { this.dome.position.copy(cam.position); this.stars?.position.copy(cam.position); }
-    this.apply(); return this;
+    this.apply();
+    // sky light and reflections from this sky, made again when it has changed (at most every 3 s)
+    if (this.makesEnv) { this.envT -= dt; if (this.envT <= 0 && this.envKey() !== this.envAt) this.makeEnv(); }
+    return this;
+  }
+  get makesEnv() { return this.env && !!this.view.envFrom && !this.physical; }
+  envKey() { return this.time.toFixed(2) + '|' + this.clouds.toFixed(2) + '|' + this.horizon.getHexString() + this.top.getHexString(); }
+  makeEnv() {
+    if (!this.envScene) { this.envScene = new Scene(); this.envDome = new Mesh(this.dome.geometry, this.dome.material); this.envDome.scale.setScalar(1000); this.envScene.add(this.envDome); }
+    const u = this.dome.material.uniforms, d = u.disc.value; u.disc.value = Math.min(d, 6);   // a softer sun in reflections
+    try { this.view.envFrom(this.envScene); } finally { u.disc.value = d; }
+    this.envAt = this.envKey(); this.envT = 3;
+    return this;
   }
   /** Works out the colours and sun for the current time (update() calls it). */
   apply() {
@@ -98,8 +143,20 @@ export class Sky {
     if (this.stars) this.stars.material.opacity = this.night * .9;
     if (this.light && this.sunLight) {
       this.sunLight.color.copy(this.sunCol); this.sunLight.intensity = this.base.sun * sunI;
+      this.sunLight.aim?.(lightDir);   // a gs.hd sun() keeps the direction for follow() and fit()
       const tgt = this.sunLight.target?.position ?? new Vector3(), d = this.sunLight.position.distanceTo(tgt) || 10;
       this.sunLight.position.copy(tgt).addScaledVector(lightDir, d);
+    }
+    // clouds: lit by the sun's colour on top, the sky's own darker colour underneath
+    if (this.cloudLight) this.cLit.copy(this.cloudLight); else this.cLit.copy(this.sunCol).lerp(C('#ffffff'), .55).multiplyScalar(.95 - this.night * .8);
+    if (this.cloudDark) this.cDark.copy(this.cloudDark); else this.cDark.copy(this.horizon).lerp(this.top, .35).multiplyScalar(.62);
+    const cu = this.dome.material.uniforms?.cloud;
+    if (cu) cu.value.set(this.clouds, this.gap, (this.view.t ?? this.t) * 6 / 620 * .2, this.flash);
+    const air = this.view._air;
+    if (air) {
+      air.sun = (air.sun || new Vector3()).copy(lightDir);
+      air.clouds = this.clouds;
+      if (this.fog) { air.colour.copy(this.horizon).lerp(this.top, .12); (air.sunColour ||= C('#fff')).copy(this.horizon).lerp(this.sunCol, .45).multiplyScalar(1.1); }
     }
     if (this.light && this.hemi) { this.hemi.intensity = this.base.amb * amb; this.hemi.color.copy(this.top).lerp(C('#ffffff'), .5); }
     const s = this.view.scene;
@@ -107,7 +164,7 @@ export class Sky {
     if (s.background?.isColor) s.background.copy(this.horizon);
     return this;
   }
-  dispose() { this.dome.removeFromParent(); this.dome.geometry?.dispose(); this.dome.material.dispose(); this.stars?.removeFromParent(); this.stars?.geometry.dispose(); }
+  dispose() { if (this.envMaker && this.view.envMaker === this.envMaker) this.view.envMaker = null; this.dome.removeFromParent(); this.dome.geometry?.dispose(); this.dome.material.dispose(); this.stars?.removeFromParent(); this.stars?.geometry.dispose(); }
 }
 
 /**

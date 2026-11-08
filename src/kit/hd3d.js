@@ -12,8 +12,8 @@
 // slide's 2D canvas; the game then draws its 2D HUD on top.
 //
 // Performance: the kit watches frame times and adapts. It first lowers the render resolution
-// (down to 55%), then drops a quality tier (ultra: AO + MSAA + 1024 shadows -> high -> medium ->
-// low: no shadows, no AO). Tiers are listed in TIERS below. The starting tier and frame rate come
+// (down to 55%), then drops a quality tier (ultra: full-size AO + MSAA + reflections -> high:
+// half-size AO + MSAA -> medium -> low: no shadows, no AO). Tiers are listed in TIERS below. The starting tier and frame rate come
 // from the phone's class (src/kit/speed.js: a top phone starts on ultra at 120 fps), and where a game
 // settled is remembered for its next round.
 //
@@ -29,7 +29,7 @@ import {
   MeshStandardMaterial, MeshPhysicalMaterial, ShaderMaterial, BufferGeometry, BufferAttribute, Points, AdditiveBlending, NormalBlending,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, NoColorSpace, PCFSoftShadowMap, ACESFilmicToneMapping, HalfFloatType,
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
-  OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4,
+  OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4, DataTexture, RGBAFormat, ShaderChunk,
 } from 'three';
 import { SSRPass } from 'three/examples/jsm/postprocessing/SSRPass.js';
 import { HorizontalBlurShader } from 'three/examples/jsm/shaders/HorizontalBlurShader.js';
@@ -59,14 +59,14 @@ export function rbox(w, h, d, r = Math.min(w, h, d) * .2) {
 // px: most pixels rendered per frame before scaling up; shadow: shadow map size (0 = off);
 // lights: how many nearby lamps get a real light (the rest just glow); ssr: screen-space reflections on
 // the surfaces a game marks with v.reflect(); contact: soft contact shadows size; ao: screen-space ambient
-// occlusion; msaa: multisample count (0 = a cheap edge smoothing in the final pass instead);
+// occlusion, worked out at this fraction of the picture's size (0 = off; half size costs a quarter); msaa: multisample count (0 = a cheap edge smoothing in the final pass instead);
 // bloom: bloom resolution scale. 2x MSAA (not 4x) costs phone GPUs far less memory traffic, and the
 // time saved goes into more pixels.
 export const TIERS = [
-  { name: 'low', px: .5e6, shadow: 0, lights: 2, ao: false, msaa: 0, bloom: .5, ssr: false, contact: 0 },
-  { name: 'medium', px: .85e6, shadow: 512, lights: 3, ao: false, msaa: 0, bloom: .5, ssr: false, contact: 128 },
-  { name: 'high', px: 1.3e6, shadow: 1024, lights: 4, ao: false, msaa: 2, bloom: .5, ssr: false, contact: 256 },
-  { name: 'ultra', px: 2e6, shadow: 1024, lights: 4, ao: true, msaa: 2, bloom: .5, ssr: true, contact: 256 },
+  { name: 'low', px: .5e6, shadow: 0, lights: 2, ao: 0, msaa: 0, bloom: .5, ssr: false, contact: 0 },
+  { name: 'medium', px: .85e6, shadow: 512, lights: 3, ao: 0, msaa: 0, bloom: .5, ssr: false, contact: 128 },
+  { name: 'high', px: 1.3e6, shadow: 1024, lights: 4, ao: .5, msaa: 2, bloom: .5, ssr: false, contact: 256 },
+  { name: 'ultra', px: 2e6, shadow: 1024, lights: 4, ao: 1, msaa: 2, bloom: .5, ssr: true, contact: 256 },
 ];
 // Where a phone starts: top phones (Fold 8, recent iPhone Pro) on ultra, others on high or medium.
 const START = { top: 3, mid: 2, low: 1 };
@@ -119,7 +119,7 @@ const tier = () => TIERS[HD.tier];
 if (typeof window !== 'undefined' && (import.meta.env?.MODE !== 'production' || navigator.webdriver)) window.__hd = HD;
 
 /* ---------- shared renderer + post chain ---------- */
-let R = null, broken = false, comp = null, P = {}, envTex = null, compKey = '';
+let R = null, broken = false, comp = null, P = {}, envTex = null, compKey = '', pmGen = null;
 function renderer() {
   if (R || broken) return R;
   try {
@@ -160,6 +160,7 @@ const UP = `uniform sampler2D tDiffuse; uniform vec2 px; uniform float k; varyin
     c += 2. * (texture2D(tDiffuse, vUv + vec2(-px.x, -px.y)).rgb + texture2D(tDiffuse, vUv + vec2(px.x, -px.y)).rgb + texture2D(tDiffuse, vUv + vec2(-px.x, px.y)).rgb + texture2D(tDiffuse, vUv + px).rgb);
     gl_FragColor = vec4(c / 12. * k, 1.); }`;
 const FINAL = `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, bloom; uniform vec2 px; varying vec2 vUv;
+  uniform float gradeOn, sat, con, glare, aspect; uniform vec3 lo, hi, sunCol; uniform vec2 sunUV;
   // (three.js adds its tone mapping and sRGB helpers to every ShaderMaterial drawn to the screen; when
   // SGSR upscales after this pass, it draws into a buffer and three leaves tone mapping out, so here it is)
   #ifndef TONE_MAPPING
@@ -195,6 +196,21 @@ const FINAL = `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, b
     vec3 col = vec3(tex(vUv + off).r, tex(vUv).g, tex(vUv - off).b);
   #endif
     col += texture2D(tBloom, vUv).rgb * bloom;
+    // the game's colour grade (v.grade): saturation, contrast round mid grey, a tint for the shadows and one for the highlights
+    if (gradeOn > .5) {
+      float l = dot(col, vec3(.2126, .7152, .0722));
+      col = max(mix(vec3(l), col, sat), 0.);
+      col = pow(col / .18 + 1e-5, vec3(con)) * .18;
+      col *= mix(lo, hi, smoothstep(.15, .85, clamp(log2(l / .18 + 1e-4) * .16 + .5, 0., 1.)));
+    }
+    // sun glare (v.glare): a soft bloom round the sun and two faint lens ghosts, only while the sun itself shows
+    if (glare > 0.) {
+      vec3 s0 = texture2D(tDiffuse, sunUV).rgb + texture2D(tDiffuse, sunUV + vec2(.006, 0.)).rgb + texture2D(tDiffuse, sunUV - vec2(.006, 0.)).rgb + texture2D(tDiffuse, sunUV + vec2(0., .008)).rgb + texture2D(tDiffuse, sunUV - vec2(0., .008)).rgb;
+      float seen = smoothstep(1.5, 6., dot(s0, vec3(.2126, .7152, .0722)) * .2);
+      vec2 q = (vUv - sunUV) * vec2(aspect, 1.), g1 = (vUv - (.5 - (sunUV - .5) * .55)) * vec2(aspect, 1.), g2 = (vUv - (.5 - (sunUV - .5) * 1.3)) * vec2(aspect, 1.);
+      float gl = exp(-dot(q, q) * 14.) * .5 + exp(-length(q) * 6.) * .22 + smoothstep(.06, .045, length(g1)) * .05 + smoothstep(.1, .08, length(g2)) * .035;
+      col += sunCol * gl * glare * seen;
+    }
     col = ACESFilmicToneMapping(col);
     col = sRGBTransferOETF(vec4(col, 1.)).rgb;
     col *= 1. - vig * smoothstep(.12, .62, r2 * 1.6);
@@ -209,7 +225,8 @@ class FinalPass extends Pass {
     this.bright = qmat(BRIGHT, { tDiffuse: { value: null }, px: { value: new Vector2() }, thr: { value: .82 } });
     this.down = qmat(DOWN, { tDiffuse: { value: null }, px: { value: new Vector2() } });
     this.up = qmat(UP, { tDiffuse: { value: null }, px: { value: new Vector2() }, k: { value: 1 } }, { blending: ADD });
-    this.final = qmat(FINAL, { tDiffuse: { value: null }, tBloom: { value: null }, t: { value: 0 }, hurt: { value: 0 }, vig: { value: .32 }, bloom: { value: .7 }, px: { value: new Vector2(1, 1) }, toneMappingExposure: { value: 1 } }, { defines: { SRGB_TRANSFER: '' } });
+    this.final = qmat(FINAL, { tDiffuse: { value: null }, tBloom: { value: null }, t: { value: 0 }, hurt: { value: 0 }, vig: { value: .32 }, bloom: { value: .7 }, px: { value: new Vector2(1, 1) }, toneMappingExposure: { value: 1 },
+      gradeOn: { value: 0 }, sat: { value: 1 }, con: { value: 1 }, lo: { value: new Vector3(1, 1, 1) }, hi: { value: new Vector3(1, 1, 1) }, glare: { value: 0 }, sunUV: { value: new Vector2() }, sunCol: { value: new Color() }, aspect: { value: 1 } }, { defines: { SRGB_TRANSFER: '' } });
     this.quad = new FullScreenQuad(null); this.mips = []; this.scale = .5; this.w = 0; this.h = 0; this.fxaa = false; this.strength = .7;
   }
   setSize(w, h) {
@@ -269,6 +286,9 @@ function chain(r, w, h) {
     P.ao = new GTAOPass(new Scene(), new PerspectiveCamera(), w, h);
     P.ao.updateGtaoMaterial({ radius: .6, distanceExponent: 1.4, thickness: 1.2, scale: 1.1, samples: 12 }); P.ao.blendIntensity = .9;
     P.ao._overrideVisibility = aoHide;
+    // the AO is worked out at the tier's fraction of the picture (half size on high) and blended back up
+    const aoSize = P.ao.setSize.bind(P.ao); P.ao.scale = 1;
+    P.ao.setSize = (w, h) => { P.ao.fw = w; P.ao.fh = h; aoSize(Math.max(1, Math.round(w * P.ao.scale)), Math.max(1, Math.round(h * P.ao.scale))); };
     P.final = new FinalPass();
     for (const p of [P.render, P.ao, P.final]) comp.addPass(p);
     comp.setSize(w, h); comp.cw = w; comp.ch = h;
@@ -348,6 +368,94 @@ export function speckle(ctx, size, n, col, r = 1.5, a = .2) {
   ctx.restore();
 }
 
+/* ---------- shared noise ---------- */
+// A 256 x 256 picture of smooth noise that tiles, made once in code: r big soft shapes, g and b finer
+// ones, a broad patches. Clouds, cloud shadows and patchy mist all read it.
+let noiseT = null;
+function tileNoise(size, base, oct, seed) {
+  const out = new Float32Array(size * size); let amp = 1, st = seed * 7919 + 1;
+  const R = () => { st = st + 0x6D2B79F5 | 0; let t = Math.imul(st ^ st >>> 15, 1 | st); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  for (let k = 0; k < oct; k++, amp *= .5) {
+    const p = base << k, L = new Float32Array(p * p); for (let i = 0; i < L.length; i++) L[i] = R();
+    for (let y = 0; y < size; y++) {
+      const fy = y / size * p, yi = Math.floor(fy), ty = fy - yi, sy = ty * ty * (3 - 2 * ty), r0 = (yi % p) * p, r1 = ((yi + 1) % p) * p;
+      for (let x = 0; x < size; x++) {
+        const fx = x / size * p, xi = Math.floor(fx), tx = fx - xi, sx = tx * tx * (3 - 2 * tx), a = L[r0 + xi % p], b = L[r0 + (xi + 1) % p], c = L[r1 + xi % p], e = L[r1 + (xi + 1) % p];
+        out[y * size + x] += (a + (b - a) * sx + (c - a) * sy + (a - b - c + e) * sx * sy) * amp;
+      }
+    }
+  }
+  let lo = Infinity, hi = -Infinity; for (const v of out) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  for (let i = 0; i < out.length; i++) out[i] = (out[i] - lo) / (hi - lo || 1);
+  return out;
+}
+/** The kit's shared tiling noise texture (r, g, b, a: four kinds of smooth noise, 0..1). */
+export function noiseTex() {
+  if (noiseT) return noiseT;
+  const S = 256, data = new Uint8Array(S * S * 4);
+  [[4, 5, 1], [8, 4, 2], [16, 3, 3], [2, 5, 4]].forEach(([b, o, seed], ch) => { const f = tileNoise(S, b, o, seed); for (let i = 0; i < S * S; i++) data[i * 4 + ch] = Math.round(f[i] * 255); });
+  noiseT = new DataTexture(data, S, S, RGBAFormat); noiseT.wrapS = noiseT.wrapT = RepeatWrapping;
+  noiseT.magFilter = LinearFilter; noiseT.minFilter = LinearMipmapLinearFilter; noiseT.generateMipmaps = true; noiseT.needsUpdate = true;
+  return noiseT;
+}
+
+/* ---------- outdoor air ---------- */
+// v.air({...}) gives a view distance haze that warms towards the sun, mist lying low in the valleys,
+// cloud shadows drifting over everything and wet, darker, shinier surfaces in the rain. The kit adds it
+// to every lit material in the scene before it first draws (and to plain and point materials: haze
+// only), so a game turns it on in one line. All patched materials read one set of values (AIR); the
+// view being drawn writes its own in each frame.
+const AIR = {
+  gsAirOn: { value: 0 }, gsSun: { value: new Vector3(0, 1, 0) }, gsAirC: { value: new Color() }, gsAirSun: { value: new Color() },
+  gsHaze: { value: 0 }, gsMist: { value: new Vector4() }, gsCloud: { value: new Vector4() }, gsDrift: { value: new Vector2() }, gsWet: { value: 0 }, gsNoise: { value: null },
+};
+const AIR_GLSL = `
+uniform float gsAirOn, gsHaze, gsWet; uniform vec3 gsSun, gsAirC, gsAirSun; uniform vec4 gsMist, gsCloud; uniform vec2 gsDrift; uniform sampler2D gsNoise; varying vec3 gsW;
+float gsShadeAt(vec3 wp){
+  vec2 c = wp.xz + gsSun.xz / max(gsSun.y, .15) * (gsCloud.z - wp.y);
+  float n = texture2D(gsNoise, c / gsCloud.w + gsDrift).r;
+  return 1. - gsCloud.y * smoothstep(1. - gsCloud.x, 1.12 - gsCloud.x * .6, n);
+}
+vec3 gsAir(vec3 col, vec3 wp){
+  vec3 rd = wp - cameraPosition; float t = length(rd); rd /= max(t, 1e-3);
+  float haze = 1. - exp(-t * gsHaze);
+  float k = rd.y * gsMist.y, fy = gsMist.x * exp(-gsMist.y * (cameraPosition.y - gsMist.z)) * (abs(k) < 1e-4 ? t : (1. - exp(-t * k)) / k);
+  float n = texture2D(gsNoise, wp.xz * .006 + gsDrift * 1.7).a;
+  float mist = 1. - exp(-max(fy, 0.) * mix(1., .35 + n * 1.3, gsMist.w));
+  float s = max(dot(rd, gsSun), 0.);
+  return mix(col, mix(gsAirC, gsAirSun, pow(s, 6.) * .9), 1. - (1. - haze) * (1. - mist));
+}
+`;
+const airDone = new WeakSet();
+function airPatch(m) {
+  if (!m || airDone.has(m)) return;
+  airDone.add(m);
+  if (m.isShaderMaterial || m.isRawShaderMaterial || m.fog === false || m.isMeshDepthMaterial || m.isMeshDistanceMaterial || m.isShadowMaterial) return;
+  const lit = m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial || m.isMeshToonMaterial, wets = m.isMeshStandardMaterial;
+  const base = m.onBeforeCompile, baseKey = m.customProgramCacheKey;
+  m.onBeforeCompile = function (sh, r) {
+    base.call(this, sh, r);
+    if (!sh.fragmentShader.includes('#include <fog_fragment>') || !sh.vertexShader.includes('#include <fog_vertex>')) return;
+    Object.assign(sh.uniforms, AIR);
+    sh.vertexShader = 'varying vec3 gsW;\n' + sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n#ifdef USE_FOG\n  gsW = transpose(mat3(viewMatrix)) * (mvPosition.xyz - viewMatrix[3].xyz);\n#endif');
+    let f = sh.fragmentShader.replace('void main() {', AIR_GLSL + 'void main() {')
+      .replace('#include <fog_fragment>', '#ifdef USE_FOG\n  if (gsAirOn > .5) gl_FragColor.rgb = gsAir(gl_FragColor.rgb, gsW); else {\n' + ShaderChunk.fog_fragment + '\n  }\n#endif');
+    if (lit) f = f.replace('#include <lights_fragment_begin>', '#ifdef USE_FOG\n  float gsShade = gsAirOn > .5 && gsCloud.y > 0. ? gsShadeAt(gsW) : 1.;\n#else\n  float gsShade = 1.;\n#endif\n'
+      + ShaderChunk.lights_fragment_begin.replace('getDirectionalLightInfo( directionalLight, directLight );', 'getDirectionalLightInfo( directionalLight, directLight ); directLight.color *= gsShade;'));
+    if (wets) f = f.replace('#include <emissivemap_fragment>', `#ifdef USE_FOG
+  if (gsAirOn > .5 && gsWet > 0.) { vec3 gn = transpose(mat3(viewMatrix)) * normal; float w = gsWet * (.3 + .7 * smoothstep(.15, .85, gn.y));
+    roughnessFactor = mix(roughnessFactor, .12, w * .8); diffuseColor.rgb *= 1. - w * .3; }
+#endif
+#include <emissivemap_fragment>`);
+    sh.fragmentShader = f;
+  };
+  // three caches programs by this key; the default key is the source of onBeforeCompile, so ask the
+  // material's own key with its own onBeforeCompile in place
+  m.customProgramCacheKey = function () { const cur = this.onBeforeCompile; this.onBeforeCompile = base; try { return baseKey.call(this) + '|gsair'; } finally { this.onBeforeCompile = cur; } };
+  m.needsUpdate = true;
+}
+const airOf = o => { if (o.material) { if (Array.isArray(o.material)) for (const m of o.material) airPatch(m); else airPatch(o.material); } };
+
 /* ---------- particles ---------- */
 const PV = `attribute float size; attribute vec4 tint; varying vec4 vT; uniform float scale;
   void main(){ vT = tint; vec4 mv = modelViewMatrix * vec4(position, 1.); gl_PointSize = size * scale / max(.05, -mv.z); gl_Position = projectionMatrix * mv; }`;
@@ -389,6 +497,9 @@ export class Particles {
 }
 
 /* ---------- view ---------- */
+const C_WARM = new Color('#ffe2b8'), GV = new Vector3(), GP = new Vector3(), GW = new Vector3();
+// a grade tint: '#rrggbb', a Color or [r, g, b] (1 = no change)
+const toRGB = (c, out) => { if (c == null) out.set(1, 1, 1); else if (Array.isArray(c)) out.set(c[0], c[1], c[2]); else { const k = c.isColor ? c : new Color(c); out.set(k.r, k.g, k.b); } return out; };
 export class HDView {
   /**
    * bg: background colour; fog: density of exponential fog (0 = none); env: strength of the
@@ -401,6 +512,58 @@ export class HDView {
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
     this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
+    this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
+  }
+  /**
+   * Outdoor air for every lit material in the scene: haze (how thick the air is: .001 is about 1 km of
+   * view), colour (far away fades to it) and sunColour (towards the sun), mist (thickness at mistY,
+   * thinning by mistFall a metre upwards; patchy 0..1), clouds (cover 0..1) with cloudShade (how
+   * dark their shadows are), cloudHeight, cloudSize (metres), wind ([x, z] m/s they drift), and wet
+   * (0..1: rain darkens things and makes up-facing surfaces shiny). sun: direction towards the sun
+   * (default: v.sun, the light from sun()). Returns the settings, which you can change any time;
+   * v.air(false) turns it off.
+   */
+  air(o = {}) {
+    if (o === false) { this._air = null; return null; }
+    if (!this._air) {
+      const fc = this.scene.fog?.color || this.scene.background || new Color('#c8d0d8');
+      this._air = { haze: .0008, colour: new Color(fc.isColor ? fc : '#c8d0d8'), sunColour: null, mist: 0, mistFall: .08, mistY: 0, patchy: .7, clouds: 0, cloudShade: .45, cloudHeight: 400, cloudSize: 620, wind: [6, 2.5], wet: 0, sun: null };
+      if (!this.scene.fog) this.scene.fog = new FogExp2(this._air.colour, 0);
+    }
+    const a = this._air;
+    for (const [k, v] of Object.entries(o)) {
+      if (k === 'colour' || k === 'sunColour') { if (v == null) a[k] = null; else (a[k] ||= new Color()).set(v); }
+      else if (k === 'sun') a.sun = v ? (v.isVector3 ? v.clone().normalize() : new Vector3(...v).normalize()) : null;
+      else a[k] = v;
+    }
+    return a;
+  }
+  /** The direction towards the sun this view uses for air, glare and cloud shadows. */
+  sunDir(out = new Vector3()) { const a = this._air; return a?.sun ? out.copy(a.sun) : this.sun?.dir ? out.copy(this.sun.dir) : this.sun?.isLight ? out.copy(this.sun.position).sub(this.sun.target.position).normalize() : out.set(.4, .8, .3).normalize(); }
+  /**
+   * Reflections and sky light from a scene of your own (a sky dome, a painted room): it's rendered
+   * once into the view's environment, used instead of the kit's soft studio. gs.sky's Sky does this
+   * for you with { env: true }. Set v.env = null to go back to the studio.
+   */
+  envFrom(scene, { size = 256, blur = .03, far = 5000 } = {}) {
+    const r = renderer(); if (!r) return null;
+    // one generator kept for the app (making one compiles its shaders), and the same size as the
+    // studio's, so swapping between them doesn't rebuild every material's shader
+    const rt = (pmGen ||= new PMREMGenerator(r)).fromScene(scene, blur, .1, far, { size });
+    if (this.envRT && this.envRT !== rt) this.envRT.dispose();
+    this.envRT = rt; this.env = rt.texture; return rt.texture;
+  }
+  // the kit's air goes into every material before it first draws
+  patchAir(all = false) { if (!this._air) return; if (all) this.scene.traverse(airOf); else this.scene.traverseVisible(airOf); }
+  airUniforms() {
+    const a = this._air; AIR.gsAirOn.value = a ? 1 : 0; if (!a) return;
+    const U = AIR; this.sunDir(U.gsSun.value);
+    U.gsAirC.value.copy(a.colour);
+    if (a.sunColour) U.gsAirSun.value.copy(a.sunColour); else U.gsAirSun.value.copy(a.colour).lerp(this.sun?.color || C_WARM, .35).multiplyScalar(1.15);
+    U.gsHaze.value = a.haze; U.gsMist.value.set(a.mist, a.mistFall, a.mistY, a.patchy);
+    U.gsCloud.value.set(a.clouds, a.clouds > 0 ? a.cloudShade : 0, a.cloudHeight, a.cloudSize);
+    U.gsDrift.value.set(a.wind[0] * this.t / a.cloudSize, a.wind[1] * this.t / a.cloudSize);
+    U.gsWet.value = a.wet; U.gsNoise.value = noiseTex();
   }
   /**
    * Marks shiny surfaces (a wet floor, a polished wall, a car) for screen-space reflections. They
@@ -452,7 +615,9 @@ export class HDView {
     const hidden = [], tmp = [];
     this.scene.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
     for (const m of extra) { const ms = new Mesh(new BoxGeometry(.01, .01, .01), m); this.scene.add(ms); tmp.push(ms); }
-    this.scene.environment = envTex;
+    this.patchAir(true); this.airUniforms();
+    try { this.envMaker?.(); } catch (e) { /* the studio reflections stay */ }
+    this.scene.environment = this.env || envTex;
     const was = r.shadowMap.enabled;
     try { for (const sh of [true, false]) { r.shadowMap.enabled = sh; r.compile(this.scene, this.cam); } } catch (e) { /* compile is only a warm-up */ }
     r.shadowMap.enabled = was;
@@ -469,7 +634,8 @@ export class HDView {
     const r = renderer(); if (!r) return Promise.resolve();
     const hidden = [], jobs = [], was = r.shadowMap.enabled, sh = tier().shadow > 0;
     this.scene.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
-    this.scene.environment = envTex;
+    this.patchAir(true); this.airUniforms();
+    this.scene.environment = this.env || envTex;
     try { for (const on of [sh, !sh]) { r.shadowMap.enabled = on; jobs.push(r.compileAsync(this.scene, this.cam)); } } catch (e) { /* only a warm-up */ }
     r.shadowMap.enabled = was;
     for (const o of hidden) o.visible = false;
@@ -559,7 +725,8 @@ export class HDView {
     const cp = this.clearBg ? seeThrough(r, pw, ph) : chain(r, pw, ph); if (cp.cw !== pw || cp.ch !== ph) { cp.setSize(pw, ph); cp.cw = pw; cp.ch = ph; }
     if (up) { P.sgsr ||= new ShaderPass(SGSR); P.sgsr.uniforms.ViewportInfo.value = (P.sgsrV ||= new Vector4()).set(1 / pw, 1 / ph, pw, ph); }
     if (this.clearBg) cp.passes = up ? [P.arRender, P.arOut, P.sgsr] : [P.arRender, P.arOut];
-    this.scene.environment = envTex; this.scene.environmentIntensity = this.envI;
+    this.scene.environment = this.env || envTex; this.scene.environmentIntensity = this.envI;
+    this.patchAir(); this.airUniforms();
     r.toneMappingExposure = this.exposure;
     if (this.clearBg) { P.arRender.scene = this.scene; P.arRender.camera = this.cam; } else { P.render.scene = P.ao.scene = this.scene; P.render.camera = P.ao.camera = this.cam; }
     // reflections (ultra, and only if the game marked shiny surfaces): SSR draws the scene itself
@@ -578,8 +745,17 @@ export class HDView {
     for (const p of this.parts) p.mat.uniforms.scale.value = ph / (2 * Math.tan(this.cam.fov * Math.PI / 360));
     if (!baking && !off) this.t += 1 / 60;
     if (!this.clearBg) {
-      const F = P.final; P.ao.enabled = T.ao; F.strength = this.bloom; F.scale = T.bloom; F.setFxaa(!T.msaa || ssr);
-      F.final.uniforms.t.value = this.t % 10; F.final.uniforms.hurt.value = this.hurt;
+      const F = P.final; P.ao.enabled = T.ao > 0; if (T.ao > 0 && P.ao.scale !== T.ao) { P.ao.scale = T.ao; P.ao.setSize(P.ao.fw || pw, P.ao.fh || ph); }
+      F.strength = this.bloom; F.scale = T.bloom; F.setFxaa(!T.msaa || ssr);
+      const u = F.final.uniforms; u.t.value = this.t % 10; u.hurt.value = this.hurt;
+      const g = this.grade; u.gradeOn.value = g ? 1 : 0;
+      if (g) { u.sat.value = g.saturation ?? 1; u.con.value = g.contrast ?? 1; toRGB(g.shadows, u.lo.value); toRGB(g.highlights, u.hi.value); }
+      u.glare.value = 0;
+      if (this.glare > 0) {
+        const sd = this.sunDir(GV), cam = this.cam; GP.copy(cam.position).addScaledVector(sd, 1000).project(cam);
+        cam.getWorldDirection(GW);
+        if (GW.dot(sd) > 0 && Math.abs(GP.x) < 1.6 && Math.abs(GP.y) < 1.6) { u.glare.value = this.glare * Math.min(1, (1.6 - Math.max(Math.abs(GP.x), Math.abs(GP.y))) * 2); u.sunUV.value.set(GP.x * .5 + .5, GP.y * .5 + .5); u.aspect.value = this.W / this.H; u.sunCol.value.copy(this.sun?.color || C_WARM); }
+      }
     }
     // extra effects a game added (gs.fx3d: outline, glitch, trails, depth of field, pixelate) go between the scene and the final pass
     if (!this.clearBg) {
@@ -645,18 +821,81 @@ function mount(cv, c, view) {
 
 /**
  * Sunlight: a shadow-casting directional light covering a size x size metre box that follows the
- * action (s.follow(x, y, z) each frame; it snaps to shadow texels so edges don't shimmer).
+ * action (s.follow(x, y, z) each frame; it snaps to shadow texels so edges don't shimmer). For big
+ * outdoor levels use s.fit(view, { far, ground }) each frame instead: the shadow then covers just what
+ * the camera can see, out to `far` metres, and gets sharper the narrower the view (a zoomed scope gets
+ * crisp shadows where it looks). s.aim(x, y, z) points it (the direction towards the sun).
  */
 export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
   const s = new DirectionalLight(col, i), c = s.shadow.camera, d = new Vector3(...dir).normalize();
   s.castShadow = true; c.left = c.bottom = -size; c.right = c.top = size; c.near = 1; c.far = 120;
   s.shadow.bias = -.0004; s.shadow.normalBias = .04; s.shadow.radius = 2;
   s.setTier = T => { s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow * 2) { s.shadow.mapSize.set(T.shadow * 2, T.shadow * 2); s.shadow.map?.dispose(); s.shadow.map = null; } };
+  s.dir = d;
+  s.aim = (x, y, z) => { if (x?.isVector3) d.copy(x); else d.set(x, y, z); d.normalize(); return s; };
   s.follow = (x, y, z) => {
+    if (s.fitted) { s.fitted = false; c.left = c.bottom = -size; c.right = c.top = size; c.near = 1; c.far = 120; c.updateProjectionMatrix(); s.shadow.bias = -.0004; s.shadow.normalBias = .04; }
     const tx = 2 * size / s.shadow.mapSize.x; x = Math.round(x / tx) * tx; z = Math.round(z / tx) * tx;
     s.target.position.set(x, y, z); s.position.set(x + d.x * 50, y + d.y * 50, z + d.z * 50); s.target.updateMatrixWorld();
   };
+  s.fit = (view, o) => fitShadow(s, view, o);
   return s;
+}
+// Fitting the sun's shadow to the view. Rays across the screen find what can be seen: where they meet
+// the ground (o.ground(x, z) gives its height) or, without a ground function, the part of each ray
+// between the heights o.low and o.high. Those points, and points o.tall metres above them (houses,
+// trees, people), are boxed in the light's own frame. The box grows and shrinks in steps and its
+// centre snaps to whole shadow texels, so turning the camera doesn't make shadow edges crawl.
+// around: k keeps the box to k times the distance to what's in the middle of the view (a scope looking
+// across a valley: sharp shadows round the target instead of thin ones over the hills behind it).
+const FX = new Vector3(), FY = new Vector3(), FZ = new Vector3(), FP = new Vector3(), FR = new Vector3(), UPV = new Vector3(0, 1, 0);
+const step4 = h => 2 ** (Math.ceil(Math.log2(Math.max(h, 1)) * 4) / 4);
+function fitShadow(s, view, { far = 250, ground = null, low = -5, high = 30, tall = 20, margin = 3, rays = 5, max = 500, soft = 1, around = 0 } = {}) {
+  const cam = view.cam, c = s.shadow.camera, d = s.dir, o = cam.position;
+  cam.updateMatrixWorld();
+  const reach = (dx, dy, dz, lim) => {   // how far a ray goes before it meets the ground (lim if it doesn't)
+    let t = cam.near, prev = t;
+    while (t < lim) { const g = ground(o.x + dx * t, o.z + dz * t); if (g != null && o.y + dy * t <= g) break; prev = t; t += .5 + t * .04; }
+    if (t >= lim) return lim;
+    let a = prev, b = t; for (let k = 0; k < 5; k++) { const m = (a + b) / 2, g = ground(o.x + dx * m, o.z + dz * m); if (g != null && o.y + dy * m <= g) b = m; else a = m; }
+    return b;
+  };
+  if (around > 0 && ground) { FR.set(0, 0, .5).unproject(cam).sub(o).normalize(); const tc = reach(FR.x, FR.y, FR.z, far); if (tc < far) far = Math.min(far, tc * around + margin); }
+  FZ.copy(d); FX.crossVectors(UPV, FZ); if (FX.lengthSq() < 1e-8) FX.set(1, 0, 0); FX.normalize(); FY.crossVectors(FZ, FX);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity, n = 0;
+  const add = p => { const a = p.dot(FX), b = p.dot(FY), e = p.dot(FZ); if (a < x0) x0 = a; if (a > x1) x1 = a; if (b < y0) y0 = b; if (b > y1) y1 = b; if (e < z0) z0 = e; if (e > z1) z1 = e; n++; };
+  const both = p => { add(p); p.y += tall; add(p); };
+  for (let i = 0; i < rays; i++) for (let j = 0; j < rays; j++) {
+    FR.set(i / (rays - 1) * 2 - 1, j / (rays - 1) * 2 - 1, .5).unproject(cam).sub(o).normalize();
+    if (ground) {
+      // out along the ray until it meets the ground (bigger steps further away), then home in
+      const t = reach(FR.x, FR.y, FR.z, far);
+      if (t >= far && o.y + FR.y * t > high + tall) continue;   // only sky that way
+      both(FP.copy(o).addScaledVector(FR, t));
+    } else {
+      let ta = cam.near, tb = far;
+      if (Math.abs(FR.y) > 1e-6) { const t1 = (low - o.y) / FR.y, t2 = (high - o.y) / FR.y; ta = Math.max(ta, Math.min(t1, t2)); tb = Math.min(tb, Math.max(t1, t2)); }
+      else if (o.y < low || o.y > high) continue;
+      if (ta > tb) continue;
+      add(FP.copy(o).addScaledVector(FR, ta)); add(FP.copy(o).addScaledVector(FR, tb));
+    }
+  }
+  if (!n) { const g = ground ? ground(o.x, o.z) ?? o.y : o.y; both(FP.set(o.x, g, o.z)); }
+  const msz = s.shadow.mapSize.x || 1024;
+  let hx = Math.min(max, step4((x1 - x0) / 2 + margin)), hy = Math.min(max, step4((y1 - y0) / 2 + margin));
+  // too big to cover it all: keep the camera's end of it
+  let cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; const ox = o.dot(FX), oy = o.dot(FY);
+  if ((x1 - x0) / 2 + margin > hx) cx = Math.min(Math.max(cx, ox - hx + margin), ox + hx - margin);
+  if ((y1 - y0) / 2 + margin > hy) cy = Math.min(Math.max(cy, oy - hy + margin), oy + hy - margin);
+  const tx = 2 * hx / msz, ty = 2 * hy / msz; cx = Math.round(cx / tx) * tx; cy = Math.round(cy / ty) * ty;
+  // the light sits above the tallest thing that could shade what's seen, low suns further off
+  const top = Math.ceil((z1 + tall / Math.max(d.y, .05) + 10) / 10) * 10, depth = Math.ceil((top - z0 + 20) / 10) * 10;
+  FP.copy(FX).multiplyScalar(cx).addScaledVector(FY, cy).addScaledVector(FZ, top);
+  s.position.copy(FP); s.target.position.copy(FP).sub(FZ); s.target.updateMatrixWorld();
+  if (c.right !== hx || c.top !== hy || c.far !== depth || !s.fitted) { c.left = -hx; c.right = hx; c.bottom = -hy; c.top = hy; c.near = .5; c.far = depth; c.updateProjectionMatrix(); view.shadowsDirty?.(); }
+  s.fitted = true;
+  const tex = Math.max(tx, ty); s.shadow.normalBias = tex * 1.2 * soft; s.shadow.bias = -(.03 + tex * .2) / depth;
+  return { width: hx * 2, height: hy * 2, texel: tex };
 }
 /** A shadow-casting spotlight (torch, searchlight) whose shadow follows the quality tier. */
 export function spot(col = '#fff2e0', i = 30, dist = 16, angle = .5) {

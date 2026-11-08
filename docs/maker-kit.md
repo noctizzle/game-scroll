@@ -927,7 +927,9 @@ makes it solid in `gs.physics3d`; `height(x, z)` gives the floor height for a `K
 
 **Sky and weather** (`gs.sky`): `Sky(view, { time, speed })` moves the sun through the day, colours
 the sky, sun, fill light and fog, and brings out stars (`physical: true` uses three.js's physical
-sky for Next Gen). `Weather(view, { kind: 'rain' | 'snow' | 'storm' })` falls around the camera;
+sky for Next Gen). `clouds: 0..1` adds drifting clouds lit by the sun, and on Next Gen `env: true`
+lights the scene's reflections from the sky; with `v.air()` their shadows cross the ground (see
+[nextgen-3d.md](nextgen-3d.md#outdoor-worlds-sun-air-sky-and-grade)). `Weather(view, { kind: 'rain' | 'snow' | 'storm' })` falls around the camera;
 storms flash lightning, and `onFlash(far)` is your cue for thunder. In AR the camera feed is the sky,
 so use `Weather` alone.
 
