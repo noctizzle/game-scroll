@@ -1,5 +1,5 @@
 import { defineConfig, loadEnv } from 'vite';
-import { readdirSync } from 'node:fs';
+import { readdirSync, existsSync, createReadStream, cpSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -58,12 +58,31 @@ function csp(env) {
   };
 }
 
+// Face and hand tracking files (gs.vision). The real app downloads them from the games host; dev
+// and test builds without one serve ml-cache/ (filled by npm run ml) at ml/.
+function mlFiles(streamed) {
+  const dir = resolve('ml-cache');
+  return {
+    name: 'ml-files',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const m = /\/ml\/([\w.-]+)\/([\w.-]+)$/.exec((req.url || '').split('?')[0]);
+        const f = m && resolve(dir, m[1], m[2]);
+        if (!f || !existsSync(f)) return next();
+        res.setHeader('Content-Type', f.endsWith('.wasm') ? 'application/wasm' : 'application/octet-stream');
+        createReadStream(f).pipe(res);
+      });
+    },
+    closeBundle() { if (!streamed && existsSync(dir)) cpSync(dir, resolve('dist/ml'), { recursive: true }); },
+  };
+}
+
 // Relative base so the build works inside the Capacitor webview and on any static host.
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   return {
     base: './',
     define: { __APP_BUILD__: JSON.stringify(buildLabel()) },
-    plugins: [bundledGames(!!env.VITE_GAMES_URL), csp(env)],
+    plugins: [bundledGames(!!env.VITE_GAMES_URL), mlFiles(!!env.VITE_GAMES_URL), csp(env)],
   };
 });

@@ -5,7 +5,8 @@
 // Everything is in your game's own units (pixels) with y pointing down, like the canvas. Angles
 // are radians, clockwise on screen, so c.rotate(thing.angle) just works.
 //
-//   import { Physics } from '../kit/physics.js';
+//   import gs from '../gamescroll.js';
+//   const { Physics } = gs.physics;
 //   let phys;
 //   reset() { phys = new Physics({ gravity: 900, walls: [0, 0, W, H] });          // make it in make() or reset()
 //             crate = phys.box(100, 50, 30, 30, { bounce: .2 });                   // centre x, y, width, height
@@ -19,19 +20,17 @@
 // engine is there too (phys.R, phys.world) for anything the helpers don't cover; it works in metres,
 // so use phys.toWorld(x) / phys.toGame(m) to convert.
 
-let R = null, loading = null;
+import { lazy } from './lazy.js';
+const engine = lazy('The physics engine', () => import('@dimforge/rapier2d-compat').then(async m => {
+  const r = m.default?.init ? m.default : m;
+  await r.init();
+  return r;
+}));
+let R = null;
 /** Loads the engine (the app does this for you before showing a game that uses it). */
-export function loadPhysics() {
-  return loading ||= import('@dimforge/rapier2d-compat').then(async m => {
-    const r = m.default?.init ? m.default : m;
-    await r.init();
-    R = r; return r;
-  });
-}
+export const loadPhysics = () => engine.load().then(r => (R = r));
 /** True once the engine is loaded. */
-export const physicsReady = () => !!R;
-// Thrown by new Physics() before the engine has loaded. The app catches it, waits, and makes the game again.
-class StillLoading extends Error { constructor() { super('The physics engine is still loading'); this.kitLoading = loadPhysics(); } }
+export const physicsReady = () => engine.ready;
 
 const ALL = 0xffff;
 const groups = (member, filter) => ((member & ALL) << 16) | (filter & ALL);
@@ -106,7 +105,7 @@ export class Physics {
    * solid walls round that rectangle.
    */
   constructor({ gravity = 900, scale = 30, walls = null } = {}) {
-    if (!R) throw new StillLoading();
+    R = engine.get();
     this.R = R; this.scale = scale;
     const g = typeof gravity === 'number' ? { x: 0, y: gravity } : gravity;
     this.world = new R.World({ x: (g.x || 0) / scale, y: (g.y || 0) / scale });

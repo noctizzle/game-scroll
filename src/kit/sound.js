@@ -10,6 +10,8 @@
 // Everything respects the player's Sound & haptics settings (sound on/off, volume, music on/off). Music stops by itself when the round ends or the
 // player swipes to another game, but stop it in your own game-over code too if it should end sooner.
 import { sfx, sound, audio } from '../sfx.js';
+import { buildSamples, SAMPLE_RATE } from './zzfx.js';
+import { lazy } from './lazy.js';
 
 /* ---------- notes ---------- */
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -107,6 +109,48 @@ export const sounds = {
   countdown: (last = false) => tone(last ? 1047 : 523, { len: last ? .3 : .12, wave: 'square', vol: .05 }),
 };
 export { sfx };   // the classic single beep, re-exported so one import covers everything
+
+/* ---------- ZzFX: design your own sound effects ---------- */
+// Design a sound on https://killedbyapixel.github.io/ZzFX/ (move the sliders, press play), copy the
+// numbers it shows, and play them: zzfx(...[,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17]). Sounds are
+// built once and cached, so playing the same one again is cheap.
+const zcache = new Map();
+/** Plays a ZzFX sound (the numbers from the ZzFX designer). Returns nothing. */
+export function zzfx(...params) {
+  if (sound.muted || !sound.volume) return;
+  const a = audio(); if (!a) return;
+  try {
+    const key = params.join(',');
+    let buf = zcache.get(key);
+    if (!buf) {
+      const data = buildSamples(...params);
+      buf = a.ctx.createBuffer(1, data.length, SAMPLE_RATE); buf.getChannelData(0).set(data);
+      if (zcache.size > 64) zcache.delete(zcache.keys().next().value);
+      zcache.set(key, buf);
+    }
+    const src = a.ctx.createBufferSource(), g = a.ctx.createGain();
+    src.buffer = buf; g.gain.value = .3; src.connect(g); g.connect(a.out); src.start();
+  } catch { /* audio unavailable */ }
+}
+/** Makes a reusable sound from ZzFX numbers: const zap = zsound(...numbers); zap(); zap(1.5) plays it higher. */
+export function zsound(...params) {
+  return (pitch = 1) => { const p = [...params]; if (pitch !== 1) p[2] = (p[2] ?? 220) * pitch; zzfx(...p); };
+}
+
+/* ---------- Tone.js: real synths, effects and sequencing (for music games) ---------- */
+// Tone.js (tonejs.github.io, MIT) is big, so it loads the first time a game asks for it: call
+// Tone() in make() or reset() (the app waits while it loads, like physics). It plays through the
+// app's audio, so the player's volume and mute apply.
+//   const T = gs.sound.Tone();
+//   const synth = new T.PolySynth(T.Synth).toDestination();  synth.triggerAttackRelease(['C4', 'E4', 'G4'], '8n');
+const toneLib = lazy('Tone.js', () => import('tone').then(T => {
+  const a = audio(); if (!a) throw new Error('No audio on this device');
+  T.setContext(a.ctx);
+  const d = T.getDestination(); d.output.disconnect(); d.output.connect(a.out);
+  return T;
+}));
+/** The Tone.js library (loads it the first time). */
+export function Tone() { return toneLib.get(); }
 
 /* ---------- music ---------- */
 const playing = new Set(), held = new Set();   // tunes playing now, and tunes paused mid-way

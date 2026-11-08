@@ -50,6 +50,18 @@ if (STREAM) remote.init(meta => { const g = { likes: 300 + hash(meta.id) % 6000,
 const feed=document.getElementById('feed');
 let slides=[],active=null,filter='all',lastId=null,io;
 
+// Makes the game. A game whose kit is still loading (the physics engine is a few MB, so it loads the
+// first time it's needed) throws an error carrying e.kitLoading: show a "loading" screen until it's in,
+// then make the game again.
+function bootGame(s){
+  try{s.game=s.def.make(s.api);s.game.reset();s.loading=false}
+  catch(e){
+    if(!e||!e.kitLoading)throw e;
+    s.loading=true;
+    s.game={reset(){},update(){},draw(c){const w=s.w||s.def.w,h=s.h||s.def.h;c.fillStyle='#111';c.fillRect(0,0,w,h);c.fillStyle='#bbb';c.font=`${Math.round(Math.min(w,h)/14)}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText('Loading…',w/2,h/2)}};
+    e.kitLoading.then(()=>{bootGame(s);s.dirty=true;renderOverlay(s)},err=>console.warn('kit failed to load',err));
+  }
+}
 function makeSlide(def){
   const el=document.createElement('section');el.className='slide '+(def.retro?'retro':'modern')+(def.era==='console'?' console':def.era==='nextgen'?' console nextgen':def.era==='ar'?' console nextgen ar':'');
   if(def.retro){const p=PAL[def.pal||'moss'];p.forEach((c,i)=>el.style.setProperty('--lcd'+i,c));el.style.setProperty('--shell',SHELL[def.pal||'moss']);}el.setAttribute('aria-label',def.title);
@@ -72,15 +84,15 @@ function makeSlide(def){
   const s={def,el,canvas:el.querySelector('canvas'),screen:el.querySelector('.screen'),overlay:el.querySelector('.overlay'),scoreEl:el.querySelector('.score'),
     state:'ready',score:0,overAt:0,dirty:true,w:def.w,h:def.h};
   s.ctx=s.canvas.getContext('2d');
-  s.game=def.make(s.api={
+  s.api={
     score:n=>{s.score=n;s.scoreEl.textContent=n;if(def.goal&&n>=def.goal)win(s)},
     over:()=>gameOver(s),
     win:()=>win(s),                                     // for games with a natural win (cleared the board, etc.)
     has:id=>!!(s.run&&s.run.items.has(id)),             // is this shop item active for the current run?
     ...savesFor(def.id),                                // save(data) / load(fallback) / clearSave(): this game's own save slot
     ...geoFor(def),                                     // location() / watchLocation(cb): rounded, only during a round (src/geo.js)
-  });
-  s.game.reset();
+  };
+  bootGame(s);
   // like
   const likeBtn=el.querySelector('.like'),liked=rating(def.id)>0||(rating(def.id)===0&&store.get('gs_like_'+def.id,false));
   // Shared counts come from the hearts backend; dev/test builds without it keep the old local number.
@@ -183,7 +195,7 @@ function clearPause(s){s.paused=false;s.pauseWhy=null;const el=s.screen.querySel
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&active)pauseGame(active,'away')});
 
 function startGame(s){
-  if(active!==s)return;
+  if(active!==s||s.loading)return;
   clearPause(s);
   // Boosts the player owns for this game are used up on this run; unlocks stay on.
   s.run={items:new Set()};
