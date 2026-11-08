@@ -6,14 +6,14 @@
 //   const { sfx, sounds } = gs.sound, { haptic } = gs.device, { clamp, rnd } = gs.util;
 //
 // What's on it (docs/maker-kit.md has the full guide):
-//   gs.sound     beeps, ready-made sounds, ZzFX designs, music loops, Tone.js synths
-//   gs.device    haptics, tilt, shake, mic, camera, compass
+//   gs.sound     beeps, ready-made sounds, ZzFX designs, music loops, Tone.js synths, the mixer, speech (say)
+//   gs.device    haptics (and rich haptic patterns), tilt, shake, mic (level, pitch, claps, blowing), camera, compass
 //   gs.util      clamp, rnd, pix, hash, fmt, disc, flickTracker
 //   gs.math      seeded random, daily seed, smooth noise, vectors, overlap tests, Grid, Timers
 //   gs.palettes  the Pocket colour sets (PAL, SHELL, C16)
-//   gs.juice     particles, shake, tweens, pop-ups, flashes
+//   gs.juice     particles, shake, tweens, timelines (anime.js; lazy), pop-ups, flashes
 //   gs.effects   one-call moments: feel.coin(), feel.hit(), feel.boom() ...
-//   gs.controls  sticks, buttons, gestures, keys
+//   gs.controls  sticks, buttons, gestures, two-finger pinch / twist / pan, keys
 //   gs.pad       game controllers: analog sticks, triggers, rumble
 //   gs.moves     motion moves: swing, punch, throw, flip, twist, knock, shake
 //   gs.pixel     pixel text and sprites drawn from text
@@ -25,13 +25,13 @@
 //   gs.toon      Classic Console 3D (cel-shaded)       gs.hd   Next Gen 3D (PBR, bloom, shadows)
 //   gs.ar        AR 3D (camera + gyro)                 gs.fx3d 3D text, 3D particles, outline/glitch/trails
 //   gs.vision    face and hand tracking (MediaPipe)    gs.geo  distances and bearings for location games
-//   gs.things    game objects: tags, "what did this hit", nearest, reuse
+//   gs.things    game objects: tags, "what did this hit", nearest, reuse; Node: parent and child places
 //   gs.rounds    scenes (intro, play, clear...) with timed changes, and level lists
 //   gs.pacing    spawners, waves with breathers, a difficulty director
 //   gs.aim       touch aim assist: sticky aim, pull onto targets, auto fire
 //   gs.senses    enemy sight cones, hearing, memory and moods (calm, suspicious, alert, searching)
 //   gs.camera2d  Camera2D: follow with a dead zone, look-ahead, zoom, level bounds, parallax layers
-//   gs.tiles     TileMap.fromText(): levels as text, walls, one-way platforms, slopes, marks, rays
+//   gs.tiles     TileMap.fromText(): levels as text, walls, one-way platforms, slopes, marks, rays, auto-tiling
 //   gs.movers    Platformer (coyote time, jump buffer, wall jump) and TopDown movement through tiles
 //   gs.anim      Animator: sprite animation states with frame events
 //   gs.story     Story (branching dialogue in ink; lazy) and Typewriter text
@@ -46,6 +46,8 @@
 //   gs.party     pass-and-play turns with a hand-over screen, and split-screen halves for two to four
 //   gs.rhythm    a beat clock in step with the music, note charts, Perfect/Good/Miss, tap-lag calibration
 //   gs.strokes   drawn lines and gesture shapes (circle, zigzag, star... or your own), lines into physics
+//   gs.paths     smooth paths through points (2D or 3D): steady-speed followers, lanes, nearest point
+//   gs.bones     2D bone characters: parts that hang off each other, poses, clips, reach (IK), wobble
 //   gs.vehicles  arcade Car (top-down drift) and Kart (3D, hops and drift boosts), Laps and places
 //   gs.level3d   3D levels from text maps, solid in physics3d        gs.sky  time of day, rain, snow, storms
 //   gs.tweak     live sliders for tuning numbers while you play (npm run dev only; the starting values elsewhere)
@@ -117,12 +119,14 @@ import * as party from './kit/party.js';
 import * as rhythm from './kit/rhythm.js';
 import * as strokes from './kit/strokes.js';
 import * as vehicles from './kit/vehicles.js';
+import * as paths from './kit/paths.js';
+import * as bones from './kit/bones.js';
 import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
 // the install's anonymous id, and the hooks the app uses to stop things between rounds.
 export const HIDDEN = {
-  sound: ['sound', 'setSound', 'audio', 'stopMusic', 'pauseMusic', 'resumeMusic'],
+  sound: ['sound', 'setSound', 'audio', 'setSfxOut', 'stopMusic', 'pauseMusic', 'resumeMusic'],
   util: ['store', 'deviceId'],
   device: ['location', 'hapticSettings', 'setHaptics'],
   moves: ['stopMoves'],
@@ -243,6 +247,8 @@ const core = {
   rhythm: pick('rhythm', rhythm),
   strokes: pick('strokes', strokes),
   vehicles: pick('vehicles', vehicles),
+  paths: pick('paths', paths),
+  bones: pick('bones', bones),
 };
 const gs = {};
 for (const [k, v] of Object.entries(core)) Object.defineProperty(gs, k, { value: v, enumerable: true });

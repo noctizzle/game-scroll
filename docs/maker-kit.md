@@ -72,7 +72,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 `juice`, `effects`, `controls`, `pad`, `moves`, `pixel`, `gfx`, `bricks`, `physics`, `physics3d`,
 `ai`, `things`, `rounds`, `pacing`, `aim`, `senses`, `prefs`, `camera2d`, `tiles`, `movers`, `anim`, `story`,
 `replay`, `look2d`, `brains`, `tweak`, `board`, `battle`, `gen`, `drag`, `idle`, `party`, `rhythm`,
-`strokes`, `vehicles`, `level3d`, `sky`, `camera`, `nav3d`, `characters`, the action kits (`combat`,
+`strokes`, `vehicles`, `paths`, `bones`, `level3d`, `sky`, `camera`, `nav3d`, `characters`, the action kits (`combat`,
 `tactics`, `climb`, `poses`, `missions`, `cutscene`, `prompts`, `destruction`, `stealth`, `gadgets`,
 `campaign`, `arena`, `props`), `outdoors`, `craft`, `soft`, `cards`, `dice`, `words`, `ui`, `toon` (Classic
 Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo` and `THREE`.
@@ -85,7 +85,7 @@ belongs to the app and isn't on `gs`. Save with `api.save()`, find the player wi
 `gs` sends each call to the right place underneath: our own kits, or the best free library for the
 job (Rapier for physics, Yuka for AI, Recast for 3D path finding, MediaPipe for faces and hands,
 Tone.js, ZzFX, three.quarks, troika-three-text, simplex-noise, rot.js, WaveFunctionCollapse, three-pinata,
-InstancedMesh2, THREE.Terrain, Yoga, pokersolver, SCOWL). If we swap a library later, games don't change.
+InstancedMesh2, THREE.Terrain, Yoga, pokersolver, SCOWL, anime.js, pitchy, the phone's own speech). If we swap a library later, games don't change.
 
 **Big parts load when first used.** Physics, 3D physics, 3D path finding, 3D extras, face tracking, Tone.js, the
 dictionary (`gs.words`) and the UI layout engine (`gs.ui`) are a
@@ -1128,3 +1128,67 @@ momentum, and moving focus with arrows or a controller (`key()`), and sends `tap
 and `back` events. `ui.each((node, box) => ...)` hands you every visible box with its state
 (`pressed`, `focused`, `press` for a bounce, your own `data`) and you paint it however your game
 looks. `wrap(c, text, width)` splits text into lines.
+
+## Feel, sound, touch and 2D animation (round 9)
+
+**Rich haptics** (`gs.device.hapticPattern`): feel that changes over time. Each event is a tap (no `len`)
+or a buzz (`len` in seconds) with `strength` and `sharpness` 0..1 (sharp is a crisp click, soft a deep
+thud), and a buzz can fade or swell to `to`. `at` is seconds from now, so start a sound at the same
+moment and they line up: `hapticPattern([{ at: 0, strength: 1, sharpness: .9 }, { at: .1, len: .4, strength: .8, to: 0, sharpness: .2 }])`.
+Ready-made: `hapticPattern('heartbeat')`, `'explosion'`, `'charge'` (`{ len: 1.5 }`), `'engine'`, `'rain'`,
+`'rumble'`, `'thud'`, `'tap'`, `'success'`, `'fail'`. iPhones use Core Haptics and Android the
+vibrator's strength control and haptic primitives (`plugins/rich-haptics`); other phones get the
+closest taps or buzzes. The player's haptics setting always applies.
+
+**Mic games** (`gs.device.startMic()`, from a tap): besides `level()`, the mic now hears `pitch()`
+(`{ hz, note: 'A4', midi, clarity }` of a sung, hummed or whistled note, or null; pitchy, the McLeod
+pitch method), `blow()` (0..1, blowing on the mic), `clapped()` (true once per clap, snap or tap on the
+phone) and `whistle()` (Hz, or 0). Read them every frame, and always give a touch way to play.
+
+**Two fingers** (`gs.controls.TwoFingers`): pinch, twist and two-finger drag, with your one-finger
+`Gestures` still working through `one:`. Callbacks get the change since last time (`pinch(scale, x, y)`,
+`twist(angle, x, y)`, `pan(dx, dy)`), or read `scale`, `angle`, `x`, `y` and `active`. When the second
+finger lands the one-finger gesture is dropped, so a pinch never ends in a stray tap.
+
+**The mixer** (`gs.sound.mixer`): every sound goes through a channel (`'sfx'`, `'music'` for `music()`
+and Tone.js, `'voice'`, or your own with `tone(f, { bus: 'alarm' })`), then a shared room and muffle.
+`mixer.volume('music', .4)`, `mixer.duck('music', .3, .8)` (dip it for a big moment), `mixer.room('cave')`
+(`'room'`, `'hall'`, `'cave'`, `'pipe'` or `{ reverb, size, echo, delay }`) and `mixer.muffle(.8)` (underwater,
+stunned, inside a box). It all goes back to normal when the round ends.
+
+**Speech** (`gs.sound.say('Watch out!', { pitch, rate, lang })`): characters talk with the phone's own
+voice (no sound files; iPhone and Android speech, the browser's on the web). It returns a promise
+that ends when the line is said, dips the music while it talks, follows the player's mute and stops
+with the round. `stopTalking()`, `talking()`. Always show the words on screen too.
+
+**Timelines** (`gs.juice.Timeline`, anime.js; loads on first use, so make it in `make()` or `reset()`):
+steps one after another, together or staggered, in seconds and driven by your `dt` so they pause
+with the game. `new Timeline({ ease: 'outBack' }).to(title, { y: 120, duration: .5 }).to(stars, { s: 1, duration: .3, delay: stagger(.1) }, '+=.1').call(fn, .6)`,
+then `tl.update(dt)`; `done`, `seek()`, `pause()`, `speed`, `loop: true`. For a single number, `Tweens` is still the lightest.
+
+**Paths** (`gs.paths`): `new Path(points, { loop, kind: 'smooth' | 'line' | 'bezier' })` in 2D or 3D, measured
+so `Follower(path, { speed, end: 'loop' | 'pingpong' | 'stop' })` moves at a steady speed. `at(d)`,
+`offset(d, side)` (lanes, kerbs), `nearest(x, y)` (snap onto the track), `spaced(step)` (coins along a
+route) and `trace(c)` (stroke it your way).
+
+**Auto-tiling** (`map.edges(tx, ty, same)` on `gs.tiles.TileMap`): which neighbours join, as a 4-bit
+`mask` (16 pieces) or the 47-piece `blob` (`BLOB_MASKS` lists them), so drawn-in-code walls, paths and
+water pick the right edge and corner pieces.
+
+**2D bone characters** (`gs.bones.Rig`): cut-out figures of parts that hang off each other. `bone()`
+adds parts (with `wobble` for ears, tails and hair that lag and swing), `pose()` and `blend()` set
+angles, `clip()` + `play()` run keyframes with events (`on('step')`), `reach(upper, lower, x, y)` is
+two-bone IK (a hand on a ledge, a foot on the ground), `look()` turns a head, `kick()` jolts a wobbly
+part, and `draw(c, fn)` calls you for each part already moved and turned into place.
+
+**Parent and child** (`gs.things.Node`): a turret on a tank, a rider on a horse, a moon round a
+planet. Nodes have `x`, `y`, `angle`, `scale` relative to their parent; `root.update()` works out
+`wx`, `wy`, `wangle`, `wscale` for all of them. `toWorld`, `toLocal`, `hit` (rotated boxes and circles),
+`pick` (the top node under a tap), `attach(newParent)` (keeps it where it is) and `draw(c, fn)`.
+
+**Next Gen extras** (`gs.hd` HDView): `v.decal(mesh, point, normal, { size, colour, paint, life })` puts a
+mark on a surface that wraps over its shape (scorches, footprints, paint; capped at 40, oldest
+first), `v.bakeLight([x, y, z], { radius })` bakes the light around a point into a light probe so rooms
+and caves pick up the colour of their walls and windows (several blend as the camera, or
+`v.probeAt`, moves; bake once after building the level: it returns a promise and joins a frame or two later), and `v.shafts = 1` adds sun shafts streaming
+past whatever blocks the sky (not on the lowest tier).

@@ -2,6 +2,9 @@
 include ':capacitor-android'
 project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/android/capacitor')
 
+include ':capacitor-community-text-to-speech'
+project(':capacitor-community-text-to-speech').projectDir = new File('../node_modules/@capacitor-community/text-to-speech/android')
+
 include ':capacitor-app'
 project(':capacitor-app').projectDir = new File('../node_modules/@capacitor/app/android')
 
@@ -22,3 +25,6 @@ project(':game-services').projectDir = new File('../plugins/game-services/androi
 
 include ':native-ar'
 project(':native-ar').projectDir = new File('../plugins/native-ar/android')
+
+include ':rich-haptics'
+project(':rich-haptics').projectDir = new File('../plugins/rich-haptics/android')

@@ -2,8 +2,9 @@
 // (Location is api.location() in make(api): see src/geo.js.)
 // Everything degrades gracefully: on web/desktop or when permission is refused, calls are no-ops
 // or return null, so every game must also be playable by touch alone.
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
+import { PitchDetector } from 'pitchy';
 import { store } from '../util.js';
 import { register, onRelease } from './cleanup.js';
 
@@ -57,6 +58,7 @@ function stopBuzz() {
   for (const t of buzzing) clearTimeout(t);
   buzzing.clear();
   if (!native) try { navigator.vibrate?.(0); } catch { /* none */ }
+  if (rich && richPlaying) { richPlaying = false; try { rich.stop(); } catch { /* none */ } }
 }
 export function buzz(pattern, short = 90, long = 380, gap = 220) {
   let at = 0;
@@ -74,6 +76,83 @@ export function buzz(pattern, short = 90, long = 380, gap = 220) {
 }
 /** Can this device vibrate at all (and has the player left haptics on)? Games show a fallback if not. */
 export function canBuzz() { return hapticSettings.on && (native || typeof navigator.vibrate === 'function'); }
+
+/* ---------- rich haptics: patterns with strength and sharpness ---------- */
+// Feel that changes over time, like a console controller's rumble but finer: a heartbeat, an engine
+// that revs, a charge that builds, rain on a roof. Each event is a tap (no len) or a buzz (len in
+// seconds), with strength and sharpness 0..1 (sharp = crisp click, soft = deep thud) and, for buzzes,
+// `to`: the strength it fades or swells to by its end. at: seconds from now, so a pattern can be
+// lined up with a sound started at the same moment.
+//   hapticPattern([{ at: 0, strength: 1, sharpness: .9 }, { at: .12, len: .4, strength: .8, to: 0, sharpness: .2 }]);
+//   hapticPattern('heartbeat');  hapticPattern('charge', { len: 1.5 });  hapticPattern('engine', { len: .6, strength: .5 });
+// On iPhones this is Core Haptics, on Android the vibrator's amplitude control and haptic primitives
+// (plugins/rich-haptics). Phones without them get the closest thing: quick taps, or plain buzzes.
+// The player's haptics setting applies (off: nothing; light / strong: softer / harder).
+const rich = native && Capacitor.isPluginAvailable('RichHaptics') ? registerPlugin('RichHaptics') : null;
+let richPlaying = false;
+const ok01 = v => Math.max(0, Math.min(1, +v || 0));
+/** Ready-made patterns: hapticPattern(name, { len, strength }). */
+export const HAPTICS = Object.freeze({
+  tap: () => [{ at: 0, strength: .8, sharpness: .8 }],
+  thud: () => [{ at: 0, strength: 1, sharpness: .1 }, { at: 0, len: .08, strength: .7, to: 0, sharpness: .1 }],
+  heartbeat: () => [{ at: 0, strength: .9, sharpness: .2 }, { at: .16, strength: .6, sharpness: .2 }],
+  explosion: (o) => [{ at: 0, strength: 1, sharpness: .7 }, { at: 0, len: o.len ?? .6, strength: 1, to: 0, sharpness: .15 }],
+  charge: (o) => [{ at: 0, len: o.len ?? 1, strength: .1, to: 1, sharpness: .4 }, { at: o.len ?? 1, strength: 1, sharpness: 1 }],
+  engine: (o) => { const n = Math.max(1, Math.round((o.len ?? .6) / .05)); return Array.from({ length: n }, (_, i) => ({ at: i * .05, strength: .5 + .5 * (i % 2), sharpness: .3 })); },
+  rain: (o) => { const n = Math.max(1, Math.round((o.len ?? 1) * 14)); return Array.from({ length: n }, () => ({ at: Math.random() * (o.len ?? 1), strength: .2 + Math.random() * .4, sharpness: .9 })); },
+  rumble: (o) => [{ at: 0, len: o.len ?? .5, strength: 1, sharpness: 0 }],
+  success: () => [{ at: 0, strength: .6, sharpness: .8 }, { at: .1, strength: 1, sharpness: 1 }],
+  fail: () => [{ at: 0, len: .25, strength: 1, to: .2, sharpness: .1 }],
+});
+/**
+ * Plays a haptic pattern: a list of events or the name of a ready-made one in HAPTICS (with
+ * options { len, strength }: strength scales the whole pattern). Up to 64 events within 10 seconds.
+ * A new pattern replaces one still playing. Returns its length in seconds.
+ */
+export function hapticPattern(events, o = {}) {
+  if (typeof events === 'string') events = HAPTICS[events]?.(o) || [];
+  if (!Array.isArray(events) || !hapticSettings.on) return 0;
+  const k = { light: .55, normal: 1, strong: 1.4 }[hapticSettings.strength] * (o.strength ?? 1);
+  const list = events.slice(0, 64).map(e => {
+    const len = Math.max(0, Math.min(10, +e.len || 0)), ev = { at: Math.max(0, Math.min(10, +e.at || 0)), len, strength: ok01((e.strength ?? 1) * k), sharpness: ok01(e.sharpness ?? .5) };
+    if (len && e.to != null) ev.to = ok01(e.to * k);
+    return ev;
+  });
+  const end = list.reduce((m, e) => Math.max(m, e.at + e.len), 0);
+  if (!list.length) return 0;
+  stopBuzz();
+  if (rich) {
+    richPlaying = true;
+    rich.play({ events: list }).then(r => { if (!r?.played && hapticSettings.on) fallbackPattern(list); }, () => fallbackPattern(list));
+    const t = setTimeout(() => { buzzing.delete(t); richPlaying = false; }, end * 1000 + 50); buzzing.add(t);
+    return end;
+  }
+  fallbackPattern(list);
+  return end;
+}
+/** Stops a pattern (and any buzz()) still playing. */
+export function stopHaptics() { stopBuzz(); }
+function fallbackPattern(list) {
+  if (native) {
+    // quick taps: one for each tap event, a run of them through each buzz, harder for stronger
+    const tapAt = (ms, s) => { if (s < .08) return; const t = setTimeout(() => { buzzing.delete(t); if (hapticSettings.on) try { Haptics.impact({ style: s > .7 ? ImpactStyle.Heavy : s > .35 ? ImpactStyle.Medium : ImpactStyle.Light }); } catch { /* none */ } }, ms); buzzing.add(t); };
+    for (const e of list) {
+      if (!e.len) { tapAt(e.at * 1000, e.strength); continue; }
+      for (let q = 0; q < e.len; q += .045) tapAt((e.at + q) * 1000, e.strength + ((e.to ?? e.strength) - e.strength) * (q / e.len));
+    }
+    return;
+  }
+  if (typeof navigator.vibrate !== 'function') return;
+  // web: on/off only, so strength becomes how much of each 20 ms slice is buzzing
+  const end = list.reduce((m, e) => Math.max(m, e.at + Math.max(e.len, .03)), 0), n = Math.ceil(end / .02), amp = new Float32Array(n);
+  for (const e of list) {
+    const a = Math.floor(e.at / .02), b = Math.min(n, Math.ceil((e.at + Math.max(e.len, .03)) / .02));
+    for (let i = a; i < b; i++) { const f = b - a > 1 ? (i - a) / (b - a - 1) : 0; amp[i] = Math.max(amp[i], e.len ? e.strength + ((e.to ?? e.strength) - e.strength) * f : e.strength); }
+  }
+  const seq = []; let wait = 0;
+  for (let i = 0; i < n; i++) { const on = Math.round(amp[i] * 20); if (on < 3) { wait += 20; continue; } seq.push(wait, on); wait = 20 - on; }
+  if (seq.length) try { navigator.vibrate(seq); } catch { /* none */ }
+}
 
 /* ---------- permissions that need a user gesture (iOS motion) ---------- */
 // Games call want('motion') when created; the request fires on the player's next tap (the Play tap).
@@ -186,20 +265,61 @@ export function faceDown() { need(); return tiltState.ok ? Math.abs(tiltState.be
 // player leaves, before the answer comes, the stream is closed as soon as it arrives instead of
 // being left running. Both also stop by themselves when a round ends or the player leaves.
 let mic = null, micAsk = null, micGen = 0;
-/** Start listening. Resolves to { level() -> 0..1, stop() } or null if refused. Call from a tap. */
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+/**
+ * Start listening. Call from a tap. Resolves to the mic, or null if refused:
+ *   level()     how loud, 0..1
+ *   pitch()     { hz, note ('A4'), midi (69.2: fractional, for "how in tune"), clarity 0..1 } of a
+ *               sung, hummed or whistled note, or null while nothing has a clear pitch
+ *   blow()      0..1 how hard the player is blowing on the mic (windy noise, no pitch)
+ *   clapped()   true once for each clap (or tap on the phone, or snap) since the last call
+ *   whistle()   the pitch in Hz of a whistle (high and pure), or 0
+ *   stop()
+ * Read them every frame. Pitch uses pitchy (the McLeod pitch method). Always offer a touch way to play.
+ */
 export function startMic() {
   if (mic) return Promise.resolve(mic);
   if (micAsk) return micAsk;
   const gen = micGen;
   return micAsk = (async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false } });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
       if (gen !== micGen) { stream.getTracks().forEach(t => t.stop()); return null; }   // stopped while asking
       const ctx = new (window.AudioContext || window.webkitAudioContext)(), src = ctx.createMediaStreamSource(stream), an = ctx.createAnalyser();
-      an.fftSize = 512; src.connect(an); const buf = new Uint8Array(an.fftSize);
-      let live = true;
+      an.fftSize = 2048; an.smoothingTimeConstant = 0; src.connect(an);
+      const wave = new Float32Array(an.fftSize), spec = new Uint8Array(an.frequencyBinCount), detector = PitchDetector.forFloat32Array(an.fftSize);
+      detector.minVolumeDecibels = -45;
+      const binHz = ctx.sampleRate / an.fftSize;
+      let live = true, readAt = -1, avg = .02, lastClap = 0, claps = 0;
+      const now = { level: 0, hz: 0, clarity: 0, blow: 0, whistle: 0 };
+      // one look at the sound per frame, however many of the readings the game asks for
+      function hear() {
+        const t = performance.now(); if (!live || t - readAt < 8) return now; readAt = t;
+        an.getFloatTimeDomainData(wave); an.getByteFrequencyData(spec);
+        let s = 0, peak = 0; for (const v of wave) { s += v * v; peak = Math.max(peak, Math.abs(v)); }
+        const rms = Math.sqrt(s / wave.length); now.level = Math.min(1, rms * 4);
+        const [hz, clarity] = detector.findPitch(wave, ctx.sampleRate);
+        now.hz = clarity > .85 && hz > 60 && hz < 4200 ? hz : 0; now.clarity = now.hz ? clarity : 0;
+        // energy below 500 Hz against the rest: blowing is a loud low rumble with no clear pitch
+        let lo = 0, all = 0; for (let i = 1; i < spec.length; i++) { all += spec[i]; if (i * binHz < 500) lo += spec[i]; }
+        const lowShare = all ? lo / all : 0;
+        now.blow = !now.hz && rms > .04 ? Math.min(1, (rms - .04) * 6 * Math.min(1, lowShare * 3)) : now.blow * .7;
+        now.whistle = now.hz > 500 && clarity > .9 ? now.hz : 0;
+        // a clap: a sudden sharp peak well over the room's usual level, at most about 6 a second
+        if (peak > .25 && peak > avg * 6 && t - lastClap > 160 && !now.hz) { claps++; lastClap = t; }
+        avg += (Math.min(peak, .5) - avg) * .05;
+        return now;
+      }
       const m = {
-        level() { if (!live) return 0; an.getByteTimeDomainData(buf); let s = 0; for (const v of buf) { const d = (v - 128) / 128; s += d * d; } return Math.min(1, Math.sqrt(s / buf.length) * 4); },
+        level() { return live ? hear().level : 0; },
+        pitch() {
+          const h = live ? hear() : null; if (!h?.hz) return null;
+          const midi = 69 + 12 * Math.log2(h.hz / 440), n = Math.round(midi);
+          return { hz: h.hz, midi, note: NOTE_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1), clarity: h.clarity };
+        },
+        blow() { return live ? hear().blow : 0; },
+        whistle() { return live ? hear().whistle : 0; },
+        clapped() { if (!live) return false; hear(); if (!claps) return false; claps--; return true; },
         stop() { if (!live) return; live = false; stream.getTracks().forEach(t => t.stop()); ctx.close(); if (mic === m) mic = null; },
       };
       return mic = m;

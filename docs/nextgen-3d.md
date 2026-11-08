@@ -211,3 +211,19 @@ s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
   `v.env = null` goes back to the studio.
 - `gs.hd.noiseTex()` is a shared 256 x 256 tiling noise texture (four sizes of noise in r, g, b and a)
   for your own shaders: clouds, water, grass, dirt.
+
+## Decals, light probes and sun shafts
+
+- `v.decal(mesh, hit.point, hit.normal, { size: .3, colour: '#1a1410' })` puts a mark on a surface that
+  wraps over its shape (three's DecalGeometry): scorches, bullet marks, footprints, paint, splats.
+  `paint: (c, s) => {}` draws your own mark on an `s` x `s` canvas (give it a `key` so it's drawn
+  once), `life` fades it out after that many seconds, `max` (default 40) drops the oldest first, and
+  `glow` makes it shine (lava, neon paint). `v.clearDecals()` removes them all.
+- `v.bakeLight([x, y, z], { radius: 10, strength: 1 })` bakes the light round a point into a light
+  probe (the colour coming from every direction), so lit materials pick up a red wall, a blue
+  window or green grass. Bake once the level is built, not every frame. Several probes blend as the
+  camera moves (or `v.probeAt`, such as the player). Lower the view's `amb` when using probes.
+  `v.clearProbes()`.
+- `v.shafts = 1` (0..2) adds sun shafts: the bright sky round the sun is smeared towards it at quarter
+  size, so whatever blocks it (trees, window frames, a hill) leaves streaks of light. Set `v.sun` so
+  it knows where the sun is. It's off on the lowest tier.

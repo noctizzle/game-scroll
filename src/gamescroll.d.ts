@@ -97,8 +97,8 @@ export interface SoundPart {
   sounds: Record<'coin' | 'jump' | 'hurt' | 'hit' | 'boom' | 'laser' | 'shoot' | 'powerup' | 'select' | 'blip' | 'pop' | 'splash' | 'click' | 'win' | 'lose' | 'levelup' | 'countdown', SoundFx> & Record<string, SoundFx>;
   /** A note name ('C5', 'F#3') to Hz. */
   freq(note: string | number): number;
-  tone(f: number | string, o?: { len?: number; wave?: OscillatorType; vol?: number; slide?: number; attack?: number; at?: number; out?: AudioNode }): void;
-  noise(len?: number, o?: { vol?: number; from?: number; to?: number; filter?: BiquadFilterType; q?: number; at?: number; out?: AudioNode }): void;
+  tone(f: number | string, o?: { len?: number; wave?: OscillatorType; vol?: number; slide?: number; attack?: number; at?: number; out?: AudioNode; bus?: string }): void;
+  noise(len?: number, o?: { vol?: number; from?: number; to?: number; filter?: BiquadFilterType; q?: number; at?: number; out?: AudioNode; bus?: string }): void;
   /** Plays a tune like 'C5 E5 G5 - C6' ('-' is a rest). */
   notes(seq: string, o?: { len?: number; gap?: number; wave?: OscillatorType; vol?: number }): void;
   /** Background music from patterns; start it in update(), not reset(). */
@@ -116,14 +116,35 @@ export interface SoundPart {
   zsound(...params: number[]): () => void;
   /** Tone.js (lazy: call it in make() or reset()). */
   Tone(): Loose;
+  /** Channels ('sfx', 'music', 'voice' or your own), ducking, room echo and muffle. Reset when the round ends. */
+  mixer: {
+    volume(name: string, v: number, fade?: number): Loose;
+    duck(name?: string, to?: number, hold?: number, back?: number): Loose;
+    room(r?: 'none' | 'room' | 'hall' | 'cave' | 'pipe' | { reverb?: number; size?: number; echo?: number; delay?: number }): Loose;
+    muffle(x?: number, fade?: number): Loose;
+    channel(name: string): { volume(v: number, fade?: number): Loose; duck(to?: number, hold?: number, back?: number): Loose };
+    reset(): Loose;
+  };
+  /** Speaks a line with the phone's own voice (text to speech). Resolves when it's said (false if it couldn't). Show the words too. */
+  say(text: string, o?: { pitch?: number; rate?: number; volume?: number; lang?: string }): Promise<boolean>;
+  stopTalking(): void;
+  talking(): boolean;
 }
 
+export interface HapticEvent { at?: number; len?: number; strength?: number; sharpness?: number; to?: number }
+declare const HAPTIC_NAMES: { tap: 1; thud: 1; heartbeat: 1; explosion: 1; charge: 1; engine: 1; rain: 1; rumble: 1; success: 1; fail: 1 };
+export interface Mic { level(): number; pitch(): { hz: number; note: string; midi: number; clarity: number } | null; blow(): number; clapped(): boolean; whistle(): number; stop(): void }
 export type HapticKind = 'light' | 'medium' | 'heavy' | 'tick' | 'success' | 'warning' | 'error';
 export interface DevicePart {
   haptic(kind?: HapticKind): void;
   /** Morse-like buzz pattern: 0 short, 1 long. */
   buzz(pattern: (number | boolean)[], short?: number, long?: number, gap?: number): void;
   canBuzz(): boolean;
+  /** Rich haptics: taps (no len) and buzzes (len s) with strength and sharpness 0..1, `to` fades a buzz, at in seconds. Or a name from HAPTICS. Returns its length (s). */
+  hapticPattern(events: HapticEvent[] | keyof typeof HAPTIC_NAMES | string, o?: { len?: number; strength?: number }): number;
+  /** Ready-made patterns: tap, thud, heartbeat, explosion, charge, engine, rain, rumble, success, fail. */
+  HAPTICS: Readonly<Record<string, (o: { len?: number; strength?: number }) => HapticEvent[]>>;
+  stopHaptics(): void;
   /** Ask for a sensor before Play: 'motion', 'mic', 'camera'... */
   want(feature: string): void;
   /** Tilt -1..1 on each axis, or null when there's no sensor (give a touch fallback). */
@@ -135,7 +156,8 @@ export interface DevicePart {
   /** Compass heading in degrees, or null. */
   heading(): number | null;
   faceDown(): boolean | null;
-  startMic(): Promise<Loose>;
+  /** The mic (call from a tap): level(), pitch() -> { hz, note, midi, clarity } | null, blow(), clapped(), whistle(), stop(); or null if refused. */
+  startMic(): Promise<Mic | null>;
   stopMic(): void;
   startCamera(): Promise<Loose>;
   stopCamera(): void;
@@ -201,6 +223,17 @@ export interface JuicePart {
   /** Smoothly approach target (frame-rate independent). */
   approach(cur: number, target: number, rate: number, dt: number): number;
   pulse(t: number, period?: number): number;
+  /** Steps in order, together and staggered (anime.js, lazy: make it in make() or reset()). Times in seconds; tl.update(dt) each frame. */
+  Timeline: new (o?: { loop?: boolean | number; alternate?: boolean; ease?: string | ((t: number) => number); duration?: number }) => Timeline;
+  /** A delay that grows along a list of targets: stagger(.1). */
+  stagger(each: number, o?: { from?: 'first' | 'center' | 'last' | number; start?: number; [k: string]: Loose }): Loose;
+}
+export interface Timeline {
+  to(targets: object | object[], params: { duration?: number; delay?: number | Loose; ease?: string | ((t: number) => number); [k: string]: Loose }, position?: number | string): this;
+  call(fn: () => void, position?: number | string): this;
+  label(name: string, position?: number | string): this;
+  update(dt: number): this; play(): this; pause(): this; seek(t: number): this; restart(): this;
+  readonly duration: number; readonly done: boolean; time: number; speed: number; playing: boolean;
 }
 
 export declare class Feel {
@@ -235,6 +268,8 @@ export interface ControlsPart {
   Button: new (o?: { x?: number; y?: number; r?: number; label?: string; zone?: number[]; color?: string }) => Control & { isDown: boolean; readonly heldFor: number; pressed(): boolean; released(): boolean; place(x: number, y: number, zone?: number[]): void };
   /** Tap, double tap, hold and swipe. */
   Gestures: new (o?: Loose) => Loose;
+  /** Pinch, twist and two-finger pan (one-finger touches go to `one`). Reads: active, scale, angle, x, y. */
+  TwoFingers: new (o?: { zone?: number[]; one?: Loose; pinch?: (scale: number, x: number, y: number) => void; twist?: (angle: number, x: number, y: number) => void; pan?: (dx: number, dy: number) => void; start?: (x: number, y: number) => void; end?: (scale: number, angle: number) => void }) => Control & { readonly active: boolean; readonly scale: number; readonly angle: number; readonly x: number; readonly y: number; update(): void };
   /** Keyboard state: keys.held('ArrowLeft'), keys.axis(). Pass key(k, isDown) to keys.key. */
   Keys: new () => { key(k: string, isDown: boolean): void; held(k: string): boolean; axis(): XY; clear(): void };
   /** Hands each finger to the first control that wants it. */
@@ -281,7 +316,19 @@ type LatLon = { lat: number; lon: number };
 export interface GeoPart { distance(a: LatLon, b: LatLon): number; bearing(a: LatLon, b: LatLon): number; offset(p: LatLon, east: number, north: number): LatLon; toLocal(origin: LatLon, p: LatLon): XY; cellId(p: LatLon, metres?: number): string }
 
 export interface Thing { dead?: boolean; tags?: Set<string>; x?: number; y?: number; r?: number; w?: number; h?: number; update?(dt: number, things: Loose): void; [k: string]: Loose }
+/** A place that moves with its parent: x, y, angle, scale are relative; wx, wy, wangle, wscale are in game units after update(). */
+export declare class Node {
+  constructor(o?: { x?: number; y?: number; angle?: number; scale?: number; r?: number; w?: number; h?: number; [k: string]: Loose });
+  x: number; y: number; angle: number; scale: number; visible: boolean; r?: number; w?: number; h?: number;
+  readonly wx: number; readonly wy: number; readonly wangle: number; readonly wscale: number;
+  parent: Node | null; children: Node[];
+  add<T extends Node>(child: T): T; remove<T extends Node>(child: T): T; attach(parent: Node | null): this; update(): this;
+  toWorld(x: number, y: number): XY; toLocal(x: number, y: number): XY; hit(x: number, y: number): boolean; pick(x: number, y: number): Node | null;
+  each(fn: (n: Node) => void): this; draw(c: Ctx, fn: (c: Ctx, n: Node) => void): this;
+  [k: string]: Loose;
+}
 export interface ThingsPart {
+  Node: typeof Node;
   Things: new (o?: { plane?: 'xy' | 'xz'; cell?: number }) => {
     add<T extends object>(obj: T, ...tags: string[]): T & Thing;
     reuse<T extends object>(tag: string, make?: () => T, init?: (obj: T) => void): T & Thing;
@@ -362,6 +409,8 @@ export declare class TileMap {
   constructor(cols: number, rows: number, o?: { size?: number; legend?: Record<string, TileKind> });
   /** '#' wall, '-' one-way, '/' '\' slopes, '.' empty; other letters are marks. */
   static fromText(text: string | string[], o?: { size?: number; legend?: Record<string, TileKind> }): TileMap;
+  /** Auto-tiling: which neighbours join (same: characters that join, or a test). mask is 4-bit, blob 0..46. */
+  edges(tx: number, ty: number, same?: string | ((ch: string, tx: number, ty: number) => boolean) | null, o?: { edge?: boolean }): TileEdges;
   cols: number; rows: number; size: number; readonly w: number; readonly h: number;
   marks: { ch: string; tx: number; ty: number; x: number; y: number }[];
   find(ch: string): { ch: string; tx: number; ty: number; x: number; y: number }[];
@@ -377,7 +426,8 @@ export declare class TileMap {
   walkable(): boolean[][];
   draw(c: Ctx, draw: (c: Ctx, ch: string, x: number, y: number, size: number, tx: number, ty: number) => void, cam?: Camera2D | null, o?: { empty?: boolean }): this;
 }
-export interface TilesPart { TileMap: typeof TileMap }
+export interface TileEdges { n: boolean; e: boolean; s: boolean; w: boolean; ne: boolean; se: boolean; sw: boolean; nw: boolean; mask: number; blob: number; blob8: number }
+export interface TilesPart { TileMap: typeof TileMap; /** The 47 blob-tile masks in order (piece i's 8-bit mask). */ BLOB_MASKS: number[] }
 
 interface MoverBase { x: number; y: number; w: number; h: number; vx: number; vy: number; onGround: boolean; facing: number; hit: Partial<TileHit>; readonly left: number; readonly right: number; readonly top: number; readonly bottom: number }
 export interface MoversPart {
@@ -443,10 +493,41 @@ export interface Look2dPart {
   loadLook2D(): Promise<Loose>;
 }
 
+export interface PathPoint { x: number; y: number; z: number; angle: number; dx: number; dy: number; dz: number; d: number }
+export declare class Path {
+  constructor(points: (number[] | { x: number; y: number; z?: number })[], o?: { loop?: boolean; kind?: 'smooth' | 'line' | 'bezier'; tension?: number; detail?: number });
+  pts: { x: number; y: number; z: number }[]; readonly length: number; loop: boolean;
+  at(d: number, out?: object): PathPoint; offset(d: number, side: number, out?: object): PathPoint;
+  nearest(x: number, y: number, z?: number): { d: number; x: number; y: number; z: number; dist: number };
+  spaced(step: number): PathPoint[]; trace(c: Ctx, from?: number, to?: number): this; build(): this; points3(V: Loose, step?: number): Loose[];
+}
+export interface PathsPart {
+  Path: typeof Path;
+  /** Moves along a path at a steady speed: x, y, z, angle, d, lap, done. */
+  Follower: new (path: Path, o?: { speed?: number; end?: 'loop' | 'pingpong' | 'stop'; d?: number; side?: number }) => PathPoint & { speed: number; side: number; lap: number; done: boolean; update(dt: number): Loose };
+}
+export interface Bone { name: string; parent: string | null; len: number; angle: number; rest: number; z: number; data: Loose; w: { x: number; y: number; angle: number; ex: number; ey: number } }
+export declare class Rig {
+  constructor(o?: { x?: number; y?: number; scale?: number; flip?: boolean });
+  x: number; y: number; scale: number; flip: boolean; playing: string | null;
+  bone(name: string, o?: { parent?: string; at?: number; len?: number; angle?: number; z?: number; wobble?: { stiff?: number; damp?: number }; min?: number; max?: number; [k: string]: Loose }): this;
+  get(name: string): Bone | undefined;
+  pose(angles: Record<string, number>, o?: { rest?: boolean }): this; snapshot(): Record<string, number>;
+  blend(a: Record<string, number>, b: Record<string, number>, t: number): this;
+  clip(name: string, c: { len: number; loop?: boolean; keys: Record<string, [number, number][]>; ease?: (t: number) => number; events?: [number, string][] }): this;
+  play(name: string, o?: { fade?: number; speed?: number; from?: number }): this; stop(): this; on(ev: string, fn: (rig: Rig, clip?: string) => void): this;
+  update(dt: number): this; solve(dt?: number): this; world(name: string): Bone['w'] | null; kick(name: string, amount?: number): this;
+  reach(upper: string, lower: string, tx: number, ty: number, o?: { bend?: 1 | -1; weight?: number }): boolean;
+  look(name: string, tx: number, ty: number, weight?: number): this;
+  draw(c: Ctx, fn: (c: Ctx, bone: Bone, w: Bone['w']) => void): this;
+}
+export interface BonesPart { Rig: typeof Rig }
+
 // ---------- 3D and AI parts (load on first use; the app loads them before a game that needs them) ----------
 
 export interface ToonPart { View: new (...a: Loose[]) => Loose; G: Loose; part: Loose; grp: Loose; blob: Loose; toon: Loose; flat: Loose; dude: Loose; has3D(): boolean; THREE: Loose }
 /** An HDView's extras for the ray-traced look: v.reflect(...meshes) (reflections on top-end phones), v.contact({ y, size }) (soft contact shadows) (mesh.userData.noAO = true keeps a mesh out of ambient occlusion). */
+/** HDView extras: v.decal(mesh, point, normal, { size, colour, paint, life }), v.clearDecals(), v.bakeLight(at, { radius, strength }) (light probes, blended by v.probeAt or the camera), v.clearProbes(), v.shafts = 0..2 (sun shafts). */
 export interface HdPart { ContactShadows: new (o?: { y?: number; size?: number; blur?: number; darkness?: number; opacity?: number; height?: number }) => Loose; HDView: new (...a: Loose[]) => Loose; HD: Loose; TIERS: Loose; hasHD(): boolean; pbr: Loose; rbox: Loose; surface: Loose; speckle: Loose; Particles: Loose; sun: Loose; spot: Loose; THREE: Loose;
   /** A shared 256 x 256 tiling noise texture (four noise sizes in r, g, b, a) for your own shaders: clouds, water, grass. */
   noiseTex(): Loose }
@@ -1016,7 +1097,7 @@ export interface GS {
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
-  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart;
+  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
