@@ -190,6 +190,36 @@ try {
     const tune = gs.sound.music({ tempo: 140, lead: 'C5 E5 G5 E5', drums: 'k h s h', lead2: 'C6 . G5 .', layers: { drums: .3, lead2: .7 } }).start();
     tune.intensity(.5); ok(tune.level === .5, 'music intensity brings in layers'); tune.stop();
   }
+  // round 8: outdoor worlds, floating, real dice, words, look-free UI
+  {
+    let gpl; try { gs.craft; } catch (x) { gpl = x; } ok(gpl?.kitLoading, 'gs.craft StillLoading (play kits load on first use)'); await gpl.kitLoading; ok(!!gs.cards.Deck && !!gs.soft.Soft && !!gs.ui.UI, 'play kits in');
+    const T = gs.THREE, { Land, Water, tree, rock } = gs.outdoors;
+    const land = new Land({ kind: 'islands', size: 120, segments: 48, seed: 5 }).paint([[-5, '#235'], [0, '#dc9'], [3, '#4a3'], [14, '#fff']]);
+    ok(Number.isFinite(land.height(10, -20)) && land.mesh.geometry.attributes.color, 'land with height colours');
+    land.flatten(0, 0, 8, 2); ok(Math.abs(land.height(0, 0) - 2) < .01, 'a flattened pad');
+    const sc = new T.Scene(); sc.add(land.object); const grass = land.grass({ count: 800, above: 0, seed: 1 }); ok(!!grass, 'grass scattered');
+    const cam = new T.PerspectiveCamera(60, 1, .1, 300); cam.position.set(0, 20, 40); land.update(1 / 60, cam);
+    const tr = tree({ kind: 'pine' }), rk = rock({ seed: 3 }); ok(tr.attributes.position.count > 50 && rk.attributes.position.count > 20, 'trees and rocks');
+    const water = new Water({ level: 0, waves: 1 }); sc.add(water.mesh); water.update(.5, { x: 0, y: 0, z: 0 }); ok(Math.abs(water.height(3, 4)) < 1, 'waves');
+    const rr = new T.WebGLRenderer({ canvas: document.createElement('canvas') }); rr.setSize(256, 256); sc.add(new T.DirectionalLight()); rr.render(sc, cam); ok(true, 'outdoor scene renders');
+    const w9 = new gs.physics3d.World3D(); land.solid(w9); const b9 = w9.ball(null, .5, { at: { x: 0, y: 8, z: 0 } }); for (let i = 0; i < 120; i++) w9.step(1 / 60);
+    ok(Math.abs(b9.pos.y - (land.height(b9.pos.x, b9.pos.z) + .5)) < .3, 'land is solid in physics3d: ' + b9.pos.y.toFixed(2));
+    const wf = new gs.physics3d.World3D(); const crate = wf.box(null, 1, 1, 1, { at: { x: 0, y: 3, z: 0 }, density: .5 }); const fl = new gs.craft.Floater(crate, water);
+    for (let i = 0; i < 300; i++) { water.update(1 / 60); fl.update(1 / 60); wf.step(1 / 60); } ok(Math.abs(crate.pos.y - water.height(crate.pos.x, crate.pos.z)) < 1, 'a crate floats: ' + crate.pos.y.toFixed(2));
+    const wd = new gs.physics3d.World3D(); wd.floor(0); const dice = new gs.dice.Dice3D(wd, 2, { seed: 4 }); let got = null; dice.on('settle', v => { got = v; }); dice.throw();
+    for (let i = 0; i < 600 && !dice.settled; i++) { wd.step(1 / 60); dice.update(1 / 60); } ok(got && got.every(v => v >= 1 && v <= 6), '3D dice settle on ' + got);
+
+    let we; try { new gs.words.Words(); } catch (x) { we = x; } ok(we?.kitLoading, 'Words StillLoading first'); await we.kitLoading;
+    const dict = new gs.words.Words(); ok(dict.size > 40000 && dict.has('ocean') && dict.has('colour') && !dict.has('qzxv'), 'dictionary has ' + dict.size + ' words');
+    const ans = dict.random({ length: 5, seed: 'day1' }); ok(ans.length === 5 && ans === dict.random({ length: 5, seed: 'day1' }), 'seeded word ' + ans);
+    ok(dict.from('tsrleai', { min: 3 }).includes('stair'), 'words in letters'); ok(dict.anagrams('listen').includes('silent'), 'anagrams');
+    ok(dict.match('c?t').includes('cat'), 'patterns'); const hits = dict.find(['cat', 'ore', 'pin']).map(f => f.word); ok(hits.includes('core') || hits.includes('rot'), 'grid words: ' + hits.slice(0, 5));
+    ok(gs.words.compare('speed', 'abide').join() === 'miss,miss,near,miss,near' && gs.words.compare('robot', 'robot').every(x => x === 'hit'), 'compare counts letters fairly');
+
+    let ue; try { new gs.ui.UI(100, 100, {}); } catch (x) { ue = x; } ok(ue?.kitLoading, 'UI StillLoading first'); await ue.kitLoading;
+    const ui = new gs.ui.UI(360, 640, { dir: 'row', pad: 10, gap: 10, children: [{ id: 'a', grow: 1, tap: true }, { id: 'b', grow: 2, tap: true }] });
+    ok(Math.abs(ui.node('b').box.w - 2 * ui.node('a').box.w) < 1, 'ui flex grow in the browser'); const cv = document.createElement('canvas').getContext('2d'); ok(gs.ui.wrap(cv, 'one two three four five six', 60).length > 1, 'text wraps'); ui.free();
+  }
 } catch (err) { out.push('FAIL threw ' + (err && err.stack || err)); }
 window.result = out;
 </script>

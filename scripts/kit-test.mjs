@@ -656,3 +656,84 @@ console.log('physics ok');
   const c2 = new Campaign(chapters).attach(api); assert.equal(c2.stars, 5); assert.equal(c2.collected('a1'), 1); assert.ok(JSON.stringify(saved).length < 200, 'save is small');
   console.log('campaign: unlocks, stars, extras, best, collectibles, save ok');
 }
+{
+  const { Plane, Boat, Hover } = await import('../src/kit/craft.js');
+  const p = new Plane({ at: { x: 0, y: 100, z: 0 }, speed: 40 }); p.throttle = .7;
+  for (let i = 0; i < 300; i++) p.update(1 / 60);
+  assert.ok(Math.abs(p.pos.y - 100) < 8, 'level flight holds height: ' + p.pos.y);
+  const h0 = p.heading; for (let i = 0; i < 25; i++) p.update(1 / 60, { roll: 1 }); for (let i = 0; i < 90; i++) p.update(1 / 60);
+  assert.ok(Math.sin(p.heading - h0) > .1, 'rolling right turns right');
+  const g = new Plane({ at: { x: 0, y: 1, z: 0 }, speed: 0, ground: () => 0 }); assert.ok(g.onGround, 'starts on the runway');
+  let up = false; for (let i = 0; i < 900; i++) { g.update(1 / 60, { throttle: 1, pitch: g.speed > 25 ? .6 : 0 }); if (!g.onGround && g.altitude > 5) { up = true; break; } }
+  assert.ok(up && !g.crashed, 'takes off');
+  const water = { height: () => 0, normal: () => ({ x: 0, y: 1, z: 0 }) };
+  const b = new Boat(water); for (let i = 0; i < 180; i++) b.update(1 / 60, { throttle: 1 }); assert.ok(b.speed > 5 && Math.abs(b.y) < 1, 'boat speeds up on the water');
+  const hv = new Hover({ at: { x: 0, y: 2, z: 0 } }); for (let i = 0; i < 120; i++) hv.update(1 / 60, { y: 1 }); assert.ok(hv.speed > 3, 'hover moves');
+  console.log('craft: level flight, banked turn, takeoff, boat, hover ok');
+}
+{
+  const { Soft, Liquid } = await import('../src/kit/soft.js');
+  const s = new Soft({ bounds: [0, 0, 360, 640] });
+  const cl = s.cloth(80, 50, 200, 150, 10, 8);
+  for (let i = 0; i < 120; i++) s.update(1 / 60);
+  const bottom = cl.at(5, 7); assert.ok(bottom.y > 150 && bottom.y < 260, 'cloth hangs: ' + bottom.y);
+  assert.ok(s.cut(0, 120, 360, 120) >= 8, 'a swipe cuts the cloth');
+  for (let i = 0; i < 120; i++) s.update(1 / 60); assert.ok(cl.at(5, 7).y > 400, 'cut cloth falls');
+  const s2 = new Soft({ bounds: [0, 0, 360, 640] }); const j = s2.jelly(180, 300, 50, 16);
+  const area = pts => { let a = 0; for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p.x * q.y - q.x * p.y; } return Math.abs(a / 2); };
+  const a0 = area(j.points); for (let i = 0; i < 240; i++) s2.update(1 / 60);
+  assert.ok(area(j.points) / a0 > .7, 'jelly keeps its shape after landing');
+  const gr = s2.grab(j.points[0].x, j.points[0].y); assert.ok(gr, 'grab a point'); gr.move(200, 100); gr.drop();
+  const lq = new Liquid({ bounds: [0, 0, 200, 300] }); lq.pour(100, 50, 60);
+  for (let i = 0; i < 240; i++) lq.update(1 / 60);
+  assert.ok(lq.list.every(p => Number.isFinite(p.x) && p.y <= 300.5 && p.y > 150), 'liquid settles in the bottom');
+  console.log('soft: cloth hangs and cuts, jelly holds, grab, liquid ok');
+}
+{
+  const { Deck, total, groups, poker, winners, sort, stacks, card } = await import('../src/kit/cards.js');
+  const d = new Deck({ seed: 7 }).shuffle(); assert.equal(d.size, 52);
+  const hands = d.deal(2, 5); assert.equal(hands[0].length, 5); assert.equal(d.size, 42);
+  const d2 = new Deck({ seed: 7 }).shuffle(); assert.deepEqual(d2.deal(2, 5)[0].map(c => c.id), hands[0].map(c => c.id), 'same seed, same deal');
+  d.discard(hands.flat()); d.draw(42); assert.equal(d.draw(3).length, 3, 'discards shuffle back in when it runs out');
+  const back = new Deck().load(d.save()); assert.equal(back.size, d.size, 'save and load');
+  assert.deepEqual(total([card('h', 1), card('s', 13)]), { total: 21, soft: true, bust: false });
+  assert.equal(total([card('h', 1), card('s', 9), card('d', 5)]).total, 15);
+  const g = groups([card('h', 5), card('h', 6), card('h', 7), card('s', 9), card('d', 9), card('c', 9)]); assert.equal(g.runs.length, 1); assert.equal(g.sets.length, 1);
+  assert.equal(groups([card('s', 12), card('s', 13), card('s', 1)]).runs.length, 1, 'Q-K-A run');
+  const fh = [card('h', 3), card('s', 3), card('d', 3), card('c', 9), card('h', 9)], pair = [card('h', 2), card('s', 2), card('d', 7), card('c', 10), card('h', 12)];
+  assert.equal(poker(fh).name, 'Full House'); assert.deepEqual(winners([pair, fh]), [1]);
+  assert.equal(sort([card('h', 2), card('s', 1)])[0].suit, 's'); assert.ok(stacks(card('h', 6), card('s', 7)) && !stacks(card('h', 6), card('d', 7)));
+  console.log('cards: deck, seeds, reshuffle, save, totals, sets and runs, poker ok');
+}
+{
+  const { roll, odds, Dice, faceUp } = await import('../src/kit/dice.js');
+  for (let i = 0; i < 50; i++) { const r = roll('2d6+3'); assert.ok(r.total >= 5 && r.total <= 15); }
+  assert.equal(roll('4d6kh3', 1).kept[0].length, 3); assert.deepEqual(roll('3d6', 5).rolls, roll('3d6', 5).rolls, 'seeded rolls repeat');
+  assert.ok(roll('d%').total <= 100 && roll('5-2').total === 3);
+  assert.ok(Math.abs(odds(2, 6)[7] - 6 / 36) < 1e-9, 'odds of 7 on 2d6');
+  const dc = new Dice(3, { seed: 2 }); let settled = null; dc.on('settle', v => { settled = v; });
+  const will = dc.throw(); dc.hold(0); for (let i = 0; i < 60; i++) dc.update(1 / 60); assert.deepEqual(settled, will, 'lands on what throw() said');
+  const keep = dc.values[0]; dc.throw(); assert.equal(dc.values[0], keep, 'held dice stay');
+  assert.equal(faceUp({ x: 0, y: 0, z: 0, w: 1 }), 1); assert.equal(faceUp({ x: 1, y: 0, z: 0, w: 0 }), 6);
+  console.log('dice: notation, keep, seeds, odds, tumble and hold, face up ok');
+}
+{
+  const { UI, loadUI } = await import('../src/kit/ui.js');
+  let threw = null; try { new UI(100, 100, {}); } catch (e) { threw = e; } assert.ok(!threw || threw.kitLoading, 'UI before load throws StillLoading');
+  await loadUI();
+  const taps = [], items = Array.from({ length: 20 }, (_, i) => ({ id: 'item' + i, h: 64, tap: true }));
+  const ui = new UI(360, 640, { dir: 'column', pad: 16, gap: 10, children: [{ id: 'title', h: 48 }, { id: 'list', grow: 1, scroll: 'y', gap: 8, children: items },
+    { dir: 'row', gap: 8, h: 56, children: [{ id: 'buy', grow: 1, tap: true }, { id: 'back', w: 96, tap: true }] }] });
+  ui.on('tap', n => taps.push(n.id));
+  const b = id => ui.node(id).box;
+  assert.deepEqual(b('back'), { x: 248, y: 568, w: 96, h: 56 }, 'flex layout'); assert.equal(b('list').h, 484, 'scroll list fills the space left');
+  ui.down(250, 570, 1); ui.up(250, 570, 1); assert.deepEqual(taps, ['back'], 'tap');
+  ui.down(180, 400, 2); for (let i = 1; i <= 10; i++) { ui.move(180, 400 - i * 20, 2); ui.update(1 / 60); } ui.up(180, 200, 2);
+  for (let i = 0; i < 120; i++) ui.update(1 / 60);
+  assert.ok(b('item0').y < 0 && taps.length === 1, 'drag scrolls (no tap)');
+  ui.focus('item19'); ui.key('Enter', true); ui.key('Enter', false); assert.equal(taps.at(-1), 'item19', 'focus and press with keys');
+  assert.ok(b('item19').y + 64 <= b('list').y + b('list').h + .5, 'focusing scrolls it into view');
+  let n = 0; ui.each(() => n++); assert.ok(n > 5 && n < 26, 'only visible boxes are drawn: ' + n);
+  ui.free();
+  console.log('ui: flex layout, tap, scroll, focus, keys, culling ok');
+}

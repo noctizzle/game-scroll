@@ -59,6 +59,12 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Chapters, stars, collectibles, unlocks | `gs.campaign` | [Action and adventure kits](#action-and-adventure-kits) |
 | Sounds placed in 3D, music that builds up | `gs.sound.Ears`, `music({ layers })` | [Action and adventure kits](#action-and-adventure-kits) |
 | Thousands of trees and rocks, rooms, big worlds | `gs.props` (InstancedMesh2) | [Action and adventure kits](#action-and-adventure-kits) |
+| Hills, islands, grass and trees, water to float on | `gs.outdoors` (THREE.Terrain) | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
+| Planes, boats, hover craft, floating crates | `gs.craft` | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
+| Cloth, ropes, jelly to cut and squish; a simple liquid | `gs.soft` | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
+| Decks, hands, poker and blackjack maths; dice | `gs.cards` (pokersolver), `gs.dice` | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
+| A dictionary for word games | `gs.words` (SCOWL) | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
+| Menus, shops and HUD layout in your own look | `gs.ui` (Yoga) | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
 
 ## What `gs` has, and what it doesn't
 
@@ -66,7 +72,9 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 `juice`, `effects`, `controls`, `pad`, `moves`, `pixel`, `gfx`, `bricks`, `physics`, `physics3d`,
 `ai`, `things`, `rounds`, `pacing`, `aim`, `senses`, `prefs`, `camera2d`, `tiles`, `movers`, `anim`, `story`,
 `replay`, `look2d`, `brains`, `tweak`, `board`, `battle`, `gen`, `drag`, `idle`, `party`, `rhythm`,
-`strokes`, `vehicles`, `level3d`, `sky`, `camera`, `nav3d`, `characters`, `toon` (Classic
+`strokes`, `vehicles`, `level3d`, `sky`, `camera`, `nav3d`, `characters`, the action kits (`combat`,
+`tactics`, `climb`, `poses`, `missions`, `cutscene`, `prompts`, `destruction`, `stealth`, `gadgets`,
+`campaign`, `arena`, `props`), `outdoors`, `craft`, `soft`, `cards`, `dice`, `words`, `ui`, `toon` (Classic
 Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo` and `THREE`.
 It is the only thing a game may import (`src/game-modules.js`); `npm run games` refuses anything
 else and the PR check flags it.
@@ -76,9 +84,11 @@ belongs to the app and isn't on `gs`. Save with `api.save()`, find the player wi
 
 `gs` sends each call to the right place underneath: our own kits, or the best free library for the
 job (Rapier for physics, Yuka for AI, Recast for 3D path finding, MediaPipe for faces and hands,
-Tone.js, ZzFX, three.quarks, troika-three-text, simplex-noise, rot.js, WaveFunctionCollapse). If we swap a library later, games don't change.
+Tone.js, ZzFX, three.quarks, troika-three-text, simplex-noise, rot.js, WaveFunctionCollapse, three-pinata,
+InstancedMesh2, THREE.Terrain, Yoga, pokersolver, SCOWL). If we swap a library later, games don't change.
 
-**Big parts load when first used.** Physics, 3D physics, 3D path finding, 3D extras, face tracking and Tone.js are a
+**Big parts load when first used.** Physics, 3D physics, 3D path finding, 3D extras, face tracking, Tone.js, the
+dictionary (`gs.words`) and the UI layout engine (`gs.ui`) are a
 few MB, so the app loads them the first time a game needs them. Create those things in `make()` or
 `reset()`: if the library isn't in yet, the app shows "Loading…" on the card and makes your game
 again once it is. Don't create them later (in `update()` or a tap), or the game will stop with an error.
@@ -1005,3 +1015,57 @@ quiet while sneaking, full when the fight starts.
 made for you (`simplify()`, three's SimplifyModifier). `scatter()` spreads them over ground with
 gaps and keep-out zones. `Areas` hides rooms you can't see into, and `Chunks` builds a big world
 around the player a piece at a time and drops what's far away.
+
+## Worlds, craft, soft things, cards and menus
+
+As everywhere in the kit, these work things out and your game decides how it all looks.
+
+**Outdoor worlds** (`gs.outdoors`, 3D, THREE.Terrain): `Land({ kind: 'islands', size: 200, high: 20, seed })`
+makes terrain (`hills`, `mountains`, `rolling`, `islands`, `bumps`, `dunes`, `cracked`, `ridges`,
+`smooth`, or your own `(x, z) => height`). `land.height(x, z)`, `normal()` and `slope()` answer where
+the ground is, `flatten()` makes a pad for a village or a landing strip, `paint([[0, '#dc9'], [3, '#4a3']])`
+colours it by height in your palette, `solid(world)` makes it solid in `gs.physics3d`, `grass()` scatters
+blades that sway (only near the camera), and `scatter(props, 'tree', 300, { above: 1, steep: .3 })` puts
+`gs.props` things on suitable ground. `tree({ kind: 'pine' | 'round' | 'palm' | 'bush' })` and `rock()`
+make simple shapes to scatter. `Water({ level, waves })` is a sea of rolling waves you can ask about
+anywhere (`height(x, z)`, `normal`, `depth(p)`); call `update(dt, camera.position)` each frame.
+
+**Planes, boats and hover craft** (`gs.craft`): `Plane({ at, speed, ground })` flies like arcade games
+feel: it banks into turns, holds its height when level, stalls when slow, lands, touches down and
+crashes (`plane.events`). Feed it `update(dt, { throttle, pitch, roll, yaw, brake })` from a stick or
+tilt. `Boat(water, { power, turn, drift })` rides the waves with pitch and roll and leaves `wake`
+points for your spray. `Hover` is a drone or hover bike. `Floater(body, water)` makes any physics3d
+body bob on the water (crates, buoys, barrels).
+
+**Soft things** (`gs.soft`): `Soft()` is a light Verlet world (2D, or 3D with `dims: 3`): `cloth()` (pinned
+along the top, tears if you like), `rope()`, `jelly()` (a pressure blob that squashes and springs
+back), with round and box `solids` to hit. `grab(x, y)` lets a finger pull a point, `cut()` slices
+everything a swipe crosses, `push()` blasts and `wind()` blows. Draw the points your way, or send a
+3D cloth to a mesh with `toGeometry()`. `Liquid()` is a simple 2D liquid of particles that pools,
+splashes and pours (`pour()`, `near()`, `count()`) for water and goo puzzles.
+
+**Cards** (`gs.cards`): `Deck({ seed, jokers, decks })` shuffles, deals, draws (reshuffling the discards
+when it runs out) and saves to `api.save`. `total()` scores a blackjack-style hand, `groups()` finds
+sets and runs for rummy, `poker()` names the best hand (pokersolver) and `winners()` compares them,
+`stacks()` checks patience moves. Cards are plain `{ suit, rank, name, red }` objects: draw them in
+your style. No real-money gambling.
+
+**Dice** (`gs.dice`): `roll('4d6kh3')` reads dice notation (keep highest or lowest, `!` explodes, `+`/`-`),
+`odds(2, 6)` gives every total's chance. `Dice(5)` tumbles for a moment then lands on the result
+(`hold(i)` keeps dice back for dice-poker games). `Dice3D(world, meshes)` throws real cubes in
+`gs.physics3d` and reads which face ends up on top.
+
+**Words** (`gs.words`, SCOWL lists, about 60,000 English words, British spellings too; loads on first
+use, so make `new Words()` in `make()` or `reset()`): `has()`, `random({ length: 5, seed: gs.math.daily('word') })`
+(only common, clean words are picked), `from('tsrleai')` (every word in some letters, `?` for a
+blank), `anagrams()`, `match('c?t')`, `find(grid)` (words snaking through a letter grid with their
+paths), `compare(guess, answer)` (hit / near / miss, fair with repeated letters), `safe()` for words
+players type, and `Bag` for letter tiles with `score()`.
+
+**Menus and HUDs with no look** (`gs.ui`, Yoga flexbox; loads on first use): describe boxes (`dir`, `gap`,
+`pad`, `grow`, `justify`, `align`, `w`/`h` in units or `'%'`, `scroll: 'y'` lists, `at` for overlays)
+and `UI(W, H, tree)` works out where each goes. It handles taps, holds, drags, scrolling with
+momentum, and moving focus with arrows or a controller (`key()`), and sends `tap`, `hold`, `drag`
+and `back` events. `ui.each((node, box) => ...)` hands you every visible box with its state
+(`pressed`, `focused`, `press` for a bounce, your own `data`) and you paint it however your game
+looks. `wrap(c, text, width)` splits text into lines.

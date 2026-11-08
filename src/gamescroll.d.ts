@@ -846,6 +846,124 @@ export interface PropsPart {
   Chunks: new (scene: Loose, o: { size?: number; radius?: number; make: (cx: number, cz: number) => Loose; drop?: (o: Loose, cx: number, cz: number) => void; perFrame?: number }) => { update(p: P3): Loose; ready(p: P3): boolean; clear(): Loose; readonly count: number };
 }
 
+export interface LandPart {
+  object: Loose; mesh: Loose; size: number; segments: number; low: number; high: number;
+  height(x: number, z: number): number; normal(x: number, z: number): P3; slope(x: number, z: number): number; inside(x: number, z: number): boolean;
+  flatten(x: number, z: number, r: number, h?: number, soft?: number): LandPart; paint(stops: [number, string][]): LandPart; solid(world: Loose, o?: Loose): Loose;
+  grass(o?: { count?: number; colour?: string; tint?: string; width?: number; height?: number; blades?: number; above?: number; below?: number; steep?: number; far?: number; seed?: number; wind?: number }): Loose;
+  scatter(props: Loose, name: string, count: number, o?: { above?: number; below?: number; steep?: number; keepOut?: (x: number, z: number) => boolean; inset?: number; [k: string]: Loose }): number[];
+  update(dt: number, camera?: Loose): LandPart; dispose(): void;
+}
+export interface WaterPart {
+  mesh: Loose; level: number; t: number;
+  height(x: number, z: number, t?: number): number; normal(x: number, z: number, t?: number): P3; depth(p: P3): number; update(dt: number, centre?: P3 | null): WaterPart; dispose(): void;
+}
+export interface OutdoorsPart {
+  /** Terrain (THREE.Terrain): kind 'hills' | 'mountains' | 'rolling' | 'islands' | 'bumps' | 'dunes' | 'cracked' | 'ridges' | 'smooth', or (x, z) => height. */
+  Land: new (o?: { kind?: string | ((x: number, z: number) => number); size?: number; segments?: number; low?: number; high?: number; seed?: number; smooth?: number; steps?: number; colours?: [number, string][]; material?: Loose; edge?: number }) => LandPart;
+  /** Waves (a sum of sines) you can read anywhere: height, normal, depth. */
+  Water: new (o?: { level?: number; waves?: number | { height: number; length: number; dir?: number; speed?: number }[]; size?: number; segments?: number; colour?: string; opacity?: number; material?: Loose; seed?: number }) => WaterPart;
+  tree(o?: { kind?: 'pine' | 'round' | 'palm' | 'bush'; trunk?: string; leaves?: string; height?: number; seed?: number }): Loose;
+  rock(o?: { size?: number; colour?: string; seed?: number }): Loose;
+}
+export interface CraftPart {
+  /** Arcade-true flight. Events this frame in events[]: 'stall', 'land', 'touch', 'crash', 'takeoff'. */
+  Plane: new (o?: { at?: P3; heading?: number; speed?: number; power?: number; lift?: number; drag?: number; stall?: number; top?: number; turn?: [number, number, number]; assist?: number; grip?: number; gravity?: number; ground?: ((x: number, z: number) => number) | null; gear?: number; crashSpeed?: number }) => {
+    pos: P3; vel: P3; quat: Loose; throttle: number; stalled: boolean; onGround: boolean; crashed: boolean; events: string[];
+    readonly forward: P3; readonly up: P3; readonly right: P3; readonly speed: number; readonly altitude: number; readonly heading: number; readonly pitch: number; readonly bank: number;
+    update(dt: number, i?: { throttle?: number; pitch?: number; roll?: number; yaw?: number; brake?: boolean }): Loose; reset(at: P3, heading?: number, speed?: number): Loose;
+  };
+  Boat: new (water: { height(x: number, z: number): number; normal(x: number, z: number): P3 }, o?: { at?: P3; heading?: number; power?: number; top?: number; turn?: number; drift?: number; drag?: number; length?: number; width?: number; draft?: number }) => {
+    x: number; y: number; z: number; heading: number; vx: number; vz: number; quat: Loose; wake: Loose[]; air: number; readonly pos: P3; readonly speed: number; readonly forward: P3;
+    update(dt: number, i?: { throttle?: number; steer?: number }): Loose;
+  };
+  Hover: new (o?: { at?: P3; heading?: number; climb?: number; speed?: number; accel?: number; turn?: number; tilt?: number; gravity?: number; ground?: ((x: number, z: number) => number) | null }) => {
+    pos: P3; vel: P3; heading: number; quat: Loose; onGround: boolean; readonly speed: number; update(dt: number, i?: { x?: number; y?: number; up?: number; yaw?: number }): Loose;
+  };
+  /** Makes a physics3d body float on Water (or anything with height(x, z)). */
+  Floater: new (body: Loose, water: Loose, o?: { size?: [number, number, number]; points?: P3[]; float?: number; drag?: number; spinDrag?: number; gravity?: number }) => { under: number; update(dt: number): Loose };
+}
+export interface SoftPoint { x: number; y: number; z: number; px: number; py: number; pz: number; pinned: boolean; mass: number; r: number }
+export interface SoftBody { points: SoftPoint[]; sticks: Loose[]; [k: string]: Loose }
+export interface SoftPart {
+  Soft: new (o?: { gravity?: P3 | null; dims?: 2 | 3; iterations?: number; damping?: number; bounds?: [number, number, number, number] | null; floor?: number | null; bounce?: number; friction?: number; step?: number }) => On<Loose> & {
+    points: SoftPoint[]; sticks: Loose[]; bodies: SoftBody[]; solids: Loose[];
+    point(x: number, y: number, z?: number, o?: { pinned?: boolean; mass?: number; r?: number }): SoftPoint;
+    stick(a: SoftPoint, b: SoftPoint, o?: { stiff?: number; len?: number | null; tear?: number; slack?: boolean }): Loose;
+    cloth(x: number, y: number, w: number, h: number, cols?: number, rows?: number, o?: { pin?: 'top' | 'left' | 'corners' | 'none' | ((c: number, r: number) => boolean); tear?: number; stiff?: number; z?: number; plane?: 'xy' | 'xz'; mass?: number }): SoftBody & { cols: number; rows: number; at(c: number, r: number): SoftPoint };
+    rope(a: P3 | SoftPoint, b: P3 | SoftPoint, n?: number, o?: { pinA?: boolean; pinB?: boolean; tear?: number; mass?: number; slack?: boolean }): SoftBody;
+    jelly(x: number, y: number, r: number, n?: number, o?: { pressure?: number; stiff?: number; mass?: number }): SoftBody;
+    circle(x: number, y: number, r: number): Loose; box(x: number, y: number, w: number, h: number): Loose; remove(thing: Loose): Loose;
+    grab(x: number, y: number, reach?: number, z?: number): { point: SoftPoint; move(x: number, y: number, z?: number): Loose; drop(): void } | null;
+    cut(x0: number, y0: number, x1: number, y1: number): number; push(p: P3, radius: number, strength: number): Loose; wind(w: P3): Loose; update(dt: number): Loose;
+    centre(body: SoftBody): P3; toGeometry(body: SoftBody, geometry: Loose): Loose;
+  };
+  /** A simple 2D liquid (particles that pool and splash). */
+  Liquid: new (o?: { r?: number; gravity?: number; stiff?: number; near?: number; rest?: number; viscosity?: number; bounds?: [number, number, number, number]; max?: number; bounce?: number }) => {
+    list: { x: number; y: number; vx: number; vy: number }[]; solids: Loose[];
+    add(x: number, y: number, vx?: number, vy?: number): Loose; pour(x: number, y: number, n?: number, spread?: number, vx?: number, vy?: number): Loose;
+    circle(x: number, y: number, r: number): Loose; box(x: number, y: number, w: number, h: number): Loose; near(x: number, y: number, r: number): Loose[]; count(test?: (p: Loose) => boolean): number; update(dt: number): Loose;
+  };
+}
+export interface Card { suit: 's' | 'h' | 'd' | 'c' | 'j'; rank: number; id: string; name: string; red: boolean; joker: boolean }
+export interface CardsPart {
+  SUITS: string[]; SUIT_SIGN: Record<string, string>;
+  card(suit: string, rank: number): Card;
+  Deck: new (o?: { suits?: string[]; ranks?: number[]; jokers?: number; decks?: number; seed?: number | null; cards?: Card[] | null }) => {
+    cards: Card[]; discards: Card[]; all: Card[]; readonly size: number; readonly empty: boolean;
+    shuffle(): Loose; draw(n?: number, o?: { reshuffle?: boolean }): Card[]; top(): Card | null; peek(n?: number): Card[]; deal(players: number, n: number): Card[][];
+    discard(...cards: (Card | Card[])[]): Loose; put(cards: Card | Card[], o?: { bottom?: boolean; anywhere?: boolean }): Loose; refill(): Loose; reset(): Loose; save(): Loose; load(s: Loose): Loose;
+  };
+  sort(cards: Card[], o?: { by?: 'suit' | 'rank'; aceHigh?: boolean; suits?: string[] }): Card[];
+  total(cards: Card[], o?: { face?: number; limit?: number; aceHigh?: number }): { total: number; soft: boolean; bust: boolean };
+  groups(cards: Card[], o?: { min?: number; aceHigh?: boolean }): { sets: Card[][]; runs: Card[][] };
+  poker(cards: Card[]): { name: string; describe: string; rank: number; cards: Card[]; solved: Loose };
+  winners(hands: Card[][]): number[];
+  stacks(a: Card, b: Card | null, o?: { down?: boolean; alternate?: boolean; sameSuit?: boolean }): boolean;
+}
+export interface DicePart {
+  roll(text: string, random?: number | (() => number) | null): { total: number; rolls: number[][]; kept: number[][]; text: string };
+  odds(count: number, sides: number): Record<number, number>;
+  Dice: new (count?: number, o?: { sides?: number; time?: number; seed?: number | null }) => On<Loose> & {
+    values: number[]; shown: number[]; held: boolean[]; readonly settled: boolean; readonly total: number; readonly tumble: number;
+    throw(): number[]; hold(i: number, on?: boolean): Loose; update(dt: number): Loose;
+  };
+  FACES: Record<number, P3>; faceUp(q: { x: number; y: number; z: number; w: number }): number;
+  Dice3D: new (world: Loose, meshes?: number | Loose[], o?: { size?: number; bounce?: number; friction?: number; density?: number; seed?: number | null }) => On<Loose> & {
+    bodies: Loose[]; readonly settled: boolean; readonly values: number[]; readonly total: number; throw(at?: P3, push?: P3): Loose; update(dt: number): Loose; remove(): void;
+  };
+}
+export interface WordsPart {
+  /** The dictionary (loads on first use: make it in make() or reset()). */
+  Words: new () => {
+    readonly size: number; has(w: string): boolean; safe(w: string): boolean; of(len: number): string[];
+    random(o?: { length?: number | null; min?: number; max?: number; seed?: number | string | (() => number) | null; starts?: string; has?: string }): string | null;
+    from(letters: string, o?: { min?: number; max?: number; common?: boolean }): string[]; anagrams(w: string): string[];
+    match(pattern: string, o?: { common?: boolean; limit?: number }): string[];
+    find(grid: string[], o?: { min?: number; diagonal?: boolean; common?: boolean }): { word: string; path: [number, number][] }[];
+  };
+  compare(guess: string, answer: string): ('hit' | 'near' | 'miss')[];
+  LETTERS: Record<string, number>; VALUES: Record<string, number>;
+  score(word: string, o?: { values?: Record<string, number>; mult?: number }): number;
+  Bag: new (o?: { size?: number; blanks?: number; seed?: number | string | null; letters?: Record<string, number> }) => { tiles: string[]; readonly left: number; shuffle(): Loose; draw(n?: number): string[]; put(...tiles: (string | string[])[]): Loose };
+}
+export interface UINode {
+  id?: string; kids: UINode[]; parent: UINode | null; box: { x: number; y: number; w: number; h: number }; clip: { x: number; y: number; w: number; h: number }; shown: boolean;
+  pressed: boolean; focused: boolean; press: number; depth: number; sx: number; sy: number; contentW: number; contentH: number; data?: Loose; [k: string]: Loose;
+}
+export interface UIPart {
+  /** Flexbox layout (Yoga) and input with no look: your game draws every box. Loads on first use: make it in make() or reset(). */
+  UI: new (w: number, h: number, tree?: Loose) => On<UINode> & {
+    root: UINode | null; w: number; h: number; readonly focusable: UINode[]; readonly focused: UINode | null;
+    set(tree: Loose): Loose; layout(): Loose; update(idOrDt: string | number, fields?: Loose): Loose; tick(dt: number): Loose; resize(w: number, h: number): Loose;
+    node(id: string): UINode | null; each(fn: (n: UINode, box: UINode['box'], clip: UINode['clip']) => void): Loose; hit(x: number, y: number, o?: { any?: boolean }): UINode | null;
+    down(x: number, y: number, id?: number): Loose; move(x: number, y: number, id?: number): Loose; up(x: number, y: number, id?: number): Loose;
+    activate(n: UINode): void; show(id: string): Loose; focus(id: string | null): Loose; step(dir: 'up' | 'down' | 'left' | 'right'): Loose; key(k: string, isDown?: boolean): boolean; free(): void;
+  };
+  /** Splits text into lines that fit width (with c's current font). */
+  wrap(c: CanvasRenderingContext2D, text: string, width: number): string[];
+}
+
 export interface GS {
   sound: SoundPart; device: DevicePart; util: UtilPart; math: MathPart; palettes: PalettesPart;
   juice: JuicePart; effects: { Feel: typeof Feel }; controls: ControlsPart; pad: PadPart; moves: MovesPart;
@@ -857,6 +975,7 @@ export interface GS {
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
+  outdoors: OutdoorsPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; ui: UIPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;
   /** three.js itself. */

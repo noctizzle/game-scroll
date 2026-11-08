@@ -44,6 +44,7 @@
     "vite": "^8.3.4"
   },
   "dependencies": {
+    "@2toad/profanity": "3.3.0",
     "@capacitor/android": "^8.5.3",
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.5.3",
@@ -66,6 +67,7 @@
     "native-ar": "file:plugins/native-ar",
     "pixi-filters": "6.1.5",
     "pixi.js": "8.22.0",
+    "pokersolver": "2.1.4",
     "recast-navigation": "0.44.0",
     "rot-js": "2.2.1",
     "simplex-noise": "4.0.3",
@@ -73,9 +75,12 @@
     "three-gpu-pathtracer": "0.0.24",
     "three-mesh-bvh": "0.9.16",
     "three.quarks": "0.16.0",
+    "three.terrain.js": "3.1.1",
     "tone": "15.1.22",
     "troika-three-text": "0.53.1",
     "wavefunctioncollapse": "2.1.0",
+    "wordlist-english": "1.2.1",
+    "yoga-layout": "3.2.1",
     "yuka": "0.7.8"
   }
 }

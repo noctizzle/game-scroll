@@ -73,7 +73,9 @@ checks it's fast enough for a mid-range phone. For opponents that learn as peopl
 pass-and-play, rhythm, drawn shapes, vehicles, 3D text levels and weather are in
 [Game kits](docs/maker-kit.md#game-kits). Guns, cover and squads, climbing, poses, missions,
 cutscenes, quick-time prompts, breaking things, stealth, gadgets, ball games with cars, campaigns,
-3D sound and big levels are in [Action and adventure kits](docs/maker-kit.md#action-and-adventure-kits).
+3D sound and big levels are in [Action and adventure kits](docs/maker-kit.md#action-and-adventure-kits). Terrain,
+grass and water, planes and boats, cloth and jelly, cards, dice, a dictionary and menus in your own
+look are in [Worlds, craft, soft things, cards and menus](docs/maker-kit.md#worlds-craft-soft-things-cards-and-menus).
 
 The [maker kit](docs/maker-kit.md) (everything on `gs`) has one-call effects, particles, screen shake,
 easing, sounds, music, thumbsticks, controllers, real 2D and 3D physics, enemy AI, pixel text and
