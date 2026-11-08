@@ -5,6 +5,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { store } from '../util.js';
+import { register } from './cleanup.js';
 
 const native = Capacitor.isNativePlatform();
 
@@ -19,6 +20,7 @@ export const hapticSettings = {
 /** Change and save haptics settings, e.g. setHaptics({ strength: 'strong' }). */
 export function setHaptics(patch) {
   Object.assign(hapticSettings, patch);
+  if (!hapticSettings.on) stopBuzz();
   if (!STRENGTHS.includes(hapticSettings.strength)) hapticSettings.strength = 'normal';
   store.set('gs_haptics', !!hapticSettings.on); store.set('gs_haptic_strength', hapticSettings.strength);
 }
@@ -49,12 +51,22 @@ export function haptic(kind = 'light') {
 
 /** Play a pattern of short (0) and long (1) buzzes. Returns its length in ms. On iPhones a long buzz
  *  is a quick run of taps, since iOS ignores vibration lengths. */
+// Pending taps of a buzz() pattern, so leaving the game, pausing or turning haptics off stops them.
+const buzzing = new Set();
+function stopBuzz() {
+  for (const t of buzzing) clearTimeout(t);
+  buzzing.clear();
+  if (!native) try { navigator.vibrate?.(0); } catch { /* none */ }
+}
 export function buzz(pattern, short = 90, long = 380, gap = 220) {
   let at = 0;
   const style = { light: ImpactStyle.Medium, normal: ImpactStyle.Heavy, strong: ImpactStyle.Heavy }[hapticSettings.strength];
   for (const p of pattern) {
     const d = p ? long : short;
-    if (native && hapticSettings.on) { for (let k = 0; k < d; k += 45) setTimeout(() => { try { Haptics.impact({ style }); } catch { /* none */ } }, at + k); }
+    if (native && hapticSettings.on) for (let k = 0; k < d; k += 45) {
+      const t = setTimeout(() => { buzzing.delete(t); if (hapticSettings.on) try { Haptics.impact({ style }); } catch { /* none */ } }, at + k);
+      buzzing.add(t);
+    }
     at += d + gap;
   }
   if (!native && hapticSettings.on) { const seq = []; pattern.forEach((p, i) => { seq.push(p ? long : short); if (i < pattern.length - 1) seq.push(gap); }); try { navigator.vibrate?.(seq); } catch { /* none */ } }
@@ -76,6 +88,11 @@ async function onGesture() {
     if (motionAllowed) startSensors();
   }
 }
+// Sensors run only while a game reads them: the first tilt() / onShake() / heading()... switches them
+// on (that reading is still null, as before any sensor event), and they switch off when the app is
+// hidden or the player leaves the game. Tap-only games never wake them.
+let lastNeed = 0;
+function need() { lastNeed = performance.now(); if (motionAllowed && !sensorsOn && !globalThis.document?.hidden) startSensors(); }
 addEventListener('pointerup', onGesture, true);
 
 /* ---------- motion sensors: tilt, shake, compass ---------- */
@@ -83,7 +100,18 @@ const tiltState = { x: 0, y: 0, ok: false, base: null }, raw = { alpha: null, be
 let headingDeg = null, lastAcc = null; const shakeCbs = new Set(); let lastShake = 0, sensorsOn = false;
 function startSensors() {
   if (sensorsOn) return; sensorsOn = true;
-  addEventListener('deviceorientation', e => {
+  addEventListener('deviceorientation', onOrient);
+  addEventListener('deviceorientationabsolute', onOrientAbs);
+  addEventListener('devicemotion', onDevMotion);
+}
+function stopSensors() {
+  if (!sensorsOn) return; sensorsOn = false;
+  removeEventListener('deviceorientation', onOrient);
+  removeEventListener('deviceorientationabsolute', onOrientAbs);
+  removeEventListener('devicemotion', onDevMotion);
+  tiltState.ok = false; raw.alpha = null; raw.absT = -1e9; lastAcc = null; headingDeg = null;   // no stale readings when they come back
+}
+function onOrient(e) {
     if (e.beta == null) return;
     tiltState.beta = e.beta;
     // relative readings only when no compass-locked (absolute) ones are coming in: those don't drift
@@ -98,14 +126,14 @@ function startSensors() {
     tiltState.ok = true;
     if (e.webkitCompassHeading != null) headingDeg = e.webkitCompassHeading;
     else if (e.absolute && e.alpha != null) headingDeg = (360 - e.alpha) % 360;
-  });
-  addEventListener('deviceorientationabsolute', e => {
+}
+function onOrientAbs(e) {
     if (e.alpha == null) return;
     headingDeg = (360 - e.alpha) % 360;
     // Android: the same orientation but locked to the compass, so "straight ahead" can't slowly drift
     if (e.beta != null) { const now = performance.now(); raw.alpha = e.alpha; raw.beta = e.beta; raw.gamma = e.gamma; raw.t = raw.absT = now; raw.abs = true; }
-  });
-  addEventListener('devicemotion', e => {
+}
+function onDevMotion(e) {
     const a = e.accelerationIncludingGravity; if (!a || a.x == null) return;
     if (lastAcc) {
       const jerk = Math.abs(a.x - lastAcc.x) + Math.abs(a.y - lastAcc.y) + Math.abs(a.z - lastAcc.z);
@@ -118,12 +146,15 @@ function startSensors() {
       const m = { gx: a.x, gy: a.y, gz: a.z, ax: l?.x ?? null, ay: l?.y ?? null, az: l?.z ?? null, ra: r.alpha || 0, rb: r.beta || 0, rg: r.gamma || 0, dt: (e.interval || 16) > 1 ? (e.interval || 16) / 1000 : e.interval, t: performance.now() };
       motionCbs.forEach(cb => cb(m));
     }
-  });
 }
-if (!window.DeviceMotionEvent?.requestPermission) { /* Android/desktop: no prompt needed */ motionAllowed = true; startSensors(); }
+if (!window.DeviceMotionEvent?.requestPermission) { /* Android/desktop: no prompt needed */ motionAllowed = true; }
+globalThis.document?.addEventListener?.('visibilitychange', () => {
+  if (document.hidden) stopSensors();
+  else if (shakeCbs.size || motionCbs.size || performance.now() - lastNeed < 5000) need();
+});
 
 /** Current tilt as {x, y} in -1..1 relative to how the phone was held when play started, or null if no sensor. */
-export function tilt() { return tiltState.ok ? { x: tiltState.x, y: tiltState.y } : null; }
+export function tilt() { need(); return tiltState.ok ? { x: tiltState.x, y: tiltState.y } : null; }
 /** Make the current phone angle the new "flat". Call from a game's reset(). */
 export function calibrateTilt() { tiltState.base = null; }
 const motionCbs = new Set();
@@ -132,48 +163,72 @@ const motionCbs = new Set();
  * { gx, gy, gz (m/s² with gravity), ax, ay, az (without gravity, or null), ra, rb, rg (rotation,
  * degrees/s about the phone's z, x and y axes), dt, t }. Returns an unsubscribe function.
  */
-export function onMotion(cb) { want('motion'); motionCbs.add(cb); return () => motionCbs.delete(cb); }
+export function onMotion(cb) { want('motion'); motionCbs.add(cb); need(); return () => motionCbs.delete(cb); }
 /** Subscribe to shakes; returns an unsubscribe function. */
-export function onShake(cb) { shakeCbs.add(cb); return () => shakeCbs.delete(cb); }
+export function onShake(cb) { shakeCbs.add(cb); need(); return () => shakeCbs.delete(cb); }
 /** Raw phone orientation for AR (src/kit/ar3d.js): { alpha, beta, gamma } in degrees plus the screen
  *  rotation, or null when there is no live gyro reading. abs: true when it's compass-locked (no drift). */
 export function orientation() {
+  need();
   if (raw.alpha == null || performance.now() - raw.t > 1500) return null;
   return { alpha: raw.alpha, beta: raw.beta, gamma: raw.gamma, abs: raw.abs, screen: (screen.orientation?.angle ?? window.orientation ?? 0) | 0 };
 }
 /** Compass heading in degrees (0 = north), or null. */
-export function heading() { return headingDeg; }
+export function heading() { need(); return headingDeg; }
 /** True when the phone is lying screen-down, false when not, null with no sensor. */
-export function faceDown() { return tiltState.ok ? Math.abs(tiltState.beta) > 120 : null; }
+export function faceDown() { need(); return tiltState.ok ? Math.abs(tiltState.beta) > 120 : null; }
 
 /* ---------- microphone ---------- */
-let mic = null;
+// Asking for the mic or camera can take a while (the permission prompt). If the game stops it, or the
+// player leaves, before the answer comes, the stream is closed as soon as it arrives instead of
+// being left running. Both also stop by themselves when a round ends or the player leaves.
+let mic = null, micAsk = null, micGen = 0;
 /** Start listening. Resolves to { level() -> 0..1, stop() } or null if refused. Call from a tap. */
-export async function startMic() {
-  if (mic) return mic;
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false } });
-    const ctx = new (window.AudioContext || window.webkitAudioContext)(), src = ctx.createMediaStreamSource(stream), an = ctx.createAnalyser();
-    an.fftSize = 512; src.connect(an); const buf = new Uint8Array(an.fftSize);
-    mic = {
-      level() { an.getByteTimeDomainData(buf); let s = 0; for (const v of buf) { const d = (v - 128) / 128; s += d * d; } return Math.min(1, Math.sqrt(s / buf.length) * 4); },
-      stop() { stream.getTracks().forEach(t => t.stop()); ctx.close(); mic = null; },
-    };
-    return mic;
-  } catch { return null; }
+export function startMic() {
+  if (mic) return Promise.resolve(mic);
+  if (micAsk) return micAsk;
+  const gen = micGen;
+  return micAsk = (async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false } });
+      if (gen !== micGen) { stream.getTracks().forEach(t => t.stop()); return null; }   // stopped while asking
+      const ctx = new (window.AudioContext || window.webkitAudioContext)(), src = ctx.createMediaStreamSource(stream), an = ctx.createAnalyser();
+      an.fftSize = 512; src.connect(an); const buf = new Uint8Array(an.fftSize);
+      let live = true;
+      const m = {
+        level() { if (!live) return 0; an.getByteTimeDomainData(buf); let s = 0; for (const v of buf) { const d = (v - 128) / 128; s += d * d; } return Math.min(1, Math.sqrt(s / buf.length) * 4); },
+        stop() { if (!live) return; live = false; stream.getTracks().forEach(t => t.stop()); ctx.close(); if (mic === m) mic = null; },
+      };
+      return mic = m;
+    } catch { return null; } finally { micAsk = null; }
+  })();
 }
-export function stopMic() { mic?.stop(); }
+export function stopMic() { micGen++; mic?.stop(); }
 
 /* ---------- camera ---------- */
-let cam = null;
+let cam = null, camAsk = null, camGen = 0;
 /** Start the back camera. Resolves to { video, stop() } (video is a playing <video>) or null if refused. */
-export async function startCamera() {
-  if (cam) return cam;
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
-    const video = document.createElement('video'); video.playsInline = true; video.muted = true; video.srcObject = stream; await video.play();
-    cam = { video, stop() { stream.getTracks().forEach(t => t.stop()); cam = null; } };
-    return cam;
-  } catch { return null; }
+export function startCamera() {
+  if (cam) return Promise.resolve(cam);
+  if (camAsk) return camAsk;
+  const gen = camGen;
+  return camAsk = (async () => {
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+      const video = document.createElement('video'); video.playsInline = true; video.muted = true; video.srcObject = stream; await video.play();
+      if (gen !== camGen) { stream.getTracks().forEach(t => t.stop()); return null; }   // stopped while asking
+      let live = true;
+      const c = { video, stop() { if (!live) return; live = false; stream.getTracks().forEach(t => t.stop()); if (cam === c) cam = null; } };
+      return cam = c;
+    } catch { stream?.getTracks().forEach(t => t.stop()); return null; } finally { camAsk = null; }
+  })();
 }
-export function stopCamera() { cam?.stop(); }
+export function stopCamera() { camGen++; cam?.stop(); }
+
+// Round over or the player left: stop the mic, camera, pending buzzes and (unless a game is still
+// subscribed to shakes or moves) the motion sensors. Pausing stops the buzzes.
+register('device', {
+  stop() { stopMic(); stopCamera(); stopBuzz(); if (!shakeCbs.size && !motionCbs.size) stopSensors(); },
+  pause() { stopBuzz(); },
+});

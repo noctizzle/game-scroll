@@ -95,7 +95,8 @@ export function fpsFor(def) {
 }
 
 /** The game on screen (set by the feed), so the 3D kit can remember things per game. */
-export const speed = { game: null };
+// offscreen: true while the feed draws a card that isn't the one on screen (one being added below).
+export const speed = { game: null, offscreen: false };
 
 /** The 3D kit settled on a tier and frame rate for this game: start there next time. */
 export function settle(id, o) {

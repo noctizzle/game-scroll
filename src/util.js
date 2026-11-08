@@ -6,6 +6,17 @@ export const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
 };
 
+/** This install's random anonymous id (cloud-save counters, hearts, play stats). One maker for all of
+ *  them, so they always agree: an id the API wouldn't accept is replaced once, here. */
+export function deviceId() {
+  let id = store.get('gs_device', null);
+  if (typeof id !== 'string' || !/^[A-Za-z0-9-]{16,64}$/.test(id)) {
+    id = globalThis.crypto?.randomUUID?.() || Array.from({ length: 32 }, () => (Math.random() * 16 | 0).toString(16)).join('');
+    store.set('gs_device', id);
+  }
+  return id;
+}
+
 /** Draw a tiny pixel map: each char is a key into `col`, '.' is transparent. */
 export function pix(c, map, x, y, col) {
   for (let r = 0; r < map.length; r++)

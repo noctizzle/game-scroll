@@ -110,6 +110,8 @@ export class ARView extends HDView {
 
   /** Call every update while playing: starts the back camera once (asks permission the first time). */
   live() {
+    // the camera was stopped by the app (round over, player left) without off(): ask for it again
+    if (this.camState === 'on' && this.camera && this.camera.video.srcObject?.active === false) { this.camState = 'off'; this.camera = null; }
     if (this.camState !== 'off') return this;
     this.camState = 'asking';
     // native AR first (phone app with ARKit / ARCore), else the web camera with the gyro

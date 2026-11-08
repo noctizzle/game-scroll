@@ -21,7 +21,7 @@ import { initWallet, toast, shopHTML, bindShop } from './kit/wallet-ui.js';
 
 import { haptic, want } from './kit/device.js';
 import { pollPads } from './kit/gamepad.js';
-import { stopAll, pauseAll, resumeAll } from './kit/cleanup.js';
+import { stopAll, pauseAll, resumeAll, ownedBy, release } from './kit/cleanup.js';
 // Things a game may leave running (music, the camera for face tracking, motion moves): stopped when a round ends or the player leaves.
 const stopKits=stopAll;   // every kit registers its own stop (src/kit/cleanup.js)
 import { remote } from './remote.js';
@@ -31,7 +31,7 @@ import { hearts } from './hearts.js';
 import { playstats } from './playstats.js';
 import { boards, rankHTML, openBoard } from './boards.js';
 import { perf } from './perf.js';
-import { speed, fpsFor, tick as tickHz } from './kit/speed.js';
+import { speed, fpsFor, tick as tickHz, screenHz } from './kit/speed.js';
 import { history } from './history.js';
 import { savesFor } from './saves.js';
 import { geoFor, roundStarted, roundEnded } from './geo.js';
@@ -58,12 +58,12 @@ let slides=[],active=null,filter='all',lastId=null,io;
 // first time it's needed) throws an error carrying e.kitLoading: show a "loading" screen until it's in,
 // then make the game again.
 function bootGame(s){
-  try{s.game=s.def.make(s.api);s.game.reset();s.loading=false}
+  try{ownedBy(s,()=>{s.game=s.def.make(s.api);s.game.reset()});s.loading=false}
   catch(e){
     if(!e||!e.kitLoading)throw e;
     s.loading=true;
     s.game={reset(){},update(){},draw(c){const w=s.w||s.def.w,h=s.h||s.def.h;c.fillStyle='#111';c.fillRect(0,0,w,h);c.fillStyle='#bbb';c.font=`${Math.round(Math.min(w,h)/14)}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText('Loading…',w/2,h/2)}};
-    e.kitLoading.then(()=>{bootGame(s);s.dirty=true;renderOverlay(s)},err=>console.warn('kit failed to load',err));
+    e.kitLoading.then(()=>{if(s.dropped)return;bootGame(s);s.dirty=true;renderOverlay(s)},err=>console.warn('kit failed to load',err));
   }
 }
 function makeSlide(def){
@@ -250,7 +250,7 @@ function startGame(s){
   s.run={items:new Set()};
   for(const it of s.def.shop||[])if(it.kind==='unlock'?progress.owned(s.def.id,it)>0:progress.use(s.def.id,it))s.run.items.add(it.id);
   s.won=false;s.paid=0;s.trophies=[];progress.played(s.def.id);playstats.started(s.def.id);perf.started(s.def.id);
-  roundStarted(s.def.id);s.game.reset();s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
+  roundStarted(s.def.id);ownedBy(s,()=>s.game.reset());s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
   s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');s.startPerf=performance.now();renderOverlay(s);
   sfx(660,.08,'square',.04,300);
 }
@@ -275,7 +275,7 @@ function gameOver(s){
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function resetSlide(s){stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');ownedBy(s,()=>s.game.reset());s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
 function goPrev(s){
   const i=slides.indexOf(s);if(i<=0)return;
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
@@ -359,7 +359,15 @@ function pickDefs(n=6){
 // waiting in this cycle. The next few stay put: they're already downloading.
 function rerank(keep=0){if(queue.length<=keep+1)return;const head=queue.slice(0,keep);queue=head.concat(rankQueue(queue.slice(keep).filter(g=>!isHidden(g.id)),GAMES))}
 history.onChange((id,w)=>{if(w)rerank(3)});
-function paint(s){s.game.draw(s.ctx);if(s.def.era==='console'){s.ctx.save();consolePost(s.ctx,s.w||s.def.w,s.h||s.def.h);s.ctx.restore()}}
+// speed.offscreen tells the 3D kits this card isn't the one being played: draw it without taking the shared
+// 3D canvas or the frame-rate tuning away from the card on screen (src/kit/hd3d.js).
+const usesHD=d=>d.era==='nextgen'||d.era==='ar';
+function paint(s){
+  const off=s!==active;speed.offscreen=off;try{s.game.draw(s.ctx)}finally{speed.offscreen=false}
+  if(s.def.era==='console'){s.ctx.save();consolePost(s.ctx,s.w||s.def.w,s.h||s.def.h);s.ctx.restore()}
+  // the shared 3D canvas shown on the card being played just drew another card's frame: put its own back
+  if(off&&active&&usesHD(s.def)&&usesHD(active.def)&&!active.loading)paint(active);
+}
 // Always keep AHEAD games downloaded and ready below the one you're on, so swiping never waits.
 const AHEAD=5;
 // The fresh catalogue arrived after the feed started from the saved one. New games join this cycle.
@@ -371,7 +379,7 @@ function catalogueChanged(added,updated){
   const ids=new Set(updated.map(g=>g.id));
   queue=queue.filter(g=>!ids.has(g.id)||inPool(g));
   const i=active?slides.indexOf(active):-1;
-  for(const s of slides.slice(i+1))if(ids.has(s.def.id)){const g=GAMES.find(x=>x.id===s.def.id);io.unobserve(s.el);s.el.remove();slides.splice(slides.indexOf(s),1);if(g&&inPool(g))queue.unshift(g)}
+  for(const s of slides.slice(i+1))if(ids.has(s.def.id)){const g=GAMES.find(x=>x.id===s.def.id);dropSlide(s);slides.splice(slides.indexOf(s),1);if(g&&inPool(g))queue.unshift(g)}
   topUp();
 }
 function topUp(){const ahead=slides.length-1-(active?slides.indexOf(active):0);if(ahead<AHEAD)addBatch(AHEAD-ahead+1)}
@@ -439,13 +447,15 @@ function pruneBehind(){
   const top=()=>active.el.getBoundingClientRect().top-feed.getBoundingClientRect().top;
   if(touches||Math.abs(top())>1)return schedulePrune();   // still moving or under a finger: try again soon
   const before=top();
-  for(const s of slides.splice(0,n)){io.unobserve(s.el);try{s.game.dispose?.()}catch(_){}s.el.remove()}
+  for(const s of slides.splice(0,n))dropSlide(s);
   feed.scrollTop+=top()-before;   // undo the jump (some browsers already did, then this adds 0)
 }
 
+// A card leaves the feed for good: let the game tidy up, then free what its kits hold (physics worlds).
+function dropSlide(s){s.dropped=true;io.unobserve(s.el);try{s.game.dispose?.()}catch(_){}release(s);s.el.remove()}
 let built=0;
 function rebuild(){
-  built++;slides.forEach(s=>io.unobserve(s.el));feed.innerHTML='';slides=[];active=null;lastId=null;queue=[];feed.scrollTop=0;addBatch();if(slides[0])setActive(slides[0]);
+  built++;slides.forEach(dropSlide);feed.innerHTML='';slides=[];active=null;lastId=null;queue=[];feed.scrollTop=0;addBatch();if(slides[0])setActive(slides[0]);
 }
 
 let resizeAt=0;
@@ -453,16 +463,21 @@ io=new IntersectionObserver(es=>{if(performance.now()-resizeAt<500)return;for(co
 
 // Debug overlay for makers (src/debug.js): dev and test builds only, never in the store apps.
 const DBG=import.meta.env.MODE==='bundled'?makeDebug():null;
-let lastT=performance.now();
+let lastT=performance.now(),nextAt=0;
 function frame(now){
   requestAnimationFrame(frame);
   pollPads(padInput);
   tickHz(now);
   const s=active;
   // Frame rate per game and phone (src/kit/speed.js): on a 120 Hz screen a 60 fps game skips every
-  // other refresh, which saves battery and heat. A little slack so a slightly early refresh still counts.
-  const fps=s?fpsFor(s.def):60;
-  if(s&&now-lastT<1000/fps-2.5)return;
+  // other refresh, which saves battery and heat. Frames are due on a steady beat (nextAt), not a gap
+  // since the last one, so a 60 fps game on a 90 Hz screen alternates 1 and 2 refreshes and still
+  // averages 60 (a gap check would wait 2 every time: 45 fps). Slack: a slightly early refresh counts.
+  const fps=s?fpsFor(s.def):60,step=1000/fps;
+  if(s){
+    if(now<nextAt-.4*1000/screenHz())return;
+    nextAt=now-nextAt>step?now+step:nextAt+step;   // fell behind (hidden, a long frame): restart the beat
+  }
   let dt=Math.min(Math.max(.033,1.25/fps),(now-lastT)/1000);lastT=now;
   if(s){
     // one broken game must never stop the loop (that froze every game): end its round instead

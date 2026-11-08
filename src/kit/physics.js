@@ -21,6 +21,7 @@
 // so use phys.toWorld(x) / phys.toGame(m) to convert.
 
 import { lazy } from './lazy.js';
+import { own } from './cleanup.js';
 const engine = lazy('The physics engine', () => import('@dimforge/rapier2d-compat').then(async m => {
   const r = m.default?.init ? m.default : m;
   await r.init();
@@ -110,9 +111,17 @@ export class Physics {
     const g = typeof gravity === 'number' ? { x: 0, y: gravity } : gravity;
     this.world = new R.World({ x: (g.x || 0) / scale, y: (g.y || 0) / scale });
     this.events = new R.EventQueue(true);
+    own(this);   // freed when the card leaves the feed (src/kit/cleanup.js)
     this.things = []; this.joints = []; this.hits = []; this.time = 0;
     this.ground = this.world.createRigidBody(R.RigidBodyDesc.fixed());   // the world, for hinges "to nothing"
     if (walls) this.walls(...walls);
+  }
+  /** Free the physics engine's memory for this world. The app does this when the card leaves the
+   *  feed; a game can call it too, when it drops a world. Don't use the world afterwards. */
+  free() {
+    if (!this.world) return;
+    try { this.events.free(); } catch (_) { /* already gone */ }
+    this.world.free(); this.world = null;
   }
   toWorld(v) { return v / this.scale; }
   toGame(m) { return m * this.scale; }

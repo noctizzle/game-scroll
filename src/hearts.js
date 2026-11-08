@@ -13,23 +13,16 @@
 //
 // With no VITE_HEARTS_URL (dev and test builds, or before the backend is set up) nothing is sent.
 import { Capacitor } from '@capacitor/core';
-import { store } from './util.js';
+import { store, deviceId } from './util.js';
 import { nativePlugin } from './kit/services.js';
 
 export const HEARTS_URL = String(import.meta.env.VITE_HEARTS_URL || '').replace(/\/+$/, '');
-const COUNTS_KEY = 'gs_heart_counts', SENT_KEY = 'gs_heart_sent', QUEUE_KEY = 'gs_heart_queue', DEVICE_KEY = 'gs_device';
+const COUNTS_KEY = 'gs_heart_counts', SENT_KEY = 'gs_heart_sent', QUEUE_KEY = 'gs_heart_queue';
 const REFRESH_MS = 2 * 60 * 1000, FRESH_MS = 3 * 60 * 1000;
 const PASS_KEY = 'gs_api_pass', ATTEST_KEY = 'gs_appattest_key', PASS_RETRY_MS = 30 * 60 * 1000;
 
 /** This install's random anonymous id (shared with play stats, used only as a rate-limit key there). */
-export function deviceId() {
-  let id = store.get(DEVICE_KEY, null);
-  if (typeof id !== 'string' || !/^[A-Za-z0-9-]{16,64}$/.test(id)) {
-    id = globalThis.crypto?.randomUUID?.() || Array.from({ length: 32 }, () => (Math.random() * 16 | 0).toString(16)).join('');
-    store.set(DEVICE_KEY, id);
-  }
-  return id;
-}
+export { deviceId };
 
 let counts = store.get(COUNTS_KEY, {}) || {};   // game id -> count from the server
 let sent = store.get(SENT_KEY, {}) || {};       // game id -> true when the server has this device's heart
