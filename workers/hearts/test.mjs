@@ -160,6 +160,9 @@ async function fakeAssertion(leafKeys, challenge, counter, app = appId) {
   await rejects(verifyAttestation({ appId, keyId: b.keyId, attestation: a.attestation, challenge: ch, rootPem }), /key id/);
   ok('…or someone else\'s key id');
   await rejects(verifyAttestation({ appId: '', keyId: a.keyId, attestation: a.attestation, challenge: ch, rootPem }), /not set up/);
+  const used = await fakeAttestation(ca, ch, { counter: 3 });
+  await rejects(verifyAttestation({ appId, keyId: used.keyId, attestation: used.attestation, challenge: ch, rootPem }), /counter/);
+  ok('…or a key that has already been used (counter not zero)');
 
   const as1 = await fakeAssertion(a.leafKeys, 'ch2', 1);
   assert.equal(await verifyAssertion({ appId, publicKey: k.publicKey, lastCounter: 0, assertion: as1, challenge: 'ch2' }), 1);
@@ -195,6 +198,8 @@ async function fakeAssertion(leafKeys, challenge, counter, app = appId) {
   await verifyIntegrity({ saJson, token: 't', challenge: 'n1', fetchFn });
   ok('a Play-recognized app on a genuine device is accepted');
   await rejects(verifyIntegrity({ saJson, token: 't', challenge: 'n2', fetchFn }), /nonce/);
+  payload = { ...base('n1'), requestDetails: { ...base('n1').requestDetails, requestPackageName: 'com.someone.else' } };
+  await rejects(verifyIntegrity({ saJson, token: 't', challenge: 'n1', fetchFn }), /wrong package/);
   payload = { ...base('n1'), deviceIntegrity: { deviceRecognitionVerdict: [] } };
   await rejects(verifyIntegrity({ saJson, token: 't', challenge: 'n1', fetchFn }), /device/);
   payload = { ...base('n1'), appIntegrity: { appRecognitionVerdict: 'UNRECOGNIZED_VERSION' } };
@@ -318,7 +323,9 @@ await run({ ENFORCE: 'on' }, async url => {
   const s = await newSession(SECRET, A, 'ios');
   r = await post(url, '/heart', { device: A, game, on: true }, { Authorization: 'Bearer ' + s.token }); assert.equal(r.status, 200);
   r = await fetch(url + '/counts'); assert.equal(r.status, 200);
-  ok('with ENFORCE on, hearts need a pass for that device; counts stay public');
+  r = await post(url, '/score', { device: A, game, score: 10, secs: 30 }); assert.equal(r.status, 401, 'scores need a pass too');
+  r = await post(url, '/score', { device: A, game, score: 10, secs: 30 }, { Authorization: 'Bearer ' + wrong.token }); assert.equal(r.status, 401, '…for that device');
+  ok('with ENFORCE on, hearts and scores need a pass for that device; counts stay public');
 });
 
 console.log('hearts worker: all checks passed');

@@ -755,6 +755,10 @@ update(dt) { enemy.mind.act(see, dt); if (nearMiss) enemy.mind.feel(1); }
 Each mind has its own reaction time and its own choice (`enemy.mind.action`), so a whole squad can
 act in the same frame.
 
+`wave.unsure(see)` says how much the live minds disagree about what to do on those inputs (0 they
+all agree, towards 1 they don't). It's a cheap "not sure" signal: when it's high, let the teacher
+decide, hesitate, or show a tell the player can read.
+
 **Imagine: trying moves ahead.** For racing lines, throws and physics, `Imagine` tries each action a
 short way ahead with your own step function and picks the best: smart from the first second. Give
 it a brain and the brain learns from every plan, and the brain's skill dial and rules apply.
@@ -768,6 +772,43 @@ const plan = new gs.brains.Imagine({
 });
 const a = plan.pick(car);
 ```
+
+`Imagine` plans for at most `budget` ms (2), so a slow phone tries fewer moves. In a game that
+records replays or runs a daily seed, add `fixed: true`: it then always tries every move `tries`
+times and picks the same on every phone (`plan.tried` says how many rounds the last pick used).
+
+`auto: true` switches planning off on phones that can't afford it: at once on a low phone, or once
+picks average longer than `maxMs` (default: `budget`). `plan.on` says whether it's planning and
+`plan.why` why not. While it's off, `pick()` uses `fallback(state)`, or the brain (with `see`), so
+the game keeps working the same way, just less cleverly.
+
+**Predict: learning the player's habits.** For board, card, rhythm and turn games. It counts what the
+player did after their last move, last two and last three, and learns which of those to believe. A
+few dozen moves are enough to spot a habit; a player who really is random doesn't fool it into
+being sure.
+
+```js
+const habits = new gs.brains.Predict(api, { moves: ['rock', 'paper', 'scissors'] });
+// each time the player moves:
+habits.see('paper');
+// before the opponent moves:
+if (habits.sure > .5 && Math.random() < bot.skill) counter(habits.guess());
+// a hint: if (habits.right > .7) say('You always play paper after rock!')
+```
+
+`guess()` is the likely next move (null before any), `chances()` gives every move a chance, `sure`
+(0..1) is how sure it is and `right` how often it has been right lately. It keeps what it learned in
+the game's brain slot (`name`, default `'habits'`); `forget()` clears it. It only guesses: your game
+decides how often to use it, so keep it inside the same guard rails (counter a habit some of the
+time, less when the player is losing).
+
+**Built in (both on; `false` turns either off):**
+
+- `even`: even steps. Each number learns at a speed scaled to its own recent steps (like RMSprop),
+  so one `learn` speed suits any game's inputs, tiny or large.
+- `odds`: the brain learns the player's real chance of winning at each skill level from round
+  results, and moves the skill to where that chance is `target`, rather than only reacting after
+  losses. `bot.winChance(skill)` reads it. The losing-streak relief still applies on top.
 
 Brains are small (`inputs`, `hidden` and `actions` multiplied out stay under 1,200 numbers).
 
@@ -821,6 +862,10 @@ a mid-range phone, and fails it if:
 When a game is over budget it lists the functions that took the most time, with their file and
 line. Pull requests that change a game run it automatically.
 
+Shared CI machines vary, so the same code can land either side of the line. A game that is only a
+little over (up to 1.5 times the budget) is played twice more and judged on the middle run; the
+report shows all three times and their spread, so you can tell a real slowdown from a noisy machine.
+
 ## 2D cameras, tile levels and movement
 
 `const { Camera2D } = gs.camera2d, { TileMap } = gs.tiles, { Platformer, TopDown } = gs.movers;`
@@ -855,6 +900,15 @@ text with `shown`, `done`, `skip()` and `ticked` (for a blip sound). Your game d
 smoothly (`at(t)`) and packs to about 1 KB (`pack()`, `Ghost.unpack()`) to keep with `api.save()`:
 race your best run. `Recorder` / `Replayer` replay a whole round exactly, if the game takes its
 random numbers from `rec.rng`.
+
+**Same on every phone.** A replay (or a daily run that should play out alike for everyone) only
+holds if every step computes the same numbers. `+ - * /`, `Math.sqrt` and `Math.hypot` are exact in
+every engine, but `Math.sin`, `cos`, `tan`, `atan2`, `exp`, `log`, `pow` and `tanh` are not:
+`node scripts/math-probe.cjs` found the last bit differs on most inputs even between two versions of
+V8 (Node 22 and Chromium 153, 8 November 2026), and Android's web view updates itself, so phones
+won't agree either. Ghosts are safe (they store positions). For a whole-round replay, keep those
+functions out of anything that decides what happens (use them for drawing), use `Imagine` with
+`fixed: true`, and never time game logic with the clock.
 
 ## 2D lights and screen effects
 

@@ -439,7 +439,7 @@ console.log('physics ok');
 
 // Tiny Brains: copies its teacher, guard rails hold, waves and plans learn
 {
-  const { Brain, Net, Wave, Imagine } = await import('../src/kit/brains.js');
+  const { Brain, Net, Wave, Imagine, Predict } = await import('../src/kit/brains.js');
   const n = new Net([3, 5, 2], 7), s = n.pack(), m = Net.unpack(s);
   assert.equal(m.shape, '3x5x2'); assert.ok(Math.max(...n.w.map((v, i) => Math.abs(v - m.w[i]))) < .01, 'pack round trip');
   assert.equal(Net.unpack('tb1:3x5x2:1:AAAA'), null, 'wrong length refused');
@@ -489,7 +489,66 @@ console.log('physics ok');
   // Imagine: picks the move that gets to the goal
   const plan = new Imagine({ actions: ['left', 'stay', 'right'], step: (s, a, dt) => ({ x: s.x + (a - 1) * dt * 5 }), score: s => -Math.abs(s.x - 3) });
   assert.equal(plan.pick({ x: 0 }), 2); assert.equal(plan.action, 'right'); assert.equal(plan.pick({ x: 6 }), 0);
-  console.log('brains: copy, trust, drift, win rate, rules, limits, waves, plans ok');
+  // Imagine fixed: always every try, whatever the clock says
+  const slow = new Imagine({ actions: 3, tries: 4, budget: 0, fixed: true, step: (s, a, dt) => { const t = performance.now(); while (performance.now() - t < .05); return { x: s.x + (a - 1) * dt }; }, score: s => s.x });
+  slow.pick({ x: 0 }); assert.equal(slow.tried, 4, 'fixed plans try everything');
+  const quick = new Imagine({ actions: 3, tries: 4, budget: 0, step: slow.step, score: slow.score });
+  quick.pick({ x: 0 }); assert.ok(quick.tried < 4, 'budgeted plans stop early: ' + quick.tried);
+  // Imagine auto: a phone too slow for plans switches them off and uses the fallback
+  const heavy = new Imagine({ actions: ['a', 'b'], tries: 1, depth: 4, auto: true, maxMs: .01, fallback: () => 'b', step: (s) => { const t = performance.now(); while (performance.now() - t < .05); return s; }, score: () => 0 });
+  heavy.on = true; heavy.why = '';   // (Node counts as a low phone: no graphics chip)
+  for (let i = 0; i < 12; i++) heavy.pick({});
+  assert.ok(!heavy.on && heavy.why === 'too slow', 'auto switches off: ' + heavy.why);
+  assert.equal(heavy.pick({}), 1); assert.equal(heavy.action, 'b');
+  const light = new Imagine({ actions: 2, auto: true, step: s => s, score: () => 0 });
+  assert.equal(light.why, 'low phone', 'a low phone never plans'); light.on = true;
+  for (let i = 0; i < 12; i++) light.pick({});
+  assert.ok(light.on, 'cheap plans stay on');
+  // Wave.unsure: copies of one brain agree; very different minds don't
+  const ub = new Brain({ name: 'u', inputs: 2, actions: 3, share: false }), uw = new Wave(ub, { change: .001 });
+  const u1 = uw.mind(), u2 = uw.mind();
+  assert.ok(uw.unsure([.5, -.5]) < .01, 'near copies agree: ' + uw.unsure([.5, -.5]).toFixed(4));
+  const uw2 = new Wave(ub, { change: 3 }); for (let i = 0; i < 6; i++) uw2.mind();
+  assert.ok(uw2.unsure([1, -1]) > uw.unsure([1, -1]) + .05, 'far-apart minds disagree: ' + uw2.unsure([1, -1]).toFixed(3));
+  u1.done(); u2.done(); assert.equal(uw.unsure([0, 0]), 0, 'no live minds: sure');
+  // even steps: learns to copy a teacher whose inputs are tiny (fixed steps barely move)
+  const teach = see => (see[0] > 0 ? 1 : 0);
+  const fit = even => {
+    const eb = new Brain({ name: 'e' + even, inputs: 1, actions: 2, hidden: [4], teacher: teach, even, limits: { react: 0, perSecond: 1e3, minNoise: 0 }, share: false });
+    let q = 3; const rr = () => (q = (q * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 1500; i++) eb.act([(rr() * 2 - 1) * .02], 1 / 60);
+    let ok = 0; for (let i = 0; i < 200; i++) { const x = (rr() * 2 - 1) * .02, p = eb.net.run([x]); if ((p[1] > p[0]) === (x > 0)) ok++; }
+    assert.ok(eb.net.w.every(Number.isFinite), 'even steps stay finite');
+    return ok;
+  };
+  const plainFit = fit(false), evenFit = fit(true);
+  assert.ok(evenFit > 170 && evenFit > plainFit, `even steps learn small inputs: ${evenFit}/200 vs ${plainFit}/200`);
+  // odds: a player who wins 90% at low skill and 20% at high; the skill settles where they win ~60%
+  const ob = new Brain({ name: 'odds', inputs: 1, actions: 2, odds: true, share: false });
+  let q2 = 9; const r2 = () => (q2 = (q2 * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 300; i++) ob.result(r2() < .95 - ob.skill * .8);   // true chance .6 at skill ~.44
+  assert.ok(Math.abs(ob.winChance(.44) - .6) < .15 && ob.skill > .25 && ob.skill < .65, `odds: skill ${ob.skill.toFixed(2)}, chance at .44 ${ob.winChance(.44).toFixed(2)}`);
+  assert.ok(ob.winChance(.1) >= ob.winChance(.9), 'more skill never helps the player');
+  // Predict: spots a cycle, then a habit change; saves and restores
+  const pslots = new Map(), papi = { brains: { load: k => pslots.get(k) ?? null, save: (k, v) => pslots.set(k, v) } };
+  const pr = new Predict(papi, { moves: ['rock', 'paper', 'scissors'] });
+  assert.equal(pr.guess(), null); assert.equal(pr.sure, 0);
+  const cyc = ['rock', 'rock', 'paper', 'scissors'];
+  for (let i = 0; i < 60; i++) pr.see(cyc[i % 4]);
+  let hits = 0; for (let i = 60; i < 100; i++) { if (pr.guess() === cyc[i % 4]) hits++; pr.see(cyc[i % 4]); }
+  assert.ok(hits >= 36, 'learns a 4-move cycle: ' + hits + '/40');
+  assert.ok(pr.right > .8 && pr.sure > .4, `right ${pr.right.toFixed(2)}, sure ${pr.sure.toFixed(2)}`);
+  const ch = pr.chances(); assert.ok(Math.abs(ch[0] + ch[1] + ch[2] - 1) < 1e-9, 'chances add up to 1');
+  for (let i = 0; i < 40; i++) pr.see('paper');
+  assert.equal(pr.guess(), 'paper', 'follows a new habit');
+  pr.persist(); const pr2 = new Predict(papi, { moves: ['rock', 'paper', 'scissors'] });
+  assert.ok(pr2.seen === pr.seen && pr2.guess() === 'paper', 'habits restored from the slot');
+  assert.ok(pslots.get('habits').length < 400, 'small save: ' + pslots.get('habits').length);
+  pr2.forget(); assert.equal(pr2.guess(), null, 'forget clears');
+  let rnd = 0, pr3 = new Predict({ moves: 4, name: 'noise' }); let q3 = 5;
+  for (let i = 0; i < 400; i++) { const m = (q3 = (q3 * 16807) % 2147483647) % 4; if (i > 100 && pr3.guess() === m) rnd++; pr3.see(m); }
+  assert.ok(pr3.sure < .35 && rnd < 110, `random player: not fooled (sure ${pr3.sure.toFixed(2)}, ${rnd}/299 right)`);
+  console.log('brains: copy, trust, drift, win rate, rules, limits, waves, plans, fixed plans, unsure, even steps, odds, predict ok');
 }
 
 // ---- round 6 game kits
