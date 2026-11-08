@@ -11,7 +11,7 @@ import { OPEN_SOURCE } from '../src/licences.js';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const deps = Object.entries(pkg.dependencies || {}).filter(([, v]) => !String(v).startsWith('file:')).map(([k]) => k);
-const listed = new Map(OPEN_SOURCE.flatMap(e => e.packages.map(p => [p, e])));
+const listed = new Map(OPEN_SOURCE.flatMap(e => (e.packages || []).map(p => [p, e])));
 const bad = [];
 
 for (const d of deps) {
@@ -26,7 +26,8 @@ for (const d of deps) {
 for (const p of listed.keys())
   if (!deps.includes(p)) bad.push(`${p} is in src/licences.js but isn't a dependency any more: remove it`);
 for (const e of OPEN_SOURCE)
-  if (!e.name || !e.licence || !e.spdx || !e.packages?.length) bad.push(`src/licences.js: "${e.name || '?'}" needs name, licence, spdx and packages`);
+  if (!e.name || !e.licence || !e.spdx || !(e.packages?.length || e.vendored)) bad.push(`src/licences.js: "${e.name || '?'}" needs name, licence, spdx and packages (or vendored)`);
+  else if (e.vendored && !existsSync(join(ROOT, e.vendored))) bad.push(`src/licences.js: "${e.name}" says it's copied into ${e.vendored}, but that file is gone: remove the entry`);
 
 if (bad.length) { console.error('Open-source list is out of date:\n  ' + bad.join('\n  ')); process.exit(1); }
 console.log(`Open-source list OK: ${deps.length} packages in ${OPEN_SOURCE.length} entries.`);

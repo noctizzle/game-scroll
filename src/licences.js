@@ -3,6 +3,7 @@
 // plugins/), with the licence its package.json gives. scripts/licence-check.mjs checks this in every
 // pull request (`npm run licences`), so the list can't fall behind when a dependency is added.
 // spdx: the SPDX id the check compares with each package's own licence field.
+// vendored: for code copied into the repo instead of installed (the file it lives in).
 
 export const OPEN_SOURCE = [
   { name: 'three.js', for: '3D graphics', licence: 'MIT', spdx: 'MIT', packages: ['three'] },
@@ -16,11 +17,10 @@ export const OPEN_SOURCE = [
   { name: 'Yuka', for: 'game AI', licence: 'MIT', spdx: 'MIT', packages: ['yuka'] },
   { name: 'Recast Navigation', for: '3D path finding', licence: 'MIT', spdx: 'MIT', packages: ['recast-navigation'] },
   { name: 'Tone.js', for: 'music', licence: 'MIT', spdx: 'MIT', packages: ['tone'] },
-  { name: 'ZzFX', for: 'sound effects, by Frank Force', licence: 'MIT', spdx: 'MIT', packages: ['zzfx'] },
+  { name: 'ZzFX', for: 'sound effects, by Frank Force', licence: 'MIT', spdx: 'MIT', vendored: 'src/kit/zzfx.js' },
   { name: 'simplex-noise', for: 'noise for terrain and motion', licence: 'MIT', spdx: 'MIT', packages: ['simplex-noise'] },
   { name: 'troika-three-text', for: '3D text', licence: 'MIT', spdx: 'MIT', packages: ['troika-three-text'] },
   { name: 'three.quarks', for: '3D particle effects', licence: 'MIT', spdx: 'MIT', packages: ['three.quarks'] },
-  { name: 'postprocessing', for: '3D screen effects', licence: 'zlib', spdx: 'Zlib', packages: ['postprocessing'] },
   { name: 'Press Start 2P font', for: 'pixel text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/press-start-2p'] },
   { name: 'Rubik font', for: 'app text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/rubik'] },
 ];
