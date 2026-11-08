@@ -21,6 +21,7 @@
 
 import { lazy } from './lazy.js';
 import { Box3, Matrix4, Vector3 as V3, Quaternion } from 'three';
+import { own } from './cleanup.js';
 const engine = lazy('The 3D physics engine', () => import('@dimforge/rapier3d-compat').then(async m => {
   const r = m.default?.init ? m.default : m;
   await r.init();
@@ -126,7 +127,16 @@ export class World3D {
     this.gravity = typeof gravity === 'number' ? V(0, gravity, 0) : vec(gravity);
     this.world = new R.World(this.gravity);
     this.events = new R.EventQueue(true);
+    own(this);   // freed when the card leaves the feed (src/kit/cleanup.js)
     this.bodies = []; this.movers = []; this.hits = []; this.joints = [];
+  }
+  /** Free the physics engine's memory for this world. The app does this when the card leaves the
+   *  feed; a game can call it too, when it drops a world. Don't use the world afterwards. */
+  free() {
+    if (!this.world) return;
+    try { this.events.free(); } catch (_) { /* already gone */ }
+    for (const m of this.movers) if (m.ctl) try { this.world.removeCharacterController(m.ctl); } catch (_) { /* already gone */ }
+    this.world.free(); this.world = null;
   }
   make(mesh, desc, o, kind) {
     const D = o.fixed ? R.RigidBodyDesc.fixed() : o.moving ? R.RigidBodyDesc.kinematicPositionBased() : R.RigidBodyDesc.dynamic();

@@ -165,6 +165,8 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
         });
     }
 
+    private static final int APP_BACKGROUND = Color.parseColor("#0c0e12");
+
     private void teardown() {
         running = false;
         if (session != null) session.pause();
@@ -172,6 +174,10 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
             glView.onPause();
             if (glView.getParent() != null) ((ViewGroup) glView.getParent()).removeView(glView);
         }
+        // start() made the page see-through so the camera shows behind it: make it solid again
+        // (the app's background colour, capacitor.config.json backgroundColor).
+        WebView web = getBridge().getWebView();
+        if (web != null) web.setBackgroundColor(APP_BACKGROUND);
         textureSet = false;
         synchronized (pendingHits) {
             for (PluginCall c : pendingHits) c.resolve(noHits());

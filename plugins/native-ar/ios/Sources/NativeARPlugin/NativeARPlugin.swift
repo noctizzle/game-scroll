@@ -29,6 +29,7 @@ public class NativeARPlugin: CAPPlugin, CAPBridgedPlugin, ARSessionDelegate {
     private var frameNo = 0
     private var savedOpaque = true
     private var savedBackground: UIColor?
+    private var savedScrollBackground: UIColor?
 
     @objc func available(_ call: CAPPluginCall) {
         let ok = ARWorldTrackingConfiguration.isSupported
@@ -70,6 +71,7 @@ public class NativeARPlugin: CAPPlugin, CAPBridgedPlugin, ARSessionDelegate {
                 parent.insertSubview(view, belowSubview: web) // behind the page, which goes see-through
                 self.savedOpaque = web.isOpaque
                 self.savedBackground = web.backgroundColor
+                self.savedScrollBackground = web.scrollView.backgroundColor
             }
             web.isOpaque = false
             web.backgroundColor = .clear
@@ -96,6 +98,7 @@ public class NativeARPlugin: CAPPlugin, CAPBridgedPlugin, ARSessionDelegate {
             if let web = self.bridge?.webView {
                 web.isOpaque = self.savedOpaque
                 web.backgroundColor = self.savedBackground
+                web.scrollView.backgroundColor = self.savedScrollBackground
             }
             call.resolve()
         }

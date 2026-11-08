@@ -57,7 +57,7 @@ function make(api) {
   }
   const dur = () => Math.max(3, 4.6 - (speed - 1) * 1.6);
   const self = {
-    reset() { wins = 0; lives = 4; t = 0; speed = 1; order = []; last = -1; if (!unShake) unShake = onShake(() => { sense.shakes++; haptic('light'); }); next(); pt = -.6; },
+    reset() { stopMic(); sense.mic = null; wins = 0; lives = 4; t = 0; speed = 1; order = []; last = -1; if (!unShake) unShake = onShake(() => { sense.shakes++; haptic('light'); }); next(); pt = -.6; },
     resize(w, h) { W = w; H = h; if (cur && phase !== 'play') { s = { t: 0, sp: speed, win: false, lose: false }; cur.init(s); } },
     update(dt) {
       t += dt; pt += dt; sense.tapBurst = Math.max(0, sense.tapBurst - dt * 2.5);

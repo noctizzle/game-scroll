@@ -12,7 +12,9 @@
   --f-body:"Rubik", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme:dark;
 }
-html{height:100%;box-sizing:border-box;background:var(--ink)}
+/* Pinch-zoom stays allowed for menus and text (accessibility); manipulation only turns off double-tap zoom,
+   and game canvases set their own touch-action below. */
+html{height:100%;box-sizing:border-box;background:var(--ink);touch-action:manipulation}
 *,*::before,*::after{box-sizing:inherit}
 body{height:100%;margin:0;overflow:hidden;background:var(--ink);color:var(--text);font-family:var(--f-body);overscroll-behavior:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 #app{position:relative;height:100%}

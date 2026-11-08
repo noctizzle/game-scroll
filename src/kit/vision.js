@@ -30,13 +30,19 @@ export const loadVision = () => lib.load();
 
 /* one front camera stream, shared by Face and Hands */
 let cam = null, users = 0;
+let camAsk = null;
 async function frontCamera() {
   if (cam) return cam;
-  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 } }, audio: false });
-  const video = document.createElement('video'); video.playsInline = true; video.muted = true; video.srcObject = stream; await video.play();
-  cam = { video, stream }; return cam;
+  // two trackers starting at once share one request (and one stream)
+  return camAsk ||= (async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 } }, audio: false });
+      const video = document.createElement('video'); video.playsInline = true; video.muted = true; video.srcObject = stream; await video.play();
+      cam = { video, stream }; return cam;
+    } finally { camAsk = null; }
+  })();
 }
-function releaseCamera() { if (--users <= 0 && cam) { cam.stream.getTracks().forEach(t => t.stop()); cam = null; users = 0; } }
+function releaseCamera() { users = Math.max(0, users - 1); if (!users && cam) { cam.stream.getTracks().forEach(t => t.stop()); cam = null; } }
 const live = new Set();
 /** Stops every tracker (the app calls this when a round ends or the player leaves). */
 export function stopVision() { for (const t of [...live]) t.stop(); }
@@ -49,10 +55,16 @@ class Tracker {
     if (this.running) return this;
     this.running = true; live.add(this); users++;
     try {
-      const [c, task] = await Promise.all([frontCamera(), this.task ||= this.makeTask()]);
-      if (!this.running) return this;
+      const [c] = await Promise.all([frontCamera(), this.task ||= this.makeTask()]);
+      // stopped while the camera was being asked for: stop() already gave up our share, so close the
+      // camera now that it has arrived, unless another tracker is using it
+      if (!this.running) { if (!users && cam) { users = 1; releaseCamera(); } return this; }
       this.video = c.video; this.ready = true;
-    } catch (e) { this.failed = e; this.running = false; live.delete(this); releaseCamera(); }
+    } catch (e) {
+      this.failed = e;
+      if (this.running) { this.running = false; live.delete(this); releaseCamera(); }
+      else if (!users && cam) { users = 1; releaseCamera(); }
+    }
     return this;
   }
   async makeTask() {

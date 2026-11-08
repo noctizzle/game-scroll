@@ -6,18 +6,13 @@
 // kept per device (a "grow-only counter"): each device only ever raises its own numbers,
 // totals are the sum over devices, and merging two saves takes the max of each device's
 // numbers. Best scores take the max and trophies the union.
-import { store } from '../util.js';
+import { store, deviceId } from '../util.js';
 
 const KEY = 'gs_progress';
 const COUNTERS = ['wins', 'plays', 'bought', 'used'];
 const blankDev = () => ({ earned: 0, spent: 0, wins: {}, plays: {}, bought: {}, used: {} });
 const blank = () => ({ v: 1, bests: {}, trophies: {}, by: {}, updated: 0 });
 
-function deviceId() {
-  let id = store.get('gs_device', null);
-  if (!id) { id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36); store.set('gs_device', id); }
-  return id;
-}
 
 function load() {
   const p = Object.assign(blank(), store.get(KEY, null) || {});

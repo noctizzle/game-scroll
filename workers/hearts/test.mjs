@@ -209,6 +209,8 @@ await run({}, async url => {
   r = await post(url, '/heart', { device: A, game, on: true }); assert.equal((await r.json()).n, 1, 'same device twice counts once');
   r = await post(url, '/heart', { device: B, game, on: true }); assert.equal((await r.json()).n, 2);
   r = await post(url, '/heart', { device: A, game, on: false }); assert.equal((await r.json()).n, 1, 'un-heart takes it back');
+  r = await post(url, '/heart', { device: A, game, on: false }); assert.equal((await r.json()).n, 1, 'un-heart twice takes one back');
+  r = await post(url, '/heart', { device: A, game: game + '-new', on: false }); assert.equal((await r.json()).n, 0, 'never below zero');
   ok('hearts count once per device and can be taken back');
   r = await post(url, '/heart', { device: 'short', game, on: true }); assert.equal(r.status, 400);
   r = await post(url, '/heart', { device: A, game: 'Bad Id!', on: true }); assert.equal(r.status, 400);
@@ -244,9 +246,12 @@ await run({}, async url => {
   const { challenge } = await r.json();
   r = await post(url, '/session', { device: A, platform: 'android', challenge, token: 'x' }); assert.equal(r.status, 403);
   assert.match((await r.json()).reason, /not set up/);
-  r = await post(url, '/session', { device: A, platform: 'ios', challenge, keyId: 'AAAA', attestation: 'AAAA' }); assert.equal(r.status, 403);
+  r = await post(url, '/session', { device: B, platform: 'android', challenge, token: 'x' }); assert.equal(r.status, 400);
+  assert.match((await r.json()).error, /already used/, 'a challenge makes one pass at most');
+  r = await fetch(url + '/challenge', { headers: { 'CF-Connecting-IP': IP } });
+  r = await post(url, '/session', { device: A, platform: 'ios', challenge: (await r.json()).challenge, keyId: 'AAAA', attestation: 'AAAA' }); assert.equal(r.status, 403);
   r = await post(url, '/session', { device: A, platform: 'android', challenge: 'forged', token: 'x' }); assert.equal(r.status, 400);
-  ok('passes need a real challenge and a verified app');
+  ok('passes need a real, unused challenge and a verified app');
 
   r = await post(url, '/stats', { device: A, games: { [game]: { v: 2, p: 1, k: 1, s: 30 } } }); assert.equal(r.status, 200);
   r = await post(url, '/stats', { device: A, games: { [game]: { v: 1, p: 0, k: 1, s: 0 } } }); assert.equal(r.status, 200);

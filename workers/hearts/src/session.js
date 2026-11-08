@@ -24,6 +24,12 @@ export async function checkChallenge(secret, challenge, now = Date.now()) {
   return Number(new DataView(body.buffer, body.byteOffset + 16, 8).getBigUint64(0)) > now;
 }
 
+/** When a (genuine) challenge expires, in ms. */
+export function challengeExpiry(challenge) {
+  const raw = unb64(challenge);
+  return Number(new DataView(raw.buffer, raw.byteOffset + 16, 8).getBigUint64(0));
+}
+
 export async function newSession(secret, device, platform, now = Date.now()) {
   const body = b64u(enc.encode(JSON.stringify({ d: device, p: platform, e: now + SESSION_MS })));
   return { token: body + '.' + b64u(await hmac(secret, 's:' + body)), expires: now + SESSION_MS };

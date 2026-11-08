@@ -26,9 +26,9 @@ game, can only connect to these two hosts, so a game can't send data anywhere el
 
 ### Passes (app attestation)
 
-1. The app calls `GET /challenge` and gets a signed challenge, valid for 5 minutes.
+1. The app calls `GET /challenge` and gets a signed challenge, valid for 5 minutes. Each challenge makes one pass at most (spent ones are kept in `used_challenges` until they expire), so one genuine phone's proof can't be replayed for many device ids.
 2. The phone proves the app is genuine, using the native plugin call `integrity()` in `plugins/game-services`:
-   - **iOS, App Attest:** on first use the phone makes a Secure Enclave key and Apple attests it. After that, the phone signs each challenge with that key. The Worker checks Apple's certificate chain (root CA built in, and checked against apple.com in CI), the app id, the nonce, and a counter that must always go up.
+   - **iOS, App Attest:** on first use the phone makes a Secure Enclave key and Apple attests it. After that, the phone signs each challenge with that key. The Worker checks Apple's certificate chain (root CA built in, and checked against apple.com in CI), the app id, the nonce, a counter that must always go up, and that the key belongs to the device id asking (otherwise the app makes a new key).
    - **Android, Play Integrity:** Google issues a token for the challenge. The Worker has Google decode it, then checks the package name, the nonce, how fresh the token is, that the app was installed from Play (`PLAY_RECOGNIZED`), and that the device is genuine (`MEETS_DEVICE_INTEGRITY`).
 3. `POST /session` returns a pass valid for 24 hours. The app sends it with each heart as `Authorization: Bearer …`.
 

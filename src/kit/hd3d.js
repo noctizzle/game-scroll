@@ -479,8 +479,11 @@ export class HDView {
     const now = performance.now();
     // where the frame goes: straight onto the card (moving the 3D canvas here first, which bakes the
     // last frame into the card it leaves), or copied into c
-    const direct = HD.direct && !baking && !!c.canvas.parentNode && mount(r.domElement, c, this);
-    if (!baking) {
+    // A card being added below the one on screen (speed.offscreen) gets a copied frame: it mustn't take
+    // the 3D canvas, the quality tuning or a shader warm-up away from the game being played.
+    const off = !baking && speed.offscreen;
+    const direct = HD.direct && !baking && !off && !!c.canvas.parentNode && mount(r.domElement, c, this);
+    if (!baking && !off) {
       if (Q.game !== speed.game) startGame(speed.game);
       // adaptive quality: first resolution, then tier (and frame rate)
       const gap = now - (Q.lastT || now); Q.lastT = now; adapt(gap);
@@ -509,7 +512,7 @@ export class HDView {
     }
     for (const cs of this.contacts) cs.update(r, this.scene, T.contact);
     for (const p of this.parts) p.mat.uniforms.scale.value = ph / (2 * Math.tan(this.cam.fov * Math.PI / 360));
-    if (!baking) this.t += 1 / 60;
+    if (!baking && !off) this.t += 1 / 60;
     if (!this.clearBg) {
       const F = P.final; P.ao.enabled = T.ao; F.strength = this.bloom; F.scale = T.bloom; F.setFxaa(!T.msaa || ssr);
       F.final.uniforms.t.value = this.t % 10; F.final.uniforms.hurt.value = this.hurt;
@@ -521,7 +524,7 @@ export class HDView {
       cp.passes = [first, P.ao, ...ex, P.final];
       for (const p of ex) if (p.cw !== pw || p.ch !== ph) { p.setSize(pw, ph); p.cw = pw; p.ch = ph; }
     }
-    if (!this.warmed) this.warm();
+    if (!this.warmed && !off) this.warm();
     // shadows: redraw the maps only when a shadow caster or a shadow light moved (or the tier, view or map changed)
     this.scene.updateMatrixWorld();
     r.shadowMap.enabled = T.shadow > 0;
@@ -531,7 +534,7 @@ export class HDView {
     r.info.autoReset = false; r.info.reset();
     const mwa = this.scene.matrixWorldAutoUpdate; this.scene.matrixWorldAutoUpdate = false;   // already updated above
     try { cp.render(); } finally { this.scene.matrixWorldAutoUpdate = mwa; }
-    if (!baking) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = shadows; }
+    if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = shadows; }
     if (direct) { c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, c.canvas.width, c.canvas.height); c.restore(); return; }
     c.save(); c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
     if (baking) { c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'destination-over'; c.drawImage(cv, 0, 0, pw, ph, 0, 0, c.canvas.width, c.canvas.height); }

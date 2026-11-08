@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Game Scroll: the app's own plugins are found by Capacitor through annotations and reflection.
+# (Capacitor's rules already keep every Plugin subclass; this is belt and braces for ours.)
+-keep class com.gamescroll.** { *; }
+# Keep line numbers in native crash reports from Play Console.
+-keepattributes SourceFile,LineNumberTable

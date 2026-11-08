@@ -81,10 +81,10 @@ import * as look2d from './kit/look2d.js';
 import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
-// and the hooks the app uses to stop things between rounds.
+// the install's anonymous id, and the hooks the app uses to stop things between rounds.
 export const HIDDEN = {
   sound: ['sound', 'setSound', 'audio', 'stopMusic', 'pauseMusic', 'resumeMusic'],
-  util: ['store'],
+  util: ['store', 'deviceId'],
   device: ['location', 'hapticSettings', 'setHaptics'],
   moves: ['stopMoves'],
   pad: ['pollPads'],

@@ -13,3 +13,25 @@ export const stopAll = () => run('stop');
 export const pauseAll = () => run('pause');
 export const resumeAll = () => run('resume');
 export const registered = () => [...kits.keys()];
+
+// Owners: things a card made that hold memory outside JavaScript (a physics world lives in the
+// physics engine's WebAssembly memory). The app makes and resets each card's game inside
+// ownedBy(card, fn), and calls release(card) when the card leaves the feed, so those are freed at
+// once instead of whenever the garbage collector gets to them. Held weakly: anything the game
+// dropped earlier can still be collected as usual.
+let owner = null;
+const owned = new WeakMap();
+/** Run fn with `o` as the owner of whatever it makes. */
+export function ownedBy(o, fn) { const prev = owner; owner = o; try { return fn(); } finally { owner = prev; } }
+/** Kits call this for something that needs freeing: obj.free() runs when its owner is released. */
+export function own(obj) {
+  if (!owner) return;
+  let l = owned.get(owner); if (!l) owned.set(owner, l = []);
+  l.push(typeof WeakRef === 'function' ? new WeakRef(obj) : { deref: () => obj });
+}
+/** Free everything `o` owns. */
+export function release(o) {
+  const l = owned.get(o); if (!l) return;
+  owned.delete(o);
+  for (const r of l) { const x = r.deref(); if (x) try { x.free(); } catch (e) { console.warn('[cleanup] free', e); } }
+}

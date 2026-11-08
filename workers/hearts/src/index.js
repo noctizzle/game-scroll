@@ -1,7 +1,7 @@
 // Game Scroll API (Cloudflare Worker + D1): shared heart counts, protected by app attestation.
 //
 //   GET  /counts      -> { counts: { "<game id>": n, ... }, at }   cached ~60 s at the edge
-//   GET  /challenge   -> { challenge }                              single-use-ish, valid 5 min
+//   GET  /challenge   -> { challenge }                              single use, valid 5 min
 //   POST /session     body { device, platform: "ios"|"android", challenge, ... } -> { session, expires }
 //                     iOS:     first time { keyId, attestation }, later { keyId, assertion }  (App Attest)
 //                     Android: { token }                                                     (Play Integrity)
@@ -15,7 +15,7 @@
 // counts once per game. A "session" (pass) proves the app is genuine. With ENFORCE = "off" hearts
 // without a pass are still accepted, but under a much tighter per-address limit; with ENFORCE = "on"
 // they are refused. Only games in the live catalogue are accepted.
-import { newChallenge, checkChallenge, newSession, readSession } from './session.js';
+import { newChallenge, checkChallenge, challengeExpiry, newSession, readSession } from './session.js';
 import { verifyAttestation, verifyAssertion } from './appattest.js';
 import { verifyIntegrity } from './playintegrity.js';
 import { unb64, b64u } from './util.js';
@@ -99,7 +99,7 @@ async function challenge(env, req) {
   return json(req, { challenge: await newChallenge(env.SESSION_SECRET) }, 200, { 'Cache-Control': 'no-store' });
 }
 
-async function session(env, req) {
+async function session(env, ctx, req) {
   if (!env.SESSION_SECRET) return json(req, { error: 'attestation not set up' }, 503);
   if (await limited(env.LIMIT_SESSION, 's:' + ip(req))) return json(req, { error: 'slow down' }, 429);
   const b = await body(req, MAX_BODY['/session']);
@@ -107,6 +107,11 @@ async function session(env, req) {
   const { device, platform, challenge: ch } = b;
   if (typeof device !== 'string' || !DEVICE_RE.test(device)) return json(req, { error: 'bad device' }, 400);
   if (typeof ch !== 'string' || !(await checkChallenge(env.SESSION_SECRET, ch))) return json(req, { error: 'bad or expired challenge' }, 400);
+  // Each challenge makes at most one pass, so one genuine phone's proof can't be replayed for many
+  // made-up device ids. Spent even if the proof below fails; the app just asks for a new one.
+  const used = await env.DB.prepare('INSERT OR IGNORE INTO used_challenges (challenge, expires) VALUES (?1, ?2)').bind(ch, challengeExpiry(ch)).run();
+  if (!used.meta.changes) return json(req, { error: 'challenge already used' }, 400);
+  if (Math.random() < .05) ctx.waitUntil(env.DB.prepare('DELETE FROM used_challenges WHERE expires < ?1').bind(Date.now()).run());
   try {
     if (platform === 'ios') {
       if (typeof b.keyId !== 'string' || b.keyId.length > 100) return json(req, { error: 'bad keyId' }, 400);
@@ -118,8 +123,10 @@ async function session(env, req) {
           .bind(kid, k.publicKey, device, k.env, Date.now()).run();
         if (!r.meta.changes) return json(req, { error: 'key already attested' }, 409);
       } else if (typeof b.assertion === 'string') {
-        const row = await env.DB.prepare('SELECT public_key, counter FROM appattest_keys WHERE key_id = ?1').bind(kid).first();
+        const row = await env.DB.prepare('SELECT public_key, counter, device FROM appattest_keys WHERE key_id = ?1').bind(kid).first();
         if (!row) return json(req, { error: 'unknown key', reattest: true }, 404);
+        // A key belongs to the install that attested it: it can't sign passes for other device ids.
+        if (row.device !== device) return json(req, { error: 'key is for another device', reattest: true }, 403);
         const counter = await verifyAssertion({ appId: env.APPLE_APP_ID, publicKey: new Uint8Array(row.public_key), lastCounter: row.counter, assertion: b.assertion, challenge: ch });
         // Only move the counter forward, so two racing requests can't both reuse one value.
         const u = await env.DB.prepare('UPDATE appattest_keys SET counter = ?2 WHERE key_id = ?1 AND counter < ?2').bind(kid, counter).run();
@@ -266,11 +273,12 @@ async function heart(env, ctx, req) {
   const change = on
     ? env.DB.prepare('INSERT OR IGNORE INTO hearts (game, device, at) VALUES (?1, ?2, ?3)').bind(game, device, Date.now())
     : env.DB.prepare('DELETE FROM hearts WHERE game = ?1 AND device = ?2').bind(game, device);
-  // Recount from the hearts table (an index range on the primary key), so the total can't drift.
-  const recount = env.DB.prepare(
-    'INSERT INTO counts (game, n) SELECT ?1, COUNT(*) FROM hearts WHERE game = ?1 ' +
-    'ON CONFLICT(game) DO UPDATE SET n = excluded.n RETURNING n').bind(game);
-  const [, res] = await env.DB.batch([change, recount]);
+  // Move the total by the rows the change touched (changes() is 1 or 0, in the same transaction), so a
+  // tap costs one row read however many hearts the game has. A repeat tap changes nothing.
+  const bump = env.DB.prepare(
+    `INSERT INTO counts (game, n) VALUES (?1, MAX(0, ${on ? '' : '-'}changes())) ` +
+    `ON CONFLICT(game) DO UPDATE SET n = MAX(0, n ${on ? '+' : '-'} changes()) RETURNING n`).bind(game);
+  const [, res] = await env.DB.batch([change, bump]);
   // Drop this location's cached list so nearby players see the change soon (others within a minute).
   ctx.waitUntil(caches.default.delete(new Request(new URL('/counts', req.url).toString())));
   return json(req, { game, n: res.results[0]?.n ?? 0 });
@@ -284,7 +292,7 @@ export default {
     try {
       if (req.method === 'GET' && pathname === '/counts') return await counts(env, ctx, req);
       if (req.method === 'GET' && pathname === '/challenge') return await challenge(env, req);
-      if (req.method === 'POST' && pathname === '/session') return await session(env, req);
+      if (req.method === 'POST' && pathname === '/session') return await session(env, ctx, req);
       if (req.method === 'POST' && pathname === '/heart') return await heart(env, ctx, req);
       if (req.method === 'POST' && pathname === '/score') return await postScore(env, ctx, req);
       if (req.method === 'GET' && pathname === '/board') return await getBoard(env, req);
