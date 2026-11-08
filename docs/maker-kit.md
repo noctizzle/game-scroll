@@ -752,6 +752,9 @@ update(dt) { enemy.mind.act(see, dt); if (nearMiss) enemy.mind.feel(1); }
 // when the enemy is destroyed or leaves: enemy.mind.done();
 ```
 
+Each mind has its own reaction time and its own choice (`enemy.mind.action`), so a whole squad can
+act in the same frame.
+
 **Imagine: trying moves ahead.** For racing lines, throws and physics, `Imagine` tries each action a
 short way ahead with your own step function and picks the best: smart from the first second. Give
 it a brain and the brain learns from every plan, and the brain's skill dial and rules apply.
