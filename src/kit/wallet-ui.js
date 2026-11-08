@@ -1,6 +1,6 @@
 // Credits pill in the top bar, the trophies panel it opens, win/trophy toasts, and the
 // per-game shop shown on a game's start and game-over screens.
-import { progress } from './progress.js';
+import { progress, fairPrice } from './progress.js';
 import { TROPHIES, checkTrophies } from './trophies.js';
 import { services } from './services.js';
 import { fmt } from '../util.js';
@@ -51,8 +51,9 @@ export function toast(slideEl, text, kind = '') {
 
 /** Shop chips for a game's overlay (empty when the game has no shop). */
 export function shopHTML(def) {
-  if (!def.shop || !def.shop.length) return '';
-  const chips = def.shop.map(it => {
+  const items = (Array.isArray(def.shop) ? def.shop : []).filter(it => it && fairPrice(it.price));   // a bad price can't be bought, so isn't shown
+  if (!items.length) return '';
+  const chips = items.map(it => {
     const n = progress.owned(def.id, it), unlock = it.kind === 'unlock';
     const state = unlock ? (n > 0 ? 'Owned' : `◆${it.price}`) : (n > 0 ? `×${n} ready · ◆${it.price}` : `◆${it.price}`);
     const poor = !(unlock && n > 0) && progress.credits < it.price;

@@ -35,8 +35,9 @@ There is a friendlier walkthrough at **https://game-scroll.com/make/**. This gui
   Saving, sound, haptics and sensors all go through the shared kit and `api.save()`: a game never
   touches `localStorage`, `fetch`, Capacitor or other windows itself, and imports only
   `gs` (`import gs from '../gamescroll.js'`, see [the maker kit guide](docs/maker-kit.md#what-gs-has-and-what-it-doesnt)).
-  `node scripts/game-lint.mjs my-game` flags any line that breaks this, and the app blocks network
-  calls to anywhere but our own servers anyway.
+  `node scripts/game-lint.mjs my-game` flags any line that breaks this (and `window`, `navigator`,
+  `document` other than `document.createElement('canvas')`, `.constructor` and changes to built-ins
+  like `Array.prototype`), and the app blocks network calls to anywhere but our own servers anyway.
 - **Touch first.** Every game must be fully playable with touch alone. Phone sensors are welcome as
   long as there is a touch fallback (see [below](#sound-haptics-and-phone-sensors)).
 - **Family friendly.** Cartoon action is fine. No gore, hateful content, gambling with real money,
@@ -388,11 +389,11 @@ Winning any game pays credits (`goal` is required for this). Optionally a game c
 buy with credits, have its own leaderboard, or pay more per win:
 
 ```js
-reward: 10,   // credits per win, first win pays double
+reward: 10,   // credits per win (0 to 50), first win pays double
 shop: [
   { id: 'shield', name: 'Shield', price: 25, kind: 'boost', desc: 'Survive one crash.' },   // used up on the next run
   { id: 'gold', name: 'Gold Skin', price: 150, kind: 'unlock', desc: 'Forever gold.' },      // kept forever
-],
+],   // prices are whole numbers of credits, 1 or more
 // in your game: if (api.has('shield')) { ... }
 ```
 

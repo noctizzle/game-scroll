@@ -43,6 +43,13 @@ const totalOf = (f, k) => Object.values(P.by).reduce((a, d) => a + ((d[f] || {})
 const keysOf = f => { const s = new Set(); for (const d of Object.values(P.by)) for (const k in d[f] || {}) if (d[f][k] > 0) s.add(k); return s; };
 const bump = (f, k, n = 1) => { const m = mine()[f]; m[k] = (m[k] || 0) + n; };
 const itemKey = (gameId, itemId) => gameId + '/' + itemId;
+/** Most credits one win pays (before the first-win double). Games set their own reward up to this. */
+export const MAX_REWARD = 50;
+/** Shop prices must be whole numbers from 1 to MAX_PRICE. */
+export const MAX_PRICE = 100000;
+/** A game's reward as paid: a whole number in 0..MAX_REWARD (10 when the game sets none). */
+export const rewardOf = r => Math.max(0, Math.min(MAX_REWARD, Math.floor(Number(r ?? 10)) || 0));
+export const fairPrice = p => Number.isInteger(p) && p >= 1 && p <= MAX_PRICE;
 
 export const progress = {
   get state() { return P; },
@@ -63,6 +70,9 @@ export const progress = {
   score(id, n) { if (n <= (P.bests[id] || 0)) return false; P.bests[id] = n; changed(); return true; },
   /** Records a win and pays credits: the game's reward, doubled the first time it is won. */
   win(id, reward) {
+    // reward comes from the game's own definition: keep it a whole number in 0..MAX_REWARD, so a game
+    // can't pay itself a fortune, take credits away (negative) or break the total ('10' + 10)
+    reward = rewardOf(reward);
     const first = this.wins(id) === 0, paid = reward * (first ? 2 : 1);
     bump('wins', id); mine().earned += paid; changed();
     return { paid, first };
@@ -71,7 +81,7 @@ export const progress = {
   /** How many of an item the player has ready: a count for boosts, 1 or 0 for unlocks. */
   owned(gameId, item) { const k = itemKey(gameId, item.id); return totalOf('bought', k) - totalOf('used', k); },
   buy(gameId, item) {
-    if (this.credits < item.price) return false;
+    if (!fairPrice(item?.price) || this.credits < item.price) return false;   // a free or negative price would hand out credits
     if (item.kind === 'unlock' && this.owned(gameId, item) > 0) return false;
     bump('bought', itemKey(gameId, item.id)); mine().spent += item.price; changed();
     return true;

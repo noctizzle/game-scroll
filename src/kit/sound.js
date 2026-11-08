@@ -238,10 +238,9 @@ if (typeof document !== 'undefined') document.addEventListener?.('visibilitychan
 //   ears.tone(440, enemy.pos, { len: .2 });  ears.noise(.4, barrel.pos);  ears.zzfx(gun.pos, ...numbers);
 //   engine = ears.loop(car.pos, 'sawtooth', 80);  engine.move(car.pos).pitch(80 + speed * 6);  engine.stop();
 const P3 = p => ({ x: p?.x || 0, y: p?.z == null ? 0 : (p.y || 0), z: p?.z == null ? (p?.y || 0) : p.z });
-const ears = new Set();
 export class Ears {
   /** ref: distance at full volume; max: past this it doesn't get quieter; rolloff: how fast it falls; hrtf: false for plain stereo (cheaper). */
-  constructor({ ref = 2, max = 60, rolloff = 1, hrtf = true, flat = false } = {}) { Object.assign(this, { ref, max, rolloff, hrtf, flat }); this.pos = { x: 0, y: 0, z: 0 }; ears.add(this); }
+  constructor({ ref = 2, max = 60, rolloff = 1, hrtf = true, flat = false } = {}) { Object.assign(this, { ref, max, rolloff, hrtf, flat }); this.pos = { x: 0, y: 0, z: 0 }; }
   /** Where the listener is and which way it faces (forward and up are directions; up defaults to +y). */
   place(pos, forward = { x: 0, y: 0, z: -1 }, up = { x: 0, y: 1, z: 0 }) {
     const a = audio(); if (!a) return this;

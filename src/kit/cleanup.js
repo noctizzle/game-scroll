@@ -31,6 +31,17 @@ export function own(obj) {
   let l = owned.get(owner); if (!l) owned.set(owner, l = []);
   l.push(typeof WeakRef === 'function' ? new WeakRef(obj) : { deref: () => obj });
 }
+/**
+ * Kits call this for something to undo when the card being made leaves the feed (a sensor
+ * subscription, a listener). Unlike own(), fn is held until then. Returns fn, or null outside make()
+ * / reset(), when there is no card to tie it to.
+ */
+export function onRelease(fn) {
+  if (!owner) return null;
+  let l = owned.get(owner); if (!l) owned.set(owner, l = []);
+  const ref = { free: fn }; l.push({ deref: () => ref });
+  return fn;
+}
 /** Free everything `o` owns. */
 export function release(o) {
   const l = owned.get(o); if (!l) return;

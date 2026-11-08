@@ -72,6 +72,13 @@ const Z = new Vector3(0, 0, 1), Y = new Vector3(0, 1, 0), Q1 = new Quaternion(-M
 const eu = new Euler(), q0 = new Quaternion(), qd = new Quaternion(), qy = new Quaternion(), tmp = new Vector3();
 const mA = new Matrix4(), mB = new Matrix4(), mC = new Matrix4(), sc = new Vector3(), ray = new Raycaster(), floorPl = new Plane(new Vector3(0, 1, 0), -FLOOR), v2 = new Vector2();
 const GOOD = { TRACKING: 1, LIMITED: 1 };
+// One listener for every AR view, held weakly: a listener per view kept each dropped card's whole
+// scene in memory for the rest of the session.
+const views = new Set();
+if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return;
+  for (const r of views) { const v = r.deref(); if (!v) views.delete(r); else try { v.off(); } catch (_) { /* best effort */ } }
+});
 // a fresh native-AR state: the latest pose and projection, and how native space maps to game space
 // How far below the phone the floor can be: standing or sitting, never a table top right under it.
 const FLOOR_MIN = .75, FLOOR_MAX = 2.3;
@@ -103,7 +110,7 @@ export class ARView extends HDView {
     this.lightCv = null; this.lightN = 0; this.lum = .45; this.tint = [1, 1, 1];
     this.camState = 'off'; this.camera = null; this.yaw0 = null; this.yaw = 0; this.pitch = 0; this.sensor = false;
     this.camQ = new Quaternion(); this.nat = null; this.rect = null;
-    document.addEventListener('visibilitychange', () => { if (document.hidden) this.off(); });
+    views.add(new WeakRef(this));   // camera off when the app hides (one listener for all views, below)
   }
   /** Let a game react to quality changes (the kit already handles the sun's shadows). */
   onTier(fn) { this.gameTier = fn; return this; }

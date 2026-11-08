@@ -12,16 +12,17 @@ export class StillLoading extends Error {
   constructor(name, promise) { super(`${name} is still loading`); this.name = 'StillLoading'; this.kitLoading = promise; }
 }
 
+// A load that fails (offline, a file that didn't arrive) rejects the promise the app is waiting on,
+// so the card can say so and offer another go; the next get() then starts a fresh load.
 export function lazy(name, loader) {
-  let value, promise = null, failed = null;
-  const load = () => promise ||= Promise.resolve().then(loader).then(v => (value = v), e => { failed = e; promise = null; throw e; });
+  let value, promise = null;
+  const load = () => promise ||= Promise.resolve().then(loader).then(v => (value = v), e => { promise = null; throw e; });
   return {
     name,
     load,
     get ready() { return value !== undefined; },
     get() {
       if (value !== undefined) return value;
-      if (failed && !promise) { const e = failed; failed = null; throw e; }
       throw new StillLoading(name, load());
     },
   };

@@ -5,7 +5,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { store } from '../util.js';
-import { register } from './cleanup.js';
+import { register, onRelease } from './cleanup.js';
 
 const native = Capacitor.isNativePlatform();
 
@@ -163,9 +163,12 @@ const motionCbs = new Set();
  * { gx, gy, gz (m/s² with gravity), ax, ay, az (without gravity, or null), ra, rb, rg (rotation,
  * degrees/s about the phone's z, x and y axes), dt, t }. Returns an unsubscribe function.
  */
-export function onMotion(cb) { want('motion'); motionCbs.add(cb); need(); return () => motionCbs.delete(cb); }
+export function onMotion(cb) { want('motion'); motionCbs.add(cb); need(); return untilLeft(() => motionCbs.delete(cb)); }
 /** Subscribe to shakes; returns an unsubscribe function. */
-export function onShake(cb) { shakeCbs.add(cb); need(); return () => shakeCbs.delete(cb); }
+export function onShake(cb) { shakeCbs.add(cb); need(); return untilLeft(() => shakeCbs.delete(cb)); }
+// A subscription made in make() / reset() ends when its card leaves the feed, so a game that never
+// unsubscribes doesn't keep the sensors on (and itself in memory) for the rest of the session.
+function untilLeft(off) { onRelease(off); return off; }
 /** Raw phone orientation for AR (src/kit/ar3d.js): { alpha, beta, gamma } in degrees plus the screen
  *  rotation, or null when there is no live gyro reading. abs: true when it's compass-locked (no drift). */
 export function orientation() {

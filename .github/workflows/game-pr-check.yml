@@ -71,6 +71,12 @@ jobs:
           IDS: ${{ steps.changed.outputs.ids }}
         run: node scripts/smoke.cjs $IDS
 
+      - name: Streamed test (runs the games the way the store apps do)
+        if: steps.changed.outputs.ids != ''
+        env:
+          IDS: ${{ steps.changed.outputs.ids }}
+        run: node scripts/stream-smoke.mjs $IDS
+
       - name: Fold test
         if: steps.changed.outputs.ids != ''
         env:

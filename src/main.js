@@ -14,7 +14,7 @@ import { live } from './feedsignals.js';
 const rankQueue=(pool,all)=>rank(pool,all,live);
 import { openMyGames } from './mygames.js';
 import { post as consolePost } from './kit/gfx.js';
-import { progress } from './kit/progress.js';
+import { progress, rewardOf } from './kit/progress.js';
 import { checkTrophies } from './kit/trophies.js';
 import { services } from './kit/services.js';
 import { initWallet, toast, shopHTML, bindShop } from './kit/wallet-ui.js';
@@ -59,16 +59,25 @@ let slides=[],active=null,filter='all',lastId=null,io;
 
 // Makes the game. A game whose kit is still loading (the physics engine is a few MB, so it loads the
 // first time it's needed) throws an error carrying e.kitLoading: show a "loading" screen until it's in,
-// then make the game again.
+// then make the game again. A kit that fails to load, or a game that throws while it's being made or
+// reset, must not take the feed with it: its card says so and a tap tries again.
+const stubGame=(s,msg)=>({reset(){},update(){},draw(c){const w=s.w||s.def.w,h=s.h||s.def.h;c.fillStyle='#111';c.fillRect(0,0,w,h);c.fillStyle='#bbb';c.font=`${Math.round(Math.min(w,h)/14)}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(msg,w/2,h/2)}});
 function bootGame(s){
+  s.failed=null;
   try{ownedBy(s,()=>{s.game=s.def.make(s.api);s.game.reset()});s.loading=false}
   catch(e){
-    if(!e||!e.kitLoading)throw e;
-    s.loading=true;
-    s.game={reset(){},update(){},draw(c){const w=s.w||s.def.w,h=s.h||s.def.h;c.fillStyle='#111';c.fillRect(0,0,w,h);c.fillStyle='#bbb';c.font=`${Math.round(Math.min(w,h)/14)}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText('Loading…',w/2,h/2)}};
-    e.kitLoading.then(()=>{if(s.dropped)return;bootGame(s);s.dirty=true;renderOverlay(s)},err=>console.warn('kit failed to load',err));
+    if(e&&e.kitLoading){
+      s.loading=true;s.game=stubGame(s,'Loading…');
+      e.kitLoading.then(()=>{if(s.dropped)return;bootGame(s);s.dirty=true;renderOverlay(s)},err=>{if(s.dropped)return;console.warn('kit failed to load',err);broken(s,'Couldn\u2019t load this game. Check the connection and try again.')});
+      return;
+    }
+    gameFault(s,e);
   }
 }
+function gameFault(s,e){console.error(s.def.id,e);perf.error(e,s.def.id);broken(s,'This game hit a problem.')}
+function broken(s,why){if(s.state==='playing')try{gameOver(s)}catch(_){}try{s.game?.dispose?.()}catch(_){}release(s);s.loading=true;s.failed=why;s.game=stubGame(s,'Tap to try again');s.dirty=true;if(s.state!=='ready'){s.state='ready';s.el.classList.remove('playing','over');feed.classList.remove('locked')}renderOverlay(s)}
+// A new round: false (and the card shows the problem) if the game threw.
+function resetGame(s){try{ownedBy(s,()=>s.game.reset());return true}catch(e){gameFault(s,e);return false}}
 function makeSlide(def){
   const el=document.createElement('section');el.className='slide '+(def.retro?'retro':'modern')+(def.era==='console'?' console':def.era==='nextgen'?' console nextgen':def.era==='ar'?' console nextgen ar':'');
   if(def.retro){const p=PAL[def.pal||'moss'];p.forEach((c,i)=>el.style.setProperty('--lcd'+i,c));el.style.setProperty('--shell',SHELL[def.pal||'moss']);}el.setAttribute('aria-label',def.title);
@@ -161,6 +170,7 @@ const sensorNote=d=>{const u=(d.uses||[]).filter(k=>SENSOR_WORDS[k]);if(!u.lengt
 const locNote=d=>d.location?`<div class="ov-loc">📍 Uses your ${d.location==='precise'?'location to walk around':'rough area (about 1 km)'}. It stays on your phone, and you can say no.</div>`:'';
 function renderOverlay(s){
   const d=s.def,cue='<div class="swipe-cue">Swipe up for the next game</div>';
+  if(s.failed){s.overlay.innerHTML=`<div class="ov-k">Oops</div><div class="ov-title">${d.title}</div><div class="ov-hint">${s.failed}</div><button class="play">Try again</button>${cue}`;s.overlay.hidden=false;return}
   if(s.state==='ready'){
     if(d.uses?.includes('motion'))want('motion');
     s.overlay.innerHTML=`<div class="ov-k">${d.era==='nextgen'||d.era==='ar'?'Ready':d.retro?'Insert coin':'Tap to start'}</div><div class="ov-title">${d.title}</div><div class="ov-hint">${d.hint}</div>${goalHTML(d)}${locNote(d)}${sensorNote(d)}<button class="play">${d.retro?'PRESS START':'Play'}</button>${shopHTML(d)}${cue}`;
@@ -179,7 +189,7 @@ function renderOverlay(s){
 
 function goalHTML(d){
   if(!d.goal)return'';
-  const w=progress.wins(d.id),r=d.reward||10;
+  const w=progress.wins(d.id),r=rewardOf(d.reward);
   return d.retro?`<div class="ov-goal">Win at ${d.goal} · <b>+${w?r:r*2}</b> credits</div>`
     :`<div class="ov-goal">Score ${d.goal} to win <b>◆${w?r:r*2}</b>${w?'':' (first win pays double)'}</div>`;
 }
@@ -215,13 +225,19 @@ function clearPause(s){s.paused=false;s.pauseWhy=null;const el=s.screen.querySel
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&active)pauseGame(active,'away')});
 
 function startGame(s){
-  if(active!==s||s.loading)return;
+  if(active!==s)return;
+  if(s.failed){bootGame(s);s.dirty=true;renderOverlay(s);return}   // the card's "Try again"
+  if(s.loading)return;
   clearPause(s);
   // Boosts the player owns for this game are used up on this run; unlocks stay on.
-  s.run={items:new Set()};
-  for(const it of s.def.shop||[])if(it.kind==='unlock'?progress.owned(s.def.id,it)>0:progress.use(s.def.id,it))s.run.items.add(it.id);
-  s.won=false;s.paid=0;s.trophies=[];progress.played(s.def.id);playstats.started(s.def.id);perf.started(s.def.id);
-  roundStarted(s.def.id);ownedBy(s,()=>s.game.reset());s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
+  // (taken only once the round has started cleanly, so a game that fails to reset costs nothing)
+  const ready=(Array.isArray(s.def.shop)?s.def.shop:[]).filter(it=>it&&progress.owned(s.def.id,it)>0);
+  s.run={items:new Set(ready.map(it=>it.id))};
+  s.won=false;s.paid=0;s.trophies=[];
+  roundStarted(s.def.id);   // before reset(): a location game may ask where the player is there
+  if(!resetGame(s)){roundEnded(s.def.id);return}
+  for(const it of ready)if(it.kind!=='unlock')progress.use(s.def.id,it);
+  progress.played(s.def.id);playstats.started(s.def.id);perf.started(s.def.id);s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
   s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');s.startPerf=performance.now();renderOverlay(s);
   sfx(660,.08,'square',.04,300);
 }
@@ -229,7 +245,7 @@ function startGame(s){
 // api.win()). It pays credits once per run and the game carries on.
 function win(s){
   if(s.won||s.state!=='playing')return;
-  const r=progress.win(s.def.id,s.def.reward||10);
+  const r=progress.win(s.def.id,s.def.reward);
   s.won=r.first?'first':'yes';s.paid=r.paid;
   toast(s.el,`WIN +${r.paid} CREDITS`,'win');haptic('success');sfx(880,.12,'triangle',.06,440);
   awardTrophies(s);
@@ -246,7 +262,7 @@ function gameOver(s){
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');ownedBy(s,()=>s.game.reset());s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function resetSlide(s){stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.score=0;s.scoreEl.textContent='0';if(resetGame(s))renderOverlay(s);s.dirty=true}
 function goPrev(s){
   const i=slides.indexOf(s);if(i<=0)return;
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
@@ -334,7 +350,9 @@ history.onChange((id,w)=>{if(w)rerank(3)});
 // 3D canvas or the frame-rate tuning away from the card on screen (src/kit/hd3d.js).
 const usesHD=d=>d.era==='nextgen'||d.era==='ar';
 function paint(s){
-  const off=s!==active;speed.offscreen=off;try{s.game.draw(s.ctx)}finally{speed.offscreen=false}
+  // a game that throws while drawing shows its problem card instead (painting new cards for the feed
+  // must never stop at one broken game)
+  const off=s!==active;speed.offscreen=off;try{s.game.draw(s.ctx)}catch(e){speed.offscreen=false;gameFault(s,e);try{s.game.draw(s.ctx)}catch(_){}return}finally{speed.offscreen=false}
   if(s.def.era==='console'){s.ctx.save();consolePost(s.ctx,s.w||s.def.w,s.h||s.def.h);s.ctx.restore()}
   // the shared 3D canvas shown on the card being played just drew another card's frame: put its own back
   if(off&&active&&usesHD(s.def)&&usesHD(active.def)&&!active.loading)paint(active);
@@ -599,5 +617,6 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 // And every 5 minutes while the app is open, so newly published games join the feed without a restart.
 if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refresh()},5*60*1000);
 
-// Test hook used by scripts/smoke.cjs
-window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',only(id){filter='id:'+id;rebuild()}};
+// Test hook used by scripts/smoke.cjs and the other browser tests: dev and test builds, and any build
+// driven by a test browser. Never in the store apps, where a game could use it to reach the wallet.
+if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',only(id){filter='id:'+id;rebuild()}};
