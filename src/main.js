@@ -30,7 +30,7 @@ import { speed, fpsFor, tick as tickHz } from './kit/speed.js';
 import { history } from './history.js';
 import { savesFor } from './saves.js';
 import { geoFor, roundStarted, roundEnded } from './geo.js';
-import { stopMusic } from './kit/sound.js';
+import { stopMusic, pauseMusic, resumeMusic } from './kit/sound.js';
 import { makeDebug } from './debug.js';
 import { shareGame, onSharedGame } from './share.js';
 import BUNDLED from 'virtual:bundled-games';
@@ -116,8 +116,8 @@ function openInfo(s){
   const d=s.def;
   if(!infoDlg){infoDlg=document.createElement('dialog');infoDlg.className='info';document.body.appendChild(infoDlg);
     infoDlg.addEventListener('click',e=>{if(e.target===infoDlg)infoDlg.close()});
-    infoDlg.addEventListener('close',()=>{const t=infoDlg._s;if(t){t.paused=false;lastT=performance.now();perf.gap()}})}
-  infoDlg._s=s;if(s.state==='playing')s.paused=true;
+    infoDlg.addEventListener('close',()=>{const t=infoDlg._s;if(t&&t.pauseWhy==='info')resumeGame(t)})}
+  infoDlg._s=s;pauseGame(s,'info');
   const kind=d.era==='console'?'Classic · Console game':d.era==='nextgen'?'Next Gen · Console game':d.era==='ar'?'AR 3D game: uses your camera and motion sensor':d.era==='advance'?'Advance-style pocket game':d.era==='color'?'Colour pocket game':d.retro?'Dot-matrix pocket game':'Phone game';
   infoDlg.innerHTML=`<div class="info-card"><button class="info-x" aria-label="Close">✕</button>
     <span class="tag">${d.tag}</span><h2>${d.title}</h2><div class="info-by">Created by <b>${creatorOf(d)}</b></div><div class="info-k">${kind}</div>
@@ -156,8 +156,35 @@ function goalHTML(d){
     :`<div class="ov-goal">Score ${d.goal} to win <b>◆${w?r:r*2}</b>${w?'':' (first win pays double)'}</div>`;
 }
 
+// Pause and resume. A round pauses when the app goes to the background (a call, the home button,
+// another app), while the How to play card is open, or on Escape / a controller's Start button. The
+// game hears about it through its optional pause() / resume() hooks (stop timers, the mic...), music
+// holds where it is, and the player taps "Carry on" to continue (the card resumes by itself on close).
+function pauseGame(s,why='away'){
+  if(!s||s.state!=='playing'||s.paused)return;
+  s.paused=true;s.pauseWhy=why;pauseMusic();
+  try{s.game.pause?.()}catch(e){console.error(s.def.id,e)}
+  if(why!=='info'){
+    let el=s.screen.querySelector('.pause-ov');
+    if(!el){el=document.createElement('div');el.className='overlay pause-ov';s.screen.appendChild(el);el.onclick=e=>{e.stopPropagation();resumeGame(s)}}
+    el.innerHTML=`<div class="ov-k">Paused</div><div class="ov-title">${s.def.title}</div><button class="play">${s.def.retro?'CONTINUE':'Carry on'}</button>`;
+    el.hidden=false;
+  }
+}
+function resumeGame(s){
+  if(!s||!s.paused)return;
+  s.paused=false;s.pauseWhy=null;const el=s.screen.querySelector('.pause-ov');if(el)el.hidden=true;
+  lastT=performance.now();perf.gap();
+  if(s.state!=='playing')return;
+  try{s.game.resume?.()}catch(e){console.error(s.def.id,e)}
+  resumeMusic();
+}
+function clearPause(s){s.paused=false;s.pauseWhy=null;const el=s.screen.querySelector('.pause-ov');if(el)el.hidden=true}
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&active)pauseGame(active,'away')});
+
 function startGame(s){
   if(active!==s)return;
+  clearPause(s);
   // Boosts the player owns for this game are used up on this run; unlocks stay on.
   s.run={items:new Set()};
   for(const it of s.def.shop||[])if(it.kind==='unlock'?progress.owned(s.def.id,it)>0:progress.use(s.def.id,it))s.run.items.add(it.id);
@@ -179,14 +206,14 @@ function awardTrophies(s){
   for(const t of checkTrophies()){toast(s.el,`🏆 ${t.name}`,'trophy');services.unlock(t.id);(s.trophies||=[]).push(t)}
 }
 function gameOver(s){
-  if(s.state!=='playing')return;
+  if(s.state!=='playing')return;clearPause(s);
   s.state='over';s.overAt=Date.now();stopMusic();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(progress.score(s.def.id,s.score))s.newBest=true;
   awardTrophies(s);services.reportRun(s.def);
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){stopMusic();roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
+function resetSlide(s){stopMusic();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.game.reset();s.score=0;s.scoreEl.textContent='0';renderOverlay(s);s.dirty=true}
 function goPrev(s){
   const i=slides.indexOf(s);if(i<=0)return;
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');

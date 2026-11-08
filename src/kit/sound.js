@@ -109,7 +109,7 @@ export const sounds = {
 export { sfx };   // the classic single beep, re-exported so one import covers everything
 
 /* ---------- music ---------- */
-const playing = new Set();
+const playing = new Set(), held = new Set();   // tunes playing now, and tunes paused mid-way
 const DRUM = {
   k: (at, v) => { tone(150, { len: .12, wave: 'sine', vol: .14 * v, slide: -110, at }); },          // kick
   s: (at, v) => { noise(.12, { vol: .07 * v, from: 5000, to: 1500, filter: 'bandpass', q: .7, at }); },   // snare
@@ -121,7 +121,7 @@ const VOICE = { lead: ['square', .028], bass: ['triangle', .07], pad: ['sine', .
  * music({ tempo, steps, lead, bass, pad, arp, drums, vol, swing }): a looping tune. Each part is a
  * line of steps (eighth notes at the tempo): note names, '.' for a rest, '-' to hold the previous
  * note. drums use k (kick), s (snare), h (hi-hat), c (crash). Parts can be different lengths.
- * Returns { start(), stop(), speed(x), playing }. Keep tunes short and quiet: it plays under the game.
+ * Returns { start(), stop(), pause(), resume(), speed(x), playing }. Keep tunes short and quiet: it plays under the game.
  */
 export function music({ tempo = 120, vol = 1, swing = 0, ...parts } = {}) {
   const tracks = [];
@@ -149,13 +149,19 @@ export function music({ tempo = 120, vol = 1, swing = 0, ...parts } = {}) {
   }
   const m = {
     get playing() { return !!timer; },
-    start() { if (timer) return m; step = 0; next = 0; schedule(); timer = setInterval(schedule, 40); playing.add(m); return m; },
-    stop() { clearInterval(timer); timer = 0; playing.delete(m); return m; },
+    start() { if (timer) return m; step = 0; next = 0; schedule(); timer = setInterval(schedule, 40); playing.add(m); held.delete(m); return m; },
+    stop() { clearInterval(timer); timer = 0; playing.delete(m); held.delete(m); return m; },
+    /** Holds the tune where it is (resume() carries on from the same step). The app does this on pause. */
+    pause() { if (!timer) return m; clearInterval(timer); timer = 0; playing.delete(m); held.add(m); return m; },
+    resume() { if (timer || !held.has(m)) return m; held.delete(m); next = 0; schedule(); timer = setInterval(schedule, 40); playing.add(m); return m; },
     /** Plays faster (x > 1) or slower, for rising tension. */
     speed(x) { rate = Math.max(.25, Math.min(4, x)); return m; },
   };
   return m;
 }
 /** Stops every tune. The app calls it when a round ends or the player leaves a game. */
-export function stopMusic() { for (const m of [...playing]) m.stop(); }
-if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => { if (document.hidden) stopMusic(); });
+export function stopMusic() { for (const m of [...playing, ...held]) m.stop(); }
+/** Holds every playing tune; resumeMusic() carries them on. The app calls these when a game pauses. */
+export function pauseMusic() { for (const m of [...playing]) m.pause(); }
+export function resumeMusic() { for (const m of [...held]) m.resume(); }
+if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => { if (document.hidden) pauseMusic(); });
