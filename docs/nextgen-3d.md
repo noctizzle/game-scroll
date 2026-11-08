@@ -25,14 +25,16 @@ ceilings), `neon-drift.js` (drift racer on a wet neon street circuit), `storm-ho
   the quality tier. Mark meshes `castShadow` / `receiveShadow`.
 - **Sun** (`sun(colour, intensity, size)`): a shadowed directional light for outdoor scenes. Call
   `s.follow(x, y, z)` each frame so the shadow box tracks the player (it snaps to shadow texels, so
-  shadows do not shimmer) and `v.onTier(T => s.setTier(T))`.
+  shadows do not shimmer) and `v.onTier(T => s.setTier(T))`. Big outdoor levels use `s.fit(v, ...)`
+  instead (see [Outdoor worlds](#outdoor-worlds-sun-air-sky-and-grade)).
 - **Lamp light pool** (`v.lampLights(range)` then `v.placeLamps(spots, x, y, z, t)` each frame):
   a level can have dozens of lamps; the nearest few get real point lights (with flicker) and the
   rest only glow. Light count stays fixed, so shaders never recompile mid-game.
 - **Post-processing**, one shared chain: HDR render with MSAA (or a light FXAA on lower tiers), ground-truth ambient occlusion
   (GTAO), bloom (anything brighter than about 1 glows: emissive above 1, particle colours above
   1), ACES filmic tone mapping, and a colour grade (vignette, film grain, slight lens fringing at
-  the edges, and a red "hurt" tint you set with `v.hurt = 0..1`).
+  the edges, and a red "hurt" tint you set with `v.hurt = 0..1`). A game can add its own grade and
+  sun glare in the same pass (`v.grade`, `v.glare`, below).
 - **Particles** (`new Particles(v, { max, additive })`): soft camera-facing points. Additive for
   sparks, fire, glints; normal for smoke and dust. `p.emit({ x, y, z, vx, vy, vz, life, size,
   grow, col, a, drag, grav, floor, fadeIn })`, then `p.update(dt)` every frame.
@@ -41,12 +43,15 @@ ceilings), `neon-drift.js` (drift racer on a wet neon street circuit), `storm-ho
 
 Phones must stay smooth, so the kit adapts on its own:
 
-| Tier | Pixels per frame | Shadows | Real lamp lights | AO | Anti-aliasing |
+| Tier | Pixels per frame | Shadows (sun) | Real lamp lights | AO | Anti-aliasing |
 | --- | --- | --- | --- | --- | --- |
-| ultra | 2.0 M | 1024 | 4 | yes | 2x MSAA |
-| high | 1.3 M | 1024 | 4 | no | 2x MSAA |
-| medium | 0.85 M | 512 | 3 | no | light FXAA |
+| ultra | 2.0 M | 1024 (2048) | 4 | full size | 2x MSAA |
+| high | 1.3 M | 1024 (2048) | 4 | half size | 2x MSAA |
+| medium | 0.85 M | 512 (1024) | 3 | no | light FXAA |
 | low | 0.5 M | off | 2 | no | light FXAA |
+
+Ambient occlusion (the soft dark in corners and under things) on the high tier is worked out at half
+the picture's width and height, a quarter of the cost, and blended back at full size.
 
 **Phone class and frame rate** (`src/kit/speed.js`). Each phone is sorted into top, mid or low from
 its graphics chip (Adreno 830, Mali-G720, ...), its model for iPhones, and its cores and memory.
@@ -151,3 +156,58 @@ usual smoke and fold tests.
 - Ambient occlusion and reflections only see solid, opaque surfaces: see-through things (light
   shafts, glows, blob shadows, alpha-cut leaves) are left out of them so they don't leave dark marks.
   Keep any other mesh out with `mesh.userData.noAO = true`.
+
+## Outdoor worlds: sun, air, sky and grade
+
+Big outdoor levels (a valley, a coast, a city's rooftops) can turn these on. Each one is opt-in, so a
+game that doesn't ask for them looks exactly as before.
+
+```js
+const { HDView, sun } = gs.hd, { Sky, Weather } = gs.sky;
+v = new HDView({ bg: '#b8c8d8', env: .5 });
+v.cam.far = 1500;
+const s = sun('#fff0d8', 2.6); v.scene.add(s, s.target); v.onTier(T => s.setTier(T));
+v.sun = s;                                   // the air, the glare and the sky use this light
+v.air({ haze: .0008, mist: .002, mistFall: .1, clouds: .4 });
+sky = new Sky(v, { time: 7.5, clouds: .4, env: true });
+v.grade = { saturation: .92, contrast: 1.08, shadows: '#e6ecff', highlights: '#fff1dc' };
+v.glare = .8;
+// each frame, before v.render():
+sky.update(dt);
+s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
+```
+
+- **Shadows fitted to the view** (`s.fit(view, o)` each frame, in place of `s.follow`): the sun's
+  shadow covers just what the camera can see, out to `far` metres. `ground(x, z)` gives the ground's
+  height (a `gs.outdoors` Land's `height`), so it stops at the hills; without it, `low` and `high` say
+  between which heights things are. `tall` (default 20 m) is how high things on the ground reach. The
+  narrower the view, the sharper the shadows: a scope gets crisp shadows where it looks.
+  `around: 1.25` keeps the shadow to what's round the middle of the view (a scope looking across a
+  valley: sharp shadows round the target, none wasted on the hills behind). It returns
+  `{ width, height, texel }` in metres. `s.aim(x, y, z)` points the sun (towards it); a Sky does that
+  for you.
+- **Air** (`v.air(o)`): distance haze that warms towards the sun, mist lying low in the valleys, cloud
+  shadows drifting over the land and wet streets. The kit adds it to every material in the scene
+  before it first draws, so it costs no extra pass. Turn it on when you build the level: a material
+  that has already been drawn is rebuilt when air reaches it. Settings: `haze` (.001 is about a
+  kilometre of view), `colour` (far things fade to it) and `sunColour` (towards the sun), `mist`
+  (thickness at height `mistY`, thinning by `mistFall` a metre upwards, `patchy` 0..1), `clouds` (cover
+  0..1), `cloudShade` (how dark their shadows are), `cloudHeight`, `cloudSize` (metres), `wind`
+  (`[x, z]` m/s they drift) and `wet` (0..1: rain darkens things and makes up-facing surfaces shiny).
+  It returns the settings, which you can change any time (`v.air().wet = rain.amount`); `v.air(false)`
+  turns it off. Your own `ShaderMaterial`s and materials with `fog: false` are left alone.
+- **Sky** (`gs.sky`'s `Sky`) with `clouds: 0..1` draws drifting clouds lit from the sun's side (your
+  own colours with `cloudLight` and `cloudDark`; `gap` keeps the low sky round the sun clear). It aims
+  the sun, and on a view with air it colours the haze from the sky and lays the clouds' shadows on the
+  ground. `env: true` makes the reflections and sky light from this sky instead of the kit's studio
+  (made when the shaders warm up, and again when the time or the clouds change, at most every 3 s).
+  `sky.flash = 1` lights up the clouds for lightning: set it from your Weather while a flash shows.
+- **Colour grade** (`v.grade = { saturation, contrast, shadows, highlights }`): saturation and
+  contrast (1 = no change), and tints for the dark and the bright parts of the picture (`'#rrggbb'`, a
+  Color or `[r, g, b]`). It runs in the final pass. `v.grade = null` turns it off.
+- **Sun glare** (`v.glare = 0..1`): a soft glow round the sun and two faint lens ghosts across the
+  picture, only while the sun itself shows (it fades behind a wall or a tree).
+- `v.envFrom(scene)` makes the reflections from any scene of your own (a painted room, a sunset dome);
+  `v.env = null` goes back to the studio.
+- `gs.hd.noiseTex()` is a shared 256 x 256 tiling noise texture (four sizes of noise in r, g, b and a)
+  for your own shaders: clouds, water, grass, dirt.

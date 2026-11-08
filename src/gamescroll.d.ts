@@ -447,7 +447,18 @@ export interface Look2dPart {
 
 export interface ToonPart { View: new (...a: Loose[]) => Loose; G: Loose; part: Loose; grp: Loose; blob: Loose; toon: Loose; flat: Loose; dude: Loose; has3D(): boolean; THREE: Loose }
 /** An HDView's extras for the ray-traced look: v.reflect(...meshes) (reflections on top-end phones), v.contact({ y, size }) (soft contact shadows) (mesh.userData.noAO = true keeps a mesh out of ambient occlusion). */
-export interface HdPart { ContactShadows: new (o?: { y?: number; size?: number; blur?: number; darkness?: number; opacity?: number; height?: number }) => Loose; HDView: new (...a: Loose[]) => Loose; HD: Loose; TIERS: Loose; hasHD(): boolean; pbr: Loose; rbox: Loose; surface: Loose; speckle: Loose; Particles: Loose; sun: Loose; spot: Loose; THREE: Loose }
+export interface HdPart { ContactShadows: new (o?: { y?: number; size?: number; blur?: number; darkness?: number; opacity?: number; height?: number }) => Loose; HDView: new (...a: Loose[]) => Loose; HD: Loose; TIERS: Loose; hasHD(): boolean; pbr: Loose; rbox: Loose; surface: Loose; speckle: Loose; Particles: Loose; sun: Loose; spot: Loose; THREE: Loose;
+  /** A shared 256 x 256 tiling noise texture (four noise sizes in r, g, b, a) for your own shaders: clouds, water, grass. */
+  noiseTex(): Loose }
+/** v.air(...) settings (Next Gen outdoor air): change them any time. */
+export interface HdAir {
+  haze: number; colour: Loose; sunColour: Loose | null; mist: number; mistFall: number; mistY: number; patchy: number;
+  clouds: number; cloudShade: number; cloudHeight: number; cloudSize: number; wind: [number, number]; wet: number; sun: Loose | null;
+}
+/** v.grade: saturation and contrast (1 = no change), tints for the shadows and the highlights ('#rrggbb', a Color or [r, g, b]). */
+export interface HdGrade { saturation?: number; contrast?: number; shadows?: Loose; highlights?: Loose }
+/** What sun().fit(view, o) covered, in metres. */
+export interface HdShadowFit { width: number; height: number; texel: number }
 export interface ArPart { ARView: new (...a: Loose[]) => Loose; FLOOR: Loose; arNote: Loose; THREE: Loose }
 export interface BricksPart { BRICK: Loose; BRICK_KEYS: Loose; STUD: Loose; brick: Loose; brick3d: Loose; stud: Loose; stud3d: Loose }
 /** Rapier 3D (lazy). */
@@ -705,8 +716,12 @@ export interface Level3dPart { Level3D: new (text: string, o?: { size?: number; 
 
 export interface SkyPart {
   DAY: [number, { top: string; horizon: string; sun: string; sunI: number; amb: number }][];
-  Sky: new (view: Loose, o?: { time?: number; speed?: number; day?: SkyPart['DAY']; stars?: number; physical?: boolean; fog?: boolean; light?: boolean; sun?: Loose; hemi?: Loose; tilt?: number }) => {
-    time: number; speed: number; night: number; readonly dayPart: number; update(dt: number): Loose; apply(): Loose; dispose(): void;
+  Sky: new (view: Loose, o?: { time?: number; speed?: number; day?: SkyPart['DAY']; stars?: number; physical?: boolean; fog?: boolean; light?: boolean; sun?: Loose; hemi?: Loose; tilt?: number;
+    /** Cloud cover 0..1 (clouds lit by the sun; on a view with air() their shadows cross the ground). */ clouds?: number; cloudLight?: string; cloudDark?: string;
+    /** 0..1: keeps the low sky round the sun clear of cloud. */ gap?: number;
+    /** Next Gen: reflections and sky light come from this sky (redone as it changes). */ env?: boolean; sunSize?: number }) => {
+    time: number; speed: number; night: number; clouds: number; gap: number; /** 0..1 lights up the sky and clouds (lightning): set it while a flash shows. */ flash: number;
+    readonly dayPart: number; update(dt: number): Loose; apply(): Loose; dispose(): void;
   };
   Weather: new (view: Loose, o?: { kind?: 'rain' | 'snow' | 'storm' | 'clear'; amount?: number; area?: number; wind?: [number, number]; max?: number; color?: string }) => {
     kind: string; amount: number; wind: [number, number]; onFlash: ((far: number) => void) | null; readonly flashing: boolean;
