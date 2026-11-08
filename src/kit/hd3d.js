@@ -29,7 +29,7 @@ import {
   MeshStandardMaterial, MeshPhysicalMaterial, ShaderMaterial, BufferGeometry, BufferAttribute, Points, AdditiveBlending, NormalBlending,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, NoColorSpace, PCFSoftShadowMap, ACESFilmicToneMapping, HalfFloatType,
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
-  OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group,
+  OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4,
 } from 'three';
 import { SSRPass } from 'three/examples/jsm/postprocessing/SSRPass.js';
 import { HorizontalBlurShader } from 'three/examples/jsm/shaders/HorizontalBlurShader.js';
@@ -39,6 +39,8 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { SGSR } from './sgsr.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -107,7 +109,9 @@ export const HD = {
   get tier() { return Q.force ?? Q.tier; }, get name() { return TIERS[this.tier].name; }, get res() { return Q.force != null ? 1 : LEVELS[Q.lvl]; },
   set force(t) { Q.force = t; }, get force() { return Q.force; },
   /** Last frame: draw calls, triangles, milliseconds spent in render() on the CPU, and whether the shadows were redrawn. */
-  info: { calls: 0, tris: 0, cpu: 0, shadows: false },
+  info: { calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false },
+  /** Upscale with Snapdragon GSR 1 when the 3D is drawn below the screen's size (false: plain stretch). */
+  upscale: true,
   /** Show the 3D canvas directly on the card (false: copy each frame into the card's canvas, as tests and screenshots need). */
   direct: typeof navigator === 'undefined' || !navigator.webdriver,
 };
@@ -156,7 +160,17 @@ const UP = `uniform sampler2D tDiffuse; uniform vec2 px; uniform float k; varyin
     c += 2. * (texture2D(tDiffuse, vUv + vec2(-px.x, -px.y)).rgb + texture2D(tDiffuse, vUv + vec2(px.x, -px.y)).rgb + texture2D(tDiffuse, vUv + vec2(-px.x, px.y)).rgb + texture2D(tDiffuse, vUv + px).rgb);
     gl_FragColor = vec4(c / 12. * k, 1.); }`;
 const FINAL = `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, bloom; uniform vec2 px; varying vec2 vUv;
-  // (three.js adds its tone mapping and sRGB helpers to every ShaderMaterial)
+  // (three.js adds its tone mapping and sRGB helpers to every ShaderMaterial drawn to the screen; when
+  // SGSR upscales after this pass, it draws into a buffer and three leaves tone mapping out, so here it is)
+  #ifndef TONE_MAPPING
+  uniform float toneMappingExposure;
+  vec3 RRTAndODTFit(vec3 v){ vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }
+  vec3 ACESFilmicToneMapping(vec3 color){
+    const mat3 I = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+    const mat3 O = mat3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+    color *= toneMappingExposure / 0.6; color = O * RRTAndODTFit(I * color); return clamp(color, 0., 1.);
+  }
+  #endif
   float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
   vec3 tex(vec2 p){ return texture2D(tDiffuse, p).rgb; }
   float luma(vec3 c){ float l = dot(c, vec3(.299, .587, .114)); return l / (1. + l); }
@@ -256,7 +270,8 @@ function seeThrough(r, w, h) {
     arKey = T.msaa;
     arComp = new EffectComposer(r, new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: T.msaa }));
     P.arRender = new RenderPass(new Scene(), new PerspectiveCamera(), null, new Color(0), 0);
-    arComp.addPass(P.arRender); arComp.addPass(new OutputPass());
+    P.arOut = new OutputPass();
+    arComp.addPass(P.arRender); arComp.addPass(P.arOut);
     arComp.setSize(w, h); arComp.cw = w; arComp.ch = h;
   }
   return arComp;
@@ -496,10 +511,17 @@ export class HDView {
       else { c.save(); c.drawImage(r.domElement, 0, 0, w, h); c.restore(); }
       return;
     }
-    let pw = c.canvas.width, ph = c.canvas.height; const q = Math.min(1, Math.sqrt(T.px / (pw * ph))) * HD.res;
+    const fw = c.canvas.width, fh = c.canvas.height; let pw = fw, ph = fh; const q = Math.min(1, Math.sqrt(T.px / (pw * ph))) * HD.res;
     pw = Math.max(16, Math.round(pw * q)); ph = Math.max(16, Math.round(ph * q));
-    const cv = r.domElement; if (cv.width !== pw || cv.height !== ph) r.setSize(pw, ph, false);
+    // The 3D is drawn at pw x ph (fewer pixels on big screens and when the phone struggles). Below the
+    // screen's size, Snapdragon GSR 1 (sgsr.js) upscales it to the full screen with sharp edges, as the
+    // last pass; HD.upscale = false shows the plain stretched picture instead (tests, comparisons).
+    const up = HD.upscale && !baking && pw < fw * .95;
+    const ow = up ? fw : pw, oh = up ? fh : ph;
+    const cv = r.domElement; if (cv.width !== ow || cv.height !== oh) r.setSize(ow, oh, false);
     const cp = this.clearBg ? seeThrough(r, pw, ph) : chain(r, pw, ph); if (cp.cw !== pw || cp.ch !== ph) { cp.setSize(pw, ph); cp.cw = pw; cp.ch = ph; }
+    if (up) { P.sgsr ||= new ShaderPass(SGSR); P.sgsr.uniforms.ViewportInfo.value = (P.sgsrV ||= new Vector4()).set(1 / pw, 1 / ph, pw, ph); }
+    if (this.clearBg) cp.passes = up ? [P.arRender, P.arOut, P.sgsr] : [P.arRender, P.arOut];
     this.scene.environment = envTex; this.scene.environmentIntensity = this.envI;
     r.toneMappingExposure = this.exposure;
     if (this.clearBg) { P.arRender.scene = this.scene; P.arRender.camera = this.cam; } else { P.render.scene = P.ao.scene = this.scene; P.render.camera = P.ao.camera = this.cam; }
@@ -521,7 +543,8 @@ export class HDView {
     if (!this.clearBg) {
       const ex = this.extras || [];
       const first = ssr ? P.ssr : P.render;
-      cp.passes = [first, P.ao, ...ex, P.final];
+      cp.passes = up ? [first, P.ao, ...ex, P.final, P.sgsr] : [first, P.ao, ...ex, P.final];
+      P.final.needsSwap = up;   // the final pass writes into the next buffer only when SGSR reads it
       for (const p of ex) if (p.cw !== pw || p.ch !== ph) { p.setSize(pw, ph); p.cw = pw; p.ch = ph; }
     }
     if (!this.warmed && !off) this.warm();
@@ -534,11 +557,11 @@ export class HDView {
     r.info.autoReset = false; r.info.reset();
     const mwa = this.scene.matrixWorldAutoUpdate; this.scene.matrixWorldAutoUpdate = false;   // already updated above
     try { cp.render(); } finally { this.scene.matrixWorldAutoUpdate = mwa; }
-    if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = shadows; }
+    if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = shadows; HD.info.upscaled = up; }
     if (direct) { c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, c.canvas.width, c.canvas.height); c.restore(); return; }
     c.save(); c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
-    if (baking) { c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'destination-over'; c.drawImage(cv, 0, 0, pw, ph, 0, 0, c.canvas.width, c.canvas.height); }
-    else c.drawImage(cv, 0, 0, pw, ph, 0, 0, w, h);
+    if (baking) { c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'destination-over'; c.drawImage(cv, 0, 0, ow, oh, 0, 0, c.canvas.width, c.canvas.height); }
+    else c.drawImage(cv, 0, 0, ow, oh, 0, 0, w, h);
     c.restore();
   }
 }

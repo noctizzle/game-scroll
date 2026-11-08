@@ -464,6 +464,63 @@ export interface CharactersPart {
 }
 export interface AiPart { Crowd: new (...a: Loose[]) => Loose; NavGrid: new (...a: Loose[]) => Loose; Brain: new (...a: Loose[]) => Loose; YUKA: Loose }
 
+/** Tiny Brains: a small neural network (tanh hidden layers, softmax out). */
+export declare class TinyNet {
+  constructor(sizes: number[], seed?: number);
+  readonly sizes: number[]; readonly shape: string; readonly length: number; w: Float32Array;
+  /** Probabilities for inputs x (reused array). */
+  run(x: ArrayLike<number>): Float32Array;
+  /** Makes `toward` more likely for x by `amount` (negative: less likely). */
+  learn(x: ArrayLike<number>, toward: number, amount: number, ran?: boolean): this;
+  copy(): TinyNet;
+  pack(): string;
+  static unpack(s: string): TinyNet | null;
+}
+export interface BrainOptions {
+  name?: string;
+  inputs: number;
+  actions: number | string[];
+  hidden?: number[];
+  /** The game's own simple AI: the brain starts by copying it. */
+  teacher?(see: number[]): number | string;
+  /** Hard rules: return the action to use instead (or the same one). */
+  rules?(see: number[], action: number | string): number | string | void;
+  /** react: seconds between decisions; perSecond: most changes of mind a second; minNoise: share of random choices. */
+  limits?: { react?: number; perSecond?: number; minNoise?: number };
+  /** The player's win rate to aim for (0.6). */
+  target?: number;
+  learn?: number;
+  drift?: number;
+  /** Shared learning: start from everyone's average brain (true). */
+  share?: boolean;
+}
+/** A Tiny Brain that learns as you play, with guard rails. */
+export declare class Brain {
+  constructor(api: GameApi | null, opts: BrainOptions);
+  net: TinyNet; skill: number; trust: number; winRate: number; steps: number;
+  /** The last action (its name when actions is a list). */
+  readonly action: number | string;
+  /** Picks an action for what it sees (numbers about -1..1), every frame. Returns its index. */
+  act(see: number[], dt?: number): number;
+  /** A moment that made the round exciting (about -1..1). */
+  feel(x?: number): void;
+  /** End of a duel or round: did the player win? */
+  result(playerWon: boolean): void;
+  /** Forgets what it learned. */
+  reset(): this;
+}
+export interface BrainMind { act(see: number[], dt?: number): number; readonly action: number | string; feel(x?: number): void; done(): void; }
+export interface BrainsPart {
+  Net: typeof TinyNet;
+  Brain: typeof Brain;
+  /** Every enemy in a wave is an experiment: wave.mind() per enemy, mind.done() when it leaves. */
+  Wave: new (brain: Brain, o?: { change?: number }) => { mind(): BrainMind };
+  /** Tries moves ahead with your game's own step function. */
+  Imagine: new <S>(o: { actions: number | string[]; step(state: S, action: number, dt: number): S; score(state: S): number; depth?: number; dt?: number; tries?: number; budget?: number; brain?: Brain; see?(state: S): number[] }) => { pick(state: S): number; readonly action: number | string };
+  packWeights(sizes: number[], w: ArrayLike<number>): string;
+  unpackWeights(s: string): { sizes: number[]; w: Float32Array } | null;
+}
+
 /** A tweak spec value: a number, [value, min, max, step?], a boolean, a '#colour', [choice, ...choices], or a function (a button). */
 export type TweakSpec = Record<string, number | [number, number, number, number?] | boolean | string | string[] | (() => void)>;
 /** Live sliders (npm run dev only); elsewhere it returns the starting values. Read the fields where they're used. */
@@ -478,7 +535,7 @@ export interface GS {
   pixel: PixelPart; gfx: GfxPart; physics: PhysicsPart; vision: VisionPart; geo: GeoPart;
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
-  tweak: TweakFn;
+  tweak: TweakFn; brains: BrainsPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;
   /** three.js itself. */

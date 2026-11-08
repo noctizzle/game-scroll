@@ -409,3 +409,52 @@ console.log('physics ok');
   _resetSaves();
   console.log('saves: versions + migrate ok');
 }
+
+// Tiny Brains: copies its teacher, guard rails hold, waves and plans learn
+{
+  const { Brain, Net, Wave, Imagine } = await import('../src/kit/brains.js');
+  const n = new Net([3, 5, 2], 7), s = n.pack(), m = Net.unpack(s);
+  assert.equal(m.shape, '3x5x2'); assert.ok(Math.max(...n.w.map((v, i) => Math.abs(v - m.w[i]))) < .01, 'pack round trip');
+  assert.equal(Net.unpack('tb1:3x5x2:1:AAAA'), null, 'wrong length refused');
+  // a 1D chaser: the teacher moves towards the player
+  const slots = new Map(), api = { brains: { load: k => slots.get(k) ?? null, save: (k, v) => slots.set(k, v) } };
+  const b = new Brain(api, { name: 'chaser', inputs: 2, actions: ['left', 'right'], hidden: [6], teacher: see => see[0] < 0 ? 'left' : 'right', limits: { react: 0, perSecond: 1000, minNoise: 0 }, share: false });
+  let r = 1; const rand = () => (r = (r * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 4000; i++) { const dx = rand() * 2 - 1; b.act([dx, rand() * 2 - 1], 1 / 60); if (i % 10 === 0) b.feel(.5); }
+  let right = 0; for (let i = 0; i < 200; i++) { const dx = rand() * 2 - 1, p = b.net.run([dx, 0]); if ((p[0] > p[1]) === (dx < 0)) right++; }
+  assert.ok(right > 170, 'copied the teacher: ' + right + '/200');
+  assert.ok(b.agree > .8 && b.anchor, 'agreement ' + b.agree.toFixed(2) + ' and a starting brain kept');
+  assert.ok(b.trust > 0, 'earns some trust: ' + b.trust.toFixed(3));
+  // drift: no number further than `drift` from the starting brain, whatever the signals
+  for (let i = 0; i < 3000; i++) { b.act([rand() * 2 - 1, 1], 1 / 60); b.feel(2); }
+  let far = 0; for (let i = 0; i < b.net.w.length; i++) far = Math.max(far, Math.abs(b.net.w[i] - b.anchor.w[i]));
+  assert.ok(far <= 1 + 1e-6, 'stays within drift of its starting brain: ' + far.toFixed(3));
+  // win rate: the player keeps losing -> the skill dial drops, and three in a row eases off at once
+  const k0 = b.skill; b.result(false); b.result(false); const k2 = b.skill; b.result(false);
+  assert.ok(k2 < k0 && b.skill < k2 - .2, `skill eases off (${k0.toFixed(2)} -> ${k2.toFixed(2)} -> ${b.skill.toFixed(2)})`);
+  for (let i = 0; i < 30; i++) b.result(true);
+  assert.ok(b.skill > .6, 'player winning everything -> sharper: ' + b.skill.toFixed(2));
+  // remembered: a new Brain with the same slot picks up where it was
+  const b2 = new Brain(api, { name: 'chaser', inputs: 2, actions: ['left', 'right'], hidden: [6], teacher: see => see[0] < 0 ? 'left' : 'right', share: false });
+  assert.ok(b2.steps === b.steps && Math.abs(b2.skill - b.skill) < .01, 'restored from its slot');
+  b2.reset(); assert.equal(b2.steps, 0, 'reset forgets');
+  // rules always win; perSecond limits changes of mind; reaction time holds a choice
+  const c = new Brain({ name: 'r', inputs: 1, actions: ['a', 'b', 'c'], limits: { react: 0, perSecond: 1000, minNoise: 0 }, rules: (s, a) => (a === 'c' ? 'a' : a), share: false });
+  for (let i = 0; i < 500; i++) { c.act([Math.random()], 1 / 60); assert.notEqual(c.action, 'c', 'rule: never c'); }
+  const d = new Brain({ name: 'p', inputs: 1, actions: 4, limits: { react: 0, perSecond: 2, minNoise: 1 }, share: false });
+  let changes = 0, last = d.act([0], 1 / 60); for (let i = 0; i < 600; i++) { const a = d.act([0], 1 / 60); if (a !== last) changes++; last = a; }
+  assert.ok(changes <= 21, 'at most 2 changes of mind a second over 10 s: ' + changes);
+  const e = new Brain({ name: 'q', inputs: 1, actions: 4, limits: { react: .5, minNoise: 1 }, share: false });
+  const first = e.act([0], 1 / 60); let same = true; for (let i = 0; i < 20; i++) if (e.act([0], 1 / 60) !== first) same = false;
+  assert.ok(same, 'reaction time holds the choice');
+  // Wave: a pair of minds moves the brain
+  const wb = new Brain({ name: 'w', inputs: 2, actions: 2, share: false }), w0 = wb.net.w.slice(), wave = new Wave(wb);
+  const m1 = wave.mind(), m2 = wave.mind();
+  for (let i = 0; i < 60; i++) { m1.act([1, 0], 1 / 60); m1.feel(1); m2.act([1, 0], 1 / 60); }
+  m1.done(); m2.done();
+  assert.ok(wb.net.w.some((v, i) => v !== w0[i]), 'a finished pair changes the brain');
+  // Imagine: picks the move that gets to the goal
+  const plan = new Imagine({ actions: ['left', 'stay', 'right'], step: (s, a, dt) => ({ x: s.x + (a - 1) * dt * 5 }), score: s => -Math.abs(s.x - 3) });
+  assert.equal(plan.pick({ x: 0 }), 2); assert.equal(plan.action, 'right'); assert.equal(plan.pick({ x: 6 }), 0);
+  console.log('brains: copy, trust, drift, win rate, rules, limits, waves, plans ok');
+}

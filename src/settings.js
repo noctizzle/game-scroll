@@ -51,7 +51,7 @@ export function openSettings({ stream, cached, clear, arTest }) {
         <h3>Licence</h3>
         <p class="qa-help">Copyright © 2026 Rob and Game Scroll contributors. The code is under the PolyForm Shield License 1.0.0: you can use, change and share it for anything except making a product that competes with Game Scroll.</p>
         <details class="set-lic"><summary>Open-source parts</summary>
-          <dl>${OPEN_SOURCE.map(e => `<dt>${e.name}</dt><dd>${e.licence}</dd>`).join('')}</dl>
+          <dl>${OPEN_SOURCE.map(e => `<dt>${e.name}</dt><dd>${e.licence}${e.notice ? `<br><small>${e.notice}</small>` : ""}</dd>`).join('')}</dl>
         </details>
         <p class="set-link"><a href="https://github.com/robthewizzuk/game-scroll/blob/main/LICENSE" target="_blank" rel="noopener">Read the full licence ↗</a></p>
       </section>

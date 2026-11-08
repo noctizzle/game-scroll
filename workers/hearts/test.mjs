@@ -233,6 +233,20 @@ await run({}, async url => {
   assert.deepEqual(bd.top.map(t => t.score), [80, 50]); assert.equal(bd.me.rank, 2); assert.ok(bd.top[1].me && !bd.top[0].me);
   assert.match(bd.top[0].name, /^[A-Z][a-z]+ [A-Z][a-z]+ \d+$/);
   ok('leaderboards keep each device\'s best, rank it, and show made-up names');
+  // Tiny Brains shared learning: trimmed average of each device's latest brain
+  {
+    const { pack } = await import('./src/brains.js');
+    const brain = v => pack('2x3x2', new Float32Array(17).fill(v));
+    r = await post(url, '/brain', { device: A, game, name: 'bot', shape: '2x3x2', w: brain(.5), steps: 900 }); assert.equal(r.status, 200);
+    r = await post(url, '/brain', { device: B, game, name: 'bot', shape: '2x3x2', w: brain(1), steps: 900 }); assert.equal(r.status, 200);
+    r = await post(url, '/brain', { device: A, game, name: 'bot', shape: '2x3x2', w: brain(1), steps: 10 }); assert.equal(r.status, 400, 'too little learning is refused');
+    r = await post(url, '/brain', { device: A, game, name: 'bot', shape: '2x4x2', w: brain(1), steps: 900 }); assert.equal(r.status, 400, 'shape must match the numbers');
+    r = await post(url, '/brain', { device: A, game, name: 'bot', shape: '200x200x2', w: brain(1), steps: 900 }); assert.equal(r.status, 400, 'too big');
+    r = await fetch(url + `/brain?game=${game}&name=bot&shape=2x3x2`, { headers: { 'CF-Connecting-IP': IP } }); assert.equal(r.status, 200);
+    const sb = await r.json(); assert.equal(sb.from, 2); assert.match(sb.w, /^tb1:2x3x2:/);
+    r = await fetch(url + `/brain?game=${game}&name=nobody&shape=2x3x2`, { headers: { 'CF-Connecting-IP': IP } }); assert.equal(r.status, 404);
+    ok('Tiny Brains: phones share brain numbers, checked, and get back the average');
+  }
   // Without a pass: 10 writes a minute per address.
   let limitedAt = 0;
   for (let i = 0; i < 12 && !limitedAt; i++) { r = await post(url, '/heart', { device: B, game, on: i % 2 === 0 }); if (r.status === 429) limitedAt = i + 1; }

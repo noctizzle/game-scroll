@@ -34,6 +34,7 @@ import { perf } from './perf.js';
 import { speed, fpsFor, tick as tickHz, screenHz } from './kit/speed.js';
 import { history } from './history.js';
 import { savesFor } from './saves.js';
+import { brainsFor } from './brainstore.js';
 import { geoFor, roundStarted, roundEnded } from './geo.js';
 import { makeDebug } from './debug.js';
 import { show as showTweaks } from './kit/tweak.js';
@@ -95,6 +96,7 @@ function makeSlide(def){
     win:()=>win(s),                                     // for games with a natural win (cleared the board, etc.)
     has:id=>!!(s.run&&s.run.items.has(id)),             // is this shop item active for the current run?
     ...savesFor(def),                                     // save(data) / load(fallback) / clearSave(): this game's own save slot
+    brains:brainsFor(def.id),                            // where this game's Tiny Brains keep what they learned (src/brainstore.js)
     ...geoFor(def),                                     // location() / watchLocation(cb): rounded, only during a round (src/geo.js)
   };
   bootGame(s);

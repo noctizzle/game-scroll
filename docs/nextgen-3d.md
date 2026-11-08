@@ -88,7 +88,7 @@ so its next round starts there instead of stuttering down again.
 Shaders are compiled up front: the first `render()` calls `v.warm()`, which compiles every material
 in the scene, including hidden ones, with shadows on and off. If you build new geometry or
 materials later (a new floor), set `v.warmed = false` so the next frame warms again before play.
-`__hd.info` reports `{ calls, tris, cpu, shadows }` for the last frame. The 3D frame is rendered at the tier's pixel count and stretched to the card; the 2D HUD is always drawn at
+`__hd.info` reports `{ calls, tris, cpu, shadows, upscaled }` for the last frame. The 3D frame is rendered at the tier's pixel count (and lower while the phone struggles), then upscaled to the card's full resolution with **Snapdragon Game Super Resolution 1** (Qualcomm's one-pass upscaler with edge-aware sharpening, `src/kit/sgsr.js`), so a smaller frame still has crisp edges. `HD.upscale = false` shows the plain stretched picture for comparison. The 2D HUD is always drawn at
 full resolution on top. `v.onTier(T => ...)` lets a game react (for example `spotLight.setTier(T)`).
 
 Rules of thumb:

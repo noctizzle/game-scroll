@@ -71,6 +71,17 @@ try {
     const shot = await hv.photo({ samples: 2 }); const t0 = performance.now(); while (!shot.done && performance.now() - t0 < 180000) { shot.step(50); await new Promise(r => setTimeout(r, 10)); }
     ok(shot.done && shot.image().width > 0, 'path-traced photo: ' + shot.samples + ' samples in ' + Math.round(performance.now() - t0) + ' ms (software GPU)');
     shot.stop(); hv.render(hx, 160, 120); ok(!hv.shot, 'back to normal rendering after the photo');
+    // Snapdragon GSR 1: a big canvas on the low tier is drawn smaller and upscaled to full size
+    {
+      gs.hd.HD.force = 0;
+      const bc = document.createElement('canvas'); bc.width = 1200; bc.height = 900; const bx = bc.getContext('2d');
+      const edges = () => { const d = bx.getImageData(0, 0, 1200, 900).data; let e = 0; for (let y = 0; y < 900; y += 3) for (let x = 1; x < 1200; x++) { const i = (y * 1200 + x) * 4; e += Math.abs(d[i] - d[i - 4]) + Math.abs(d[i + 1] - d[i - 3]); } return e; };
+      gs.hd.HD.upscale = false; hv.render(bx, 1200, 900); hv.render(bx, 1200, 900); const plain = edges(), plainUp = gs.hd.HD.info.upscaled;
+      gs.hd.HD.upscale = true; hv.render(bx, 1200, 900); hv.render(bx, 1200, 900); const sharp = edges();
+      ok(gs.hd.HD.info.upscaled && !plainUp, 'drawn smaller and upscaled with SGSR 1');
+      ok(bx.getImageData(600, 450, 1, 1).data[3] > 0 && sharp >= plain * .98, 'SGSR picture is as sharp or sharper: edges ' + sharp + ' vs plain ' + plain);
+      gs.hd.HD.force = 3;
+    }
     gs.hd.HD.direct = direct; gs.hd.HD.force = null;
     ok(!('currentView' in gs.hd), 'currentView hidden from games');
   }
@@ -91,6 +102,18 @@ try {
     for (let i = 0; i < 2000; i++) batch.add(tex, Math.random() * 100, Math.random() * 100);
     batch.add(tex, 50, 50, { scale: 2 }); batch.draw(bx);
     ok(bx.getImageData(50, 50, 1, 1).data[1] > 200 && batch.count === 2001, 'batch drew 2001 sprites');
+  }
+  // Tiny Brains in the browser: a chaser learns its teacher, waves and plans run, numbers pack
+  {
+    const { Brain, Wave, Imagine, Net } = gs.brains;
+    const bot = new Brain(null, { name: 'kb', inputs: 2, actions: ['left', 'right'], hidden: [8], teacher: s => s[0] < 0 ? 'left' : 'right', limits: { react: 0, perSecond: 1000, minNoise: 0 }, share: false });
+    const t0 = performance.now(); for (let i = 0; i < 3000; i++) { bot.act([Math.random() * 2 - 1, 0], 1 / 60); if (i % 20 === 0) bot.feel(.5); }
+    const per = (performance.now() - t0) / 3000;
+    ok(bot.agree > .8, 'brain copied its teacher: ' + bot.agree.toFixed(2));
+    ok(per < .2, 'a decision takes ' + (per * 1000).toFixed(1) + ' µs');
+    ok(Net.unpack(bot.net.pack())?.shape === '2x8x2', 'brain packs');
+    const wave = new Wave(bot), m = wave.mind(); m.act([.5, 0]); m.feel(1); m.done(); ok(true, 'wave mind ran');
+    ok(new Imagine({ actions: 2, step: (s, a) => ({ x: s.x + (a ? 1 : -1) }), score: s => s.x }).pick({ x: 0 }) === 1, 'imagine picked the better move');
   }
 } catch (err) { out.push('FAIL threw ' + (err && err.stack || err)); }
 window.result = out;

@@ -31,6 +31,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | 3D text, 3D particles, outlines, glitch, trails | `gs.fx3d` | [3D extras](#3d-extras) |
 | Play with your face or your hands | `gs.vision` (MediaPipe) | [Face and hands](#face-and-hands) |
 | To see frame rate, hitboxes, slow motion | press `` ` `` in `npm run dev` | [Debug overlay](#debug-overlay) |
+| Opponents that learn as you play (Tiny Brains) | `gs.brains` | [Tiny Brains](#tiny-brains) |
 | Sliders to tune numbers while you play | `gs.tweak` | [Hot reload and tweak sliders](#hot-reload-and-tweak-sliders) |
 | A save that survives a game update | `save: { version, migrate }` | [Save slots](#save-slots) |
 | Is my game fast enough for phones? | `npm run budget my-game` | [Speed budget](#speed-budget) |
@@ -649,6 +650,88 @@ The panel shows frames per second, how long your `update()` and `draw()` take, t
 score and state. For hitboxes, give your game object a `debug(c)` method that outlines whatever you
 like in game units; it is drawn on top while hitboxes are on. A physics game can just call
 `phys.debugDraw(c)`.
+
+## Tiny Brains
+
+Tiny Brains are small neural networks that learn while people play, with no training step. A brain
+starts by copying your game's own simple AI (its **teacher**), learns a little every frame, and only
+takes over from the teacher as it shows it makes the game more fun. It runs on the phone's CPU in
+plain JavaScript; a decision takes microseconds.
+
+```js
+const { Brain } = gs.brains;
+function make(api) {
+  const bot = new Brain(api, {
+    name: 'bot',
+    inputs: 4,                                          // numbers it sees, each about -1..1
+    actions: ['left', 'right', 'jump', 'wait'],
+    teacher: see => (see[0] < 0 ? 'left' : 'right'),    // your simple AI: where it starts
+    limits: { react: .15, perSecond: 6, minNoise: .05 },// human-like caps it can never go past
+    rules: (see, a) => (playerDown && a === 'jump' ? 'wait' : a),   // things it may never do
+  });
+  return {
+    update(dt) {
+      bot.act([dx / W, dy / H, vx / 300, onGround ? 1 : -1], dt);
+      if (bot.action === 'jump') jump();
+      if (nearMiss) bot.feel(1);        // an exciting moment: pressure, a close call
+    },
+    // when the round (or a duel) ends:
+    // bot.result(playerWon);
+  };
+}
+```
+
+- `act(see, dt)` every frame: returns the action's index; `bot.action` is its name.
+- `feel(x)` (about -1..1): "this moment was a good challenge". Call it for close calls, pressure,
+  near misses; negative for dull or unfair moments. Don't reward hurting the player as such.
+- `result(playerWon)` at the end of each round or duel.
+- `reset()` forgets what it learned on this phone.
+
+**Guard rails** (always on, a game can't turn them off):
+
+- **It aims for fun, not winning.** It steers the player's win rate towards `target` (0.6). While the
+  player loses too often, the same `feel()` signals teach it to ease off.
+- **Hard limits from your game:** `react` (seconds between decisions, longer when the skill dial is
+  low), `perSecond` (changes of mind), `minNoise` (always a little randomness).
+- **Tiny, slow changes:** each nudge is small, and every number stays within `drift` (1) of the
+  brain it started as (the copy of your teacher), with a gentle pull back.
+- **Losing streak relief:** after three player losses in a row it backs off at once.
+- **Your rules win:** `rules(see, action)` can swap any choice.
+- **Private and resettable:** what it learned stays in the game's brain slot on the phone (and the
+  player's cloud save), apart from `api.save()`.
+
+**Shared learning.** Now and then a brain that has learned enough sends its numbers (only the
+numbers, nothing about the player) to our server, and a fresh brain starts from everyone's average
+(the server drops the most unusual 20% of each number, so a few odd phones can't steer it).
+`share: false` turns it off for a brain. Changing `inputs`, `hidden` or `actions` makes a new brain
+shape that starts again.
+
+**Waves: every enemy is an experiment.** Each enemy gets a slightly changed copy of the brain; it's
+scored by its `feel()` over its own life, and pairs of opposite changes move the brain towards
+whichever made things more exciting.
+
+```js
+const wave = new gs.brains.Wave(bot);
+spawn() { enemy.mind = wave.mind(); }
+update(dt) { enemy.mind.act(see, dt); if (nearMiss) enemy.mind.feel(1); }
+// when the enemy is destroyed or leaves: enemy.mind.done();
+```
+
+**Imagine: trying moves ahead.** For racing lines, throws and physics, `Imagine` tries each action a
+short way ahead with your own step function and picks the best: smart from the first second. Give
+it a brain and the brain learns from every plan, and the brain's skill dial and rules apply.
+
+```js
+const plan = new gs.brains.Imagine({
+  actions: ['left', 'straight', 'right'],
+  step: (s, a, dt) => drive({ ...s }, a, dt),   // returns a NEW state; never change the real one
+  score: s => s.progress - s.offTrack * 5,
+  brain: racer, see: s => [s.angle / Math.PI, s.speed / 300, s.edge],
+});
+const a = plan.pick(car);
+```
+
+Brains are small (`inputs`, `hidden` and `actions` multiplied out stay under 1,200 numbers).
 
 ## Hot reload and tweak sliders
 
