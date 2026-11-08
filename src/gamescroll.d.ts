@@ -518,6 +518,10 @@ export interface BrainOptions {
   drift?: number;
   /** Shared learning: start from everyone's average brain (true). */
   share?: boolean;
+  /** Even steps: each number's step scaled to its own recent steps (false). */
+  even?: boolean;
+  /** Learn the player's real win chance at each skill level and aim the skill at the target (false). */
+  odds?: boolean;
 }
 /** A Tiny Brain that learns as you play, with guard rails. */
 export declare class Brain {
@@ -531,17 +535,39 @@ export declare class Brain {
   feel(x?: number): void;
   /** End of a duel or round: did the player win? */
   result(playerWon: boolean): void;
+  /** The player's learned chance of winning a round at a skill level (default: the current one). */
+  winChance(skill?: number): number;
   /** Forgets what it learned. */
   reset(): this;
+}
+/** Learns the player's habits and guesses their next move. */
+export declare class Predict {
+  constructor(api: GameApi | null, opts: { moves: number | string[]; name?: string; learn?: number });
+  /** The player made a move. */
+  see(move: number | string): this;
+  /** The most likely next move, or null before any moves. */
+  guess(): number | string | null;
+  /** A chance for each move (adds up to 1). */
+  chances(): Float64Array;
+  /** How sure the guess is, 0..1. */
+  readonly sure: number;
+  /** How often its guesses came true lately, 0..1. */
+  right: number;
+  /** Moves seen. */
+  seen: number;
+  /** Forgets every habit. */
+  forget(): this;
 }
 export interface BrainMind { act(see: number[], dt?: number): number; readonly action: number | string; feel(x?: number): void; done(): void; }
 export interface BrainsPart {
   Net: typeof TinyNet;
   Brain: typeof Brain;
   /** Every enemy in a wave is an experiment: wave.mind() per enemy, mind.done() when it leaves. */
-  Wave: new (brain: Brain, o?: { change?: number }) => { mind(): BrainMind };
+  Wave: new (brain: Brain, o?: { change?: number }) => { mind(): BrainMind; /** How much the live minds disagree on these inputs, 0..1. */ unsure(see: number[]): number };
+  /** Learns the player's habits and guesses their next move (board, card, rhythm, turn games). */
+  Predict: typeof Predict;
   /** Tries moves ahead with your game's own step function. */
-  Imagine: new <S>(o: { actions: number | string[]; step(state: S, action: number, dt: number): S; score(state: S): number; depth?: number; dt?: number; tries?: number; budget?: number; brain?: Brain; see?(state: S): number[] }) => { pick(state: S): number; readonly action: number | string };
+  Imagine: new <S>(o: { actions: number | string[]; step(state: S, action: number, dt: number): S; score(state: S): number; depth?: number; dt?: number; tries?: number; budget?: number; /** Always try every move: the same pick on every phone. */ fixed?: boolean; brain?: Brain; see?(state: S): number[] }) => { pick(state: S): number; readonly action: number | string; /** Rounds of tries the last pick used. */ readonly tried: number };
   packWeights(sizes: number[], w: ArrayLike<number>): string;
   unpackWeights(s: string): { sizes: number[]; w: Float32Array } | null;
 }

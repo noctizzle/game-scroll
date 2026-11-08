@@ -2,7 +2,8 @@
 # file name and its id differ), then plays the changed games in a headless browser (smoke + fold,
 # plus sweep for Console games, and the speed budget). A second job flags game code that touches the network, storage or
 # native features (scripts/game-lint.mjs), and lists changed files outside src/games/ that need a
-# careful read. Runs with read-only permissions and no secrets, so it is safe for pull requests from
+# careful read. Two more jobs: a mutation check of the server and licence guards, and a maths probe
+# across JavaScript engines (both only when those parts change). Runs with read-only permissions and no secrets, so it is safe for pull requests from
 # forks. See CONTRIBUTING.md.
 name: Game PR check
 
@@ -127,3 +128,68 @@ jobs:
           if [ -z "$other" ]; then echo "Only game files changed."; exit 0; fi
           { echo "### Changed outside src/games/ (review every line)"; echo; echo "$other" | sed 's/^/- `/; s/$/`/'; } >> "$GITHUB_STEP_SUMMARY"
           for f in $other; do echo "::warning file=$f::This pull request changes $f, which is outside src/games/. Shared code and CI files run for every game, so review it line by line."; done
+
+  # Mutation check: puts each server and licence guard's defect back, one at a time, and makes sure a
+  # test then fails (scripts/mutants.mjs). Runs when the Worker, the licence list or the check change.
+  guards:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Did the guards change?
+        id: changed
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          if git diff --name-only "origin/$BASE...HEAD" | grep -qE '^(workers/hearts/|src/licences\.js|scripts/(licence-check|mutants)\.mjs|package(-lock)?\.json)'; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "No guard changes."; fi
+
+      - uses: actions/setup-node@v7
+        if: steps.changed.outputs.run
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            workers/hearts/package-lock.json
+
+      - name: Install
+        if: steps.changed.outputs.run
+        run: npm ci && (cd workers/hearts && npm ci && npx wrangler d1 migrations apply game-scroll-hearts --local)
+
+      - name: Every guard is reached by a test
+        if: steps.changed.outputs.run
+        run: node scripts/mutants.mjs
+
+  # Maths probe: do V8 (Android, the Worker) and JavaScriptCore (iPhone) give the same bits for
+  # Math.sin, exp...? Informational (a warning, never red). Runs when the kits change.
+  maths:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Did the kits change?
+        id: changed
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          if git diff --name-only "origin/$BASE...HEAD" | grep -qE '^(src/kit/|scripts/math-probe\.cjs)'; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "No kit changes."; fi
+
+      - uses: actions/setup-node@v7
+        if: steps.changed.outputs.run
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Playwright with Chromium and WebKit
+        if: steps.changed.outputs.run
+        run: npm ci && npm i --no-save playwright && npx playwright install --with-deps chromium webkit
+
+      - name: Same maths in every engine?
+        if: steps.changed.outputs.run
+        run: node scripts/math-probe.cjs

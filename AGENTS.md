@@ -150,7 +150,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.replay`: `Ghost` (record a run, `pack()` for `api.save`, race it), `Recorder` / `Replayer` (whole rounds).
 - `gs.look2d`: `Lights` (darkness, coloured lights, shadows off walls), `Screen` (lazy: crt, bloom, grade,
   glitch, film, shockwave...), `Batch` (lazy: thousands of WebGL sprites).
-- `gs.brains` (Tiny Brains): `Brain(api, { inputs, actions, teacher, limits, rules })` learns as you play with guard rails (`act`, `feel`, `result`), `Wave` (each enemy an experiment), `Imagine` (tries moves ahead).
+- `gs.brains` (Tiny Brains): `Brain(api, { inputs, actions, teacher, limits, rules })` learns as you play with guard rails (`act`, `feel`, `result`), `Wave` (each enemy an experiment, `unsure(see)`), `Imagine` (tries moves ahead; `fixed: true` for replays), `Predict` (learns the player's habits: `see`, `guess`, `sure`).
 - `gs.board.Board` (match, fall, refill, `slide` 2048-style, `flood`, `hint`), `gs.battle` (`Fighter`, `Battle`
   turn order + types + statuses, `Bag`, `gainXp`, `loot`), `gs.gen` (lazy: `dungeon`, `cave`, `maze`, `islands`,
   `pattern`, `fov`; seeded, same text as TileMap), `gs.drag.Drag` (pieces, slots, snap, lists), `gs.idle`

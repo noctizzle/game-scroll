@@ -6,6 +6,11 @@
 //
 // It times the game's own update() and draw() (for 3D games only update(): a headless browser draws
 // 3D in software, far slower than a phone's GPU, so that time would say nothing about phones).
+//
+// Noise floor: shared CI machines vary, so the same code can land either side of the line. A game
+// that is only a little over (up to NEAR x the budget) is played twice more: it fails when the
+// middle of the three runs is still over, and the report gives the spread so you can tell a real
+// slowdown from a noisy machine. Further over than that fails at once.
 const { chromium, devices } = require('playwright');
 
 const CPU_SLOWDOWN = 4;          // CI machines are several times faster than a mid-range phone
@@ -16,6 +21,7 @@ const BUDGET = {                 // per frame, on the slowed CPU, 95th percentil
   growMB: 40,                    // JavaScript memory still held after a minute of play (a leak)
 };
 const SECONDS = 12;
+const NEAR = 1.5, RUNS = 3;
 
 const p95 = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * .95))]; };
 
@@ -29,8 +35,8 @@ const p95 = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - 
   const ids = process.argv.slice(2).length ? process.argv.slice(2) : await p.evaluate(() => __gs.GAMES.map(g => g.id));
   await cdp.send('Profiler.enable'); await cdp.send('HeapProfiler.enable');
   let failed = 0;
-  for (const id of ids) {
-    const errs = [];
+  // one 12-second play of a game: its p95 frame time, memory growth and profile
+  async function measure(id) {
     await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(300);
     for (let i = 0; i < 40 && await p.evaluate(() => !__gs.active || __gs.active.loading); i++) await p.waitForTimeout(250);
     const is3d = await p.evaluate(() => ['console', 'nextgen', 'ar'].includes(__gs.active?.def.era));
@@ -62,13 +68,23 @@ const p95 = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - 
     const heap1 = (await cdp.send('Runtime.getHeapUsage')).usedSize;
     const T = await p.evaluate(() => { clearInterval(__budget.iv); const t = window.__budget; return { u: t.u.slice(5), d: t.d.slice(5) }; });
     const frames = T.u.map((u, i) => u + (is3d ? 0 : (T.d[i] || 0)));
-    const ms = p95(frames), grow = (heap1 - heap0) / 1048576;
+    return { ms: p95(frames), grow: (heap1 - heap0) / 1048576, n: T.u.length, profile, is3d };
+  }
+  for (const id of ids) {
+    const runs = [await measure(id)], { is3d } = runs[0];
     const limit = is3d ? BUDGET.update3d : BUDGET.frame;
-    const slow = ms > limit, leak = grow > BUDGET.growMB, few = T.u.length < 30;
+    // a near miss: play it again, and judge the middle run
+    if (runs[0].ms > limit && runs[0].ms <= limit * NEAR && runs[0].grow <= BUDGET.growMB && runs[0].n >= 30)
+      while (runs.length < RUNS) runs.push(await measure(id));
+    const byMs = [...runs].sort((a, b) => a.ms - b.ms), mid = byMs[byMs.length >> 1];
+    const { ms, grow, n, profile } = mid, spread = byMs[byMs.length - 1].ms - byMs[0].ms;
+    const slow = ms > limit, leak = grow > BUDGET.growMB, few = n < 30;
     const ok = !slow && !leak && !few;
     if (!ok) failed++;
-    const line = `${ok ? 'PASS' : 'FAIL'} ${id.padEnd(16)} ${is3d ? 'update' : 'frame '} p95 ${ms.toFixed(1)} ms (budget ${limit.toFixed(1)})  memory +${grow.toFixed(1)} MB  frames ${T.u.length}`;
+    const again = runs.length > 1 ? `  (middle of ${runs.length} runs: ${runs.map(r => r.ms.toFixed(1)).join(', ')} ms, spread ${spread.toFixed(1)})` : '';
+    const line = `${ok ? 'PASS' : 'FAIL'} ${id.padEnd(16)} ${is3d ? 'update' : 'frame '} p95 ${ms.toFixed(1)} ms (budget ${limit.toFixed(1)})  memory +${grow.toFixed(1)} MB  frames ${n}${again}`;
     console.log(line);
+    if (slow) console.log(`   over budget by ${(ms - limit).toFixed(1)} ms${runs.length > 1 ? `, runs spread ${spread.toFixed(1)} ms` : ''}`);
     if (few) console.log('   too few frames played to measure (did the game start?)');
     if (leak) console.log(`   memory grew ${grow.toFixed(0)} MB in ${SECONDS} s: something is kept every frame or round (arrays that only grow, listeners added in reset()...)`);
     if (slow) for (const t of hot(profile)) console.log('   ' + t);
