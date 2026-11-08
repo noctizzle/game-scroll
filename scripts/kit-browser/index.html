@@ -19,8 +19,8 @@ try {
   let g3; try { gs.hd; } catch (x) { g3 = x; } ok(g3?.kitLoading && /gs\.hd/.test(g3.message), 'gs.hd StillLoading before the 3D parts load'); await g3.kitLoading;
   let gai; try { gs.ai; } catch (x) { gai = x; } ok(gai?.kitLoading, 'gs.ai StillLoading'); await gai.kitLoading; ok(!!gs.hd.HDView && !!gs.ai.Crowd && !!gs.THREE.Scene, '3D and AI parts in');
   // comfort settings: shake and flash shrink with Reduce motion (the default here is off)
-  ok(gs.prefs.reduceMotion === false && gs.prefs.aimAssist === 1 && new gs.aim.AimAssist().strength === 1, 'prefs defaults');
-  try { gs.prefs.aimAssist = 0; } catch (_) { /* frozen */ } ok(gs.prefs.aimAssist === 1, 'games cannot change prefs');
+  ok(gs.prefs.reduceMotion === false && gs.prefs.motion === 1, 'prefs defaults');
+  try { gs.prefs.motion = 0; } catch (_) { /* frozen */ } ok(gs.prefs.motion === 1, 'games cannot change prefs');
   // lazy: physics
   let e; try { new gs.physics.Physics(); } catch (x) { e = x; } ok(e && e.kitLoading, 'physics StillLoading'); await e.kitLoading;
   const p = new gs.physics.Physics({ walls: [0, 0, 320, 240] }); const b = p.box(100, 20, 20, 20); for (let i = 0; i < 90; i++) p.step(1 / 60); ok(b.y > 200, 'physics in browser ' + b.y);
