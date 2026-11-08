@@ -36,7 +36,8 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 
 `gs` is a frozen object with one group per job: `sound`, `device`, `util`, `math`, `palettes`,
 `juice`, `effects`, `controls`, `pad`, `moves`, `pixel`, `gfx`, `bricks`, `physics`, `physics3d`,
-`ai`, `toon` (Classic Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo` and `THREE`.
+`ai`, `things`, `rounds`, `pacing`, `aim`, `senses`, `camera`, `nav3d`, `characters`, `toon` (Classic
+Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo` and `THREE`.
 It is the only thing a game may import (`src/game-modules.js`); `npm run games` refuses anything
 else and the PR check flags it.
 
@@ -44,13 +45,17 @@ Everything else (credits, saved progress, settings, hearts, raw storage, the unr
 belongs to the app and isn't on `gs`. Save with `api.save()`, find the player with `api.location()`.
 
 `gs` sends each call to the right place underneath: our own kits, or the best free library for the
-job (Rapier for physics, Yuka for AI, MediaPipe for faces and hands, Tone.js, ZzFX, three.quarks,
-troika-three-text, simplex-noise). If we swap a library later, games don't change.
+job (Rapier for physics, Yuka for AI, Recast for 3D path finding, MediaPipe for faces and hands,
+Tone.js, ZzFX, three.quarks, troika-three-text, simplex-noise). If we swap a library later, games don't change.
 
-**Big parts load when first used.** Physics, 3D physics, 3D extras, face tracking and Tone.js are a
+**Big parts load when first used.** Physics, 3D physics, 3D path finding, 3D extras, face tracking and Tone.js are a
 few MB, so the app loads them the first time a game needs them. Create those things in `make()` or
 `reset()`: if the library isn't in yet, the app shows "Loading…" on the card and makes your game
 again once it is. Don't create them later (in `update()` or a tap), or the game will stop with an error.
+
+**Your game leads, the kit helps.** The kits work out the fiddly parts (what hit what, when to
+spawn, where a guard looks, where the camera goes) and hand you the answers. How things look, the
+HUD, and the rules stay in your game: nothing on `gs` draws a screen for you unless you call it.
 
 Each streamed game lists the parts of `gs` it uses, so an app version that doesn't have one yet
 skips the game until it updates.
@@ -413,6 +418,150 @@ update(dt) { moves.update(); }   // moves are handed to your handlers here
 Moves: `swing` (`dir` left / right / up / down), `punch`, `throw`, `flip` (forward / back),
 `twist` (left / right), `knock`, `shake`, and `any`. Each has `power` 0..1. `new Moves({ sensitivity: 1.3 })`
 fires more easily. On iPhones the player is asked for motion access when they tap Play.
+
+## Game objects
+
+`const { Things } = gs.things;` A light list of your game's objects with tags, so collisions and
+"what's nearest" are one line. They stay your own plain objects: you move and draw them.
+
+```js
+reset() { things = new Things(); player = things.add({ x: 180, y: 600, r: 14 }, 'player'); }
+update(dt) {
+  things.each('bullet', b => { b.y -= 400 * dt; });
+  things.hits('bullet', 'enemy', (b, e) => { things.kill(b); if (--e.hp <= 0) things.kill(e); });
+  const coin = things.hit(player, 'coin'); if (coin) { things.kill(coin); score++; }
+  things.cull(0, 0, W, H, 20, 'bullet');      // gone off screen
+  things.update(dt);                          // calls each thing's own update(dt) if it has one, drops killed ones
+}
+draw(c) { for (const e of things.all('enemy')) drawEnemy(c, e); }
+```
+
+- Shapes: `r` (circle), `w` + `h` (box centred on x, y) or neither (a point). A thing can have several tags.
+- `all(tag)`, `count(tag)`, `first(tag)`, `each(tag, fn)`, `hit(obj, tag)`, `hitsOf(obj, tag)`,
+  `hits(tagA, tagB, fn)` (fast with hundreds), `near(x, y, r, tag)`, `nearest(x, y, tag)`, `tag()`, `untag()`, `is()`.
+- `reuse(tag, make, init)` recycles killed objects (less garbage in busy games).
+- 3D games: `new Things({ plane: 'xz' })` uses x and z.
+
+## Rounds and scenes
+
+`const { Scenes, Levels } = gs.rounds;` The parts of a round (intro, play, clear, boss) as scenes
+with their own update and draw, and timed changes between them that you draw your own way.
+
+```js
+reset() {
+  levels = new Levels(LEVELS, { loop: true });
+  scenes = new Scenes({
+    intro: { enter() { build(levels.now); }, update(dt, s) { if (s.time > 1.2) s.go('play', { fade: .4 }); } },
+    play:  { update(dt, s) { step(dt); if (cleared()) s.go('clear'); }, draw: drawWorld },
+    clear: { enter() { feel.win(); }, update(dt, s) { if (s.time > 1.5) { levels.next(); s.go('intro', { fade: .6 }); } } },
+  }, 'intro');
+}
+update(dt) { scenes.update(dt); }
+draw(c) { scenes.draw(c); if (scenes.changing) { c.fillStyle = `rgba(0,0,0,${scenes.cover})`; c.fillRect(0, 0, W, H); } }
+```
+
+- `go(name, { fade, data })`, `after(sec, name)`, `is(name)`, `time`, `prev`, `data`, `changing`,
+  `progress` (0 → 1) and `cover` (0 → 1 → 0) for your own fade, wipe or iris. `input('down', x, y)` passes taps on.
+- `Levels(list, { loop })`: `now`, `index`, `number`, `lap` (repeats, to make them harder), `next()`, `last`.
+
+## Spawning and pacing
+
+`const { Spawner, Waves, Director, ramp } = gs.pacing;` When things appear and how hard it gets.
+The kit says when; your game makes the thing.
+
+```js
+spawner = new Spawner({ every: 1.2, fastest: .35, over: 60, jitter: .25 });   // speeds up over a minute
+spawner.update(dt, () => things.add(makeBat(), 'enemy'));
+
+waves = new Waves([{ count: 6, every: .7, kind: 'bat' }, { count: 1, kind: 'boss' }], { breather: 3, loop: true });
+waves.update(dt, kind => spawn(kind), things.count('enemy'));   // next wave once this one is beaten
+// waves.number, waves.state ('spawning' | 'fighting' | 'breather' | 'done'), waves.breatherLeft
+
+director = new Director({ over: 90 });      // difficulty 0..1 that eases off when the player is struggling
+director.hurt(1); director.scored(1); director.update(dt); gap = director.pick(1.4, .4);
+```
+
+## Aim assist
+
+`const { AimAssist } = gs.aim;` The help phone shooters give thumbs: sticky aim, a gentle pull onto
+targets and optional auto fire. You still own the gun, the shots and the crosshair.
+
+```js
+assist = new AimAssist({ cone: 12, range: 300, pull: .5, slow: .45, autoFire: .15 });
+aim += assist.turn(stickX * 3 * dt);                                   // turning slows over a target
+const a = assist.update(dt, gun, aim, things.all('enemy'), { sees: nav && ((x1, y1, x2, y2) => nav.sees(x1, y1, x2, y2)) });
+aim = a.angle; if (a.fire) shoot();                                    // a.target, a.on, a.lock (0..1)
+```
+
+3D: pass `{ x, y, z }` for the gun and a direction vector for the aim; read `a.dir`. `{ lead: bulletSpeed }`
+aims ahead of moving targets (with `vx`, `vy`). `assist.strength = 0` turns it off.
+
+## Enemy senses
+
+`const { Senses, Noises } = gs.senses;` What a guard knows: sight cones that walls block, hearing,
+memory of where you were, and a mood. You decide what the guard does and how the cone and "?" look.
+
+```js
+g.senses = new Senses({ range: 120, fov: 80, spotTime: .9, memory: 4 });
+noises.make(player.x, player.y, running ? 70 : 25);
+const s = g.senses.update(dt, g, player, { sees: (x1, y1, x2, y2) => nav.sees(x1, y1, x2, y2), noises, light });
+if (s.mood === 'alert') chase(s.lastSeen); else if (s.mood !== 'calm') walkTo(s.lookAt);
+noises.update(dt);
+```
+
+- Guards need `x`, `y`, `facing` (radians); the player `x`, `y` (`hidden: true` in a bush).
+- Moods: `calm` → `suspicious` → `alert` → `searching` → `calm`. `awareness` (0..1) fills a meter.
+- `alert(x, y)`, `suspect(x, y)`, `Senses.alertAll(guards, x, y, radius)` (one guard raises the alarm).
+- 3D games: pass x and z as x and y.
+
+## Camera rigs
+
+`const { CameraRig } = gs.camera;` Moves a 3D camera for you: `chase`, `shoulder`, `first`, `top`,
+`side`, `orbit`, `rail` and `fixed`. It stays out of walls, blends between rigs, shakes and kicks.
+
+```js
+rig = new CameraRig(v, { mode: 'chase', distance: 6, height: 2.2, walls: [level] });
+rig.yaw += dragX * .01; rig.pitch += dragY * .01;   // look around
+rig.update(dt, hero);                               // any Object3D, or { position, yaw }
+rig.to('shoulder', .4); rig.shake(.5); rig.kick(8, .25);
+const fwd = rig.forward(), right = rig.right();     // "stick up = away from the camera"
+```
+
+Settings (also `rig.set({...})`): `distance`, `height`, `side`, `look`, `lag`, `lead`, `fov`, `walls`,
+`pitchMin`, `pitchMax`, `rail` (a `THREE.Curve`), `at` (for `fixed`). Characters face +z.
+
+## 3D path finding
+
+`const { NavMesh3D } = gs.nav3d;` (loads when first used.) Finds paths round any 3D level, using a
+walkable map made from your level's meshes ([Recast & Detour](https://github.com/isaac-mason/recast-navigation-js)).
+
+```js
+reset() {
+  nav = new NavMesh3D([floor, walls, crates], { radius: .4, height: 1.8, climb: .4, slope: 45 });
+  crowd = nav.crowd(); g.agent = crowd.add(g.mesh.position, { speed: 3.5 });
+}
+update(dt) { g.agent.goto(hero.position); crowd.update(dt); g.mesh.position.copy(g.agent.position); }
+```
+
+- `path(a, b)` → corners `[Vector3]` (or `[]`), `reachable(a, b)`, `closest(p)`, `random(p, radius)`.
+- Agents: `goto(p)`, `stop()`, `place(p)`, `arrived()`, `position`, `velocity`, `speed`, `remove()`.
+- Set `mesh.userData.noNav = true` on things that shouldn't count (decorations, the player).
+
+## Living characters and ragdolls
+
+`const { lookAt, reach, Steps, Wobble } = gs.characters;` Motion for characters you build from parts
+(groups with their origins at the joints, limbs hanging down their own -y, facing +z).
+
+```js
+lookAt(guard.head, hero.position, dt, { max: 1.1 });          // null looks ahead again
+reach(thigh, shin, steps.feet[0].pos);                        // two-bone IK: bends the knee
+steps = new Steps({ feet: [[-.15, 0], [.15, 0]], stride: .45, ground: (x, z) => 0 });
+steps.update(dt, hero);                                       // feet[i].pos, .lifting, .landed (footstep sound)
+wobble.hit(1); wobble.update(dt); body.rotation.x = wobble.value * .4;   // springy hit reaction
+```
+
+Ragdolls are part of 3D physics: `rag = phys.ragdoll(guard, { limbs: [head, armL, armR, legL, legR], push: [0, 2, -5] })`
+turns the character floppy (each limb swings at its origin). `rag.push()`, `rag.hit(part, ...)`, `rag.remove()`.
 
 ## 3D extras
 

@@ -128,9 +128,17 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.physics.Physics` (Rapier 2D; lazy): `circle`, `box`, `poly`, `line`, `walls`, `hinge`, `spring`,
   `rope`, `weld`, `slider`, `wheel`, `grab`, `ray`, `at`, `blast`, `onHit`, `step(dt)`, `path(c, t)`.
 - `gs.physics3d.World3D` (Rapier 3D; lazy): `ball`, `box`, `capsule`, `hull`, `ground(mesh)`,
-  `floor`, `mover()` (walking character), `ray`, joints, `step(dt)` syncs meshes.
+  `floor`, `mover()` (walking character), `ragdoll()`, `ray`, joints, `step(dt)` syncs meshes.
 - `gs.ai`: `Crowd` (`add(x, y).chase(t) / flee / wander / follow(route) / flock / hunt(t, nav)`),
   `NavGrid` (`path`, `sees`), `Brain` (state machine), `YUKA`.
+- `gs.things.Things` (game objects): `add(obj, tag)`, `hit(obj, tag)`, `hits(tagA, tagB, fn)`, `near`, `nearest`, `kill`, `reuse`, `each`, `all`.
+- `gs.rounds`: `Scenes({ name: { enter, update, draw } }, start)` with `go(name, { fade })`, `cover`, `after()`; `Levels(list)`.
+- `gs.pacing`: `Spawner({ every, fastest, over })`, `Waves([...], { breather })`, `Director` (difficulty that eases off), `ramp`.
+- `gs.aim.AimAssist`: sticky aim, pull onto targets, auto fire (2D angle or 3D direction).
+- `gs.senses`: `Senses` (sight cones, hearing, memory; moods calm/suspicious/alert/searching), `Noises`.
+- `gs.camera.CameraRig` (3D): `chase`, `shoulder`, `first`, `top`, `side`, `orbit`, `rail`, `fixed`; walls, blends, `shake`, `kick`.
+- `gs.nav3d.NavMesh3D` (lazy): 3D paths made from your level meshes, `crowd()` agents.
+- `gs.characters`: `lookAt`, `reach` (two-bone IK), `Steps` (feet that plant), `Wobble`; ragdolls are `World3D.ragdoll()`.
 - `gs.math`: `rng(seed)`, `daily(salt)`, `noise2`, `noise3`, `fbm`, `vec`, `overlap`, `Grid`, `Timers`, `angleDiff`, `wrap`.
 - `gs.util`: `clamp`, `rnd`, `pix`, `disc`, `hash`, `fmt`, `flickTracker`. `gs.palettes`: `PAL`, `SHELL`, `C16`.
 - `gs.gfx` (shaded 2D shapes, glow, backdrops), `gs.bricks` (toy bricks), `gs.geo` (location maths).
@@ -140,10 +148,12 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   `outline`, `glitch`, `trails`, `focus`, `pixelate`.
 - `gs.vision` (lazy): `Face` (`x`, `y`, `yaw`, `mouth`, `smile`, `blink`...), `Hands` (`pinch`, `open`, `point`...).
 
-**Lazy parts** (physics, physics3d, fx3d, vision, Tone): create them in `make()` or `reset()`, never
+**Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone): create them in `make()` or `reset()`, never
 later. The app shows "Loading…" and remakes the game once the library is in.
 
 ## Common mistakes
+
+- Making the kits decide the look: kits give answers (hits, timings, where to aim or look); your game draws and sets the rules.
 
 - Round state set in `make()` instead of `reset()`, so "Play again" doesn't start clean.
 - Using `Date.now()` or `setTimeout` for game timing: use `dt` and `gs.math.Timers` (they pause with the game).

@@ -1,4 +1,5 @@
 import gs from '../gamescroll.js';
+const { Timers } = gs.math;
 const { sounds, noise, tone } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
@@ -62,6 +63,7 @@ function makeMech(col, visorCol) {
 }
 
 function make(api) {
+  const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   let v, me, foe, sunL, spots, sparks, smoke, debris, built;
   let myHp, foeHp, rival, ri, foeState, foeT, foeSide, open, myGuard, dodge, dodgeT, cool, score, t, msg, fingers, keys, hitFlash, koT, shake, roundT, flying;
   const tmp = new Vector3();
@@ -100,7 +102,7 @@ function make(api) {
     if (cool > 0 || koT > 0 || dodgeT > 0) return;
     const a = me.userData.arms[side]; a.ext = .01; cool = side === 'L' ? .28 : .55;
     tone(side === 'L' ? 300 : 200, { len: .08, wave: 'triangle', vol: .04, slide: -100 });
-    setTimeout(() => land(side), side === 'L' ? 110 : 180);
+    later(() => land(side), side === 'L' ? 110 : 180);
   }
   function land(side) {
     if (!foe || koT > 0) return;
@@ -125,7 +127,7 @@ function make(api) {
   function foeAttack() {
     const a = foe.userData.arms[foeSide];
     if (foeSide === 'S') { foe.userData.arms.L.ext = foe.userData.arms.R.ext = .01; } else a.ext = .01;
-    setTimeout(() => {
+    later(() => {
       if (koT > 0 || !foe) return;
       const smash = foeSide === 'S';
       if (dodgeT > 0) { open = 1.3; msg = { txt: 'DODGED · OPEN!', l: 1, col: '#40e8ff' }; haptic('light'); tone(900, { len: .1, wave: 'square', vol: .04, slide: 300 }); return; }
@@ -133,10 +135,10 @@ function make(api) {
       if (myGuard && !smash) { dmg = 4; tone(1500, { len: .05, wave: 'square', vol: .03 }); haptic('medium'); burst(tmp.set(0, 2.6, .9), 10, [2, 2, 2.6], 4); msg = { txt: 'BLOCKED', l: .6, col: '#cfe' }; }
       else { haptic('heavy'); sounds.hurt(.8); noise(.3, { vol: .12, from: 1600, to: 100 }); hitFlash = 1; shake = smash ? 1 : .7; if (Math.random() < .4) knockPlate(me); if (smash && myGuard) msg = { txt: "CAN'T BLOCK A SMASH, DODGE IT", l: 1.2, col: '#ff6a5a' }; }
       myHp -= dmg;
-      if (myHp <= 0) { myHp = 0; sounds.lose(); setTimeout(() => api.over(), 900); koT = 99; msg = { txt: 'DOWN!', l: 3, col: '#ff5050' }; }
+      if (myHp <= 0) { myHp = 0; sounds.lose(); later(() => api.over(), 900); koT = 99; msg = { txt: 'DOWN!', l: 3, col: '#ff5050' }; }
     }, 140);
   }
-  function update(dt) {
+  function update(dt) { timers.update(dt);
     t += dt; roundT += dt; cool = Math.max(0, cool - dt); dodgeT = Math.max(0, dodgeT - dt); open = Math.max(0, open - dt); hitFlash = Math.max(0, hitFlash - dt * 2.5); shake = Math.max(0, shake - dt * 2);
     if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
     myGuard = Object.values(fingers).some(f => f.hold) || keys.has('ArrowDown');
@@ -195,7 +197,7 @@ function make(api) {
     c.restore();
   }
   const self = {
-    reset() {
+    reset() { timers.clear();
       if (!v) setup();
       for (const d of debris) v.scene.remove(d.o); debris = [];
       if (me) v.scene.remove(me); me = makeMech('#a8aeb8', '#40e8ff'); v.scene.add(me);

@@ -1,4 +1,5 @@
 import gs from '../gamescroll.js';
+const { Timers } = gs.math;
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
@@ -23,6 +24,7 @@ const KINDS = [
 let W = 176, H = 192;
 
 function make(api) {
+  const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   let pl, things, studs, bots, total, bank, target, time, square, t, hold, tapStart, parts, msg, dead, swing, bump, cleared;
   const top = 14;
   function free(w, h) { for (let i = 0; i < 60; i++) { const x = rnd(8, W - w - 8), y = rnd(top + 14, H - h - 8); if (Math.hypot(x + w / 2 - pl.x, y + h / 2 - pl.y) > 26 && !things.some(o => x < o.x + o.w + 4 && x + w + 4 > o.x && y < o.y + o.h + 4 && y + h + 4 > o.y)) return { x, y }; } return null; }
@@ -81,9 +83,9 @@ function make(api) {
     else { best.hp--; best.hit = .2; best.stun = .8; haptic('medium'); if (best.hp <= 0) { bots.splice(bots.indexOf(best), 1); spill(best.x, best.y, 8, true); burst(best.x, best.y, '#b8bcc4'); sfx(180, .2, 'sawtooth', .05, -60); } }
   }
   const self = {
-    reset() { pl = { x: W / 2, y: H - 20, a: -1.57 }; square = 1; total = 0; time = 0; t = 0; hold = null; parts = []; dead = 0; swing = 0; bump = 0; build(); },
+    reset() { timers.clear(); pl = { x: W / 2, y: H - 20, a: -1.57 }; square = 1; total = 0; time = 0; t = 0; hold = null; parts = []; dead = 0; swing = 0; bump = 0; build(); },
     resize(w, h) { const sx = w / W, sy = h / H; W = w; H = h; if (things) for (const o of [pl, ...things, ...studs, ...bots]) { o.x *= sx; o.y *= sy; } },
-    update(dt) {
+    update(dt) { timers.update(dt);
       t += dt; swing = Math.max(0, swing - dt); bump = Math.max(0, bump - dt);
       for (const p of parts) { p.l -= dt; if (p.vx != null) { p.x += p.vx * dt; p.y += p.vy * dt; } else p.y -= 16 * dt; } parts = parts.filter(p => p.l > 0);
       if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
@@ -107,7 +109,7 @@ function make(api) {
         if (b.x < 8 || b.x > W - 8) b.a = Math.PI - b.a; if (b.y < top + 8 || b.y > H - 8) b.a = -b.a; b.x = clamp(b.x, 8, W - 8); b.y = clamp(b.y, top + 8, H - 8);
         if (d < 10 && bump <= 0) { bump = 1.2; const lose = Math.min(bank, 8 + square * 2); bank -= lose; total -= lose; api.score(total); spill(pl.x, pl.y, Math.min(10, lose), false); b.stun = 1; haptic('heavy'); sfx(150, .3, 'sawtooth', .05, -60); parts.push({ txt: `-${lose}`, x: pl.x, y: pl.y - 12, l: .8, col: '#f86060' }); }
       }
-      if (!cleared && bank >= target) { cleared = true; haptic('success'); sfx(880, .5, 'square', .05, 500); msg = { txt: 'HERO! NEXT SQUARE...', l: 1.6 }; setTimeout(() => { if (!dead) { square++; build(); } }, 1600); }
+      if (!cleared && bank >= target) { cleared = true; haptic('success'); sfx(880, .5, 'square', .05, 500); msg = { txt: 'HERO! NEXT SQUARE...', l: 1.6 }; later(() => { if (!dead) { square++; build(); } }, 1600); }
       if (!cleared && !things.length && !studs.length && !bots.length) { for (let i = 0; i < 6; i++) { const K = KINDS[Math.random() * 5 | 0], p = free(K.w, K.h); if (p) things.push({ ...K, ...p, hit: 0, col: K.col, wob: 0 }); } msg = { txt: 'MORE TO SMASH!', l: 1 }; }
     },
     draw(c) {
