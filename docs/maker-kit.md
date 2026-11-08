@@ -264,8 +264,15 @@ tune.start(); tune.speed(1.2); tune.stop();
 
 - **Ready-made**: `coin`, `jump`, `hurt`, `hit`, `boom`, `laser`, `shoot`, `powerup`, `select`,
   `blip`, `pop`, `splash`, `click`, `win`, `lose`, `levelup`, `countdown(last)`.
-- **`noise(len, { vol, from, to, filter, q })`**: filtered noise sweeping from `from` Hz to `to` Hz.
-  High to low is an explosion, short and high is a hit, long and low is a rumble.
+- **`noise(len, { vol, from, to, filter, q, attack })`**: filtered noise sweeping from `from` Hz to `to` Hz.
+  High to low is an explosion, short and high is a hit, long and low is a rumble. `attack` fades it in (a whoosh).
+- **`space({ seconds, decay, wet, bright, pre })`**: the sound of a place, a reverb made in code (a
+  church, a valley, a cave). Play into it with `noise(len, { out: sp?.in })` or `tone(f, { out: sp?.in })`,
+  or pass it to `new Ears({ space: sp, send })` so 3D sounds echo too. `sp.set({ wet, bright }, seconds)`
+  glides (stepping indoors). Null where there is no audio, so write `sp?.in`.
+- **`bed({ vol, from, filter, q, gusts })`**: a steady background made from noise: wind (`gusts` for
+  slow swells), rain, a river. `b.set({ vol, from }, seconds)` glides as a storm rises. Beds fade in,
+  go quiet while paused and stop with the round.
 - **`tone(note, { len, wave, vol, slide })`**: one note with a soft envelope. Notes are names
   (`'A4'`, `'C#5'`, `'Eb3'`) or Hz.
 - **`music({ tempo, lead, bass, pad, arp, drums, vol, swing })`**: a looping tune. Each part is a
