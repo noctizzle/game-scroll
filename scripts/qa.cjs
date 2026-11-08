@@ -87,7 +87,7 @@ function flags(g) {
   const mk = async () => {
     const ctx = await b.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 1 });
     const p = await ctx.newPage(), errs = [];
-    p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+    p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) errs.push(m.text()); });   // the app's own API calls (scores, hearts) can fail offline: not the game's fault
     await p.goto('http://localhost:4181/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(400);
     return { p, errs };
   };

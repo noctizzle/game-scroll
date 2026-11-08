@@ -293,3 +293,96 @@ console.log('physics ok');
   setPrefs({ reduceMotion: false });
   console.log('prefs ok');
 }
+// 2D camera: dead zone, bounds, toWorld
+{
+  const { Camera2D } = await import('../src/kit/camera2d.js');
+  const cam = new Camera2D(160, 144, { bounds: [0, 0, 640, 144], deadzone: [40, 40], lag: 0 });
+  const t = { x: 10, y: 72 }; cam.update(1 / 60, t);
+  assert.equal(cam.x, 80, 'clamped to the left edge');
+  t.x = 300; cam.update(1 / 60, t); assert.ok(Math.abs(cam.x - 280) < 1e-6, 'follows to the dead zone edge ' + cam.x);
+  t.x = 900; cam.update(1 / 60, t); assert.equal(cam.x, 560, 'clamped to the right edge');
+  const w = cam.toWorld(80, 72); assert.ok(Math.abs(w.x - 560) < 1e-6 && Math.abs(w.y - 72) < 1e-6, 'toWorld');
+  assert.ok(cam.sees(600, 70) && !cam.sees(100, 70), 'sees');
+  console.log('camera2d ok');
+}
+// tile levels and movers
+{
+  const { TileMap } = await import('../src/kit/tiles.js');
+  const { Platformer, TopDown } = await import('../src/kit/movers.js');
+  const map = TileMap.fromText(`
+    ..........
+    .P......E.
+    ....--....
+    ..........
+    ...../####
+    ##########`, { size: 10 });
+  assert.equal(map.cols, 10); assert.equal(map.rows, 6);
+  assert.deepEqual(map.find('P').map(m => [m.x, m.y]), [[15, 15]], 'marks');
+  const hero = new Platformer({ x: 15, y: 15, w: 8, h: 8, jump: 25, run: 60 });
+  for (let i = 0; i < 60; i++) hero.update(1 / 60, map, {});
+  assert.ok(hero.onGround && Math.abs(hero.bottom - 50) < .01, 'lands on the floor ' + hero.bottom);
+  // run right up the slope onto the block
+  for (let i = 0; i < 120; i++) hero.update(1 / 60, map, { x: 1 });
+  assert.ok(hero.onGround && Math.abs(hero.bottom - 40) < .6 && hero.x > 55, 'walked up the slope onto the block ' + hero.x + ',' + hero.bottom);
+  // a jump reaches about the jump height, coyote time works after walking off
+  const h2 = new Platformer({ x: 25, y: 46, w: 8, h: 8, jump: 25 }); h2.update(1 / 60, map, {});
+  let top = h2.y; h2.update(1 / 60, map, { jump: true }); for (let i = 0; i < 40; i++) { h2.update(1 / 60, map, { jump: true }); top = Math.min(top, h2.y); }
+  assert.ok(46 - top > 20 && 46 - top < 30, 'jump height ~25: ' + (46 - top));
+  // one-way platform: jump up through it and stand on it
+  assert.ok(map.info(4, 2).oneWay, 'one-way tile');
+  const h3 = new Platformer({ x: 45, y: 46, w: 6, h: 8, jump: 35 }); h3.update(1 / 60, map, {});
+  h3.update(1 / 60, map, { jump: true }); for (let i = 0; i < 90; i++) h3.update(1 / 60, map, { jump: true });
+  assert.ok(h3.onGround && Math.abs(h3.bottom - 20) < .01, 'stands on the one-way platform ' + h3.bottom);
+  // top-down slides along walls
+  const td = new TopDown({ x: 15, y: 25, w: 8, h: 8, speed: 80 }); for (let i = 0; i < 60; i++) td.update(1 / 60, map, { x: -1, y: 1 });
+  assert.ok(td.left >= 0 - 1e-6 && td.bottom <= 50 + 1e-6, 'top-down stops at walls');
+  assert.ok(map.sees(15, 15, 85, 15) && !map.sees(15, 45, 85, 45), 'line of sight');
+  console.log('tiles + movers ok');
+}
+// animation states
+{
+  const { Animator } = await import('../src/kit/anim.js');
+  const steps = [];
+  const a = new Animator({ idle: { frames: 2, fps: 4 }, run: { frames: 4, fps: 10, events: { 1: 'step', 3: 'step' } }, punch: { frames: [7, 8, 9], fps: 10, loop: false, then: 'idle' } }, 'idle');
+  a.on('step', () => steps.push(a.frame));
+  for (let i = 0; i < 40; i++) a.update(.01, 'run');
+  assert.deepEqual(steps, [1, 3], 'step events on frames 1 and 3: ' + steps);
+  a.play('punch'); a.update(.15, 'run'); assert.equal(a.frame, 8, 'punch frame'); a.update(.2, 'run');
+  assert.equal(a.state, 'idle', 'punch ends into idle (locked until done)');
+  console.log('anim ok');
+}
+// replays and ghosts
+{
+  const { Ghost, Recorder, Replayer } = await import('../src/kit/replay.js');
+  const g = new Ghost(); for (let i = 0; i < 600; i++) g.record(1 / 60, i * 2, Math.sin(i / 30) * 50);
+  const p = g.pack(); assert.ok(p.length <= 1200, 'packs small: ' + p.length);
+  const back = Ghost.unpack(p), at = back.at(5);
+  assert.ok(Math.abs(at.x - 600) < 3 && Math.abs(at.y - Math.sin(10) * 50) < 2, 'ghost plays back ' + JSON.stringify(at));
+  const rec = new Recorder({ seed: 42 }); const game = { s: 0, down(x) { this.s += x; }, update(dt) { this.s += dt; } };
+  rec.event('down', 5); rec.frame(.5); game.down(5); game.update(.5);
+  const n1 = rec.rng(), copy = { s: 0, down: game.down, update: game.update }, play = new Replayer(rec.data);
+  while (!play.done) play.step(copy);
+  assert.equal(copy.s, game.s, 'replay feeds the same inputs'); assert.equal(play.rng(), n1, 'same random numbers');
+  console.log('replay ok');
+}
+// dialogue (ink)
+{
+  const { Story, Typewriter, loadStory } = await import('../src/kit/story.js');
+  let e; try { new Story('Hi.'); } catch (x) { e = x; } assert.ok(e?.kitLoading, 'Story waits for ink'); await loadStory();
+  const talk = new Story(`
+  VAR gate = false
+  Halt! Who goes there? #who:guard
+  * [A friend] -> friend
+  * [Nobody] Very funny. #who:guard #mood:cross
+    -> END
+  == friend ==
+  Then pass, friend.
+  ~ gate = true
+  -> END`);
+  const l1 = talk.next(); assert.equal(l1.text, 'Halt! Who goes there?'); assert.equal(l1.tags.who, 'guard');
+  assert.deepEqual(l1.choices.map(c => c.text), ['A friend', 'Nobody'], 'choices');
+  talk.choose(0); assert.equal(talk.next().text, 'Then pass, friend.'); assert.equal(talk.vars.gate, true, 'ink variable'); assert.ok(talk.ended, 'ended');
+  const tw = new Typewriter('Hi, you.', { speed: 20 }); let ticks = 0; for (let i = 0; i < 200 && !tw.done; i++) { tw.update(.02); if (tw.ticked) ticks++; }
+  assert.ok(tw.done && ticks === 7, 'typewriter ' + ticks);
+  console.log('story ok');
+}

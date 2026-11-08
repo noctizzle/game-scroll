@@ -36,7 +36,8 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 
 `gs` is a frozen object with one group per job: `sound`, `device`, `util`, `math`, `palettes`,
 `juice`, `effects`, `controls`, `pad`, `moves`, `pixel`, `gfx`, `bricks`, `physics`, `physics3d`,
-`ai`, `things`, `rounds`, `pacing`, `aim`, `senses`, `camera`, `nav3d`, `characters`, `toon` (Classic
+`ai`, `things`, `rounds`, `pacing`, `aim`, `senses`, `prefs`, `camera2d`, `tiles`, `movers`, `anim`, `story`,
+`replay`, `look2d`, `camera`, `nav3d`, `characters`, `toon` (Classic
 Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo` and `THREE`.
 It is the only thing a game may import (`src/game-modules.js`); `npm run games` refuses anything
 else and the PR check flags it.
@@ -623,3 +624,52 @@ The panel shows frames per second, how long your `update()` and `draw()` take, t
 score and state. For hitboxes, give your game object a `debug(c)` method that outlines whatever you
 like in game units; it is drawn on top while hitboxes are on. A physics game can just call
 `phys.debugDraw(c)`.
+
+## 2D cameras, tile levels and movement
+
+`const { Camera2D } = gs.camera2d, { TileMap } = gs.tiles, { Platformer, TopDown } = gs.movers;`
+Write a level as text: `TileMap.fromText(LEVEL, { size: 16 })`. `#` is a wall, `-` a one-way platform
+(jump up through it, `input.down` drops through), `/` and `\` are slopes, `.` is empty and any other
+letter is a mark you read with `map.find('P')` (each gives `x`, `y` at the tile's centre) and then
+`map.clear('P')`. Your own tile kinds go in `legend`. `map.move(box, dx, dy)` moves a box (centre
+`x`, `y`, size `w`, `h`) and says what it hit; `map.ray` and `map.sees` are lines of sight and
+`map.walkable()` feeds `gs.ai.NavGrid`. `map.draw(c, (c, ch, x, y, size) => ..., cam)` calls your
+drawing for each tile on screen.
+
+`Platformer` moves through a map with the tricks that make jumping feel right: coyote time, a jump
+buffer, letting go early for a short hop, wall slide and wall jump (`wall: true`), air jumps. Its
+`state` ('idle', 'run', 'jump', 'fall', 'wall'), `jumped`, `landed` and `impact` drive your animation
+and effects. `TopDown` is eight-way walking that slides along walls.
+
+`Camera2D(W, H, { bounds: [0, 0, map.w, map.h], deadzone: [60, 80], lag: .12, lead: .2 })`:
+`cam.update(dt, hero)`, then draw the world between `cam.begin(c)` and `cam.end(c)`; `cam.layer(c,
+.3, drawHills, { repeat: [W, 0] })` for parallax; taps go through `cam.toWorld(x, y)`.
+
+## Animation, dialogue and replays
+
+`gs.anim.Animator` keeps track of which frame to draw: states with `frames`, `fps`, `loop`, `then`
+(where a one-shot goes next) and `events` on frames (`on('step', ...)`). Pick the state each frame
+with `anim.update(dt, 'run')` or play one with `anim.play('punch')`.
+
+`gs.story.Story(script)` runs a conversation written in ink (inklestudios.com/ink): `next()` gives
+`{ text, tags, choices }`, `choose(i)`, `vars` for ink variables, `ended`. `Typewriter` reveals the
+text with `shown`, `done`, `skip()` and `ticked` (for a blip sound). Your game draws the box.
+
+`gs.replay.Ghost` records a few numbers over time (`record(dt, x, y, angle)`), plays them back
+smoothly (`at(t)`) and packs to about 1 KB (`pack()`, `Ghost.unpack()`) to keep with `api.save()`:
+race your best run. `Recorder` / `Replayer` replay a whole round exactly, if the game takes its
+random numbers from `rec.rng`.
+
+## 2D lights and screen effects
+
+`gs.look2d.Lights(W, H, { dark: .85 })` draws darkness with lights cut out of it:
+`lights.draw(c, [{ x, y, r, color, cone, dir, flicker }], { walls: map, cam })`. Walls (a TileMap,
+anything with `ray()`, or `[x1, y1, x2, y2]` segments) cast real shadows. `pixel: true` bands the
+light for pixel styles.
+
+`Screen({ crt: true, bloom: { threshold: .6 } })` (PixiJS and pixi-filters, loaded on first use) runs
+the whole frame through effects: call `screen.apply(c)` last in `draw`. Effects: `crt`, `bloom`,
+`grade`, `pixelate`, `glitch`, `rgbSplit`, `film`, `shockwave` (`screen.shock(x, y)`), `godrays`,
+`zoomBlur`, `blur`, `outline`, `grayscale`, with their pixi-filters options. Reduce motion turns off
+the shaky ones. `Batch(W, H)` draws thousands of sprites with WebGL: `batch.texture(sprite)`,
+`batch.add(tex, x, y)`, `batch.draw(c)`.

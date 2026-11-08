@@ -29,7 +29,12 @@ import {
   MeshStandardMaterial, MeshPhysicalMaterial, ShaderMaterial, BufferGeometry, BufferAttribute, Points, AdditiveBlending, NormalBlending,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, NoColorSpace, PCFSoftShadowMap, ACESFilmicToneMapping, HalfFloatType,
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
+  OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group,
 } from 'three';
+import { SSRPass } from 'three/examples/jsm/postprocessing/SSRPass.js';
+import { HorizontalBlurShader } from 'three/examples/jsm/shaders/HorizontalBlurShader.js';
+import { VerticalBlurShader } from 'three/examples/jsm/shaders/VerticalBlurShader.js';
+import { lazy } from './lazy.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
@@ -51,15 +56,16 @@ export function rbox(w, h, d, r = Math.min(w, h, d) * .2) {
 
 /* ---------- quality tiers ---------- */
 // px: most pixels rendered per frame before scaling up; shadow: shadow map size (0 = off);
-// lights: how many nearby lamps get a real light (the rest just glow); ao: screen-space ambient
+// lights: how many nearby lamps get a real light (the rest just glow); ssr: screen-space reflections on
+// the surfaces a game marks with v.reflect(); contact: soft contact shadows size; ao: screen-space ambient
 // occlusion; msaa: multisample count (0 = a cheap edge smoothing in the final pass instead);
 // bloom: bloom resolution scale. 2x MSAA (not 4x) costs phone GPUs far less memory traffic, and the
 // time saved goes into more pixels.
 export const TIERS = [
-  { name: 'low', px: .5e6, shadow: 0, lights: 2, ao: false, msaa: 0, bloom: .5 },
-  { name: 'medium', px: .85e6, shadow: 512, lights: 3, ao: false, msaa: 0, bloom: .5 },
-  { name: 'high', px: 1.3e6, shadow: 1024, lights: 4, ao: false, msaa: 2, bloom: .5 },
-  { name: 'ultra', px: 2e6, shadow: 1024, lights: 4, ao: true, msaa: 2, bloom: .5 },
+  { name: 'low', px: .5e6, shadow: 0, lights: 2, ao: false, msaa: 0, bloom: .5, ssr: false, contact: 0 },
+  { name: 'medium', px: .85e6, shadow: 512, lights: 3, ao: false, msaa: 0, bloom: .5, ssr: false, contact: 128 },
+  { name: 'high', px: 1.3e6, shadow: 1024, lights: 4, ao: false, msaa: 2, bloom: .5, ssr: false, contact: 256 },
+  { name: 'ultra', px: 2e6, shadow: 1024, lights: 4, ao: true, msaa: 2, bloom: .5, ssr: true, contact: 256 },
 ];
 // Where a phone starts: top phones (Fold 8, recent iPhone Pro) on ultra, others on high or medium.
 const START = { top: 3, mid: 2, low: 1 };
@@ -362,7 +368,27 @@ export class HDView {
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
     this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7;
-    this.lamps = []; this.tierSeen = -1; this.parts = [];
+    this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = []; this.shot = null;
+  }
+  /**
+   * Marks shiny surfaces (a wet floor, a polished wall, a car) for screen-space reflections. They
+   * show on top-end phones (the ultra tier); elsewhere the surfaces keep their usual look.
+   */
+  reflect(...meshes) { for (const m of meshes.flat()) if (m && !this.reflectors.includes(m)) this.reflectors.push(m); return this; }
+  /**
+   * Soft contact shadows on a floor: the dark, blurry patch right under things that makes them sit
+   * on the ground. y: the floor height; size: metres across; follow it with cs.at(x, z). Medium tier
+   * and up.
+   */
+  contact(o = {}) { const cs = new ContactShadows(o); this.scene.add(cs.group); this.contacts.push(cs); return cs; }
+  /**
+   * Photo mode: path-traces the current view into a lovely still (light bouncing, soft shadows,
+   * real reflections) over a few seconds. Resolves to a Photo: call shot.step(ms) each frame until
+   * shot.done (or let render() do it), then shot.image() is a canvas of the picture.
+   */
+  async photo({ samples = 120 } = {}) {
+    const L = await pathTracer.load(), r = renderer(); if (!r) throw new Error('No 3D on this device');
+    this.shot?.stop(); this.shot = new Photo(this, L, r, samples); return this.shot;
   }
   /**
    * A pool of real point lights placed each frame at the nearest of many lamp spots (the far ones
@@ -461,6 +487,12 @@ export class HDView {
     }
     const T = tier();
     if (this.tierSeen !== HD.tier) { this.tierSeen = HD.tier; this.tierFn?.(T); }
+    if (this.shot && !this.shot.stopped) {   // photo mode: the path tracer draws instead
+      this.shot.step(12);
+      if (direct) { c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, c.canvas.width, c.canvas.height); c.restore(); }
+      else { c.save(); c.drawImage(r.domElement, 0, 0, w, h); c.restore(); }
+      return;
+    }
     let pw = c.canvas.width, ph = c.canvas.height; const q = Math.min(1, Math.sqrt(T.px / (pw * ph))) * HD.res;
     pw = Math.max(16, Math.round(pw * q)); ph = Math.max(16, Math.round(ph * q));
     const cv = r.domElement; if (cv.width !== pw || cv.height !== ph) r.setSize(pw, ph, false);
@@ -468,16 +500,25 @@ export class HDView {
     this.scene.environment = envTex; this.scene.environmentIntensity = this.envI;
     r.toneMappingExposure = this.exposure;
     if (this.clearBg) { P.arRender.scene = this.scene; P.arRender.camera = this.cam; } else { P.render.scene = P.ao.scene = this.scene; P.render.camera = P.ao.camera = this.cam; }
+    // reflections (ultra, and only if the game marked shiny surfaces): SSR draws the scene itself
+    const ssr = !this.clearBg && T.ssr && this.reflectors.length > 0;
+    if (ssr) {
+      if (!P.ssr) { P.ssr = new SSRPass({ renderer: r, scene: this.scene, camera: this.cam, width: pw, height: ph, selects: [], groundReflector: null }); Object.assign(P.ssr, { thickness: .02, maxDistance: 8, opacity: .55, blur: true, fresnel: true, distanceAttenuation: true, bouncing: false, infiniteThick: false }); P.ssr.cw = pw; P.ssr.ch = ph; }
+      P.ssr.scene = this.scene; P.ssr.camera = this.cam; P.ssr.selects = this.reflectors;
+      if (P.ssr.cw !== pw || P.ssr.ch !== ph) { P.ssr.setSize(pw, ph); P.ssr.cw = pw; P.ssr.ch = ph; }
+    }
+    for (const cs of this.contacts) cs.update(r, this.scene, T.contact);
     for (const p of this.parts) p.mat.uniforms.scale.value = ph / (2 * Math.tan(this.cam.fov * Math.PI / 360));
     if (!baking) this.t += 1 / 60;
     if (!this.clearBg) {
-      const F = P.final; P.ao.enabled = T.ao; F.strength = this.bloom; F.scale = T.bloom; F.setFxaa(!T.msaa);
+      const F = P.final; P.ao.enabled = T.ao; F.strength = this.bloom; F.scale = T.bloom; F.setFxaa(!T.msaa || ssr);
       F.final.uniforms.t.value = this.t % 10; F.final.uniforms.hurt.value = this.hurt;
     }
     // extra effects a game added (gs.fx3d: outline, glitch, trails, depth of field, pixelate) go between the scene and the final pass
     if (!this.clearBg) {
       const ex = this.extras || [];
-      cp.passes = ex.length ? [P.render, P.ao, ...ex, P.final] : [P.render, P.ao, P.final];
+      const first = ssr ? P.ssr : P.render;
+      cp.passes = [first, P.ao, ...ex, P.final];
       for (const p of ex) if (p.cw !== pw || p.ch !== ph) { p.setSize(pw, ph); p.cw = pw; p.ch = ph; }
     }
     if (!this.warmed) this.warm();
@@ -543,3 +584,94 @@ export function spot(col = '#fff2e0', i = 30, dist = 16, angle = .5) {
   s.setTier = T => { s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow) { s.shadow.mapSize.set(T.shadow, T.shadow); s.shadow.map?.dispose(); s.shadow.map = null; } };
   return s;
 }
+
+
+/* ---------- contact shadows ---------- */
+// The soft shadow right under things, made the usual way: render what's above the floor from below
+// as darkness by height into a small texture, blur it, and lay it on the floor. Cheap and looks
+// right for AR (things sit on your real floor) and for Next Gen on phones without real shadows.
+export class ContactShadows {
+  constructor({ y = 0, size = 8, blur = 2.5, darkness = 1.2, opacity = .55, height = 1.2 } = {}) {
+    Object.assign(this, { size, blurAmount: blur, height });
+    this.group = new Group(); this.group.position.y = y + .003; this.res = 0;
+    this.mat = new MeshBasicMaterial({ transparent: true, opacity, depthWrite: false, toneMapped: false });
+    this.plane = new Mesh(new PlaneGeometry(size, size).rotateX(Math.PI / 2), this.mat);
+    this.plane.renderOrder = 1; this.plane.scale.y = -1; this.plane.userData.noContact = true; this.group.add(this.plane);
+    this.cam = new OrthographicCamera(-size / 2, size / 2, size / 2, -size / 2, 0, height); this.cam.rotation.x = Math.PI / 2; this.group.add(this.cam);
+    this.depth = new MeshDepthMaterial(); this.depth.depthTest = this.depth.depthWrite = false;
+    this.depth.userData.dark = { value: darkness };
+    this.depth.onBeforeCompile = sh => {
+      sh.uniforms.darkness = this.depth.userData.dark;
+      sh.fragmentShader = 'uniform float darkness;\n' + sh.fragmentShader.replace('gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );', 'gl_FragColor = vec4( vec3( 0.0 ), ( 1.0 - fragCoordZ ) * darkness );');
+    };
+    this.hBlur = new ShaderMaterial(HorizontalBlurShader); this.hBlur.depthTest = false;
+    this.vBlur = new ShaderMaterial(VerticalBlurShader); this.vBlur.depthTest = false;
+    this.quad = new FullScreenQuad(null);
+  }
+  /** Moves the shadow area to centre on x, z (follow the action in a big level). */
+  at(x, z) { this.group.position.x = x; this.group.position.z = z; return this; }
+  set(res) {
+    if (res === this.res) return;
+    this.rt?.dispose(); this.rt2?.dispose(); this.res = res;
+    if (!res) { this.rt = this.rt2 = null; this.mat.map = null; return; }
+    this.rt = new WebGLRenderTarget(res, res); this.rt.texture.generateMipmaps = false;
+    this.rt2 = new WebGLRenderTarget(res, res); this.rt2.texture.generateMipmaps = false;
+    this.mat.map = this.rt.texture; this.mat.needsUpdate = true;
+  }
+  blur(r, amount) {
+    this.hBlur.uniforms.tDiffuse.value = this.rt.texture; this.hBlur.uniforms.h.value = amount / 256;
+    this.quad.material = this.hBlur; r.setRenderTarget(this.rt2); this.quad.render(r);
+    this.vBlur.uniforms.tDiffuse.value = this.rt2.texture; this.vBlur.uniforms.v.value = amount / 256;
+    this.quad.material = this.vBlur; r.setRenderTarget(this.rt); this.quad.render(r);
+  }
+  update(r, scene, res) {
+    if (this.enabled === false) res = 0;
+    this.set(res); this.plane.visible = !!res; if (!res) return;
+    // only things that cast shadows go in (not floors, shadow catchers or effects)
+    const hidden = [];
+    scene.traverseVisible(o => { if ((o.isMesh || o.isPoints || o.isSprite || o.isLine) && (!o.castShadow || o.userData.noContact)) hidden.push(o); });
+    for (const o of hidden) o.visible = false;
+    const bg = scene.background, fog = scene.fog, prevT = r.getRenderTarget(), clr = r.getClearAlpha(), auto = r.autoClear;
+    scene.background = null; scene.fog = null; scene.overrideMaterial = this.depth;
+    r.setClearAlpha(0); r.autoClear = true; r.setRenderTarget(this.rt); r.clear(); r.render(scene, this.cam);
+    scene.overrideMaterial = null; scene.background = bg; scene.fog = fog;
+    for (const o of hidden) o.visible = true;
+    this.blur(r, this.blurAmount); this.blur(r, this.blurAmount * .4);
+    r.setRenderTarget(prevT); r.setClearAlpha(clr); r.autoClear = auto;
+  }
+}
+
+/* ---------- photo mode (path tracing) ---------- */
+const pathTracer = lazy('Photo mode', () => import('three-gpu-pathtracer'));
+/** Loads the path tracer (the app does this when the player taps Photo). */
+export const loadPhoto = () => pathTracer.load();
+
+class Photo {
+  constructor(view, L, r, samples) {
+    this.view = view; this.r = r; this.target = samples; this.stopped = false;
+    this.pt = new L.WebGLPathTracer(r);
+    this.pt.tiles.set(2, 2); this.pt.minSamples = 1; this.pt.renderScale = 1; this.pt.dynamicLowRes = false; this.pt.fadeDuration = 0;
+    // the path tracer lights the scene from an equirect sky: a gradient from the view's fill light
+    const sc = view.scene, sky = new L.GradientEquirectTexture(256), k = view.hemi.intensity * 1.6 + view.envI;
+    sky.topColor.copy(view.hemi.color).multiplyScalar(k); sky.bottomColor.copy(view.hemi.groundColor).multiplyScalar(k * .6); sky.update();
+    this.saved = { env: sc.environment, envI: sc.environmentIntensity }; this.sky = sky;
+    sc.environment = sky; sc.environmentIntensity = 1;
+    this.pt.setScene(sc, view.cam);
+  }
+  get samples() { return this.pt.samples; }
+  get progress() { return Math.min(1, this.pt.samples / this.target); }
+  get done() { return this.pt.samples >= this.target; }
+  /** Renders samples for up to ms milliseconds. */
+  step(ms = 12) {
+    if (this.stopped || this.done) return this;
+    const t0 = performance.now();
+    do this.pt.renderSample(); while (!this.done && performance.now() - t0 < ms);
+    return this;
+  }
+  /** The picture so far, as a canvas. */
+  image() { const cv = document.createElement('canvas'), src = this.r.domElement; cv.width = src.width; cv.height = src.height; cv.getContext('2d').drawImage(src, 0, 0); return cv; }
+  /** Back to the game's normal rendering. */
+  stop() { if (this.stopped) return; this.stopped = true; try { this.pt.dispose(); } catch (_) { /* best effort */ } Object.assign(this.view.scene, { environment: this.saved.env, environmentIntensity: this.saved.envI }); this.sky.dispose(); if (this.view.shot === this) this.view.shot = null; }
+}
+/** The view drawn last (the app's photo button uses it). */
+export const currentView = () => lastView;

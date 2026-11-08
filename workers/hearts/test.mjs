@@ -220,6 +220,17 @@ await run({}, async url => {
   r = await fetch(url + '/counts', { headers: { Origin: 'https://evil.example' } });
   assert.equal(r.headers.get('access-control-allow-origin'), null);
   ok('counts readable; browsers only allowed from the app and test site');
+  // leaderboards: best score kept per device, ranks, today's board, made-up names
+  r = await post(url, '/score', { device: A, game, score: 50 }); assert.equal(r.status, 200);
+  let sc = await r.json(); assert.deepEqual([sc.all.rank, sc.all.of, sc.day.rank], [1, 1, 1]);
+  r = await post(url, '/score', { device: B, game, score: 80 }); sc = await r.json(); assert.deepEqual([sc.all.rank, sc.all.of], [1, 2]);
+  r = await post(url, '/score', { device: A, game, score: 30 }); sc = await r.json(); assert.equal(sc.all.best, 50, 'a lower score keeps the best'); assert.equal(sc.all.rank, 2);
+  r = await post(url, '/score', { device: A, game, score: -1 }); assert.equal(r.status, 400);
+  r = await post(url, '/score', { device: A, game, score: 1e12 }); assert.equal(r.status, 400);
+  r = await fetch(url + `/board?game=${game}&device=${A}&when=day`, { headers: { 'CF-Connecting-IP': IP } }); const bd = await r.json();
+  assert.deepEqual(bd.top.map(t => t.score), [80, 50]); assert.equal(bd.me.rank, 2); assert.ok(bd.top[1].me && !bd.top[0].me);
+  assert.match(bd.top[0].name, /^[A-Z][a-z]+ [A-Z][a-z]+ \d+$/);
+  ok('leaderboards keep each device\'s best, rank it, and show made-up names');
   // Without a pass: 10 writes a minute per address.
   let limitedAt = 0;
   for (let i = 0; i < 12 && !limitedAt; i++) { r = await post(url, '/heart', { device: B, game, on: i % 2 === 0 }); if (r.status === 429) limitedAt = i + 1; }

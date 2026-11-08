@@ -172,3 +172,10 @@ if (hearts.enabled) {
   addEventListener('online', () => flush());
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') hearts.load(); });
 }
+
+/** POSTs to the API with this install's pass (getting a fresh one if the server asks). For src/boards.js. */
+export async function apiPost(path, body) {
+  let token = await pass(), r = await post(path, body, token);
+  if (r.status === 401) { token = await pass(true); if (token) r = await post(path, body, token); }
+  return r;
+}

@@ -132,3 +132,10 @@ To see the camera path in headless Chromium, launch it with
 grant the `camera` permission, make `DeviceMotionEvent.requestPermission` resolve `'granted'`, start
 the game with a real click (motion access is asked on the Play tap), and dispatch
 `Object.assign(new Event('deviceorientation'), { alpha, beta: 90, gamma: 0 })` to turn the phone.
+
+## Contact shadows
+
+`ARView` lays soft contact shadows on the floor under everything that casts a shadow (medium tier and
+up), so objects look like they're sitting on your real floor. Adjust them with
+`v.contactShadows.at(x, z)` (centre) or turn them off with `v.contactShadows.enabled = false`. Screen-space reflections and photo mode are Next Gen only: they'd look wrong over the
+live camera picture.
