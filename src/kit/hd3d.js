@@ -181,15 +181,16 @@ const FINAL = `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, b
     // light edge smoothing: find the edge direction from the four diagonal neighbours, blur along it
     vec3 cM = tex(vUv); float lM = luma(cM), lNW = luma(tex(vUv + vec2(-1., -1.) * px)), lNE = luma(tex(vUv + vec2(1., -1.) * px)),
       lSW = luma(tex(vUv + vec2(-1., 1.) * px)), lSE = luma(tex(vUv + vec2(1., 1.) * px));
-    float lo = min(lM, min(min(lNW, lNE), min(lSW, lSE))), hi = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+    // (lMin / lMax, not lo / hi: those names are the grade's tints below)
+    float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE))), lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
     vec3 col = cM;
-    if (hi - lo > max(.04, hi * .125)) {
+    if (lMax - lMin > max(.04, lMax * .125)) {
       vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));
       float rcp = 1. / (min(abs(dir.x), abs(dir.y)) + max((lNW + lNE + lSW + lSE) * .03125, .0078125));
       dir = clamp(dir * rcp, -8., 8.) * px;
       vec3 a = .5 * (tex(vUv + dir * (1. / 3. - .5)) + tex(vUv + dir * (2. / 3. - .5)));
       vec3 b = a * .5 + .25 * (tex(vUv - dir * .5) + tex(vUv + dir * .5));
-      float lb = luma(b); col = lb < lo || lb > hi ? a : b;
+      float lb = luma(b); col = lb < lMin || lb > lMax ? a : b;
     }
   #else
     vec2 off = d * r2 * .012;

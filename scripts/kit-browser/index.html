@@ -150,7 +150,11 @@ try {
       const air = ov.air({ haze: .002, mist: .01, mistFall: .1, clouds: .5, wet: .6 });
       const sky2 = new Sky(ov, { time: 8, clouds: .5, env: true, stars: 0 }); sky2.update(.1);
       ov.grade = { saturation: 1.1, contrast: 1.05, shadows: '#e8f0ff', highlights: [1.06, 1, .92] }; ov.glare = 1;
-      HDh.force = 2; ov.render(ox, 160, 120); HDh.force = 3; ov.render(ox, 160, 120); HDh.force = null;
+      HDh.force = 2; ov.render(ox, 160, 120); HDh.force = 3; ov.render(ox, 160, 120);
+      // the low tiers smooth edges in the final pass instead of MSAA; the grade must look the same there
+      const lum = () => { const d = ox.getImageData(0, 0, 160, 120).data; let s = 0; for (let i = 0; i < d.length; i += 4) s += d[i] + d[i + 1] + d[i + 2]; return s / (d.length / 4 * 3); };
+      const lumHi = lum(); HDh.force = 0; ov.render(ox, 160, 120); ov.render(ox, 160, 120); const lumLo = lum(); HDh.force = 3; ov.render(ox, 160, 120); HDh.force = null;
+      ok(lumLo > lumHi * .8 && lumLo < lumHi * 1.25, `grade as bright on low as on ultra: ${lumLo.toFixed(0)} vs ${lumHi.toFixed(0)}`);
       ok(gm.customProgramCacheKey().includes('gsair') && bm.customProgramCacheKey().includes('gsair'), 'air added to lit and plain materials');
       ok(!!ov.env && air.clouds === .5 && air.sun && air.sun.y > 0, 'sky makes reflections and drives the air (sun, clouds)');
       const px = ox.getImageData(80, 100, 1, 1).data; ok(px[3] > 0, 'outdoor view renders with air, grade and glare');
