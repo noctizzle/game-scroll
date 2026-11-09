@@ -20,6 +20,7 @@ let package = Package(
         .package(name: "CapacitorShare", path: "../../../node_modules/@capacitor/share"),
         .package(name: "GameServices", path: "../../../plugins/game-services"),
         .package(name: "NativeAr", path: "../../../plugins/native-ar"),
+        .package(name: "Npu", path: "../../../plugins/npu"),
         .package(name: "PhoneAi", path: "../../../plugins/phone-ai"),
         .package(name: "RichHaptics", path: "../../../plugins/rich-haptics")
     ],
@@ -37,6 +38,7 @@ let package = Package(
                 .product(name: "CapacitorShare", package: "CapacitorShare"),
                 .product(name: "GameServices", package: "GameServices"),
                 .product(name: "NativeAr", package: "NativeAr"),
+                .product(name: "Npu", package: "Npu"),
                 .product(name: "PhoneAi", package: "PhoneAi"),
                 .product(name: "RichHaptics", package: "RichHaptics")
             ]

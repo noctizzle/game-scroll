@@ -1,7 +1,7 @@
 // Checks the face, hand and sound steps that run on the phone's AI chip (src/kit/vision-npu.js, the
 // ONNX models from scripts/npu-models/convert.py) against MediaPipe's own results on test photos.
-// Needs npm run ml (MediaPipe files) and the ONNX models in ml-cache/<NPU_VERSION>/ (convert.py, or
-// --fetch to download them from the games host). The test photos are MediaPipe's own (Apache-2.0).
+// Needs npm run ml (MediaPipe files); the ONNX models are in ml-models/<NPU_VERSION>/ (--fetch checks
+// the copies on the games host instead). The test photos are MediaPipe's own (Apache-2.0).
 //   node scripts/npu-test.cjs [--fetch]
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
@@ -14,13 +14,13 @@ const fs = require('fs'), path = require('path');
     const r = await fetch('https://storage.googleapis.com/mediapipe-assets/' + f); if (!r.ok) throw new Error(f + ' ' + r.status);
     fs.writeFileSync(p, Buffer.from(await r.arrayBuffer()));
   }
-  const dir = path.join(root, 'ml-cache', NPU_VERSION);
-  if (process.argv.includes('--fetch')) {
+  const fetchThem = process.argv.includes('--fetch'), dir = path.join(root, fetchThem ? 'ml-cache' : 'ml-models', NPU_VERSION);
+  if (fetchThem) {
     fs.mkdirSync(dir, { recursive: true });
-    for (const f of NPU_FILES) { if (fs.existsSync(path.join(dir, f))) continue; const r = await fetch(`https://assets.game-scroll.com/ml/${NPU_VERSION}/${f}`); if (!r.ok) throw new Error(f + ' ' + r.status); fs.writeFileSync(path.join(dir, f), Buffer.from(await r.arrayBuffer())); }
+    for (const f of Object.keys(NPU_FILES)) { if (fs.existsSync(path.join(dir, f))) continue; const r = await fetch(`https://assets.game-scroll.com/ml/${NPU_VERSION}/${f}`); if (!r.ok) throw new Error(f + ' ' + r.status); fs.writeFileSync(path.join(dir, f), Buffer.from(await r.arrayBuffer())); }
   }
-  const missing = NPU_FILES.filter(f => !fs.existsSync(path.join(dir, f)));
-  if (missing.length) { console.log(`FAIL missing ${missing.join(', ')} in ml-cache/${NPU_VERSION}: run scripts/npu-models/convert.py (or --fetch)`); process.exit(1); }
+  const missing = Object.keys(NPU_FILES).filter(f => !fs.existsSync(path.join(dir, f)));
+  if (missing.length) { console.log(`FAIL missing ${missing.join(', ')} in ${dir}`); process.exit(1); }
   const vite = await import('vite');
   const server = await vite.createServer({ server: { port: 4188 }, mode: 'bundled', logLevel: 'error' }); await server.listen();
   const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });

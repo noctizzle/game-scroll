@@ -7,7 +7,7 @@ import { nativeARSupported } from './kit/native-ar.js';
 import { fpsPick, setFpsPick, autoFps, phoneClass, screenHz } from './kit/speed.js';
 import { geoSettings } from './geo.js';
 import { gpuPick, setGpuPick, hasWebGPU } from './kit/gpu.js';
-import { OPEN_SOURCE } from './licences.js';
+import { OPEN_SOURCE, OTHER_PARTS } from './licences.js';
 import { feedBrain, resetRecommendations } from './feedsignals.js';
 
 const size = b => b < 1024 * 1024 ? `${Math.ceil(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
@@ -69,6 +69,9 @@ export function openSettings({ stream, cached, clear, arTest }) {
         <p class="qa-help">Copyright © 2026 Rob and Game Scroll contributors. The code is under the PolyForm Shield License 1.0.0: you can use, change and share it for anything except making a product that competes with Game Scroll.</p>
         <details class="set-lic"><summary>Open-source parts</summary>
           <dl>${OPEN_SOURCE.map(e => `<dt>${e.name}</dt><dd>${e.licence}${e.notice ? `<br><small>${e.notice}</small>` : ""}</dd>`).join('')}</dl>
+        </details>
+        <details class="set-lic"><summary>Other parts</summary>
+          <dl>${OTHER_PARTS.map(e => `<dt>${e.name}</dt><dd>${e.for}. ${e.licence}${e.notice ? `<br><small>${e.notice}</small>` : ""}</dd>`).join('')}</dl>
         </details>
         <p class="set-link"><a href="https://github.com/robthewizzuk/game-scroll/blob/main/LICENSE" target="_blank" rel="noopener">Read the full licence ↗</a></p>
       </section>

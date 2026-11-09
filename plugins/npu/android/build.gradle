@@ -1,0 +1,50 @@
+// The phone's AI chip for Game Scroll on Android (see NPUPlugin.java): ONNX Runtime with the Qualcomm
+// QNN execution provider (the Hexagon NPU on Snapdragon phones; the CPU on every other phone), CameraX
+// for the front camera.
+ext {
+    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
+}
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace = "com.gamescroll.npu"
+    compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
+    defaultConfig {
+        minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 24
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    // ONNX Runtime (MIT) with the QNN execution provider; it brings Qualcomm's QNN runtime libraries
+    // (Qualcomm's AI Stack License, listed under Settings › Licence › Other parts). Build with
+    // -Pnpu.qnn=false for plain ONNX Runtime (the CPU on every phone, a much smaller app).
+    def ort = '1.29.0'
+    if ((rootProject.findProperty('npu.qnn') ?: 'true').toString() != 'false') implementation "com.microsoft.onnxruntime:onnxruntime-android-qnn:$ort"
+    else implementation "com.microsoft.onnxruntime:onnxruntime-android:$ort"
+    def camerax = '1.4.2'
+    implementation "androidx.camera:camera-core:$camerax"
+    implementation "androidx.camera:camera-camera2:$camerax"
+    implementation "androidx.camera:camera-lifecycle:$camerax"
+}

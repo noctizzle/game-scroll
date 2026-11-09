@@ -10,8 +10,9 @@
 //   tap to start: voice.start();                // false if this phone can't listen on the phone itself
 //   update(dt) { if (voice.said('jump')) jump(); }
 //
-// Sounds uses Google's YAMNet (521 everyday sounds) through MediaPipe Audio (Apache-2.0): about 4 MB of
-// model and engine, downloaded from our games server the first time a listening game is played.
+// Sounds uses Google's YAMNet (521 everyday sounds): in the phone apps on the phone's AI chip with the
+// mic read natively (npu.js), on the web through MediaPipe Audio (Apache-2.0). About 4 to 5 MB of model
+// and engine, downloaded from our games server the first time a listening game is played.
 // Voice uses the phone's own ON-DEVICE speech recogniser (iPhone, and Android 12+): phones without
 // one say voice.available false, and the game uses its touch controls. Always give a touch way to play.
 
@@ -19,13 +20,16 @@ import { lazy } from './lazy.js';
 import { register } from './cleanup.js';
 import { ML_VERSION } from './vision-files.js';
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { npuInfo, loadModel, npuMic, npuMicDone, npuListen, yamnetLabels } from './npu.js';
 
 const BASE = String((import.meta.env && import.meta.env.VITE_GAMES_URL) || '').replace(/\/+$/, '');
 const ML = BASE ? `${BASE}/ml/${ML_VERSION}/` : `ml/${ML_VERSION}/`;
-const lib = lazy('Sound recognition', async () => {
+const mediapipe = async () => {
   const [m, loader] = await Promise.all([import('@mediapipe/tasks-audio'), import('@mediapipe/tasks-audio/audio_wasm_internal.js?url')]);
   return { m, files: { wasmLoaderPath: loader.default, wasmBinaryPath: ML + 'audio_wasm_internal.wasm' } };
-});
+};
+// with the NPU plugin the web engine isn't needed (it loads later only if the plugin fails)
+const lib = lazy('Sound recognition', async () => (await npuInfo()).available ? { native: true } : mediapipe());
 export const loadHear = () => lib.load();
 
 const native = Capacitor.isNativePlatform();
@@ -63,7 +67,20 @@ export class Sounds {
   async start() {
     if (this.running) return this;
     this.running = true; live.add(this);
+    if (this.L.native && !this.noNative) {
+      try {
+        const [, names] = await Promise.all([loadModel('yamnet'), yamnetLabels()]);
+        if (!this.running) return this;
+        if (await npuMic()) {
+          if (!this.running) { npuMicDone(); return this; }
+          this.native = { names, busy: false }; this.ready = true; return this;
+        }
+      } catch (e) { console.warn('NPU sound recognition did not start, using the web one:', e); }
+      this.noNative = true;
+      if (!this.running) return this;
+    }
     try {
+      if (this.L.native) this.L = await mediapipe();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
       if (!this.running) { stream.getTracks().forEach(t => t.stop()); return this; }
       const ctx = new (window.AudioContext || window.webkitAudioContext)(), src = ctx.createMediaStreamSource(stream), an = ctx.createAnalyser();
@@ -79,14 +96,32 @@ export class Sounds {
     return this;
   }
   close() { const a = this.audio; if (!a) return; this.audio = null; a.stream.getTracks().forEach(t => t.stop()); a.ctx.close().catch(() => {}); }
-  stop() { if (!this.running && !this.audio) return; this.running = false; this.ready = false; live.delete(this); this.close(); }
+  stop() {
+    if (this.native) { this.native = null; npuMicDone(); }
+    if (!this.running && !this.audio) return; this.running = false; this.ready = false; live.delete(this); this.close();
+  }
   /** Looks at the newest sound now and then (every `every` seconds). Call each frame with dt. */
   update(dt = 1 / 60) {
-    if (!this.ready || !this.audio) return this;
+    if (!this.ready || (!this.audio && !this.native)) return this;
     this.wait -= dt; if (this.wait > 0) return this; this.wait = this.every;
+    const n = this.native;
+    if (n) {
+      // the AI chip: the result comes back on a later update
+      if (!n.busy) {
+        n.busy = true;
+        npuListen().then(sc => {
+          if (this.native !== n) return;
+          const top = [...sc].map((s, i) => ({ categoryName: n.names[i], score: s })).filter(c => c.score >= .05).sort((a, b) => b.score - a.score).slice(0, 5);
+          this.heardCats(top);
+        }).catch(() => {}).finally(() => { n.busy = false; });
+      }
+      return this;
+    }
     const a = this.audio; a.an.getFloatTimeDomainData(a.buf);
     let res; try { res = this.task.classify(a.buf, a.ctx.sampleRate); } catch { return this; }
-    const cats = res?.[0]?.classifications?.[0]?.categories || [];
+    return this.heardCats(res?.[0]?.classifications?.[0]?.categories || []);
+  }
+  heardCats(cats) {
     const seen = new Map();
     for (const c of cats) { const n = c.categoryName || c.displayName; if (!n) continue; if (this.want && !this.want.has(n.toLowerCase())) continue; seen.set(n, c.score); }
     // a sound counts once each time it starts (it has to drop below half `sure` before it counts again)

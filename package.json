@@ -73,6 +73,7 @@
     "inkjs": "2.4.0",
     "lil-gui": "0.21.0",
     "native-ar": "file:plugins/native-ar",
+    "npu": "file:plugins/npu",
     "phone-ai": "file:plugins/phone-ai",
     "pitchy": "4.1.0",
     "pixi-filters": "6.1.5",
