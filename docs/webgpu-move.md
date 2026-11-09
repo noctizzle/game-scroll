@@ -60,6 +60,7 @@ The rules for new 3D code until then:
 | Classic Console | `src/kit/toon3d.js` ink pass; toon shading is already stock `MeshToonMaterial` | A TSL edge-detect pass, then Console views on WebGPU |
 | 3D text | troika-three-text (patches shaders) | Three's own text geometry or an SDF text node |
 | 3D particles | three.quarks 0.17 (needs three ≥ 0.182, works on 0.186) | Check its WebGPU support; else our own node particles |
+| Sky glow cap and shafts threshold | `sky.js` soft knee in the physical dome, `v.shaftsAt`; `hd3d.js` `ShaftsPass.bright()` (`thr`/`hi`/`cap`/`gain`) | The same knee in `gpuMaterials.skyDome` and the same mask numbers in `GpuChain`'s shafts |
 | Sized points | `gs.sky` stars and snow (`PointsMaterial` with `size`) | WebGPU draws points 1 pixel wide whatever the size: sprites (instanced quads) instead. They don't keep a view on WebGL; they are just thin |
 
 Status from `gpu-games.cjs` (2026-11-09): all 20 Next Gen and AR games draw on WebGPU with no errors.

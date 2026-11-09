@@ -295,8 +295,8 @@ try {
       const lm = new T.MeshStandardMaterial({ alphaTest: .5 }), lu = looks.leaves(lm, { wind: w }); ok(lu.uniforms.lkWindDir === w.uniforms.lkWindDir, 'leaves share the wind');
       const hv2 = new gs.hd.HDView({}), pt = new gs.hd.Particles(hv2, { wind: w, additive: false }); pt.emit({ x: 0, y: 1, z: 0, life: 2 }); for (let i = 0; i < 30; i++) pt.update(1 / 30); ok(pt.list[0].x > .5, 'smoke drifts downwind: ' + pt.list[0].x.toFixed(2));
       const tg = tree({ kind: 'round', height: 6 }), imp = impostor(tg, new T.MeshStandardMaterial({ vertexColors: true }), { cards: 3, size: 64 });
-      const px = new Uint8Array(4), mid = new Uint8Array(4), r3 = gs.hd.bakeRenderer(); r3.readRenderTargetPixels(imp.target, 0, 63, 1, 1, px); r3.readRenderTargetPixels(imp.target, 96, 32, 1, 1, mid);
-      ok(imp && imp.geometry.attributes.position.count === 12 && imp.target.width === 192 && mid[3] > 200 && px[3] === 0, `tree impostor: 3 cards on a 192 x 64 picture (tree ${mid[3]}, corner ${px[3]})`);
+      const im = imp?.texture.image, alpha = (x, y) => im.data[(y * im.width + x) * 4 + 3], mid = [0, 0, 0, alpha(96, 32)], px = [0, 0, 0, alpha(0, 63)];   // the bake is read back into a plain texture
+      ok(imp && imp.geometry.attributes.position.count === 12 && im.width === 192 && mid[3] > 200 && px[3] === 0, `tree impostor: 3 cards on a 192 x 64 picture (tree ${mid[3]}, corner ${px[3]})`);
       imp.dispose();
     }
     const w9 = new gs.physics3d.World3D(); land.solid(w9); const b9 = w9.ball(null, .5, { at: { x: 0, y: 8, z: 0 } }); for (let i = 0; i < 120; i++) w9.step(1 / 60);

@@ -295,10 +295,13 @@ class FinalPass extends Pass {
 // pass of its own (so it can be swapped for a WebGPU node later without touching the final pass):
 // the bright sky near the sun is picked out at quarter size, smeared towards the sun, and added
 // back on top. Where something blocks the sky, the streak has a gap: that's the shaft.
-const SHAFT_MASK = `uniform sampler2D tDiffuse; uniform vec2 sunUV; uniform float aspect, thr; varying vec2 vUv;
-  void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb; float l = dot(c, vec3(.2126, .7152, .0722));
+// A sky that is light, not paint (Sky physical) is far brighter round the sun: it says how bright
+// (v.shaftsAt), and the mask then only picks out the sky nearer the sun, capped and scaled back, so
+// the shafts look the same as with a painted sky and never white out the screen.
+const SHAFT_MASK = `uniform sampler2D tDiffuse; uniform vec2 sunUV; uniform float aspect, thr, hi, cap, gain; varying vec2 vUv;
+  void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb; float l = dot(c, vec3(.2126, .7152, .0722)); if (l > cap) { c *= cap / l; l = cap; } c *= gain;
     vec2 q = (vUv - sunUV) * vec2(aspect, 1.); float near = exp(-dot(q, q) * 3.);
-    gl_FragColor = vec4(c * smoothstep(thr, thr * 2.2, l) * near, 1.); }`;
+    gl_FragColor = vec4(c * smoothstep(thr, hi, l) * near, 1.); }`;
 const SHAFT_BLUR = `uniform sampler2D tDiffuse; uniform vec2 sunUV; uniform float decay, density; varying vec2 vUv;
   #define N 24
   void main(){ vec2 d = (vUv - sunUV) * density / float(N); vec2 p = vUv; vec3 sum = vec3(0.); float w = 1.;
@@ -309,7 +312,7 @@ const SHAFT_ADD = `uniform sampler2D tDiffuse, tShaft; uniform float strength; u
 class ShaftsPass extends Pass {
   constructor() {
     super(); this.needsSwap = true; this.strength = 0;
-    this.mask = qmat(SHAFT_MASK, { tDiffuse: { value: null }, sunUV: { value: new Vector2(.5, .5) }, aspect: { value: 1 }, thr: { value: 1.1 } });
+    this.mask = qmat(SHAFT_MASK, { tDiffuse: { value: null }, sunUV: { value: new Vector2(.5, .5) }, aspect: { value: 1 }, thr: { value: 1.1 }, hi: { value: 2.42 }, cap: { value: 1e9 }, gain: { value: 1 } });
     this.blur = qmat(SHAFT_BLUR, { tDiffuse: { value: null }, sunUV: { value: new Vector2(.5, .5) }, decay: { value: .955 }, density: { value: .9 } });
     this.add = qmat(SHAFT_ADD, { tDiffuse: { value: null }, tShaft: { value: null }, strength: { value: 0 }, tint: { value: new Color(1, .9, .75) } });
     this.quad = new FullScreenQuad(null); this.a = null; this.b = null;
@@ -321,6 +324,8 @@ class ShaftsPass extends Pass {
     const o = { type: HalfFloatType, depthBuffer: false, minFilter: LinearFilter, magFilter: LinearFilter };
     this.a = new WebGLRenderTarget(bw, bh, o); this.b = new WebGLRenderTarget(bw, bh, o);
   }
+  /** How bright the sky is that starts a shaft (1.1 for a painted sky; brighter skies pass more). */
+  bright(at = 1.1) { const u = this.mask.uniforms, t = Math.max(1.1, at), lit = t > 1.1; u.thr.value = t; u.hi.value = lit ? t * 1.2 : t * 2.2; u.cap.value = lit ? t * 1.2 : 1e9; u.gain.value = 1.1 / t; }
   /** Where the sun is on screen (0..1) and how much it shows (0 hides the shafts). */
   aim(uv, aspect, amount, col) { this.mask.uniforms.sunUV.value.copy(uv); this.blur.uniforms.sunUV.value.copy(uv); this.mask.uniforms.aspect.value = aspect; this.amount = amount; if (col) this.add.uniforms.tint.value.copy(col); }
   pass(r, mat, target) { this.quad.material = mat; r.setRenderTarget(target); this.quad.render(r); }
@@ -696,7 +701,7 @@ export class HDView {
     this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
-    this.shafts = 0; this.decals = []; this.probes = []; this.probe = null; this.focus = null; this.cascade = null;
+    this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.focus = null; this.cascade = null;
     this.upscaler = undefined;   // 'sgsr1' keeps this view on Snapdragon GSR 1 (lots of fast movers: SGSR 2 can leave a short soft trail)
   }
   /**
@@ -1179,7 +1184,7 @@ export class HDView {
           const seen = Math.min(1, (1.6 - Math.max(Math.abs(GP.x), Math.abs(GP.y))) * 2);
           u.sunUV.value.set(GP.x * .5 + .5, GP.y * .5 + .5); u.aspect.value = this.W / this.H; u.sunCol.value.copy(this.sun?.color || C_WARM);
           if (this.glare > 0) u.glare.value = this.glare * seen;
-          if (shafts) { P.shafts.strength = Math.min(2, this.shafts); P.shafts.aim(u.sunUV.value, this.W / this.H, seen, this.sun?.color || C_WARM); }
+          if (shafts) { P.shafts.strength = Math.min(2, this.shafts); P.shafts.bright(this.shaftsAt ?? 1.1); P.shafts.aim(u.sunUV.value, this.W / this.H, seen, this.sun?.color || C_WARM); }
         }
       }
     }
