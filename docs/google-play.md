@@ -40,12 +40,11 @@ No Java on the Mac? The built-in openssl makes the same kind of key (it asks for
 
 ```bash
 openssl req -x509 -newkey rsa:4096 -nodes -keyout upload.key -out upload.crt -days 10000 -subj "/CN=Your Name"
-openssl pkcs12 -export -in upload.crt -inkey upload.key -name upload -out game-scroll-upload.jks \\
+openssl pkcs12 -export -in upload.crt -inkey upload.key -name upload -out game-scroll-upload.jks \
   -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 && rm upload.key upload.crt
 ```
 
-Then copy the key
-as text:
+Then copy the key as text:
 
 ```bash
 base64 -i game-scroll-upload.jks | pbcopy
