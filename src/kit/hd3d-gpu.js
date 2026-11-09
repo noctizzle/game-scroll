@@ -202,8 +202,12 @@ function sgsr2Gpu(fin, depthT) {
     return vec4(ndc.sub(pre.xy.div(pre.w)), clip, 0);
   })();
   const mdc = rtt(conv, 1, 1, { depthBuffer: false });
-  const hist = new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false }), next = new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false });
-  const histT = texture(hist.texture);
+  // two history pictures taking turns: this frame's upscale is drawn into one while it reads last
+  // frame's from the other. (Copying into a single history picture broke after a resize, like
+  // unfolding a Fold: a picture that is only copied into keeps its old size on the GPU.)
+  const H2 = [0, 1].map(() => new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false }));
+  let cur = 0;
+  const histT = texture(H2[1].texture), outT = texture(H2[0].texture);
   // upscale: Lanczos of the 5 nearest small pixels, a colour box, history clamped to it, then blended
   const upscale = Fn(() => {
     const H = screenUV, J = clamp(H.add(U.jit.div(U.rs)), 0, 1), IP = ivec2(J.mul(U.rs)), hi = ivec2(U.rs).sub(1);
@@ -243,13 +247,13 @@ function sgsr2Gpu(fin, depthT) {
     return vec4(mix(h, upc, a), 1);
   })();
   const upMat = new NodeMaterial(); upMat.fragmentNode = upscale; upMat.name = 'SGSR2';
-  const cpMat = new NodeMaterial(); cpMat.fragmentNode = vec4(histT.sample(screenUV).rgb, 1); cpMat.name = 'SGSR2 out';
+  const cpMat = new NodeMaterial(); cpMat.fragmentNode = vec4(outT.sample(screenUV).rgb, 1); cpMat.name = 'SGSR2 out';
   const qUp = new QuadMesh(upMat), qCp = new QuadMesh(cpMat);
   return {
     U, key: '',
     size(pw, ph, fw, fh) {
       const k = `${pw}x${ph}>${fw}x${fh}`; if (k === this.key) return; this.key = k;
-      low.setSize(pw, ph); mdc.setSize(pw, ph); hist.setSize(fw, fh); next.setSize(fw, fh);
+      low.setSize(pw, ph); mdc.setSize(pw, ph); for (const t of H2) t.setSize(fw, fh);
     },
     set(f) {
       U.rs.value.copy(f.renderSize); U.os.value.copy(f.outputSize); U.jit.value.copy(f.jitter); U.sr.value.copy(f.scaleRatio);
@@ -259,12 +263,13 @@ function sgsr2Gpu(fin, depthT) {
     render(r) {
       const tm = r.toneMapping, cs = r.outputColorSpace; r.toneMapping = NoToneMapping; r.outputColorSpace = LinearSRGBColorSpace;
       try {
-        r.setRenderTarget(next); qUp.render(r);
-        r.copyTextureToTexture(next.texture, hist.texture);
+        const into = H2[cur], from = H2[1 - cur]; histT.value = from.texture; outT.value = into.texture;
+        r.setRenderTarget(into); qUp.render(r);
         r.setRenderTarget(null); qCp.render(r);
+        cur = 1 - cur;
       } finally { r.toneMapping = tm; r.outputColorSpace = cs; }
     },
-    dispose() { low.dispose(); mdc.dispose(); hist.dispose(); next.dispose(); upMat.dispose(); cpMat.dispose(); },
+    dispose() { low.dispose(); mdc.dispose(); for (const t of H2) t.dispose(); upMat.dispose(); cpMat.dispose(); },
   };
 }
 
