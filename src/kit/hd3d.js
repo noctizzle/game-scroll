@@ -1528,7 +1528,7 @@ export class HDView {
     const made = !!fg && !!shown;
     if (made) HD.fgTap?.(shown, r.domElement, 'frame');
     // the refreshes after this one that the feed skips show the moments due then (last: the next draws a real frame)
-    speed.between = made ? (last = true) => { const k = ch.between(last); if (k) HD.fgTap?.(k, r.domElement, 'between'); } : null;
+    speed.between = made ? (last = true, now = null) => { const k = ch.between(last, now); if (k) HD.fgTap?.(k, r.domElement, 'between'); } : null;
     // the refreshes between kept not coming (the phone is too busy to draw them in time): blend puts the
     // made frame on the real frame's refresh, so first try ahead (its work is spread over both); then stop for this game
     if (made && ch.fgWin.real >= 90) {

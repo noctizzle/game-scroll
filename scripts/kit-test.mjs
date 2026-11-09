@@ -1438,7 +1438,16 @@ console.log('physics ok');
   p.charging = true; assert.equal(judge(p, 30000), true, 'held a minute after the reason goes');
   assert.equal(judge(p, 62000), false, 'then lets go');
   p.saver = true; judge(p, 70000); assert.equal(p.why, 'battery saver is on');
-  console.log('frame generation: exact camera turns, battery and heat ok');
+
+  // pacing: a 60 fps game on a 120 Hz screen whose refresh between real frames comes late, or not at all,
+  // still shows the moment due by the clock (never back, never the same moment twice)
+  const { refreshesSince } = await import('../src/kit/framegen.js');
+  const S = { at: 1000, ms: 1000 / 120, k: 0 };
+  assert.equal(refreshesSince(S, 1000 + 8.6), 1, 'the next refresh');
+  assert.equal(refreshesSince(S, 1000 + 16.9), 2, 'a refresh the phone skipped is counted');
+  S.k = 2; assert.equal(refreshesSince(S, 1000 + 17.5), 3, 'never the same moment twice');
+  assert.equal(refreshesSince({ at: 0, ms: 0, k: 4 }, 50), 5, 'no clock: the next');
+  console.log('frame generation: exact camera turns, battery and heat, pacing by the clock ok');
 }
 
 // gs.props on WebGPU: each copy keeps its slot in the drawn list while it stays in view (three's motion,

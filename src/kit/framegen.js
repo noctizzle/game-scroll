@@ -5,9 +5,10 @@
 // No neural network: every pixel is moved along its own motion (three.js's per-pixel velocity, so
 // moving things move, not just the camera), with depth deciding what is in front. The method follows
 // the published free ones: AMD FSR 3 frame interpolation (MIT) for the forward splat of motion vectors
-// with a depth-ordered atomic min and the background-first hole fill, and Mob-FGSR (SIGGRAPH 2024) for
-// doing it cheaply on phones from the game's own motion and depth instead of optical flow. Written
-// fresh in TSL (three.js's node language) so it runs as WebGPU compute, beside SGSR 2.
+// with a depth-ordered atomic min and the background-first hole fill, its optical flow field, scene
+// change check and inpainting pyramid, and Mob-FGSR (SIGGRAPH 2024) for doing it cheaply on phones from
+// the game's own motion and depth. Written fresh in TSL (three.js's node language) so it runs as WebGPU
+// compute, beside SGSR 2.
 //
 //   scenePass.setMRT(frameGenMRT());                 // the scene's pass writes motion and a see-through mask too
 //   const fg = new FrameGen(renderer);               // kit use: hd3d-gpu.js GpuChain makes one per Next Gen / AR view
@@ -36,6 +37,17 @@
 // the last frame shows the same spark where it says it came from, so sparks move at the screen's rate
 // too. Smoke (ordinary see-through blending) stays as drawn: moving it dragged the ground behind it
 // along, which scored worse against the truth than leaving it (scripts/framegen-test.cjs --hard).
+//
+// What the game's motion doesn't describe (a shadow sliding over still ground, a scrolling texture, a
+// reflection) is read from the pictures: an optical flow, block matching coarse to fine once per pair of
+// real frames, used per pixel only where it matches both frames clearly better than the game's motion
+// and the surface's depth agrees (FSR 3 mixes its two motions more coarsely). The same pass checks for
+// a cut (the two frames' brightness histograms far apart, or nothing matching anywhere): then the made
+// frame is the nearer real frame, never two scenes mixed. Big gaps that open behind moving things are
+// filled from a pyramid of the made frame that favours the far side (the background), not smeared from
+// the edge. Both frames are read with a sharp 5-tap filter, so made frames are as sharp as real ones
+// (FSR 3's are a little softer). refreshesSince() counts refreshes by the clock, so a refresh the
+// phone skipped doesn't hold the picture back a step (stop and go).
 import {
   StorageTexture, StorageBufferAttribute, DataTexture, HalfFloatType, FloatType, Vector2, Matrix3, Matrix4, Quaternion,
   LinearFilter, NearestFilter, Node, BlendMode, MaterialBlending, NormalBlending, NoBlending, AdditiveBlending,
@@ -43,11 +55,16 @@ import {
 import {
   Fn, instanceIndex, uint, int, float, vec2, vec3, vec4, ivec2, uniform, storage, atomicMin, atomicStore, atomicAdd,
   textureStore, texture, If, select, clamp, abs, max, min, floor, dot, mix, length, floatBitsToUint, smoothstep,
-  mrt, output, velocity, diffuseColor, cameraProjectionMatrix, cameraViewMatrix,
+  mrt, output, velocity, diffuseColor, cameraProjectionMatrix, cameraViewMatrix, Loop, atomicLoad,
 } from 'three/tsl';
 
 const EMPTY = 0xffffffff;
 const LUMA = vec4(.299, .587, .114, 0);
+// optical flow: how far the coarsest level searches (in its own pixels, 16 screen pixels each: +-96 screen
+// pixels) and how much a flow has to beat the game's own motion on a block (mean brightness difference)
+// before it is used there. A cut to a new scene: the two frames' brightness histograms this far apart
+// (0..2), or the best matches this far off (mean brightness difference), counted together
+const FLOW_R = 6, FLOW_GAIN = .012, CUT_HIST = .33, CUT_MISS = .05;
 
 /** True for a material drawn see-through or with added light (glass, water, smoke, sparks, glows). */
 export const seeThrough = m => !!m && (m.transparent === true || (m.blending !== NormalBlending && m.blending !== NoBlending));
@@ -130,11 +147,13 @@ export { warpUV };
  * frame, at the render size) and depth is the scene's depth (0 near, 1 far, at the render size).
  */
 export class FrameGen {
-  constructor(r, { tolerance = .04 } = {}) {
-    this.r = r; this.key = ''; this.frames = 0; this.ready = false;
+  constructor(r, { tolerance = .04, flow = true, fill = true, sharp = true } = {}) {
+    this.r = r; this.key = ''; this.frames = 0; this.ready = false; this.flowFor = -1;
     this.U = {
       rs: uniform(new Vector2(1, 1)), os: uniform(new Vector2(1, 1)), t: uniform(.5), jd: uniform(new Vector2()),
       tol: uniform(tolerance), interp: uniform(1), near: uniform(.1), far: uniform(1000), up: uniform(0),
+      // optical flow and the gap-filling pyramid on (1) or off (0): switches, so trying without needs no rebuild
+      flowOn: uniform(flow ? 1 : 0), fillOn: uniform(fill ? 1 : 0), sharp: uniform(sharp ? 1 : 0),
       // the camera's turn: newest -> last frame, last -> the one before, newest -> the moment made; 1 once three frames are in
       Hb: uniform(new Matrix3()), Hb2: uniform(new Matrix3()), Ht: uniform(new Matrix3()), hist: uniform(0),
     };
@@ -155,11 +174,29 @@ export class FrameGen {
     this.prevDepth = st(rw, rh, FloatType);
     // mid-frame motion: one depth key per render pixel (atomic min), then the motion that won it
     this.keysAttr = new StorageBufferAttribute(new Uint32Array(n), 1);
-    this.midMotion = st(rw, rh);      // xy: displacement (uv) from frame N back to N-1, z: depth, w: 1 found (2: a moving particle), 0 hole
+    this.midMotion = st(rw, rh, FloatType);   // xy: displacement (uv) from frame N back to N-1, z: depth, w: 1 found (2: a moving particle), 0 hole
     this.midBend = st(rw, rh);        // xy: how far the camera's turn and the curve put it off the straight line (uv)
-    this.filled = st(rw, rh);         // the same with the holes filled from the background round them
+    this.filled = st(rw, rh, FloatType);      // the same with the holes filled from the background round them
     this.filledBend = st(rw, rh);
+    this.raw = st(ow, oh, HalfFloatType, LinearFilter);   // the made frame before its gaps are filled (alpha: 0 a gap, else how far the surface is)
     this.output = st(ow, oh, HalfFloatType, LinearFilter);
+    // optical flow (the second motion, read from the pictures: FSR 3's optical flow field), once per real
+    // frame: both frames' brightness at 1/2 .. 1/16 of the screen (x the newest, y the last), and the flow
+    // in blocks of 64, 32, 16 and 8 screen pixels (xy: uv from the newest back to the last; z: how well it
+    // matches; w: how much better it matches than the game's own motion there, at the finest level)
+    const sz = k => [Math.max(1, Math.ceil(ow / 2 ** k)), Math.max(1, Math.ceil(oh / 2 ** k))];
+    this.lum = [1, 2, 3, 4].map(k => st(...sz(k), HalfFloatType, LinearFilter));
+    this.flow = [3, 4, 5, 6].map(k => st(...sz(k)));
+    // the gap-filling pyramid (FSR 3's inpainting pyramid): the made frame at 1/2 .. 1/32, each pixel the
+    // average of the surfaces found round it, the far ones (the background a gap uncovers) counting most
+    this.pyr = [1, 2, 3, 4, 5].map(k => st(...sz(k), HalfFloatType, LinearFilter));
+    // (their sizes are uniforms too, kept across builds)
+    const LS = this.LS ||= [1, 2, 3, 4].map(() => uniform(new Vector2())), FS = this.FS ||= [3, 4, 5, 6].map(() => uniform(new Vector2())), PS = this.PS ||= [1, 2, 3, 4, 5].map(() => uniform(new Vector2()));
+    [1, 2, 3, 4].forEach((k, i) => LS[i].value.set(...sz(k))); [3, 4, 5, 6].forEach((k, i) => FS[i].value.set(...sz(k))); [1, 2, 3, 4, 5].forEach((k, i) => PS[i].value.set(...sz(k)));
+    // the cut check: [0] the coarsest flow's misses added up, [1] its blocks, [2..33] and [34..65] the two
+    // frames' brightness histograms (32 bins, at 1/16 size), [66] 1 when it's a cut, [67] [68] how far the
+    // histograms and the matches were off (x 4096, for tests)
+    this.cutAttr = new StorageBufferAttribute(new Uint32Array(72), 1);
     const keys = storage(this.keysAttr, 'uint', n).toAtomic(), keysR = storage(this.keysAttr, 'uint', n);
     // the inputs change every frame (SGSR 2 takes turns between two pictures): nodes whose value real() sets
     const col = this.colN = texture(this.prevColor), vel = this.velN = texture(this.prevColor), dep = this.depN = texture(this.prevDepth);
@@ -266,10 +303,100 @@ export class FrameGen {
       textureStore(this.filled, p, m); textureStore(this.filledBend, p, vec4(e, 0, 0));
     })().compute(n, [64]);
 
+    // optical flow, once per real frame (FSR 3 reads a second motion from the pictures, for what the game's
+    // motion doesn't describe: shadows, reflections, scrolling textures, glows). Block matching, coarse to
+    // fine: each block of the newest frame looks for the place in the last frame whose brightness matches
+    // best, trying the game's own motion there first (so where both fit, the game's wins), no motion, the
+    // coarser level's answers round it, then a pixel either way. The coarsest also searches a wide square.
+    const PIX = [2, 4, 8, 16];   // screen pixels per pixel of each brightness level
+    const lumT = this.lum.map(t => texture(t)), flowT = this.flow.map(t => texture(t)), cut = storage(this.cutAttr, 'uint', 72).toAtomic(), cutR = storage(this.cutAttr, 'uint', 72);
+    this.cLum = this.lum.map((t, k) => Fn(() => {
+      const s = LS[k], p = ivec2(int(instanceIndex).mod(int(s.x)), int(instanceIndex).div(int(s.x)));
+      // each pixel the average of the 2 x 2 below it (a linear sample at their shared corner)
+      const u = vec2(p).mul(2).add(1).div(k ? LS[k - 1] : U.os);
+      const v = k ? lumT[k - 1].sample(u).level(0) : vec4(dot(col.sample(u).level(0), LUMA), dot(pcol.sample(u).level(0), LUMA), 0, 0);
+      textureStore(t, p, v);
+      // the smallest level also fills the two frames' brightness histograms (FidelityFX's scene change check)
+      if (k === 3) { atomicAdd(cut.element(int(clamp(v.x, 0, .999).mul(32)).add(2)), uint(1)); atomicAdd(cut.element(int(clamp(v.y, 0, .999).mul(32)).add(34)), uint(1)); }
+    })().compute(sz(k + 1)[0] * sz(k + 1)[1], [64]));
+    // how badly a block (4 x 4 brightness pixels at level k, block g) matches the last frame moved by d (uv): the mean difference
+    const miss = (k, g, d) => {
+      const L = lumT[k], s = LS[k], hiL = ivec2(int(s.x).sub(1), int(s.y).sub(1));
+      let sum = float(0);
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+        const p = clamp(g.mul(4).add(ivec2(x, y)), ivec2(0, 0), hiL);
+        sum = sum.add(abs(L.load(p).x.sub(L.sample(vec2(p).add(.5).div(s).add(d)).level(0).y)));
+      }
+      return sum.div(16);
+    };
+    // the game's motion at the middle of a block of b screen pixels (uv, newest back to last)
+    const gameAt = (g, b) => back(vel.load(pixOf(vec2(g).mul(b).add(b / 2).div(U.os))).xy);
+    // how badly the block matches with each of its pixels moved by the game's own motion there (what the
+    // made frame does without the flow): the flow is only worth using where it beats this
+    const missGame = g => {
+      const L = lumT[0], s = LS[0], hiL = ivec2(int(s.x).sub(1), int(s.y).sub(1));
+      let sum = float(0);
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+        const p = clamp(g.mul(4).add(ivec2(x, y)), ivec2(0, 0), hiL), u = vec2(p).add(.5).div(s);
+        sum = sum.add(abs(L.load(p).x.sub(L.sample(u.add(back(vel.load(pixOf(u)).xy))).level(0).y)));
+      }
+      return sum.div(16);
+    };
+    this.cCutClear = Fn(() => { atomicStore(cut.element(instanceIndex), uint(0)); })().compute(66, [64]);
+    // a cut to a new scene: the two frames' brightness spread very different, or nothing matching anywhere
+    this.cCutDecide = Fn(() => {
+      const dh = float(0).toVar(), tot = float(0).toVar();
+      // (read through the atomic view: one buffer can't be bound twice in a pass that writes it)
+      const at = i => float(atomicLoad(cut.element(i)));
+      Loop(32, ({ i }) => { const a = at(int(i).add(2)), b = at(int(i).add(34)); dh.addAssign(abs(a.sub(b))); tot.addAssign(a); });
+      const hd = dh.div(max(tot, 1)), md = at(0).div(max(at(1), 1)).div(4096);
+      // (either one far off, or both quite far off: in the tests a cut scores about twice the worst fast pan on each)
+      atomicStore(cut.element(66), select(hd.div(CUT_HIST).add(md.div(CUT_MISS)).greaterThan(2), uint(1), uint(0)));
+      atomicStore(cut.element(67), uint(hd.mul(4096))); atomicStore(cut.element(68), uint(md.mul(4096)));
+    })().compute(1, [1]);
+    this.cFlow = [3, 2, 1, 0].map(k => Fn(() => {
+      const s = FS[k], g = ivec2(int(instanceIndex).mod(int(s.x)), int(instanceIndex).div(int(s.x))), px = LS[k];
+      const gm = gameAt(g, PIX[k] * 4), gc = miss(k, g, gm), best = float(gc).toVar(), bd = vec2(gm).toVar();
+      // a try replaces the best only if clearly better (flat areas match anything: they keep the game's motion)
+      const tryAt = d => { const c = miss(k, g, d); If(c.lessThan(best.mul(.9).sub(.001)), () => { best.assign(c); bd.assign(d); }); };
+      if (k === 3) {
+        Loop({ start: int(-FLOW_R), end: int(FLOW_R), condition: '<=', name: 'fy' }, ({ fy }) => {
+          Loop({ start: int(-FLOW_R), end: int(FLOW_R), condition: '<=', name: 'fx' }, ({ fx }) => { tryAt(vec2(float(fx), float(fy)).div(px)); });
+        });
+      } else {
+        tryAt(vec2(0));
+        const up = FS[k + 1], hiU = ivec2(int(up.x).sub(1), int(up.y).sub(1));
+        // (the coarser block over this one and the two beside it that are nearest: this block is a quarter of it)
+        const pg = g.div(2), side = g.sub(pg.mul(2)).mul(2).sub(1);
+        for (const o of [ivec2(0, 0), ivec2(side.x, 0), ivec2(0, side.y)]) tryAt(flowT[k + 1].load(clamp(pg.add(o), ivec2(0, 0), hiU)).xy);
+      }
+      // then a pixel either way of the best (the coarsest also diagonally)
+      const c0 = vec2(bd).toVar();
+      for (const [ox, oy] of k === 3 ? [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]] : [[-1, 0], [1, 0], [0, -1], [0, 1]]) tryAt(c0.add(vec2(ox, oy).div(px)));
+      // the coarsest level adds up how badly the whole screen matches: a cut to a new scene matches nowhere
+      if (k === 3) { atomicAdd(cut.element(0), uint(min(best, 1).mul(4096))); atomicAdd(cut.element(1), uint(1)); }
+      // finest: how much better than the game's motion pixel by pixel (0 where they're the same move, within a pixel)
+      // (a clear win only: the flow's match at most 40% as far off as the game's, so a texture that repeats
+      // or shimmers in the distance, which matches many ways a little better, keeps the game's motion)
+      const mg = missGame(g), gain = k ? gc : select(length(bd.sub(gm).mul(U.os)).greaterThan(.75).and(best.lessThan(mg.mul(.4))), mg.sub(best), float(0));
+      textureStore(this.flow[k], g, vec4(bd, best, gain));
+    })().compute(sz(k + 3)[0] * sz(k + 3)[1], [64]));
+    const isCut = () => cutR.element(66).greaterThan(uint(0));
+
     // 5 compose, at the screen's size: the newest frame from where each pixel was at t = 1 and the last
     // frame from where it was at t = 0, each kept only if it sees the same surface (its depth isn't in
     // front of it), blended by time. Ahead of the newest frame (t > 1) there is only the newest to take from.
     const OW = int(U.os.x);
+    // (on the picture's own pixels: its size, read from it)
+    const sharpAt = (T, uv) => {
+      const ts = vec2(T.size(int(0))), P = uv.mul(ts), c = floor(P.sub(.5)).add(.5), f = P.sub(c), f2 = f.mul(f), f3 = f2.mul(f);
+      const w0 = f3.mul(-.5).add(f2).sub(f.mul(.5)), w1 = f3.mul(1.5).sub(f2.mul(2.5)).add(1), w2 = f3.mul(-1.5).add(f2.mul(2)).add(f.mul(.5)), w3 = f3.mul(.5).sub(f2.mul(.5));
+      const w12 = w1.add(w2), t12 = c.add(w2.div(w12)).div(ts), t0 = c.sub(1).div(ts), t3 = c.add(2).div(ts);
+      const at = (x, y) => T.sample(vec2(x, y)).level(0);
+      const a = w12.x.mul(w0.y), b = w0.x.mul(w12.y), m = w12.x.mul(w12.y), d = w3.x.mul(w12.y), e = w12.x.mul(w3.y);
+      const sum = at(t12.x, t0.y).mul(a).add(at(t0.x, t12.y).mul(b)).add(at(t12.x, t12.y).mul(m)).add(at(t3.x, t12.y).mul(d)).add(at(t12.x, t3.y).mul(e));
+      return max(sum.div(a.add(b).add(m).add(d).add(e)), vec4(0));
+    };
     const fromN = (u, m, e) => u.sub(m.xy.mul(float(1).sub(U.t))).sub(e), fromP = (u, m, e) => u.add(m.xy.mul(U.t)).sub(e);
     this.cCompose = Fn(() => {
       const i = int(instanceIndex), q = ivec2(i.mod(OW), i.div(OW)), u = vec2(q).add(.5).div(U.os);
@@ -290,7 +417,13 @@ export class FrameGen {
       });
       const d = m.xy, z = m.z, isPart = m.w.greaterThan(1.5);
       const uN = fromN(u, m, e), uP = fromP(u, m, e);
-      const cN = col.sample(clamp(uN, 0, 1)).level(0), cP = pcol.sample(clamp(uP, 0, 1)).level(0);
+      // (sampled sharp, as a Catmull-Rom curve through the 4 x 4 pixels round the spot, in five linear
+      // samples: a plain linear sample between pixels softens the picture, so every made frame would look
+      // a little blurrier than the real ones round it, which shows as a shimmer)
+      // (only on a picture at the screen's size, as the app gives it: a smaller one is being magnified anyway)
+      const sharpOn = U.sharp.greaterThan(.5).and(length(vec2(col.size(int(0))).sub(U.os)).lessThan(.5));
+      const cN = sharpOn.select(sharpAt(col, clamp(uN, 0, 1)), col.sample(clamp(uN, 0, 1)).level(0));
+      const cP = sharpOn.select(sharpAt(pcol, clamp(uP, 0, 1)), pcol.sample(clamp(uP, 0, 1)).level(0));
       const L = lin(z), tol = L.mul(U.tol);
       const inN = in01(uN), inP = in01(uP).and(U.interp.greaterThan(.5));
       // the newest frame's pixel there is a moving particle, but this one is the background behind it: not from there
@@ -307,14 +440,81 @@ export class FrameGen {
       const lost = select(inN.not().and(inP), float(0), float(1));
       const wN = select(okN, select(okP, select(still.and(differ), float(1), U.t), float(1)), select(okP, float(0), lost));
       const made = mix(cP, cN, clamp(wN, 0, 1)).toVar();
+      // a gap: neither frame saw the surface that is here at t (it was hidden in both), though the newest
+      // frame has a picture there (step 8 fills it from the pyramid)
+      const gap = float(select(inN.and(okN.not()).and(okP.not()).and(isPart.not()), float(1), float(0))).toVar();
       // a moving particle followed from the last frame: its light then and now, by time
       If(isPart, () => { made.assign(select(in01(uP).and(U.interp.greaterThan(.5)), mix(cP, cN, U.t), cN)); });
+      // optical flow: where a block of the picture moved in a way the game's motion doesn't say (a shadow
+      // crossing still ground, a scrolling texture, a reflection, a glow), on the same surface the game's
+      // motion found here, the move whose two frames agree best wins
+      If(U.flowOn.greaterThan(.5).and(isPart.not()).and(okN), () => {
+        const fs = FS[0], fq = u.mul(fs).sub(.5), f0 = ivec2(floor(fq)), hiF = ivec2(int(fs.x).sub(1), int(fs.y).sub(1));
+        const C = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => flowT[0].load(clamp(f0.add(ivec2(x, y)), ivec2(0, 0), hiF)));
+        const most = C.reduce((s, c) => max(s, c.w), float(0));
+        const same = z => abs(z.sub(L)).lessThan(L.mul(.1).add(.05));
+        const differ3 = (a, b) => dot(abs(a.sub(b)).xyz, vec3(1 / 3));
+        If(most.greaterThan(FLOW_GAIN), () => {
+          // between two frames: against the game's motion, each flow round here (FSR 3 weighs its two motions the same way)
+          // (only where the game's motion clearly fails: its two frames disagree here)
+          const dG = differ3(cN, cP);
+          If(U.interp.greaterThan(.5).and(okP).and(dG.greaterThan(.05)), () => {
+            const best = dG.mul(.5).sub(.01).toVar();
+            // a block's flow counts only where the bigger block round it (16 pixels) moves the same way (a lone
+            // block is more likely a texture that repeats, matched one repeat over), and only a move unlike the
+            // game's here, by more than a pixel
+            const fs1 = FS[1], par = flowT[1].load(clamp(ivec2(floor(u.mul(fs1))), ivec2(0, 0), ivec2(int(fs1.x).sub(1), int(fs1.y).sub(1)))).xy;
+            const near = (a, b) => length(a.sub(b).mul(U.os)).lessThan(1.5);
+            const backed = (c, k) => C.reduce((s, o, j) => j === k ? s : s.or(o.w.greaterThan(FLOW_GAIN).and(near(o.xy, c.xy))), near(par, c.xy));
+            for (const [k, c] of C.entries()) {
+              If(c.w.greaterThan(FLOW_GAIN).and(backed(c, k)).and(length(c.xy.sub(d).mul(U.os)).greaterThan(1)), () => {
+                const a = u.sub(c.xy.mul(float(1).sub(U.t))), b = u.add(c.xy.mul(U.t));
+                const ok = in01(a).and(in01(b)).and(same(lin(dep.load(pixOf(a)).x))).and(same(lin(pdep.load(pixOf(b)).x)));
+                const ca = col.sample(clamp(a, 0, 1)).level(0), cb = pcol.sample(clamp(b, 0, 1)).level(0), d = differ3(ca, cb);
+                If(ok.and(d.lessThan(best)), () => { best.assign(d); made.assign(mix(cb, ca, U.t)); });
+              });
+            }
+          });
+          // past the newest frame there is nothing to check a flow against: only inside a patch of it (all
+          // four blocks round here moving alike, clearly unlike the game's motion), moved by their blend
+          If(U.interp.lessThan(.5), () => {
+            const all = C.slice(1).reduce((s, c) => s.and(c.w.greaterThan(FLOW_GAIN)).and(length(c.xy.sub(C[0].xy).mul(U.os)).lessThan(1)), C[0].w.greaterThan(FLOW_GAIN));
+            const fr = fq.sub(floor(fq)), fl = mix(mix(C[0].xy, C[1].xy, fr.x), mix(C[2].xy, C[3].xy, fr.x), fr.y);
+            const a = u.sub(fl.mul(float(1).sub(U.t)));
+            If(all.and(in01(a)).and(same(lin(dep.load(pixOf(a)).x))), () => { made.assign(col.sample(a).level(0)); });
+          });
+        });
+      });
       // marked see-through things that weren't lifted and moved, here or where this pixel's colour comes
       // from: the newest frame, unmoved (faint glass is mostly left to the motion, as what shows through it
       // moves with the background)
       const r0 = rea.sample(u).level(0), stat = (r, lift) => r.x.mul(float(1).sub(lift));
       const re = select(isPart, float(0), max(stat(r0, liftAt(u)), stat(rN, liftN)));
-      textureStore(this.output, q, mix(made, col.sample(u).level(0), smoothstep(.2, .7, re)));
+      const fin = mix(made, col.sample(u).level(0), smoothstep(.2, .7, re)).toVar();
+      // a cut to a new scene (nothing matched anywhere): never a mix of the two, just a real frame, the one due
+      If(U.flowOn.greaterThan(.5).and(isCut()), () => { fin.assign(select(U.interp.greaterThan(.5).and(U.t.lessThan(1)), pcol.sample(u).level(0), col.sample(u).level(0))); gap.assign(0); });
+      // alpha for the pyramid: 0 a gap, else how far away the surface is (far counts more: what a gap
+      // uncovers is the background, so it is filled mostly from the background round it, not the thing in front)
+      textureStore(this.raw, q, vec4(fin.xyz, select(gap.greaterThan(.5), float(0), clamp(L.div(40), .02, 1))));
+    })().compute(on, [64]);
+
+    // 7 the gap-filling pyramid: each level the weighted average of the surfaces found below it
+    const rawT = texture(this.raw), pyrT = this.pyr.map(t => texture(t)), hiO = ivec2(int(U.os.x).sub(1), int(U.os.y).sub(1));
+    this.cPyr = this.pyr.map((t, k) => Fn(() => {
+      const s = PS[k], p = ivec2(int(instanceIndex).mod(int(s.x)), int(instanceIndex).div(int(s.x)));
+      if (k) { textureStore(t, p, pyrT[k - 1].sample(vec2(p).mul(2).add(1).div(PS[k - 1])).level(0)); return; }
+      let sum = vec4(0);
+      for (const [x, y] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const c = rawT.load(clamp(p.mul(2).add(ivec2(x, y)), ivec2(0, 0), hiO)); sum = sum.add(vec4(c.xyz.mul(c.w), c.w)); }
+      textureStore(t, p, sum.mul(.25));
+    })().compute(sz(k + 1)[0] * sz(k + 1)[1], [64]));
+    // 8 the finished frame: each gap takes the finest level of the pyramid that has surfaces round it
+    this.cInpaint = Fn(() => {
+      const i = int(instanceIndex), q = ivec2(i.mod(OW), i.div(OW)), u = vec2(q).add(.5).div(U.os), c = rawT.load(q), out = vec3(c.xyz).toVar();
+      If(c.w.lessThanEqual(0).and(U.fillOn.greaterThan(.5)), () => {
+        const done = float(0).toVar();
+        for (const P of pyrT) If(done.lessThan(.5), () => { const s = P.sample(u).level(0); If(s.w.greaterThan(1e-3), () => { out.assign(s.xyz.div(s.w)); done.assign(1); }); });
+      });
+      textureStore(this.output, q, vec4(out, 1));
     })().compute(on, [64]);
 
     // 6 keep the newest frame as next time's last frame (with its motion, for next time's curve)
@@ -363,20 +563,37 @@ export class FrameGen {
     const r = this.r, t0 = performance.now(), U = this.U;
     U.t.value = t; U.interp.value = t <= 1 ? 1 : 0;
     homography(this.poses[0], this.poseAt(t, TP), U.Ht.value);
-    // one compute pass: WebGPU finishes each step's writes before the next step reads them
-    r.compute([this.cClear, this.cSplat, this.cResolve, this.cFill, this.cCompose]);
+    // one compute pass: WebGPU finishes each step's writes before the next step reads them. The optical
+    // flow (and the cut check that comes with it) is worked out once for each pair of real frames.
+    const steps = [this.cClear, this.cSplat, this.cResolve, this.cFill];
+    if (this.flowFor !== this.frames) { this.flowFor = this.frames; steps.push(this.cCutClear); if (U.flowOn.value) steps.push(...this.cLum, ...this.cFlow, this.cCutDecide); }
+    steps.push(this.cCompose); if (U.fillOn.value) steps.push(...this.cPyr);
+    r.compute([...steps, this.cInpaint]);
     this.stats.made++; this.stats.ms = this.stats.ms * .9 + (performance.now() - t0) * .1;   // CPU time to queue it (the GPU time is measured by the app)
     return true;
   }
   /** Forget the last frames (a camera cut, a new round, a resize): nothing is made until two new real frames. */
-  reset() { this.frames = 0; this.ready = false; }
+  reset() { this.frames = 0; this.ready = false; this.flowFor = -1; }
   dispose() {
-    for (const k of ['prevColor', 'prevDepth', 'midMotion', 'midBend', 'filled', 'filledBend', 'output']) { this[k]?.dispose(); this[k] = null; }
-    for (const k of ['cClear', 'cSplat', 'cResolve', 'cFill', 'cCompose', 'cKeepC', 'cKeepD']) { this[k]?.dispose?.(); this[k] = null; }
-    this.keysAttr = null; this.key = '';
+    for (const k of ['prevColor', 'prevDepth', 'midMotion', 'midBend', 'filled', 'filledBend', 'raw', 'output']) { this[k]?.dispose(); this[k] = null; }
+    for (const k of ['lum', 'flow', 'pyr']) { for (const t of this[k] || []) t.dispose(); this[k] = null; }
+    for (const k of ['cClear', 'cSplat', 'cResolve', 'cFill', 'cCompose', 'cKeepC', 'cKeepD', 'cCutClear', 'cCutDecide', 'cInpaint']) { this[k]?.dispose?.(); this[k] = null; }
+    for (const k of ['cLum', 'cFlow', 'cPyr']) { for (const c of this[k] || []) c.dispose?.(); this[k] = null; }
+    this.keysAttr = this.cutAttr = null; this.key = ''; this.flowFor = -1;
   }
 }
 const TP = newPose();
+
+/**
+ * Which refresh after the newest real frame this one is (1 the next), from the schedule the 3D kit keeps
+ * ({ at: the real frame's time, ms: a refresh, k: the last refresh shown }) and this refresh's time: by
+ * the clock, so one the phone skipped is counted and the picture stays on time, never back or the same
+ * moment twice. Without a time, simply the next.
+ */
+export function refreshesSince(S, now) {
+  if (now == null || !(S.ms > 0)) return S.k + 1;
+  return Math.max(S.k + 1, Math.round((now - S.at) / S.ms));
+}
 
 /**
  * Still-picture check (src/kit/hd3d-gpu.js): compares a sixteenth of the finished frame's pixels with the

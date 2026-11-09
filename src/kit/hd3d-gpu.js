@@ -25,7 +25,7 @@ import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { FrameGen, StillCheck, frameGenMRT, fgPrevVP, newPose, copyPose, homography, warpUV } from './framegen.js';
+import { FrameGen, StillCheck, frameGenMRT, fgPrevVP, newPose, copyPose, homography, warpUV, refreshesSince } from './framegen.js';
 
 const LUM = vec3(.2126, .7152, .0722);
 
@@ -974,7 +974,7 @@ export class GpuChain {
     let gap = S ? Math.round((o.now - S.at) / ms) : 0;
     if (!(gap >= 1 && gap <= 6)) gap = Math.max(1, Math.round(steps));
     if (S) { this.fgWin.real++; if (S.k < gap - 1) this.fgWin.missed++; }   // refreshes in that gap showed nothing new
-    this.sched = { at: o.now, gap, k: 0, D: mode === 'blend' ? Math.max(1, Math.ceil(steps - .01) - 1) : 0 };
+    this.sched = { at: o.now, ms, gap, k: 0, D: mode === 'blend' ? Math.max(1, Math.ceil(steps - .01) - 1) : 0 };
     this.owe = true;
     // fresh aim: where the input pointed the camera for this frame (a later change is the finger's own)
     const base = this.aim && fg.ready ? this.aim() : null; if (base) copyPose(base, this.aimBase);
@@ -990,11 +990,13 @@ export class GpuChain {
   }
   /**
    * A refresh after a real frame (the feed's skipped refresh): shows the moment due then. last: the next
-   * refresh draws a real frame (so the newest is kept now, on this lighter refresh). Returns 'real' | 'made' | false.
+   * refresh draws a real frame (so the newest is kept now, on this lighter refresh); now: this refresh's
+   * time (the animation frame's), so a refresh the phone skipped (a busy moment) doesn't hold the picture
+   * back a step, which then jumps when the next real frame comes (stop and go). Returns 'real' | 'made' | false.
    */
-  between(last = true) {
+  between(last = true, now = null) {
     const S = this.sched; if (!S || !this.fg) return false;
-    S.k++;
+    S.k = refreshesSince(S, now);
     const shown = this.showAt(S.k);
     if (last && this.owe) { this.fg.keep(); this.owe = false; }
     return shown;

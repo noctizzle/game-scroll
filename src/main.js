@@ -586,7 +586,7 @@ function frame(now){
   if(s){
     // a refresh between two real frames: a Next Gen or AR game making frames in between (frame generation,
     // src/kit/framegen.js) shows the moment due then (last: the next refresh draws a real frame)
-    if(now<nextAt-.4*rf){const b=speed.between;if(b)try{b(now+1.4*rf>=nextAt)}catch(e){speed.between=null;console.warn('frame generation',e)}return}
+    if(now<nextAt-.4*rf){const b=speed.between;if(b)try{b(now+1.4*rf>=nextAt,now)}catch(e){speed.between=null;console.warn('frame generation',e)}return}
     nextAt=now-nextAt>step?now+step:nextAt+step;   // fell behind (hidden, a long frame): restart the beat
     speed.between=null;   // (the 3D kit sets it again while this frame draws)
     // stutter shield (src/kit/speed.js): a 3D game drawing every refresh whose frame came a refresh or more late

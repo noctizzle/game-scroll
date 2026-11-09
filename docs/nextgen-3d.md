@@ -277,6 +277,20 @@ round them. The method follows AMD FSR 3's frame interpolation (MIT) and Mob-FGS
 written fresh as WebGPU compute. It runs after SGSR 2 at the screen's size, takes SGSR 2's camera
 jitter back out of the motion, and costs a few milliseconds of compute instead of a whole extra frame.
 
+- **What motion vectors miss** (a shadow sliding over still ground, a scrolling texture, a reflection)
+  is read from the pictures too: an optical flow, worked out once per pair of real frames by matching
+  blocks coarse to fine, as FSR 3 does. It's used per pixel only where it matches both real frames
+  clearly better than the game's own motion and the surface's depth agrees, so a still floor under a
+  moving shadow isn't dragged along.
+- **Cuts are found by themselves:** the same pass compares the two frames' brightness spread and how
+  well anything matches; after a cut the made frames show the nearer real frame instead of mixing two
+  scenes (the commonest frame gen complaint after ghosting).
+- **Big gaps** that open behind fast things are filled from a small pyramid of the made frame that
+  favours the far side (the background), instead of a smear from the edge.
+- **As sharp as real frames:** both real frames are read with a sharp 5-tap filter, so made frames don't
+  look softer than the real ones between them (no "shimmer" from sharp, soft, sharp).
+- **Pacing by the clock:** each refresh works out which moment it shows from its own time, so a refresh
+  the phone skips doesn't hold the picture back a step that then jumps.
 - **Camera turns are exact.** The camera's turn and zoom between frames are worked out from its pose
   (a rotation of the picture), not guessed from pixels, so a fast pan lands where the real frame
   would. What's left (things moving, the camera sliding) follows a curve through the last three real
@@ -343,7 +357,9 @@ jitter back out of the motion, and costs a few milliseconds of compute instead o
 refreshes per real frame, `fgMs` the CPU time to queue it and `still` whether the last refresh
 showed a still picture again. `node scripts/framegen-test.cjs [--mode ahead] [--steps 3] [--hard]`
 scores made frames against the truth on test scenes (moving things, things going round in circles,
-a camera turning round the scene and on the spot, glass, sparks, smoke, SGSR 2's jitter), and
+a camera turning round the scene and on the spot, glass, sparks, smoke, SGSR 2's jitter; `--kinds
+shadow,scroll,cut` for a moving shadow, a scrolling texture and a cut, with `--query '&flow=0'`,
+`&fill=0` or `&sharp=0` to compare without the optical flow, the gap pyramid or the sharp filter), and
 `node scripts/framegen-test.cjs --check` runs every suite against `scripts/framegen-test/baseline.json`
 (the PR check does this when frame generation's code changes; `--save` after a change meant to move
 the numbers). `npm run build:bundled && node scripts/framegen-games.cjs [id ...] [--shots dir]` plays
