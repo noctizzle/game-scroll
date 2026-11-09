@@ -78,6 +78,7 @@
     "native-ar": "file:plugins/native-ar",
     "npu": "file:plugins/npu",
     "phone-ai": "file:plugins/phone-ai",
+    "power-state": "file:plugins/power-state",
     "pitchy": "4.1.0",
     "pixi-filters": "6.1.5",
     "pixi.js": "8.22.0",
