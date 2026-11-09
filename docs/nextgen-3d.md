@@ -367,7 +367,7 @@ works on instanced meshes and on WebGL and WebGPU alike.
   it tells the view how bright (`v.shaftsAt`), so only the sky close to the sun makes shafts and they
   never white out the screen.
 
-## Outdoor looks: ground, hills, rock, leaves
+## Outdoor looks: ground, hills, rock, leaves, water and lava
 
 `gs.outdoors` paints a Next Gen landscape that holds up through a scope. Each look is a named patch
 on a three.js standard material, so light, shadows and the air still apply.
@@ -398,5 +398,11 @@ const leafLook = looks.leaves(leafMaterial, { wind: .6 });      // sway, sun glo
 - **`looks.rock(material, o)`** and **`looks.leaves(material, o)`**: `rock({ scale, moss, mossy })`;
   `leaves({ time, wind, sun, sway, above, glow, atlas })`. Pass numbers, or shared uniforms
   (`{ value }`) when several materials should move together.
+- **Rivers, waterfalls, lava and floods**: `new River(stream)` draws a `gs.flow` river or pool with
+  `looks.flow` (ripples and colour sliding downstream at each point's own speed, deeper in the middle,
+  foam at rocks, banks and falls) or, for `kind: 'lava'`, `looks.lava` (glowing cracks between drifting
+  plates of crust that cool downstream; the glow feeds bloom). `new FloodWater(flood, { view: v })`
+  draws a `gs.flow` Flood; on WebGPU the flood itself runs as compute on the graphics chip and its
+  depths are copied back every few frames for `flood.depth()`. Both look the same on WebGL and WebGPU.
 - Every look is a named effect (`material.userData.gsLooks` lists them), so the WebGPU version can
   swap each one for a node later (see `docs/webgpu-move.md`). Road segments: up to 32.
