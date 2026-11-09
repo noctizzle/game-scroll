@@ -59,6 +59,12 @@ The rules for new 3D code until then:
 
 Status from `gpu-games.cjs` (2026-11-09): all 20 Next Gen and AR games draw on WebGPU with no errors.
 
+## GPU particles
+
+`gs.hd.GPUParticles` is the first part made WebGPU-first: a TSL compute pass (`src/kit/particles-gpu.js`)
+moves them in storage buffers that the sprites read, with the same rules run on the CPU for WebGL. The
+look-compare `sparks` scene checks the two match.
+
 ## Done for Long Shadow and Deep Pressure
 
 - **Outdoor looks as TSL**: `gpuLooks` in `hd3d-gpu.js` has `ground` (fields, roads, wear), `hills`,

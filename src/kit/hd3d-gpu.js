@@ -639,3 +639,4 @@ export class GpuChain {
   }
   dispose() { this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose?.(); this.s2?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose(); this.pp.dispose?.(); }
 }
+export { gpuSparks } from './particles-gpu.js';
