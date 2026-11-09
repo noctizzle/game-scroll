@@ -81,9 +81,12 @@ try {
   const vc = bundle.versionCode;
   console.log(`Play took version code ${vc}`);
   if (mapping) {
-    await call('POST', `${UP}/edits/${edit.id}/apks/${vc}/deobfuscationFiles/mapping?uploadType=media`,
-      { body: readFileSync(mapping), type: 'application/octet-stream', token });
-    console.log('Uploaded the R8 mapping, so crash reports in Play Console show real names');
+    // Nice to have: a failure here only means unreadable crash traces, so it never stops the release.
+    try {
+      await call('POST', `${UP}/edits/${edit.id}/apks/${vc}/deobfuscationFiles/proguard?uploadType=media`,
+        { body: readFileSync(mapping), type: 'application/octet-stream', token });
+      console.log('Uploaded the R8 mapping, so crash reports in Play Console show real names');
+    } catch (e) { console.log(`::warning::Couldn't upload the R8 mapping (${e.message}); releasing anyway`); }
   }
   const putTrack = () => call('PUT', `${API}/edits/${edit.id}/tracks/${track}`, { token, body: {
     track, releases: [{ name: name || String(vc), versionCodes: [String(vc)], status }] } });
@@ -106,7 +109,7 @@ try {
 } catch (e) {
   console.error(e.message);
   if (e.status === 401 || e.status === 403) console.error('The service account can\'t publish this app: invite it in Play Console → Users and permissions (docs/google-play.md, step 4).');
-  if (e.status === 404) console.error(`Play doesn't know ${PKG} yet, or the API isn't on: upload the first bundle by hand (docs/google-play.md, step 3).`);
+  if (e.status === 404) console.error(`Play doesn't know ${PKG} yet, or the API isn't on: check the package name and that the Play Developer API is on (docs/google-play.md, step 4).`);
   if (/version code .* already been used/i.test(e.detail || '')) console.error('That version code is already on Play: run the workflow again (each run gets a new number).');
   process.exit(1);
 }
