@@ -799,10 +799,12 @@ function world() {
   WD.cover = new CoverMap(GC, GR, coverAt, { size: CELL, x0: GX0, y0: GZ0, low: (c, r) => WD.lowCells.has(c + ',' + r) });
   WD.nav = new NavGrid(GC, GR, CELL, (c, r) => {
     const x = GX0 + (c + .5) * CELL, z = GZ0 + (r + .5) * CELL;
-    if (Math.abs(x - BRIDGE.x) < 4 && z > BRIDGE.z0 - 2 && z < BRIDGE.z1 + 2) return false;
-    // the banks by the bridge are steep and wet: cross on the bridge, not beside it
-    if (Math.abs(x - BRIDGE.x) < 16 && z > BRIDGE.z0 && z < BRIDGE.z1 && land.height(x, z) < 2) return true;
-    return coverAt(c, r) || land.height(x, z) < -.6 || land.slope(x, z) > .55;
+    if (Math.abs(x - BRIDGE.x) < 4 && z > BRIDGE.z0 - 6 && z < BRIDGE.z1 + 6) return false;   // the deck and the road onto each end
+    // beside the bridge: the banks are steep and wet, and the parapets are walls. On and off at the ends only
+    if (Math.abs(x - BRIDGE.x) < 16 && z > BRIDGE.z0 - 1 && z < BRIDGE.z1 + 1) return true;
+    // no wading: the whole cell (its corners and edges too, where paths run between cells) stays out of the water
+    for (const [dx, dz] of [[0, 0], [-2, -2], [2, -2], [-2, 2], [2, 2], [0, -2], [0, 2], [-2, 0], [2, 0]]) if (land.height(x + dx, z + dz) < -.9) return true;
+    return coverAt(c, r) || land.slope(x, z) > .55;
   });
   return WD;
 }
@@ -1534,6 +1536,32 @@ function make(api) {
     }
     return true;
   }
+  // could a shot from the eye e reach this man? (walls and buildings, then the ground, as the bullets see it)
+  function shootable(e, s) {
+    const top = s.gy + (s.crouch ? 1.05 : 1.6);
+    for (const y of [top, top - .45]) {
+      const p = { x: s.x, y, z: s.y };
+      if (!clearLine(e, p)) continue;
+      const L = Math.hypot(p.x - e.x, p.z - e.z), n = Math.ceil(L / 2); let ok = true;
+      for (let i = 1; i < n; i++) { const k = i / n; if (e.y + (p.y - e.y) * k < WD.land.height(e.x + (p.x - e.x) * k, e.z + (p.z - e.z) * k)) { ok = false; break; } }
+      if (ok) return true;
+    }
+    return false;
+  }
+  // the nearest open ground, a few cells round him, that a shot from e reaches (standing), not right under the nest
+  function seenSpot(s, e) {
+    const c0 = Math.floor((s.x - GX0) / CELL), r0 = Math.floor((s.y - GZ0) / CELL), me = { gy: 0, crouch: false, x: 0, y: 0 }; let tries = 4;
+    for (let rad = 1; rad <= 8; rad++) for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++) {
+      if (Math.max(Math.abs(dc), Math.abs(dr)) !== rad || !WD.nav.open(c0 + dc, r0 + dr)) continue;
+      me.x = GX0 + (c0 + dc + .5) * CELL; me.y = GZ0 + (r0 + dr + .5) * CELL; me.gy = groundAt(me.x, me.y);
+      if (Math.hypot(me.x - e.x, me.y - e.z) > 30 && shootable(e, me)) {
+        // and one he can walk to (a few tries: the other side of a river or a wall doesn't count)
+        const a = openNear(s.x, s.y); if (!a || tries-- <= 0) return null;
+        if (WD.nav.path(a.x - GX0, a.z - GZ0, me.x - GX0, me.y - GZ0)) return { x: me.x, y: me.y };
+      }
+    }
+    return null;
+  }
   // room round a camera spot: no wall within about a metre and a half, so a corner doesn't fill the shot
   function roomAt(q) { for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) if (solidAt(q.x + dx, q.z + dz, WD.solids)) return false; return true; }
   // where the camera watches the belfry climb from: the first spot east of the ladder that sees all of it
@@ -1746,15 +1774,21 @@ function make(api) {
     if ((s.pathTo?.x !== tx || s.pathTo?.z !== tz) && pathBudget > 0) {
       pathBudget--; s.pathTo = { x: tx, z: tz };
       const a = openNear(s.x, s.y), b = openNear(tx, tz), p = a && b ? WD.nav.path(a.x - GX0, a.z - GZ0, b.x - GX0, b.z - GZ0) : null;
-      if (p) { s.path = p.map(q => ({ x: q.x + GX0, z: q.y + GZ0 })); if (b.x !== tx || b.z !== tz) s.path.push({ x: tx, z: tz }); s.pi = s.path.length > 1 ? 1 : 0; }
+      if (p) { s.path = p.map(q => ({ x: q.x + GX0, z: q.y + GZ0 })); if ((b.x !== tx || b.z !== tz) && dryStep(b, tx, tz)) s.path.push({ x: tx, z: tz }); s.pi = s.path.length > 1 ? 1 : 0; }
       else s.path = null;   // no way there on foot: wait for a new order rather than wade across
     }
-    if (!s.path || s.pathTo?.x !== tx || s.pathTo?.z !== tz) { s.vx = s.vy = 0; return false; }
+    if (!s.path || s.pathTo?.x !== tx || s.pathTo?.z !== tz) { s.vx = s.vy = 0; return s.pathTo?.x === tx && s.pathTo?.z === tz ? 'stuck' : false; }
     const q = s.path[Math.min(s.pi, s.path.length - 1)], dx = q.x - s.x, dz = q.z - s.y, d = Math.hypot(dx, dz);
     if (d < .4) { if (s.pi < s.path.length - 1) s.pi++; else { s.vx = s.vy = 0; return true; } }
     const k = Math.min(1, speed * dt / (d || 1)); s.vx = dx / (d || 1) * speed; s.vy = dz / (d || 1) * speed;
     s.x += dx * k; s.y += dz * k; s.yaw = turnTo(s.yaw, Math.atan2(dx, dz), dt * 6);
     return false;
+  }
+  // the last little step off the grid to the exact goal: only if it's short and on dry ground clear of walls
+  function dryStep(b, tx, tz) {
+    if (Math.hypot(tx - b.x, tz - b.z) > CELL * 1.2) return false;
+    for (let k = .25; k <= 1; k += .25) { const x = b.x + (tx - b.x) * k, z = b.z + (tz - b.z) * k; if (WD.land.height(x, z) < -.9 || solidAt(x, z, WD.solids)) return false; }
+    return true;
   }
   // the nearest walkable spot (a goal inside a wall or the river moves to the bank)
   function openNear(x, z) {
@@ -1803,6 +1837,16 @@ function make(api) {
       if (see[3] && inCover > 0) squad.call(s, 'heads down');
     }
   }
+  // seconds in a row the current nest couldn't have shot him (checked twice a second; 0 while Wren is on the move)
+  function hiddenFor(s, dt, stand) {
+    if (!nest || move || state !== 'play') return s.hidT = 0;
+    if ((s.chkT = (s.chkT ?? Math.random() * .5) - dt) <= 0) {
+      s.chkT = .5; const c = s.crouch; if (stand) s.crouch = false;
+      const ok = shootable(nestEye(nest), s); s.crouch = c;
+      s.hidT = ok ? 0 : (s.hidT || 0) + .5; s.inView = ok;
+    }
+    return s.hidT || 0;
+  }
   function updateMen(dt) {
     const eye = WD.v.cam.position; pathBudget = 1; thinkBudget = 1;
     for (const s of men) {
@@ -1837,7 +1881,20 @@ function make(api) {
         m.rig.play('idle'); m.rig.upper('aim');
       } else if (s.alert) {
         s.alertT += dt; s.thinkDt += dt; s.shaken = Math.max(0, (s.shaken || 0) - dt * .2);
-        if (s.mind && foeAim && (s.thinkT -= dt) <= 0 && thinkBudget-- > 0) { s.thinkT = rnd(.8, 1.3); think(s, foeAim); }
+        // nobody hides for good: a man the nest can't reach for a few seconds steps out to where it can, and shoots back from there
+        const hid = hiddenFor(s, dt, s.order?.do === 'shoot');
+        if (hid > 5 && !(s.showT > 0) && foeAim) {
+          // the nearest spot in reach of the nest, or else head for the nest itself and stop as soon as it can see him
+          const spot = seenSpot(s, nestEye(nest));
+          WD.cover.free(s); s.plan = 'show'; s.showT = spot ? 9 : 20; s.hidT = 0; s.inView = false;
+          s.order = { do: 'move', role: 'show', to: spot || { x: nest.x, y: nest.z }, spot: null, at: { x: foeAim.x, y: foeAim.y } };
+        }
+        if (s.showT > 0) {
+          s.showT -= dt;
+          if (s.order?.role === 'show' && (s.order.arrived || (s.inView && Math.hypot(s.x - nest.x, s.y - nest.z) > 30))) { s.order = { do: 'shoot', at: s.order.at, spot: null, from: null, shown: true }; s.hidT = 0; }
+          else if (s.order?.shown && hid >= 1.5) { s.showT = 0; s.hidT = 6.5; }      // still out of reach where he stopped: look again
+        }
+        else if (s.mind && foeAim && (s.thinkT -= dt) <= 0 && thinkBudget-- > 0) { s.thinkT = rnd(.8, 1.3); think(s, foeAim); }
         const o = s.order || { do: 'hold' };
         if (o.do === 'move' && o.to) {
           if (!o.arrived && !walk(s, o.to.x, o.to.y, o.role === 'retreat' ? 3.6 : 3.3, dt)) { speed = 3.3; s.crouch = false; }
@@ -1845,7 +1902,7 @@ function make(api) {
         } else if (o.do === 'shoot') {
           // pops up from cover to shoot, then ducks back down: watch the rhythm and take him as he rises
           const up = !o.spot || s.fireT < .9 || t - (s.shotAt ?? -9) < .6, p = (up ? o.from : o.spot) || { x: s.x, y: s.y };
-          if (Math.hypot(p.x - s.x, p.y - s.y) > .4) { walk(s, p.x, p.y, 2.2, dt); speed = 2.2; }
+          if (Math.hypot(p.x - s.x, p.y - s.y) > .4) { if (walk(s, p.x, p.y, 2.2, dt) === 'stuck') o.from = o.spot = null; else speed = 2.2; }
           s.crouch = !up; s.yaw = turnTo(s.yaw, Math.atan2(o.at.x - s.x, o.at.y - s.y), dt * 4);
           if ((s.fireT -= dt) <= 0 && !speed) { s.fireT = rnd(1.8, 3.2); s.shotAt = t; const ally = allies && nearestAlly(s); if (ally) enemyShot(s, ally, 'rifle'); else if (located && nest && !move) enemyShot(s, 'me', 'rifle'); }
         } else if (o.do === 'throw') {
@@ -1855,9 +1912,11 @@ function make(api) {
         m.rig.play(speed > 0 ? 'run' : s.crouch ? 'crouch' : 'idle'); m.rig.upper(speed > 0 ? null : 'aim');
       } else {
         // calm: patrol or stand; suspicion grows when bullets land near or a friend drops
+        // a sentry standing where the nest can't reach him wanders out to where it can
+        if (!s.route && !s.fixed && hiddenFor(s, dt, true) > 5) { const p = seenSpot(s, nestEye(nest)); s.hidT = 0; if (p) s.route = [[p.x, p.y, 1e9]], s.ri = 0, s.wt = 0; }
         if (s.route) {
           const r = s.route[s.ri % s.route.length];
-          if (Math.hypot(r[0] - s.x, r[1] - s.y) > .6) { walk(s, r[0], r[1], s.late ? 2.6 : 1.3, dt); speed = s.late ? 2.6 : 1.3; }
+          if (Math.hypot(r[0] - s.x, r[1] - s.y) > .6) { if (walk(s, r[0], r[1], s.late ? 2.6 : 1.3, dt) === 'stuck') { s.ri++; if (s.route.length < 2) s.route = null; } else speed = s.late ? 2.6 : 1.3; }
           else if ((s.wt += dt) > r[2]) { s.wt = 0; s.ri++; if (s.late) { s.route = null; s.sus = .8; } }
         }
         if (s.sus > .5) { s.yaw += Math.sin(t * 2 + s.x) * dt; }
@@ -1888,7 +1947,7 @@ function make(api) {
         if (pinned) { a.crouch = true; }
         else if (route) {
           a.crouch = false; const tgt = route[Math.min(a.leg, route.length - 1)], tx = tgt[0] + i * 2 - 2, tz = tgt[1] + i * 2;
-          if (Math.hypot(tx - a.x, tz - a.y) > .6) { const sp = allyGo === 3 ? 4.6 : 3.2; walk(a, tx, tz, sp, dt); speed = sp; } else if (a.leg < route.length - 1) a.leg++; else { a.leg = 0; if (allyGo === 3) a.done = true; a.crouch = true; if (allyGo < 3) a.atLeg = allyGo; }
+          if (Math.hypot(tx - a.x, tz - a.y) > .6) { const sp = allyGo === 3 ? 4.6 : 3.2; if (walk(a, tx, tz, sp, dt) !== 'stuck') speed = sp; } else if (a.leg < route.length - 1) a.leg++; else { a.leg = 0; if (allyGo === 3) a.done = true; a.crouch = true; if (allyGo < 3) a.atLeg = allyGo; }
         }
         if (allyGo !== a.lastGo) { a.lastGo = allyGo; a.leg = 0; }
       }
@@ -2155,7 +2214,7 @@ function make(api) {
       if (state === 'intro' || state === 'outro') {
         cut.update(dt); audioTick(dt);
         if (state === 'intro' && cut.done) { state = 'play'; const s = cut.shot; if (s?.look) { const dx = s.look.x - s.x, dy = s.look.y - s.y, dz = s.look.z - s.z; look.yaw = Math.atan2(-dx, -dz); look.pitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -.5, .35); } }
-        updateMen(dt); updateAllies(dt); WD.dust.update(dt); WD.sparks.update(dt); WD.smoke.update(dt); WD.trail.update(dt);
+      updateMen(dt); updateAllies(dt); WD.dust.update(dt); WD.sparks.update(dt); WD.smoke.update(dt); WD.trail.update(dt);
         if (state === 'outro') { mission.update(dt); trainUpdate(dt); if (mid === 'm1' && train.final) rideTrain(dt); }
         if (outroDone && state === 'outro') finish(true);
         return;
