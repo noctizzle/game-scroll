@@ -221,6 +221,51 @@ class UpscalePass extends Pass {
   }
 }
 
+/**
+ * What SGSR 2 needs from the frame, the same on WebGL and WebGPU (hd3d-gpu.js): sizes, the camera's
+ * move since last frame (without the jitter), whether to start over, and this frame's jitter, which
+ * begin() puts on the camera and end() takes off. yDown: the renderer's pictures count rows from the
+ * top (WebGPU), so the jitter's y is turned round to stay in picture pixels.
+ */
+export class SgsrFrame {
+  constructor() {
+    this.renderSize = new Vector2(); this.outputSize = new Vector2(); this.jitter = new Vector2(); this.scaleRatio = new Vector2();
+    this.clipToPrevClip = new Matrix4(); this.fovH = 1; this.minLerp = 0; this.reset = 1;
+    this.prevVP = new Matrix4(); this.saved = new Matrix4(); this.savedInv = new Matrix4();
+    this.frame = 0; this.still = 0; this.view = null; this.lastT = 0; this.key = '';
+  }
+  begin(cam, pw, ph, ow, oh, view, now, cut = false, yDown = false) {
+    const key = `${pw}x${ph}>${ow}x${oh}`, resized = key !== this.key; this.key = key;
+    const reset = cut || resized || this.view !== view || now - this.lastT > 1000;   // a cut: another view drew in between, or a long pause
+    this.view = view; this.lastT = now;
+    this.renderSize.set(pw, ph); this.outputSize.set(ow, oh);
+    const k = ow / pw;
+    this.scaleRatio.set(k, Math.min(20, Math.pow((ow * oh) / (pw * ph), 3)));
+    this.fovH = cam.isPerspectiveCamera ? Math.tan(cam.fov * Math.PI / 360) * pw / ph : 1;
+    // the camera's move: this frame's clip space to last frame's (without the jitter)
+    cam.updateMatrixWorld();
+    VP.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    let d = 0; for (let i = 0; i < 16; i++) d += Math.abs(VP.elements[i] - this.prevVP.elements[i]);
+    this.still = !reset && d < 1e-5 ? this.still + 1 : 0;
+    this.clipToPrevClip.multiplyMatrices(reset ? VP : this.prevVP, INV.copy(VP).invert());
+    this.prevVP.copy(VP);
+    this.minLerp = this.still ? .3 : 0;
+    this.reset = reset ? 1 : 0;
+    // jitter: a Halton (2, 3) point inside the pixel, more of them the bigger the upscale
+    const n = Math.min(32, Math.max(8, Math.ceil(8 * k * k)));
+    this.frame = (this.frame % n) + 1;
+    const jx = halton(this.frame, 2) - .5, jy = halton(this.frame, 3) - .5;
+    this.jitter.set(jx, jy);
+    // move the picture by (jx, jy) picture pixels: clip x += 2 jx / pw * w (works for both camera kinds)
+    this.saved.copy(cam.projectionMatrix); this.savedInv.copy(cam.projectionMatrixInverse);
+    const e = cam.projectionMatrix.elements, tx = 2 * jx / pw, ty = (yDown ? -2 : 2) * jy / ph;
+    for (let c = 0; c < 4; c++) { e[c * 4] += tx * e[c * 4 + 3]; e[c * 4 + 1] += ty * e[c * 4 + 3]; }
+    cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+  }
+  /** After drawing: the camera without jitter again. */
+  end(cam) { cam.projectionMatrix.copy(this.saved); cam.projectionMatrixInverse.copy(this.savedInv); }
+}
+
 export class SGSR2 {
   constructor() {
     this.cu = { InputDepth: { value: null }, clipToPrevClip: { value: new Matrix4() }, renderSize: { value: new Vector2() }, renderSizeRcp: { value: new Vector2() }, cameraFovAngleHor: { value: 1 } };
@@ -230,41 +275,18 @@ export class SGSR2 {
     this.quad = new FullScreenQuad(null);
     this.mdc = rt(); this.hist = [rt(), rt()]; this.cur = 0;
     this.convertPass = new ConvertPass(this); this.upscalePass = new UpscalePass(this);
-    this.prevVP = new Matrix4(); this.saved = new Matrix4(); this.savedInv = new Matrix4();
-    this.frame = 0; this.still = 0; this.view = null; this.lastT = 0;
+    this.f = new SgsrFrame();
   }
   /** Before drawing: sizes, the camera's move since last frame, and this frame's jitter on cam. */
   begin(cam, pw, ph, ow, oh, view, now, cut = false) {
-    const cu = this.cu, uu = this.uu;
-    const resized = this.mdc.width !== pw || this.mdc.height !== ph || this.hist[0].width !== ow || this.hist[0].height !== oh;
-    if (resized) { this.mdc.setSize(pw, ph); for (const h of this.hist) h.setSize(ow, oh); }
-    const reset = cut || resized || this.view !== view || now - this.lastT > 1000;   // a cut: another view drew in between, or a long pause
-    this.view = view; this.lastT = now;
-    cu.renderSize.value.set(pw, ph); cu.renderSizeRcp.value.set(1 / pw, 1 / ph); uu.outputSize.value.set(ow, oh);
-    const k = ow / pw;
-    uu.scaleRatio.value.set(k, Math.min(20, Math.pow((ow * oh) / (pw * ph), 3)));
-    cu.cameraFovAngleHor.value = cam.isPerspectiveCamera ? Math.tan(cam.fov * Math.PI / 360) * pw / ph : 1;
-    // the camera's move: this frame's clip space to last frame's (without the jitter)
-    cam.updateMatrixWorld();
-    VP.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
-    let d = 0; for (let i = 0; i < 16; i++) d += Math.abs(VP.elements[i] - this.prevVP.elements[i]);
-    this.still = !reset && d < 1e-5 ? this.still + 1 : 0;
-    cu.clipToPrevClip.value.multiplyMatrices(reset ? VP : this.prevVP, INV.copy(VP).invert());
-    this.prevVP.copy(VP);
-    uu.minLerpContribution.value = this.still ? .3 : 0;
-    uu.reset.value = reset ? 1 : 0;
-    // jitter: a Halton (2, 3) point inside the pixel, more of them the bigger the upscale
-    const n = Math.min(32, Math.max(8, Math.ceil(8 * k * k)));
-    this.frame = (this.frame % n) + 1;
-    const jx = halton(this.frame, 2) - .5, jy = halton(this.frame, 3) - .5;
-    uu.jitterOffset.value.set(jx, jy);
-    // move the picture by (jx, jy) pixels: clip x += 2 jx / pw * w (works for both camera kinds)
-    this.saved.copy(cam.projectionMatrix); this.savedInv.copy(cam.projectionMatrixInverse);
-    const e = cam.projectionMatrix.elements, tx = 2 * jx / pw, ty = 2 * jy / ph;
-    for (let c = 0; c < 4; c++) { e[c * 4] += tx * e[c * 4 + 3]; e[c * 4 + 1] += ty * e[c * 4 + 3]; }
-    cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+    const cu = this.cu, uu = this.uu, f = this.f;
+    if (this.mdc.width !== pw || this.mdc.height !== ph || this.hist[0].width !== ow || this.hist[0].height !== oh) { this.mdc.setSize(pw, ph); for (const h of this.hist) h.setSize(ow, oh); }
+    f.begin(cam, pw, ph, ow, oh, view, now, cut);
+    cu.renderSize.value.copy(f.renderSize); cu.renderSizeRcp.value.set(1 / pw, 1 / ph); uu.outputSize.value.copy(f.outputSize);
+    uu.scaleRatio.value.copy(f.scaleRatio); cu.cameraFovAngleHor.value = f.fovH; cu.clipToPrevClip.value.copy(f.clipToPrevClip);
+    uu.minLerpContribution.value = f.minLerp; uu.reset.value = f.reset; uu.jitterOffset.value.copy(f.jitter);
   }
   /** After drawing: the camera without jitter again. */
-  end(cam) { cam.projectionMatrix.copy(this.saved); cam.projectionMatrixInverse.copy(this.savedInv); }
+  end(cam) { this.f.end(cam); }
   dispose() { this.mdc.dispose(); for (const h of this.hist) h.dispose(); this.convert.dispose(); this.upscale.dispose(); this.copy.dispose(); this.quad.dispose(); }
 }

@@ -9,11 +9,11 @@
 // scripts/look-compare.cjs --webgpu draws the same scenes both ways and compares them.
 // Kit use only.
 import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Color, Sprite, SpriteNodeMaterial, InstancedBufferAttribute, AdditiveBlending, NormalBlending,
-  MeshBasicNodeMaterial, NodeMaterial, QuadMesh, RenderTarget, Texture } from 'three/webgpu';
+  MeshBasicNodeMaterial, NodeMaterial, QuadMesh, RenderTarget, Texture, Matrix4, HalfFloatType, NoToneMapping, ACESFilmicToneMapping, SRGBColorSpace, LinearSRGBColorSpace } from 'three/webgpu';
 import {
   pass, mrt, output, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
-  positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth,
+  positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min,
 } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
@@ -163,6 +163,99 @@ function bloomChain(src, aoF) {
 /* ---------- the screen effects ---------- */
 // One chain per view (it draws that view's scene and camera). rebuild() when the shape changes (AO on
 // or off, smoothing, see-through for AR); the numbers are uniforms set each frame.
+// Snapdragon GSR 2 on WebGPU: the same two passes as sgsr2.js (Qualcomm, BSD 3-Clause; the licence and
+// what changed are in that file), written as TSL. The finished small picture (fin) and the motion
+// picture are drawn at the render size; the upscale is drawn at the screen's size into a history
+// picture, which is copied to the screen and kept for next frame. Pictures here count rows from the
+// top, so this is the shader's REQUEST_NDC_Y_UP variant, and WebGPU depth is already 0..1 like NDC z.
+function sgsr2Gpu(fin, depthT) {
+  const U = { rs: uniform(new Vector2(1, 1)), os: uniform(new Vector2(1, 1)), jit: uniform(new Vector2()), sr: uniform(new Vector2(1, 1)),
+    fov: uniform(1), minLerp: uniform(0), reset: uniform(1), c2p: uniform(new Matrix4()) };
+  const low = rtt(fin, 1, 1, { depthBuffer: false });
+  // convert: motion back to last frame from the nearest depth and the camera's move, and the depth clip
+  const conv = Fn(() => {
+    const P = ivec2(screenCoordinate.xy), hi = ivec2(U.rs).sub(1);
+    const D = (x, y) => depthT.load(clamp(P.add(ivec2(x, y)), ivec2(0, 0), hi)).x;
+    // textureGather's order round the 2 x 2 texels from o: (0,1) (1,1) (1,0) (0,0)
+    const G = (ox, oy) => ({ x: D(ox, oy + 1), y: D(ox + 1, oy + 1), z: D(ox + 1, oy), w: D(ox, oy) });
+    const bl = G(-1, -1), br = G(1, -1), tl = G(-1, 1), tr = G(1, 1);
+    const min4 = g => min(min(g.y, g.x), min(g.z, g.w));
+    const maxC = min(min(min(bl.z, br.w), tl.y), tr.x).toVar();
+    const bl9 = min(tl.x, min(min(maxC, min4(bl)), br.x));
+    const sep = float(1.37e-05).mul(U.fov).mul(length(U.rs)).mul(float(1).sub(maxC));
+    const w = g => clamp(sep.div(abs(maxC.sub(min4(g))).add(1.19e-07)), 0, 1);
+    const clip = select(maxC.lessThan(1 - 1e-5), clamp(float(1).sub(w(bl).add(w(br)).add(w(tl)).add(w(tr)).mul(.25)), 0, 1), float(0));
+    const u = vec2(P).add(.5).div(U.rs), ndc = vec2(u.x.mul(2).sub(1), float(1).sub(u.y.mul(2)));
+    const pre = U.c2p.mul(vec4(ndc, bl9, 1));
+    return vec4(ndc.sub(pre.xy.div(pre.w)), clip, 0);
+  })();
+  const mdc = rtt(conv, 1, 1, { depthBuffer: false });
+  const hist = new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false }), next = new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false });
+  const histT = texture(hist.texture);
+  // upscale: Lanczos of the 5 nearest small pixels, a colour box, history clamped to it, then blended
+  const upscale = Fn(() => {
+    const H = screenUV, J = clamp(H.add(U.jit.div(U.rs)), 0, 1), IP = ivec2(J.mul(U.rs)), hi = ivec2(U.rs).sub(1);
+    const mda = mdc.sample(J).xyz, M = mda.xy, df = mda.z;
+    const prevUV = clamp(vec2(M.x.mul(-.5).add(H.x), M.y.mul(.5).add(H.y)), 0, 1);
+    const histC = histT.sample(prevUV).rgb;
+    const biasmax = U.sr.x, biasmin = max(float(1), biasmax.mul(.3).add(.3));
+    const kb = mix(biasmax, biasmin, df.mul(.25)).mul(.5), kb2 = kb.mul(kb);
+    const mlen = length(M.mul(U.os));
+    const curve = mix(float(-2), float(-3), clamp(mlen.mul(.02), 0, 1));
+    const so = vec2(IP).add(.5).sub(U.jit).sub(H.mul(U.rs));
+    const lz = b => { const y = b.sub(1); return y.mul(.75).add(y.mul(y)).mul(y.mul(y)); };
+    const taps = [[0, 1], [1, 0], [-1, 0], [0, 0], [0, -1]].map(([x, y]) => {
+      const c = low.load(clamp(IP.add(ivec2(x, y)), ivec2(0, 0), hi)).rgb, o = so.add(vec2(x, y)), dd = dot(o, o);
+      return { c, w: lz(clamp(dd.mul(kb2), 0, 1)), bw: exp(dd.mul(curve)) };
+    });
+    let sw = taps[0].w, scw = taps[0].c.mul(taps[0].w), bmin = taps[0].c, bmax = taps[0].c, sb = taps[0].bw, cen = taps[0].c.mul(taps[0].bw), vr = taps[0].c.mul(taps[0].c).mul(taps[0].bw);
+    for (const t of taps.slice(1)) {
+      sw = sw.add(t.w); scw = scw.add(t.c.mul(t.w)); bmin = min(bmin, t.c); bmax = max(bmax, t.c);
+      sb = sb.add(t.bw); cen = cen.add(t.c.mul(t.bw)); vr = vr.add(t.c.mul(t.c).mul(t.bw));
+    }
+    cen = cen.div(sb); vr = abs(vr.div(sb).sub(cen.mul(cen))).sqrt();
+    const upc = clamp(scw.div(sw), bmin.sub(.075), bmax.add(.075)), upw = sw.mul(1 / 3);
+    let base = float(1).sub(df);
+    base = min(base, mix(base, upw.mul(10), clamp(mlen.mul(10), 0, 1)));
+    base = min(base, mix(base, upw, clamp(mlen.mul(.05), 0, 1)));
+    const boxsize = mix(U.sr.y, float(1), max(df, clamp(mlen.mul(.05), 0, 1)));
+    const lo = max(bmin, cen.sub(vr.mul(boxsize))), hiC = min(bmax, cen.add(vr.mul(boxsize)));
+    const clamped = clamp(histC, lo, hiC);
+    const start = select(abs(M.x).add(abs(M.y)).greaterThan(1e-6), float(0), U.minLerp);
+    const outside = lo.x.greaterThan(histC.x).or(lo.y.greaterThan(histC.y)).or(lo.z.greaterThan(histC.z))
+      .or(histC.x.greaterThan(hiC.x)).or(histC.y.greaterThan(hiC.y)).or(histC.z.greaterThan(hiC.z));
+    const lerpC = clamp(select(outside, start, float(1)), 0, 1);
+    const h = mix(clamped, histC, lerpC);
+    const ba = mix(min(base, .1), base, lerpC);
+    const a = clamp(upw.div(max(1.192e-07, ba.add(upw))).add(U.reset), 0, 1);
+    return vec4(mix(h, upc, a), 1);
+  })();
+  const upMat = new NodeMaterial(); upMat.fragmentNode = upscale; upMat.name = 'SGSR2';
+  const cpMat = new NodeMaterial(); cpMat.fragmentNode = vec4(histT.sample(screenUV).rgb, 1); cpMat.name = 'SGSR2 out';
+  const qUp = new QuadMesh(upMat), qCp = new QuadMesh(cpMat);
+  return {
+    U, key: '',
+    size(pw, ph, fw, fh) {
+      const k = `${pw}x${ph}>${fw}x${fh}`; if (k === this.key) return; this.key = k;
+      low.setSize(pw, ph); mdc.setSize(pw, ph); hist.setSize(fw, fh); next.setSize(fw, fh);
+    },
+    set(f) {
+      U.rs.value.copy(f.renderSize); U.os.value.copy(f.outputSize); U.jit.value.copy(f.jitter); U.sr.value.copy(f.scaleRatio);
+      U.fov.value = f.fovH; U.minLerp.value = f.minLerp; U.reset.value = f.reset; U.c2p.value.copy(f.clipToPrevClip);
+    },
+    // draw (the scene and the small finished picture are drawn on the way, by the nodes the upscale reads)
+    render(r) {
+      const tm = r.toneMapping, cs = r.outputColorSpace; r.toneMapping = NoToneMapping; r.outputColorSpace = LinearSRGBColorSpace;
+      try {
+        r.setRenderTarget(next); qUp.render(r);
+        r.copyTextureToTexture(next.texture, hist.texture);
+        r.setRenderTarget(null); qCp.render(r);
+      } finally { r.toneMapping = tm; r.outputColorSpace = cs; }
+    },
+    dispose() { low.dispose(); mdc.dispose(); hist.dispose(); next.dispose(); upMat.dispose(); cpMat.dispose(); },
+  };
+}
+
 export class GpuChain {
   constructor(r, scene, cam, clear) {
     Object.assign(this, { r, scene, cam, clear, key: '' });
@@ -174,12 +267,12 @@ export class GpuChain {
     };
     this.bloomN = null; this.aoN = null;
   }
-  build(aoOn, smooth, msaa) {
-    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}`;
+  build(aoOn, smooth, msaa, s2 = false) {
+    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}`;
     if (key === this.key) return;
     this.key = key;
-    this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose(); this.aoN = this.dnN = this.bloomN = null;
-    const sp = pass(this.scene, this.cam, { samples: msaa || 0 });
+    this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose(); this.s2?.dispose(); this.aoN = this.dnN = this.bloomN = this.s2 = null;
+    const sp = this.sp = pass(this.scene, this.cam, { samples: msaa || 0 });
     if (this.clear) {
       // AR: just the scene on a see-through background, tone mapped (bloom and the grade would tint the room behind it)
       this.pp.outputNode = renderOutput(sp); this.pp.needsUpdate = true; return;
@@ -218,8 +311,8 @@ export class GpuChain {
         .add(smoothstep(.06, .045, length(g1)).mul(.05)).add(smoothstep(.1, .08, length(g2)).mul(.035));
       return col.add(U.sunCol.mul(gl).mul(U.glare).mul(seen));
     })();
-    // tone mapping (ACES, the renderer's exposure) and sRGB
-    let out = renderOutput(vec4(graded, 1));
+    // tone mapping (ACES, the renderer's exposure) and sRGB (named outright under SGSR 2: drawn outside the pipeline)
+    let out = s2 ? renderOutput(vec4(graded, 1), ACESFilmicToneMapping, SRGBColorSpace) : renderOutput(vec4(graded, 1));
     if (smooth) out = fxaa(out);
     const fin = Fn(() => {
       let col = out.rgb;
@@ -229,21 +322,28 @@ export class GpuChain {
       col = mix(col, col.mul(vec3(1.25, .45, .4)).add(vec3(.12, 0, 0)), U.hurt.mul(smoothstep(.04, .4, r2)));   // hurt
       return vec4(col, 1);
     })();
+    if (s2) { this.s2 = sgsr2Gpu(fin, sp.getTextureNode('depth')); return; }
     this.pp.outputNode = fin; this.pp.needsUpdate = true;
   }
   /** Sets the numbers from the view and tier, then draws. o: { ao (AO resolution, 0 = off), msaa, bloomScale, smooth, bloom, t, hurt, grade, glare, sunUV, sunCol, aspect } */
   render(o) {
-    this.build(!this.clear && o.ao > 0, !!o.smooth, o.msaa);
+    // o.s2: SGSR 2's frame numbers (sgsr2.js SgsrFrame): the scene and effects at o.w x o.h, upscaled to o.fw x o.fh
+    const f = !this.clear && o.s2 ? o.s2 : null;
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f);
+    // the passes size themselves from the canvas: under SGSR 2 the canvas is the screen's size, so scale them down
+    const k = f ? (o.w + .5) / o.fw : 1;
+    if (this.sp.getResolutionScale() !== k) this.sp.setResolutionScale(k);
     if (!this.clear) {
       const U = this.U;
-      if (this.aoN && this.aoN.resolutionScale !== o.ao) this.aoN.resolutionScale = o.ao;
+      if (this.aoN && this.aoN.resolutionScale !== o.ao * k) this.aoN.resolutionScale = o.ao * k;
       this.bloomK.value = Math.max(0, o.bloom) * .8; this.bloomN.size(o.w, o.h, o.bloomScale || .5);
       U.t.value = o.t; U.hurt.value = o.hurt;
       const g = o.grade; U.gradeOn.value = g ? 1 : 0;
       if (g) { U.sat.value = g.sat; U.con.value = g.con; U.lo.value.copy(g.lo); U.hi.value.copy(g.hi); }
       U.glare.value = o.glare; U.sunUV.value.set(o.sunUV.x, 1 - o.sunUV.y); U.sunCol.value.copy(o.sunCol); U.aspect.value = o.aspect;
     }
-    this.pp.render();
+    if (this.s2) { this.s2.size(o.w, o.h, o.fw, o.fh); this.s2.set(f); this.s2.render(this.r); }
+    else this.pp.render();
   }
-  dispose() { this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose?.(); this.pp.dispose?.(); }
+  dispose() { this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose?.(); this.s2?.dispose(); this.pp.dispose?.(); }
 }
