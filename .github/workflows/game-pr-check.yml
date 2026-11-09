@@ -1,7 +1,7 @@
 # Checks pull requests. "check" runs the fast tests (game build, licences, types, kits, Tiny Brains,
 # feed ranking, website build). "plan" works out which games to play: only the changed games when a
 # PR just adds or edits games, but every game when shared code changes (kits, gamescroll.js, the app,
-# three.js and other packages, the test scripts), split across parallel "play" jobs. Those play the
+# three.js and other packages, the test scripts, this file), split across parallel "play" jobs. Those play the
 # games in a headless browser (smoke, streamed, fold, and sweep for 3D games), plus the speed budget
 # and Tiny Brains check for changed games. "code-flags" flags game code that touches the network,
 # storage or native features (scripts/game-lint.mjs), and lists changed files outside src/games/ that
@@ -76,7 +76,7 @@ jobs:
           files=$(git diff --name-only "origin/$BASE...HEAD")
           changed=$(echo "$files" | grep -E '^src/games/[a-z0-9-]+\.js$' | while read -r f; do [ -f "$f" ] && basename "$f" .js; done | tr '\n' ' ')
           # Shared code runs inside every game, so a change there plays them all.
-          shared=$(echo "$files" | grep -E '^(src/|public/|index\.html|vite\.config\.js|package(-lock)?\.json|\.nvmrc|\.env|scripts/(smoke|fold|sweep|stream-smoke|build-games)\.)' | grep -vE '^src/(games/|licences\.js)' || true)
+          shared=$(echo "$files" | grep -E '^(src/|public/|index\.html|vite\.config\.js|package(-lock)?\.json|\.nvmrc|\.env|scripts/(smoke|fold|sweep|stream-smoke|build-games)\.|\.github/workflows/game-pr-check\.yml)' | grep -vE '^src/(games/|licences\.js)' || true)
           # Sweep (fast-forwarded long play at odd sizes): Console games, and Next Gen games the PR changes
           # (Next Gen draws in software here, so sweeping all of them would take too long).
           sweepable() { grep -qE "era: *'console'" "src/games/$1.js" || { grep -qE "era: *'nextgen'" "src/games/$1.js" && case " $changed " in *" $1 "*) true;; *) false;; esac; }; }
