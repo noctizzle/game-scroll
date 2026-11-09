@@ -95,6 +95,13 @@ in the scene, including hidden ones, with shadows on and off. If you build new g
 materials later (a new floor), build it while the screen is faded out and call `v.precompile()`: it
 compiles the new shaders in the background and resolves when they're ready, so fade back in then
 (`v.warmed = false` also works, but compiles everything on the next frame at once, which is a stutter).
+Anything that still needs a new shader mid-round (a new kind of thing, a swapped material) doesn't
+stop the frame either: it waits, hidden, for a frame or two while its shader builds in the background
+(three.js's `compileAsync`: WebGPU's async pipelines, WebGL's parallel shader compile), then appears.
+It waits at most `__hd.holdMs` (500 ms). Mark something that must show on its very first frame (the
+player, say) `userData.noHold = true`; it then builds in the frame as before. `__hd.hold = false`
+turns waiting off; `__hd.info.held` says how many things are waiting. `node scripts/shader-hold.cjs
+[--webgpu]` measures the difference.
 `__hd.info` reports `{ calls, tris, cpu, shadows, upscaled, backend, framegen }` for the last frame. The 3D frame is rendered at the tier's pixel count (and lower while the phone struggles), then upscaled to the card's full resolution with **Snapdragon Game Super Resolution 2** (Qualcomm's temporal upscaler, `src/kit/sgsr2.js`): the camera is nudged by a fraction of a pixel each frame and each new small frame is blended into the full-size picture of the frames before, moved by the camera's own move. That gives a sharper, steadier picture than one frame can, and it also runs at full size as anti-aliasing (grass, leaves, wires and thin poles stop shimmering; FXAA is off then). Things that move fast across a still camera can leave a short soft trail (there are no per-object motion vectors), so a view can set `v.upscaler = 'sgsr1'` to use **SGSR 1** (`src/kit/sgsr.js`, one frame, edge-aware sharpening). AR views and frames with screen-space reflections use SGSR 1 too, and `HD.upscaler = 'sgsr1'` switches every view. `HD.upscale = false` shows the plain stretched picture for comparison, and `node scripts/upscale-compare.cjs` scores plain, SGSR 1 and SGSR 2 against a supersampled picture (`--webgpu` for the WebGPU path, which has its own TSL versions of both). The 2D HUD is always drawn at
 full resolution on top. `v.onTier(T => ...)` lets a game react (for example `spotLight.setTier(T)`).
 

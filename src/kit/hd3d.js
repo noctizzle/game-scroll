@@ -135,6 +135,8 @@ export const HD = {
   set force(t) { Q.force = t; }, get force() { return Q.force; },
   /** Last frame: draw calls, triangles, milliseconds spent in render() on the CPU, and whether the shadows were redrawn. */
   info: { calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0 },
+  /** Things needing a shader not built yet wait (hidden) at most this long while it builds in the background (v.holdNew); hold = false: build it in the frame instead. */
+  holdMs: 500, hold: true,
   /** Upscale when the 3D is drawn below the screen's size (false: plain stretch). */
   upscale: true,
   /** Which upscaler: 'sgsr2' (Snapdragon GSR 2, temporal; Next Gen without reflections) or 'sgsr1' (one frame). AR and the rest use SGSR 1. */
@@ -1014,6 +1016,44 @@ export class HDView {
     (this.occlusion ||= new Occlusion(o)).set(list); Object.assign(this.occlusion, o);
     return this;
   }
+  /**
+   * Shaders built in the background (WebGL and WebGPU): something that needs a shader the view hasn't
+   * built yet (a new kind of thing appearing mid-round, a material swapped in) waits, hidden, for a
+   * frame or two while three builds it on the driver's own threads (compileAsync: WebGPU's
+   * createRenderPipelineAsync, WebGL's KHR_parallel_shader_compile), instead of the whole frame stopping
+   * while it builds. What's there on the view's first frame, or when precompile() finishes, never
+   * waits. It waits at most HD.holdMs (500 ms), then draws anyway. userData.noHold draws a mesh at
+   * once; HD.hold = false turns it all off.
+   */
+  holdNew(r, skip, now, rt = null, mrt = null) {   // rt, mrt: the picture the scene is drawn into (shaders are built for it)
+    const held = this.held ||= new Map(), seen = this.shSeen ||= new Set(), jobs = this.shJobs ||= new Map();
+    // the ones whose shaders are ready (or waited long enough) come back
+    for (const [o, j] of held) if (j.done || now - j.t0 > HD.holdMs || skip || HD.hold === false) { o.layers.mask = (o.layers.mask | 1) & ~(1 << HOLD_LAYER); held.delete(o); }
+    for (const [k, j] of jobs) if (j.done || now - j.t0 > HD.holdMs) { seen.add(k); jobs.delete(k); }
+    if (skip || HD.hold === false) return;
+    // the first frame, and after warm() or precompile() (which built the hidden things' shaders too), are where
+    // the waiting starts from: what's there now draws at once
+    if (this.holdBase !== true) {
+      const all = this.holdBase === 'all'; this.holdBase = true;
+      this.scene[all ? 'traverse' : 'traverseVisible'](o => { if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.material) seen.add(shaderKey(o)); });
+      return;
+    }
+    this.scene.traverseVisible(o => {
+      if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite) || !o.material || !(o.layers.mask & 1)) return;
+      const k = shaderKey(o);
+      if (seen.has(k)) return;
+      if (o.userData.noHold) return;
+      let j = jobs.get(k);
+      if (!j) {
+        jobs.set(k, j = { t0: now, done: false });
+        const rt0 = r.getRenderTarget(), m0 = r.getMRT?.();
+        try { r.setRenderTarget(rt); r.setMRT?.(mrt); Promise.resolve(r.compileAsync(o, this.cam, this.scene)).then(() => { j.done = true; }, () => { j.done = true; }); }
+        catch (_) { j.done = true; } finally { r.setRenderTarget(rt0); r.setMRT?.(m0 ?? null); }
+      }
+      if (!j.done) { held.set(o, j); o.layers.mask = (o.layers.mask & ~1) | (1 << HOLD_LAYER); }
+    });
+    HD.info.held = held.size;
+  }
   // hides (from the view's camera only: shadows and reflections still see them) what the occluders cover
   cullHidden() {
     const oc = this.occlusion, hid = this.occHid ||= new Map(); this.showHidden();
@@ -1188,6 +1228,7 @@ export class HDView {
    * extra materials that get swapped in later can be passed in.
    */
   warm(...extra) {
+    this.holdBase = 'all';   // (what it builds never waits: holdNew)
     const G = gpuFor(this);
     if (G) { gpuSwap(this, G); this.warmed = true; try { this.envMaker?.(); } catch (e) { /* the studio reflections stay */ } this.scene.environment = this.envFor(G); G.r.compileAsync(this.scene, this.cam).catch(() => {}); return; }
     const r = renderer(); if (!r) return; this.warmed = true; gpuSwap(this, null);
@@ -1222,7 +1263,7 @@ export class HDView {
     const G = gpuFor(this);
     if (G) {
       gpuSwap(this, G); this.scene.environment = this.envFor(G); this.warmed = true;
-      return G.r.compileAsync(this.scene, this.cam).catch(() => {}).then(() => { this.ready = true; });
+      return G.r.compileAsync(this.scene, this.cam).catch(() => {}).then(() => { this.ready = true; this.holdBase = 'all'; });
     }
     const r = renderer(); if (!r) return Promise.resolve();
     gpuSwap(this, null);
@@ -1238,7 +1279,7 @@ export class HDView {
     this.scene.traverse(o => { for (const m of [o.material].flat()) if (m) for (const k in m) if (m[k]?.isTexture) texs.add(m[k]); });
     return Promise.all(jobs).catch(() => {}).then(async () => {
       for (const t of texs) { try { r.initTexture(t); } catch (_) { /* uploads on first use instead */ } await idle(); }
-      this.ready = true;
+      this.ready = true; this.holdBase = 'all';
     });
   }
   /** Called when the quality tier changes: let the game switch shadows on lights it owns. */
@@ -1265,7 +1306,10 @@ export class HDView {
   // up: { pw, fw, fh, s1 } when the scene is drawn pw wide and upscaled to the canvas (fw x fh) by SGSR 2, or SGSR 1 if s1
   drawGPU(G, r, T, baking, off, now, up, direct) {
     const s2 = up && !up.s1 ? up : null;
-    const ch = this._gpuChain?.r === r ? this._gpuChain : (this._gpuChain = new G.fx.GpuChain(r, this.scene, this.cam, !!this.clearBg));
+    // card pictures (bakes) draw with no upscaler and no frame generation, which the chain is built for: one
+    // shared chain flipped between the two and rebuilt all its passes twice whenever the game's card was baked
+    const ck = baking ? '_gpuBakeChain' : '_gpuChain';
+    const ch = this[ck]?.r === r ? this[ck] : (this[ck] = new G.fx.GpuChain(r, this.scene, this.cam, !!this.clearBg));
     try { this.envMaker?.(); } catch (e) { /* the studio reflections stay */ }
     this.scene.environment = this.envFor(G); this.scene.environmentIntensity = this.envI;
     if (this._air) { this.airUniforms(); const a = gpuAir(G); a.sync(); this.scene.fogNode = a.node(); } else { this.scene.fogNode = null; AIR.gsAirOn.value = 0; }
@@ -1282,6 +1326,8 @@ export class HDView {
     if (!baking && !off) this.t += 1 / 60;
     gpuSwap(this, G);
     if (this.gi || this.rooms?.length) this.bakeExtras(G, r);
+    // (built for the screen, not the chain's own picture: a pipeline built for that picture also bound it to read, which WebGPU refuses)
+    this.holdNew(r, baking || off, now);
     this.scene.traverse(o => { if (o.isInstancedMesh2 && o.userData.gpuHid) o.userData.gpuTwin.sync(this.cam, this.occlusion?.ready && HD.occlude !== false ? this.occlusion : null); });
     for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
     // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
@@ -1429,6 +1475,7 @@ export class HDView {
     this.scene.environment = this.envFor(null); this.scene.environmentIntensity = this.envI;
     this.patchAir(); this.airUniforms();
     if (this.gi || this.rooms?.length) this.bakeExtras(null, r);
+    this.holdNew(r, baking || off, now, this.clearBg ? null : cp.readBuffer);
     r.toneMappingExposure = this.exposure;
     if (this.clearBg) { P.arRender.scene = this.scene; P.arRender.camera = this.cam; } else { P.render.scene = P.ao.scene = this.scene; P.render.camera = P.ao.camera = this.cam; }
     // reflections (ultra, and only if the game marked shiny surfaces): SSR draws the scene itself
@@ -1659,6 +1706,19 @@ function shadowSize(sh, n) {
 }
 // the layer things hidden by occlusion culling move to: the view's camera doesn't draw it, shadow cameras do
 const OCC_LAYER = 30;
+// the layer things wait on while their shaders build (holdNew): nothing draws it
+const HOLD_LAYER = 29;
+// what makes a thing need its own shader: its materials (and their versions), its kind and its geometry's layout
+const KEYS = new WeakMap();
+function shaderKey(o) {
+  const ms = Array.isArray(o.material) ? o.material : [o.material], g = o.geometry, c = KEYS.get(o);
+  const sig = ms.map(m => m.id + '.' + m.version).join(',') + '|' + (g?.id ?? '');
+  if (c?.sig === sig) return c.key;
+  const key = sig.replace(/\|.*$/, '') + '|' + (o.isSkinnedMesh ? 's' : '') + (o.isInstancedMesh ? 'i' : '') + (o.isBatchedMesh ? 'b' : '') + (o.isPoints ? 'p' : o.isLine ? 'l' : o.isSprite ? 'S' : '') +
+    (o.morphTargetInfluences ? 'm' : '') + (g ? '|' + Object.keys(g.attributes).sort().join(',') + (g.index ? '+i' : '') + '|' + Object.keys(g.morphAttributes || {}).join(',') : '');
+  KEYS.set(o, { sig, key });
+  return key;
+}
 export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
   const s = new DirectionalLight(col, i), c = s.shadow.camera, d = new Vector3(...dir).normalize();
   s.castShadow = true; c.left = c.bottom = -size; c.right = c.top = size; c.near = 1; c.far = 120;
