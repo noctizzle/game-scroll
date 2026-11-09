@@ -8,7 +8,7 @@ answers into Policy → App content. Character counts are checked by `node scrip
 | Field | Value |
 | --- | --- |
 | App name (30) | Game Scroll: Mini Games Feed |
-| Package | com.gamescroll.app |
+| Package | com.game_scroll.app (com.gamescroll.app was taken on Play; a package name can never change after the first upload) |
 | Category | Game → Casual |
 | Tags | Arcade, Casual, Puzzle, Retro, Single player (pick from the ones Play offers, up to 5) |
 | Email | support@game-scroll.com |

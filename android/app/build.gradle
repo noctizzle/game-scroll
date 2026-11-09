@@ -4,7 +4,7 @@ android {
     namespace = "com.gamescroll.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.gamescroll.app"
+        applicationId "com.game_scroll.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // CI builds count up so each new APK installs over the last one.
