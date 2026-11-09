@@ -1519,5 +1519,5 @@ planet. Nodes have `x`, `y`, `angle`, `scale` relative to their parent; `root.up
 mark on a surface that wraps over its shape (scorches, footprints, paint; capped at 40, oldest
 first), `v.bakeLight([x, y, z], { radius })` bakes the light around a point into a light probe so rooms
 and caves pick up the colour of their walls and windows (several blend as the camera, or
-`v.probeAt`, moves; bake once after building the level: it returns a promise and joins a frame or two later), and `v.shafts = 1` adds sun shafts streaming
+`v.probeAt`, moves; bake once after building the level: it returns a promise and joins a frame or two later), `v.bounce(box)` adds bounce light over a level (a grid of probes: a red wall tints the floor, light from a door fills a room; WebGL and WebGPU), `v.room(box)` gives shiny things in a room box-projected reflections of that room, and `v.shafts = 1` adds sun shafts streaming
 past whatever blocks the sky (not on the lowest tier).
