@@ -6,18 +6,20 @@
 //   node scripts/framegen-test.cjs [--scale 1.5] [--mode ahead] [--steps 3] [--hard] [--shots dir]
 // --hard runs the hard cases instead: a see-through ball, glowing sparks (plain, and ones that say how
 // they move), smoke and SGSR 2's camera jitter. --steps 3 makes two frames between each pair (40 fps on 120 Hz).
+// --kinds shadow,scroll,cut: what the game's motion doesn't describe (the optical flow's cases) and a cut.
 //   node scripts/framegen-test.cjs --check [--save]
 // The quality check the PR check runs when frame generation's code changes: every suite below, each
 // scene no worse than scripts/framegen-test/baseline.json (and better than repeating a frame). --save
 // writes the baseline after a change that is meant to move the numbers (say why in the PR).
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
-const HARD = 'glass,sparks,sparks-moving,smoke,jitter';
+const HARD = 'glass,sparks,sparks-moving,smoke,jitter', FLOW = 'shadow,scroll,cut';
 const SUITES = {
   blend: '&kinds=still,strafe,turn,pan,curve,aim', ahead: '&mode=ahead',
   hard: `&kinds=${HARD}`, 'hard-ahead': `&kinds=${HARD}&mode=ahead`,
   thirds: '&steps=3', 'thirds-ahead': '&steps=3&mode=ahead',
   upscaled: '&scale=1.5', 'upscaled-hard': `&scale=1.5&kinds=${HARD}`,
+  flow: `&kinds=${FLOW}`, 'flow-ahead': `&kinds=${FLOW}&mode=ahead`, 'flow-upscaled': `&scale=1.5&kinds=${FLOW}`,
 };
 const BASELINE = path.join(__dirname, 'framegen-test', 'baseline.json');
 // how much worse than the baseline a scene may score before the check fails (SwiftShader gives the same
@@ -57,8 +59,11 @@ const slack = (now, was) => now > was * 1.1 + .1;
       saved[name][k] = f;
       let why = '';
       // made frames must be closer to the truth than repeating a frame, with fewer visible breaks
-      if (k !== 'still' && (f.error >= rp.error || f.broken >= rp.broken)) why = 'not better than repeating a frame';
+      // (a cut can at best show a real frame: the one due, never a mix of two scenes)
+      const keep = k === 'still' || k === 'cut';
+      if (!keep && (f.error >= rp.error || f.broken >= rp.broken)) why = 'not better than repeating a frame';
       if (k === 'still' && f.error > rp.error + .5) why = 'a still scene changed';
+      if (k === 'cut' && (f.error > rp.error + .5 || f.broken > rp.broken + .5)) why = 'a cut mixed two scenes';
       if (check && !save && was && (slack(f.error, was.error) || slack(f.broken, was.broken))) why = `worse than the baseline (${was.error} / ${was.broken}%)`;
       if (why) bad++;
       console.log(`  ${k.padEnd(13)} framegen ${String(f.error).padStart(5)} / ${String(f.broken).padStart(5)}%   repeat ${String(rp.error).padStart(5)} / ${String(rp.broken).padStart(5)}%` + (s.mix ? `   mix ${String(s.mix.error).padStart(5)} / ${String(s.mix.broken).padStart(5)}%` : '') + `   ${s.ms} ms` + (why ? `   FAIL: ${why}` : ''));
