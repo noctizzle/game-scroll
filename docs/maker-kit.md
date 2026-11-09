@@ -49,6 +49,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Strategy controls, tower defence | `gs.rts` | [Game kits](#game-kits) |
 | A fighting game | `gs.fight` | [Game kits](#game-kits) |
 | Bullet patterns (shoot-'em-ups) | `gs.bullets` | [Game kits](#game-kits) |
+| Falling sand, blastable ground | `gs.sand` | [Game kits](#game-kits) |
 | Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
 | Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
 | Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
@@ -1256,6 +1257,15 @@ draw, `hit(x, y, r, graze)` (`{ hit, grazed }`: near misses count once) and `cle
 bombs and turning bullets into points. `Emitter(bullets, { every, rotate, times, delay })` fires a
 volley built from `ring(n, speed)`, `spread(n, arc, speed, aim)`, `spiral(arms, speed, step)`,
 `burst(n, speed, aim)` and `custom(fn)` each time; `update(dt, x, y)` from where the boss is.
+
+**Falling sand and blastable ground** (`gs.sand`): `Sand(w, h)` is a grid of materials (`M.EMPTY`,
+`WALL`, `DIRT`, `WOOD`, `SAND`, `WATER`, `OIL`, `FIRE`, `SMOKE`, `ACID`, `STEAM`) that behave by
+themselves: sand piles, water and oil flow and settle by weight, fire burns wood and oil into smoke,
+water puts fire out as steam, acid eats ground. `fill(fn)`, `paint(x, y, r, m)`, `blast(x, y, r)` (a
+hole whose edge falls as rubble), `solid(x, y)` for heroes to stand on, `count(m, box)` for goals,
+`update(dt)` (60 steps a second), `picture()` to draw scaled up with smoothing off, `colour(m, [r, g,
+b, variation])` for your own look. It runs on the CPU in flat arrays: about 120 x 200 cells is
+comfortable on a phone.
 
 **Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
 `Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran

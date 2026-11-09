@@ -49,6 +49,7 @@
 //   gs.rts       strategy controls: tap and box select, formations, flow fields, build grids, tower targets
 //   gs.fight     fighting games: motion inputs with a buffer, moves in frames, hit and hurt boxes, cancels, stun
 //   gs.bullets   shoot-'em-up bullets: thousands in flat arrays, rings, spreads, spirals, homing, grazing
+//   gs.sand      falling sand and blastable ground: sand, water, oil, fire, smoke, acid; solid() for heroes
 //   gs.idle      idle maths: rising prices, affordable counts, short big numbers, Earner (and api.away())
 //   gs.party     pass-and-play turns with a hand-over screen, and split-screen halves for two to four
 //   gs.rhythm    a beat clock in step with the music, note charts, Perfect/Good/Miss, tap-lag calibration
@@ -133,6 +134,7 @@ import * as hex from './kit/hex.js';
 import * as rts from './kit/rts.js';
 import * as fight from './kit/fight.js';
 import * as bullets from './kit/bullets.js';
+import * as sand from './kit/sand.js';
 import * as party from './kit/party.js';
 import * as rhythm from './kit/rhythm.js';
 import * as strokes from './kit/strokes.js';
@@ -277,6 +279,7 @@ const core = {
   rts: pick('rts', rts),
   fight: pick('fight', fight),
   bullets: pick('bullets', bullets),
+  sand: pick('sand', sand),
   party: pick('party', party),
   rhythm: pick('rhythm', rhythm),
   strokes: pick('strokes', strokes),

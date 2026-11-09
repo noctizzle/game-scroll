@@ -839,6 +839,22 @@ console.log('physics ok');
   console.log('bullets: ring, rotate, times, speed, off screen, aimed spread, hit, graze, homing, max, clear ok');
 }
 {
+  const { Sand, M } = await import('../src/kit/sand.js');
+  const s = new Sand(60, 80); s.fill((x, y) => y >= 70 ? M.DIRT : x === 0 || x === 59 ? M.WALL : M.EMPTY);
+  s.paint(30, 10, 5, M.SAND); const n = s.count(M.SAND); for (let i = 0; i < 200; i++) s.step();
+  assert.equal(s.count(M.SAND), n, 'sand is kept'); assert.equal(s.get(30, 69), M.SAND, 'sand falls to the ground'); assert.ok(s.solid(30, 69));
+  let top = 99; for (let y = 0; y < 80; y++) if (s.get(30, y) === M.SAND) { top = y; break; } assert.ok(top > 55, 'and spreads into a pile');
+  const w = new Sand(40, 40); w.fill((x, y) => y >= 35 || x === 0 || x === 39 ? M.WALL : M.EMPTY); w.paint(20, 5, 4, M.OIL); w.paint(20, 15, 4, M.WATER);
+  for (let i = 0; i < 400; i++) w.step(); let oilY = 0, waterY = 0, no = 0, nw = 0;
+  for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) { if (w.get(x, y) === M.OIL) { oilY += y; no++; } if (w.get(x, y) === M.WATER) { waterY += y; nw++; } }
+  assert.ok(oilY / no < waterY / nw, 'oil floats on water'); assert.ok(Math.max(...[...Array(38)].map((_, x) => w.get(x + 1, 34) === M.WATER ? 1 : 0)) === 1, 'water spreads along the floor');
+  const f = new Sand(30, 30); f.fill((x, y) => y >= 20 && y < 25 && x > 5 && x < 25 ? M.WOOD : M.EMPTY); const wood = f.count(M.WOOD); f.set(15, 19, M.FIRE);
+  for (let i = 0; i < 600; i++) { f.step(); if (i % 40 === 0) f.paint(15, 19, 1, M.FIRE); } assert.ok(f.count(M.WOOD) < wood, 'fire burns wood');
+  const g = new Sand(40, 40); g.fill((x, y) => y > 20 ? M.DIRT : M.EMPTY); const gone = g.blast(20, 25, 5, { fire: false });
+  assert.ok(gone > 60 && g.get(20, 25) === M.EMPTY, 'a blast makes a hole'); assert.ok(g.count(M.SAND) > 0, 'and loose rubble');
+  console.log('sand: falling, piles, oil on water, flowing, fire, blasts ok');
+}
+{
   const { dungeon, cave, maze, islands, pattern, fov, loadGen, proven, reach } = await import('../src/kit/gen.js');
   await loadGen();
   const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });

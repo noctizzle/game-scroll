@@ -968,6 +968,15 @@ export interface BulletsPart {
   Bullets: new (o?: { max?: number; w?: number; h?: number; margin?: number }) => Bullets;
   Emitter: new (bullets: Bullets, o?: { every?: number; rotate?: number; times?: number; delay?: number; o?: BulletOpts }) => Emitter;
 }
+export interface SandMaterials { readonly EMPTY: 0; readonly WALL: 1; readonly DIRT: 2; readonly WOOD: 3; readonly SAND: 4; readonly WATER: 5; readonly OIL: 6; readonly FIRE: 7; readonly SMOKE: 8; readonly ACID: 9; readonly STEAM: 10 }
+export interface Sand {
+  w: number; h: number; rate: number; bg: [number, number, number, number]; t: Uint8Array;
+  get(x: number, y: number): number; set(x: number, y: number, m: number): void; solid(x: number, y: number): boolean; inside(x: number, y: number): boolean;
+  fill(fn: (x: number, y: number) => number): Sand; paint(x: number, y: number, r: number, m: number, o?: { over?: boolean; chance?: number }): Sand;
+  blast(x: number, y: number, r: number, o?: { fire?: boolean }): number; count(m: number, x?: number, y?: number, w?: number, h?: number): number;
+  update(dt: number): Sand; step(): void; colour(m: number, rgbv: [number, number, number, number]): Sand; picture(bg?: [number, number, number, number]): HTMLCanvasElement | OffscreenCanvas;
+}
+export interface SandPart { M: SandMaterials; Sand: new (w?: number, h?: number, o?: { seed?: number }) => Sand }
 export interface DragPart { Drag: new (o?: { snap?: number; accept?: (piece: DragThing, slot: DragThing) => boolean; lift?: number; speed?: number; list?: { x: number; y: number; gap?: number; axis?: 'x' | 'y' } | null; swap?: boolean }) => Drag }
 
 export interface Earner {
@@ -1492,7 +1501,7 @@ export interface GS {
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
-  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; fight: FightPart; bullets: BulletsPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
+  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; fight: FightPart; bullets: BulletsPart; sand: SandPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
