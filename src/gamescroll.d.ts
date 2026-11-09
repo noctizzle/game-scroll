@@ -311,10 +311,11 @@ export interface GfxPart {
 /** Rapier 2D (lazy: make it in make() or reset()). */
 export interface PhysicsPart { Physics: new (o?: { gravity?: number; walls?: number[]; [k: string]: Loose }) => Loose; Body: Loose; World: Loose; loadPhysics(): Promise<Loose>; physicsReady(): boolean }
 
-/** Face and hand tracking (lazy). Positions are 0..1, mirrored like a selfie. */
+/** Face and hand tracking (lazy). Positions are 0..1, mirrored like a selfie. In the phone apps it runs on the phone's AI chip
+ *  (backend 'npu'), where the camera picture never reaches the game: pass `preview: true` if the game draws `picture`. */
 export interface VisionPart {
-  Face: new () => { start(): void; stop(): void; update(): void; ready: boolean; found: boolean; x: number; y: number; size: number; yaw: number; pitch: number; roll: number; mouth: number; smile: number; blink: boolean; winkLeft: boolean; winkRight: boolean; brows: number; [k: string]: Loose };
-  Hands: new (o?: { max?: number }) => { start(): void; stop(): void; update(): void; ready: boolean; found: boolean; list: Loose[]; first: Loose | null };
+  Face: new (o?: { preview?: boolean }) => { start(): void; stop(): void; update(): boolean; ready: boolean; found: boolean; backend?: string; picture: HTMLVideoElement | null; x: number; y: number; size: number; yaw: number; pitch: number; roll: number; mouth: number; smile: number; blink: boolean; winkLeft: boolean; winkRight: boolean; brows: number; [k: string]: Loose };
+  Hands: new (o?: { max?: number; preview?: boolean }) => { start(): void; stop(): void; update(): boolean; ready: boolean; found: boolean; backend?: string; picture: HTMLVideoElement | null; list: Loose[]; first: Loose | null };
   loadVision(): Promise<Loose>;
 }
 
