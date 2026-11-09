@@ -1763,6 +1763,7 @@ function gpuSwap(v, G) {
       o.visible = false; ud.gpuTwin.group.visible = ud.gpuWasVisible;
     } else if (ud.gpuHid) { o.visible = ud.gpuWasVisible; ud.gpuHid = false; ud.gpuTwin?.group.removeFromParent(); }
   }
+  for (const s of v.sims || []) s.gpuStep(G);   // simulations with a compute twin (gs.outdoors FloodWater)
   for (const p of v.parts) {
     if (G) {
       const tw = p.gpuTwin?.r === G.r ? p.gpuTwin : (p.gpuTwin = { r: G.r, ...(p.makeTwin ? p.makeTwin(G) : G.fx.gpuParticles(p)) });

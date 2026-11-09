@@ -977,6 +977,25 @@ export interface Sand {
   update(dt: number): Sand; step(): void; colour(m: number, rgbv: [number, number, number, number]): Sand; picture(bg?: [number, number, number, number]): HTMLCanvasElement | OffscreenCanvas;
 }
 export interface SandPart { M: SandMaterials; Sand: new (w?: number, h?: number, o?: { seed?: number }) => Sand }
+export interface FlowHere { in: boolean; kind: string | null; depth: number; speed: number; current: { x: number; y: number; z: number }; edge: number; fall: boolean; foam?: number; hurt: number; level?: number; d?: number; side?: number; stream: Loose }
+export interface FlowStream { path: Loose; width: number; speed: number; depth: number; kind: string; hurt: number; push: number; readonly length: number; rock(d: number, side: number, r?: number): FlowStream; surface(d: number, side?: number): { x: number; y: number; z: number }; isFall(d: number): boolean }
+export interface FlowOptions { width?: number; speed?: number; depth?: number; kind?: 'water' | 'lava' | 'acid' | 'mud' | 'deep'; hurt?: number; push?: number; fall?: number }
+export interface FloodPart {
+  N: number; size: number; l: number; D: Float32Array; B: Float32Array; edges: 'wall' | 'drain'; rate: number;
+  ground(fn: (x: number, z: number) => number): FloodPart; pour(x: number, z: number, rate?: number, r?: number): { x: number; z: number; rate: number; r: number }; drain(x: number, z: number, rate?: number, r?: number): Loose; remove(src: Loose): FloodPart;
+  rain(rate: number): FloodPart; add(x: number, z: number, volume: number, r?: number): FloodPart; depth(x: number, z: number): number; wet(x: number, z: number, deep?: number): boolean; level(x: number, z: number): number;
+  current(x: number, z: number): { x: number; z: number; speed: number }; volume(): number; update(dt: number): FloodPart; step(h: number): void;
+}
+export interface FlowPart {
+  /** Rivers, pools, whirlpools: current that carries things, waterfalls, lava and acid that hurt. space '2d' (x, y) or '3d' (ground x, z). */
+  Streams: new (o?: { space?: '2d' | '3d' }) => On<Loose> & {
+    list: Loose[]; river(path: Loose, o?: FlowOptions): FlowStream; pool(at: { x: number; y?: number; z?: number }, r: number, o?: FlowOptions & { w?: number; h?: number; spin?: number; pull?: number }): Loose;
+    whirl(at: { x: number; y?: number; z?: number }, r: number, spin?: number, pull?: number, o?: FlowOptions): Loose; remove(s: Loose): Loose;
+    at(p: { x: number; y?: number; z?: number }): FlowHere; carry(obj: { x: number; y: number; z?: number }, dt: number, o?: { drag?: number }): FlowHere; hurt(obj: Loose, dt: number): number;
+  };
+  /** Shallow water that floods: spreads, runs downhill, fills hollows. */
+  Flood: new (o?: { size?: number; cells?: number; x?: number; z?: number; y?: number | null; ground?: (x: number, z: number) => number; edges?: 'wall' | 'drain'; damp?: number; rate?: number }) => FloodPart;
+}
 export interface ArtLook { hue?: number; palette?: string[] }
 export interface ArtColours { main: string; dark: string; light: string; accent: string; hue: number }
 export interface ArtCreature { body: 'round' | 'tall' | 'wide' | 'drop' | 'bean'; legs: number; eyes: number; horns: boolean; spots: boolean; mouth: string; wings: boolean; colour: ArtColours; draw(c: CanvasRenderingContext2D, x: number, y: number, size?: number, time?: number): void }
@@ -1288,7 +1307,15 @@ export interface OutdoorsPart {
     hills(material: Loose, o?: { wood?: string | number[]; scale?: number; woods?: number }): { uniforms: Record<string, { value: Loose }> };
     rock(material: Loose, o?: { detail?: Loose; scale?: number; moss?: string | number[]; mossy?: number }): { uniforms: Record<string, { value: Loose }> };
     leaves(material: Loose, o?: { time?: number | { value: number }; wind?: number | { value: number } | WindPart; sun?: Loose; sway?: number; above?: number; glow?: number; atlas?: [number, number] }): { uniforms: Record<string, { value: Loose }> };
+    /** Moving water for a River mesh (its lkFlow / lkDir attributes). */
+    flow(material: Loose, o?: { deep?: string | number[]; shallow?: string | number[]; foam?: string | number[]; scale?: number; ripple?: number; froth?: number; time?: number | { value: number } }): { uniforms: Record<string, { value: Loose }> };
+    /** Molten lava for a River mesh: glowing cracks, cooling crust. */
+    lava(material: Loose, o?: { glow?: string | number[]; crust?: string | number[]; heat?: number; cool?: number; scale?: number; time?: number | { value: number }; length?: number }): { uniforms: Record<string, { value: Loose }> };
   };
+  /** Draws a gs.flow river, waterfall or pool: moving water with foam, or lava (kind 'lava'), acid, mud. update(dt) each frame. */
+  River: new (stream: Loose, o?: { step?: number; across?: number; lift?: number; look?: Loose; material?: Loose }) => { mesh: Loose; stream: Loose; look: { uniforms: Record<string, { value: Loose }> }; update(dt: number): Loose; dispose(): void };
+  /** Draws a gs.flow Flood (and runs it on the graphics chip on WebGPU when given the view). update() each frame after flood.update(dt). */
+  FloodWater: new (flood: FloodPart, o?: { view?: Loose; deep?: string; shallow?: string; opacity?: number; rough?: number; full?: number }) => { mesh: Loose; flood: FloodPart; update(): Loose; dispose(): void };
   /** One wind for a world: grass (land.wind), leaves, rain, particles, cloud shadows; at(x, z) for bullets and flags. */
   Wind: new (o?: { x?: number; z?: number; gust?: number; gustSize?: number; sway?: number; grass?: number }) => WindPart;
   /** Far stand-in for a tree: crossed cards with baked pictures of it (null without 3D). Use as a props lod level: [dist, imp.geometry, imp.material]. */
@@ -1536,7 +1563,7 @@ export interface GS {
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
-  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; fight: FightPart; bullets: BulletsPart; sand: SandPart; art: ArtPart; sports: SportsPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
+  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; fight: FightPart; bullets: BulletsPart; sand: SandPart; flow: FlowPart; art: ArtPart; sports: SportsPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;

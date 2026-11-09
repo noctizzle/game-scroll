@@ -109,3 +109,82 @@ export class Streams {
     return h.in ? h.hurt * dt : 0;
   }
 }
+
+/**
+ * Shallow water that floods: water poured, rained or let in spreads over the ground, runs downhill,
+ * fills hollows and evens out (a grid of columns that pass water to their neighbours: the "virtual
+ * pipes" method). size: metres a side, cells a side, x, z (or x, y in 2D): the middle, ground(x, z):
+ * the ground height (a gs.outdoors Land's height works: (x, z) => land.height(x, z)), edges: 'wall'
+ * (water stays in) or 'drain' (it runs off the sides). update(dt) runs it; depth, level, current and
+ * wet answer where it is. gs.outdoors FloodWater draws it (and runs it on the graphics chip with WebGPU).
+ */
+export class Flood {
+  constructor({ size = 40, cells = 64, x = 0, z = 0, y = null, ground = () => 0, edges = 'wall', damp = .995, rate = 60 } = {}) {
+    const N = cells | 0; this.N = N; this.size = size; this.l = size / N; this.x0 = x - size / 2; this.z0 = (y ?? z) - size / 2;
+    this.B = new Float32Array(N * N); this.D = new Float32Array(N * N); this.F = new Float32Array(N * N * 4);   // fluxes out: left, right, up (-z), down (+z)
+    this.edges = edges; this.damp = damp; this.rate = rate; this.acc = 0; this.sources = []; this.rainRate = 0; this.gpu = null; this.t = 0;
+    this.ground(ground);
+  }
+  /** Sets the ground again (after digging or building a dam): fn(x, z) => height. */
+  ground(fn) { const { N, l } = this; for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) this.B[j * N + i] = fn(this.x0 + (i + .5) * l, this.z0 + (j + .5) * l); if (this.gpu) this.gpu.dirty = true; return this; }
+  cell(x, z) { const i = Math.floor((x - this.x0) / this.l), j = Math.floor((z - this.z0) / this.l); return i < 0 || j < 0 || i >= this.N || j >= this.N ? -1 : j * this.N + i; }
+  /** A tap: rate cubic metres a second into a disc of radius r (a negative rate is a drain). Returns it; change .rate or remove(src). */
+  pour(x, z, rate = 1, r = 1) { const s = { x, z, rate, r }; this.sources.push(s); return s; }
+  /** A drain: takes up to rate cubic metres a second. */
+  drain(x, z, rate = 1, r = 1) { return this.pour(x, z, -rate, r); }
+  remove(s) { this.sources = this.sources.filter(o => o !== s); return this; }
+  /** Rain: metres of water a second over everything (.002 is a downpour). */
+  rain(rate) { this.rainRate = rate; return this; }
+  /** Adds a volume of water at once (a burst dam, a bucket). */
+  add(x, z, volume, r = 1) { this.spread(x, z, r, volume, true); if (this.gpu) this.gpu.dirty = true; return this; }
+  spread(x, z, r, amount, once) {
+    const { N, l, D } = this, cs = []; const rc = Math.max(r, l * .5);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const cx = this.x0 + (i + .5) * l, cz = this.z0 + (j + .5) * l; if ((cx - x) ** 2 + (cz - z) ** 2 <= rc * rc) cs.push(j * N + i); }
+    if (!cs.length) { const k = this.cell(x, z); if (k >= 0) cs.push(k); }
+    const per = amount / (cs.length * l * l); for (const k of cs) D[k] = Math.max(0, D[k] + per);
+    return once;
+  }
+  /** Water depth at a point (0 when dry). */
+  depth(x, z) { const k = this.cell(x, z); return k < 0 ? 0 : this.D[k]; }
+  /** Whether a point is under water (deeper than `deep` metres). */
+  wet(x, z, deep = .02) { return this.depth(x, z) > deep; }
+  /** The water surface height at a point (the ground where it's dry). */
+  level(x, z) { const k = this.cell(x, z); return k < 0 ? 0 : this.B[k] + this.D[k]; }
+  /** Which way and how fast the water moves at a point: { x, z, speed } (m/s). */
+  current(x, z) {
+    const k = this.cell(x, z); if (k < 0) return { x: 0, z: 0, speed: 0 };
+    const { N, F, l } = this, i = k % N, j = (k / N) | 0, d = Math.max(this.D[k], .01);
+    const fx = (F[k * 4 + 1] - F[k * 4] + (i > 0 ? F[(k - 1) * 4 + 1] : 0) - (i < N - 1 ? F[(k + 1) * 4] : 0)) / 2;
+    const fz = (F[k * 4 + 3] - F[k * 4 + 2] + (j > 0 ? F[(k - N) * 4 + 3] : 0) - (j < N - 1 ? F[(k + N) * 4 + 2] : 0)) / 2;
+    const vx = fx / (l * d), vz = fz / (l * d); return { x: vx, z: vz, speed: Math.hypot(vx, vz) };
+  }
+  /** All the water there is, in cubic metres. */
+  volume() { let v = 0; for (const d of this.D) v += d; return v * this.l * this.l; }
+  /** Runs the water on (`rate` steps a second, however long the frame). On WebGPU with FloodWater the graphics chip does it. */
+  update(dt) {
+    this.acc = Math.min(this.acc + dt, .1); const h = 1 / this.rate;
+    while (this.acc >= h) { this.acc -= h; if (this.gpu) this.gpu.steps++; else this.step(h); }
+    return this;
+  }
+  /** One step of h seconds (on the CPU). */
+  step(h) {
+    const { N, B, D, F, l, damp } = this, A = l * l, g = 9.81, k = h * g * l, wall = this.edges === 'wall';   // (h A g / l with pipe area A = l^2)
+    this.t += h;
+    for (const s of this.sources) this.spread(s.x, s.z, s.r, s.rate * h);
+    if (this.rainRate) for (let i = 0; i < D.length; i++) D[i] += this.rainRate * h;
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const c = j * N + i, hc = B[c] + D[c], o = c * 4;
+      // to the edge: a wall holds water in; a drain lets it out as if the ground beyond were far below
+      const out = (n, f) => n < 0 ? (wall ? 0 : Math.max(0, f * damp + k * Math.max(D[c], 0))) : Math.max(0, f * damp + k * (hc - B[n] - D[n]));
+      F[o] = out(i > 0 ? c - 1 : -1, F[o]); F[o + 1] = out(i < N - 1 ? c + 1 : -1, F[o + 1]);
+      F[o + 2] = out(j > 0 ? c - N : -1, F[o + 2]); F[o + 3] = out(j < N - 1 ? c + N : -1, F[o + 3]);
+      const sum = (F[o] + F[o + 1] + F[o + 2] + F[o + 3]) * h, have = D[c] * A;
+      if (sum > have) { const s = sum > 0 ? have / sum : 0; F[o] *= s; F[o + 1] *= s; F[o + 2] *= s; F[o + 3] *= s; }
+    }
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const c = j * N + i, o = c * 4;
+      const inflow = (i > 0 ? F[(c - 1) * 4 + 1] : 0) + (i < N - 1 ? F[(c + 1) * 4] : 0) + (j > 0 ? F[(c - N) * 4 + 3] : 0) + (j < N - 1 ? F[(c + N) * 4 + 2] : 0);
+      D[c] = Math.max(0, D[c] + (inflow - F[o] - F[o + 1] - F[o + 2] - F[o + 3]) * h / A);
+    }
+  }
+}

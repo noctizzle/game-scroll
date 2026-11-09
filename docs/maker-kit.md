@@ -53,6 +53,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Monsters, faces, loot, towns from a seed | `gs.art` | [Game kits](#game-kits) |
 | Team sports AI | `gs.sports` | [Game kits](#game-kits) |
 | Quiz questions (about 2,700) | `gs.trivia` (Open Trivia Database) | [Game kits](#game-kits) |
+| Rivers, waterfalls, lava, floods | `gs.flow` (+ `gs.outdoors` `River`, `FloodWater` in 3D) | [Game kits](#game-kits) |
 | Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
 | Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
 | Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
@@ -1296,6 +1297,21 @@ correct, streak, score }`; `timeout()` is a miss; `fifty()` is two wrong answers
 `climb: 3` it starts easy and steps up after three right in a row, down after a miss. `pack()` is a tiny
 save to `resume` from. Show `CREDIT` somewhere in the game: the licence asks for it.
 
+**Flowing liquids** (`gs.flow`, 2D top-down or 3D ground): `new Streams({ space: '3d' })` holds rivers,
+pools and whirlpools. `river(path, { width, speed, depth, kind: 'water' | 'lava' | 'acid' | 'mud' | 'deep',
+hurt })` follows a `gs.paths` Path: fastest in the middle, slow at the banks, bending round `rock(d, side,
+r)`, and pulling down where the path drops steeply (a waterfall). `pool(at, r, { kind: 'lava' })` and
+`whirl(at, r, spin, pull)` are round (or boxes with `w`, `h`). `at(p)` says what the liquid is doing at
+a point (`{ in, kind, depth, speed, current, edge, fall, foam, hurt, level }`), `carry(obj, dt, { drag })`
+moves a raft or a swimmer with it, `hurt(obj, dt)` is this frame's damage from lava or acid (with
+`on('enter' | 'leave')`). `new Flood({ size, cells, ground: (x, z) => land.height(x, z), edges: 'wall' |
+'drain' })` is shallow water that spreads, runs downhill and fills hollows: `pour(x, z, rate, r)` (a tap;
+negative drains), `add(x, z, volume)` (a burst dam), `rain(rate)`, then `depth`, `wet`, `level`, `current`
+and `volume()` anywhere; `ground(fn)` again after digging. In 3D, `gs.outdoors` draws them:
+`new River(stream)` (moving water with foam at rocks, banks and falls; lava with glowing cracks and a
+crust that cools downstream; acid; mud) and `new FloodWater(flood, { view })`, which on WebGPU runs the
+flood on the graphics chip. `gs.sand` has lava too, for 2D.
+
 **Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
 `Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran
 on this phone (at most a week), for money earned while away.
@@ -1438,7 +1454,7 @@ the ground is, `flatten()` makes a pad for a village or a landing strip, `paint(
 colours it by height in your palette, `solid(world)` makes it solid in `gs.physics3d`, `grass()` scatters
 blades that sway (only near the camera), and `scatter(props, 'tree', 300, { above: 1, steep: .3 })` puts
 `gs.props` things on suitable ground. `tree({ kind: 'pine' | 'round' | 'palm' | 'bush' })` and `rock()`
-make simple shapes to scatter. Next Gen worlds can paint it instead with `looks.ground` (fields, hedges, lanes, mud, puddles), ring it with far hills (`horizon(land)`) and give rocks and leaves their looks: see [Next Gen outdoor looks](nextgen-3d.md#outdoor-looks-ground-hills-rock-leaves). `Water({ level, waves })` is a sea of rolling waves you can ask about
+make simple shapes to scatter. Next Gen worlds can paint it instead with `looks.ground` (fields, hedges, lanes, mud, puddles), ring it with far hills (`horizon(land)`) and give rocks and leaves their looks: see [Next Gen outdoor looks](nextgen-3d.md#outdoor-looks-ground-hills-rock-leaves). `River(stream)` and `FloodWater(flood)` draw `gs.flow` rivers, waterfalls, lava and floods (see Flowing liquids). `Water({ level, waves })` is a sea of rolling waves you can ask about
 anywhere (`height(x, z)`, `normal`, `depth(p)`); call `update(dt, camera.position)` each frame.
 
 `new Wind({ x: 3, z: 0, gust: .4 })` is one wind for the whole world: `land.wind = wind` sways the

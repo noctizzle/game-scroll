@@ -20,6 +20,7 @@ import {
 } from 'three/tsl';
 import { LightProbeGrid } from 'three/examples/jsm/lighting/LightProbeGrid.js';
 export { LightProbeGrid };
+export { gpuFlood } from './flood-gpu.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';

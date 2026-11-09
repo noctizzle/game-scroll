@@ -890,6 +890,39 @@ console.log('physics ok');
   console.log('sports: formation, keeper, chase, slide, shoot, pass under pressure, marking, human ok');
 }
 {
+  const { Streams, Flood } = await import('../src/kit/flow.js'); const { Path } = await import('../src/kit/paths.js');
+  // 2D
+  const w = new Streams(); const r = w.river(new Path([[0, 100], [400, 100]], { kind: 'line' }), { width: 40, speed: 50 });
+  let h = w.at({ x: 200, y: 100 }); console.log(h.speed, h.current, h.edge);
+  assert.ok(h.in && h.current.x > 49 && Math.abs(h.current.y) < 1e-6);
+  const hb = w.at({ x: 200, y: 118 }); assert.ok(hb.in && hb.speed < h.speed && hb.edge > .8, 'slower at the bank'); assert.ok(!w.at({ x: 200, y: 130 }).in);
+  r.rock(200, 0, 5); const front = w.at({ x: 194, y: 100.5 }), past = w.at({ x: 200, y: 108 }); console.log('rock', front.current, past.current, past.foam);
+  assert.ok(Math.abs(front.current.x) < 30, 'slowed before the rock'); assert.ok(past.speed > 50, 'faster past its side');
+  assert.equal(w.at({ x: 200, y: 101 }).speed, 0, 'none inside');
+  const boat = { x: 50, y: 100 }; for (let i = 0; i < 60; i++) w.carry(boat, 1 / 60); assert.ok(Math.abs(boat.x - 100) < 2, 'carried');
+  const lava = w.pool({ x: 600, y: 600 }, 20, { kind: 'lava' }); const hero = { x: 600, y: 600 }; let ev = [];
+  w.on('enter', (o, s) => ev.push('in ' + s.kind)).on('leave', (o, s) => ev.push('out ' + s.kind));
+  assert.equal(w.hurt(hero, .5), 15); hero.x = 700; assert.equal(w.hurt(hero, .5), 0); assert.deepEqual(ev, ['in lava', 'out lava']);
+  const wh = w.whirl({ x: 0, y: 600 }, 30, 4, 2); const q = w.at({ x: 20, y: 600 }); console.log('whirl', q.current); assert.ok(q.current.y > 0 && q.current.x < 0);
+  // 3D with a waterfall
+  const w3 = new Streams({ space: '3d' });
+  const fallR = w3.river(new Path([{ x: 0, y: 10, z: 0 }, { x: 20, y: 10, z: 0 }, { x: 21, y: 0, z: 0 }, { x: 40, y: 0, z: 0 }], { kind: 'line' }), { width: 6, speed: 3 });
+  const top = w3.at({ x: 10, y: 10, z: 1 }), fall = w3.at({ x: 20.6, y: 5, z: 0 }), low = w3.at({ x: 30, y: 0, z: 0 });
+  assert.ok(top.in && !top.fall && top.current.x > 2.5 && Math.abs(top.current.y) < 1e-9 && Math.abs(top.level - 10) < .01);
+  assert.ok(fall.fall && fall.current.y < -1, 'a waterfall pulls down'); assert.ok(Math.abs(low.level) < .01);
+  // a bowl on the left, a hill on the right
+  const f = new Flood({ size: 40, cells: 80, ground: (x, z) => x < 0 ? Math.hypot(x + 10, z) * .1 - 1 : 2 - Math.hypot(x - 10, z) * .1 });
+  f.add(10, 0, 30, 2); const v0 = f.volume(); console.log('v0', v0);
+  for (let i = 0; i < 60 * 20; i++) f.update(1 / 60);
+  assert.ok(Math.abs(f.volume() - v0) < v0 * 1e-3, 'water is kept');
+  assert.ok(f.depth(10, 0) < .01 && f.depth(-10, 0) > .3, 'runs off the hill into the hollow');
+  assert.ok(Math.abs(f.level(-10, 0) - f.level(-8, 1)) < .02, 'and settles flat');
+  const d = new Flood({ size: 20, cells: 20, edges: 'drain' }); d.add(0, 0, 10, 3); for (let i = 0; i < 600; i++) d.update(1 / 60); console.log('drained', d.volume()); assert.ok(d.volume() < 9);
+  const p = new Flood({ size: 20, cells: 20 }); const tap = p.pour(0, 0, 2, 1); for (let i = 0; i < 300; i++) p.update(1 / 60); console.log('poured', p.volume()); assert.ok(Math.abs(p.volume() - 10) < .2);
+  const c = new Flood({ size: 20, cells: 40, ground: (x) => -x * .05 }); c.add(-8, 0, 20, 2); for (let i = 0; i < 40; i++) c.update(1 / 60); console.log('current', c.current(-6, 0)); assert.ok(c.current(-6, 0).x > .1, 'flows downhill');
+  console.log('flow: current, banks, rocks, carry, lava hurt, whirlpools, waterfalls, flood fills hollows, drains, taps, runs downhill ok');
+}
+{
   const { Quiz, categories, loadTrivia, CREDIT } = await import('../src/kit/trivia.js');
   assert.throws(() => new Quiz(), /still loading/, 'loads first'); await loadTrivia();
   const cats = categories(); assert.ok(cats.length >= 10 && cats.every(c => c.count > 0), 'categories'); assert.ok(CREDIT.includes('CC BY-SA'));

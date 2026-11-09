@@ -249,6 +249,63 @@ export class River {
   dispose() { this.mesh.geometry.dispose(); this.mesh.material.dispose(); this.mesh.removeFromParent(); }
 }
 
+
+/**
+ * Draws a gs.flow Flood: a water surface over the ground where it's wet, lighter where shallow. With
+ * view (an HDView) on WebGPU the flood runs on the graphics chip (bigger grids stay quick) and its
+ * depths come back every few frames for flood.depth(), level() and current(); on WebGL it runs on the
+ * CPU. o: deep, shallow (colours), opacity, rough, full (metres of water for the deep colour).
+ */
+export class FloodWater {
+  constructor(flood, { view = null, deep = '#1d5872', shallow = '#6fa8b0', opacity = .85, rough = .08, full = 1.2 } = {}) {
+    this.flood = flood; const { N, l } = flood;
+    this.look = { deep: new Color(deep), shallow: new Color(shallow), opacity, rough, full, dry: .01, sink: .06 };
+    const pos = new Float32Array(N * N * 3), idx = [];
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const k = (j * N + i) * 3; pos[k] = flood.x0 + (i + .5) * l; pos[k + 2] = flood.z0 + (j + .5) * l; }
+    for (let j = 0; j < N - 1; j++) for (let i = 0; i < N - 1; i++) { const a = j * N + i; idx.push(a, a + N, a + 1, a + 1, a + N, a + N + 1); }
+    const g = new BufferGeometry(); g.setAttribute('position', new Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new Float32BufferAttribute(new Float32Array(N * N * 3), 3));
+    g.setAttribute('color', new Float32BufferAttribute(new Float32Array(N * N * 3), 3)); g.setIndex(idx);
+    this.look.geometry = g; this.look.cellsIn = s => this.cellsIn(s);
+    const m = new MeshStandardMaterial({ vertexColors: true, roughness: rough, metalness: 0, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
+    this.mesh = new Mesh(g, m); this.mesh.frustumCulled = false; this.mesh.renderOrder = 2;
+    this.view = view; if (view) (view.sims ||= []).push(this);
+    this.sync();
+  }
+  cellsIn(s) { const { N, l } = this.flood, rc = Math.max(s.r, l * .5); let n = 0; for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { const cx = this.flood.x0 + (i + .5) * l, cz = this.flood.z0 + (j + .5) * l; if ((cx - s.x) ** 2 + (cz - s.z) ** 2 <= rc * rc) n++; } return n; }
+  // the mesh from the CPU's depths: heights, normals by central differences (as the WebGPU mesh), colours
+  sync() {
+    const { N, l, B, D } = this.flood, L = this.look, g = this.mesh.geometry, P = g.attributes.position.array, Nm = g.attributes.normal.array, C = g.attributes.color.array;
+    const hs = this._h ||= new Float32Array(N * N);
+    for (let c = 0; c < N * N; c++) hs[c] = D[c] > L.dry ? B[c] + D[c] : B[c] - L.sink;
+    const sh = L.shallow, dp = L.deep;
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const c = j * N + i, k = c * 3;
+      const nx = (hs[i > 0 ? c - 1 : c] - hs[i < N - 1 ? c + 1 : c]) / (i > 0 && i < N - 1 ? 2 * l : l), nz = (hs[j > 0 ? c - N : c] - hs[j < N - 1 ? c + N : c]) / (j > 0 && j < N - 1 ? 2 * l : l);
+      const q = Math.hypot(nx, 1, nz); P[k + 1] = hs[c]; Nm[k] = nx / q; Nm[k + 1] = 1 / q; Nm[k + 2] = nz / q;
+      const t = Math.min(1, Math.max(0, D[c] / L.full)), f = t * t * (3 - 2 * t);
+      C[k] = sh.r + (dp.r - sh.r) * f; C[k + 1] = sh.g + (dp.g - sh.g) * f; C[k + 2] = sh.b + (dp.b - sh.b) * f;
+    }
+    for (const a of ['position', 'normal', 'color']) g.attributes[a].needsUpdate = true;
+  }
+  /** Each frame after flood.update(dt): the mesh follows the water (on WebGPU the graphics chip does this). */
+  update() { if (!this.flood.gpu) this.sync(); return this; }
+  // hd3d.js gpuSwap: on WebGPU the compute twin takes over the steps and the drawing, and gives them back
+  gpuStep(G) {
+    const f = this.flood;
+    if (G) {
+      if (this.twin?.r !== G.r) { this.twin?.dispose(); this.look.shallowV = new Vector3(this.look.shallow.r, this.look.shallow.g, this.look.shallow.b); this.look.deepV = new Vector3(this.look.deep.r, this.look.deep.g, this.look.deep.b); this.twin = { r: G.r, ...G.fx.gpuFlood(f, this.look) }; }
+      if (!f.gpu) { f.gpu = { steps: 0, dirty: true }; }
+      if (this.mesh.parent) { this.mesh.parent.add(this.twin.mesh); this.mesh.removeFromParent(); }
+      this.twin.step(G.r, f.gpu.steps); f.gpu.steps = 0;
+    } else if (f.gpu) {
+      const n = f.gpu.steps; f.gpu = null; for (let k = 0; k < n; k++) f.step(1 / f.rate);   // (the last copy back is a few frames old)
+      if (this.twin?.mesh.parent) { this.twin.mesh.parent.add(this.mesh); this.twin.mesh.removeFromParent(); }
+      this.sync();
+    }
+  }
+  dispose() { this.mesh.geometry.dispose(); this.mesh.material.dispose(); this.mesh.removeFromParent(); this.twin?.mesh.removeFromParent(); this.twin?.dispose(); const s = this.view?.sims; if (s) s.splice(s.indexOf(this), 1); }
+}
+
 /**
  * The wind over a world: x, z its steady push (metres a second, towards +x / +z), gust 0..1 (how much
  * stronger and weaker it gets), gustSize (metres across a gust), sway and grass (how much leaves and
