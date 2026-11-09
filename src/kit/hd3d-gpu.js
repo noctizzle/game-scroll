@@ -16,10 +16,11 @@ import {
   positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min, materialEmissive, distance,
   attribute, vertexColor, normalWorld, normalViewGeometry, positionLocal, positionGeometry, modelWorldMatrix, modelWorldMatrixInverse,
   materialColor, materialOpacity, materialRoughness, cos, floor, step, fwidth, dFdx, dFdy, normalize, uniformArray, Loop, int, If, sqrt,
-  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break,
+  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix,
 } from 'three/tsl';
 import { LightProbeGrid } from 'three/examples/jsm/lighting/LightProbeGrid.js';
 export { LightProbeGrid };
+export { gpuFlood } from './flood-gpu.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
@@ -235,6 +236,37 @@ export const gpuLooks = {
       const moss = smoothstep(.55, .85, wn.y.add(e.r.sub(.5).mul(.6)));
       return mix(c, live(u.lkMoss).mul(d.r.mul(.6).add(.7)), moss.mul(live(u.lkMossy)));
     });
+  },
+  // looks.js flow(): moving water on a gs.outdoors River (two crossfaded layers sliding at each point's speed)
+  flow(m, s, o) {
+    const u = s.uniforms, T = live(u.lkFlowT), K = live(u.lkFlowK), F = attribute('lkFlow', 'vec4'), D = attribute('lkDir', 'vec3'), N = u.lkNoise.value;
+    const slide = (sc, sx, sy) => {
+      const p0 = fract(T.mul(.5)), p1 = fract(T.mul(.5).add(.5)), w = abs(p0.mul(2).sub(1));
+      const a = texture(N, vec2(F.x.mul(sx), F.y.mul(sy).sub(F.z.mul(p0).mul(2))).mul(sc));
+      const b = texture(N, vec2(F.x.mul(sx), F.y.mul(sy).sub(F.z.mul(p1).mul(2))).mul(sc).add(.37));
+      return mix(a, b, w);
+    };
+    const n = slide(K.x, 1, .6).toVar('lkN'), st = slide(K.x.mul(1.7), 2.5, .25);
+    const foam = clamp(smoothstep(.55, .85, st.g.mul(.55).add(F.w.mul(.8)).add(n.r.mul(.25))).mul(K.z), 0, 1).toVar('lkFoam');
+    afterColor(m, o, () => mix(mix(live(u.lkDeep), live(u.lkShallow), clamp(D.z.mul(D.z).add(n.a.sub(.5).mul(.4)), 0, 1)).mul(n.r.mul(.3).add(.85)), live(u.lkFoamC), foam));
+    m.roughnessNode = mix(float(.06), float(.75), foam);
+    const g = vec2(n.b, n.g).sub(.5).mul(K.y).mul(foam.oneMinus()), dd = D.xy, pp = vec2(dd.y.negate(), dd.x), gw = dd.mul(g.y).add(pp.mul(g.x));
+    m.normalNode = normalize(normalViewGeometry.add(cameraViewMatrix.mul(vec4(gw.x, 0, gw.y, 0)).xyz));
+  },
+  // looks.js lava(): glowing cracks between drifting plates of crust, cooling downstream
+  lava(m, s, o) {
+    const u = s.uniforms, T = live(u.lkFlowT), K = live(u.lkLavaK), F = attribute('lkFlow', 'vec4'), N = u.lkNoise.value, G = live(u.lkGlowC);
+    const slide = sc => {
+      const p0 = fract(T.mul(.1)), p1 = fract(T.mul(.1).add(.5)), w = abs(p0.mul(2).sub(1));
+      return mix(texture(N, vec2(F.x, F.y.sub(F.z.mul(p0).mul(10))).mul(sc)), texture(N, vec2(F.x, F.y.sub(F.z.mul(p1).mul(10))).mul(sc).add(.53)), w);
+    };
+    const n = slide(K.x).toVar('lkN'), mm = slide(K.x.mul(3.1)).toVar('lkM');
+    const heat = clamp(float(1).sub(K.z.mul(F.y).div(max(K.w, 1))), 0, 1).mul(sin(T.mul(1.3).add(n.g.mul(6))).mul(.1).add(.9)).toVar('lkHeat');
+    const cr = abs(n.r.sub(.5)).mul(2).add(mm.b.sub(.5).mul(.25)), crack = float(1).sub(smoothstep(.02, heat.mul(.1).add(.05), cr));
+    const hot = clamp(crack.add(heat.mul(.2).mul(smoothstep(.55, .9, mm.g))).add(F.w.mul(.5)), 0, 1).toVar('lkHot');
+    afterColor(m, o, () => mix(live(u.lkCrust).mul(mm.r.mul(.6).add(.6)), G.mul(.05), hot));
+    m.roughnessNode = mix(float(.9), float(.5), hot);
+    m.emissiveNode = materialEmissive.add(G.mul(hot).mul(heat).mul(K.y));
   },
   // looks.js leaves(): sway (more towards the top, leaning downwind), light through towards the sun,
   // outlines that hold up far away, and both sides lit alike

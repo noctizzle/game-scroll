@@ -42,6 +42,18 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Turn-based fights, items, XP and loot | `gs.battle` | [Game kits](#game-kits) |
 | Dungeons, caves, mazes, islands, tile patterns | `gs.gen` (rot.js, WaveFunctionCollapse) | [Game kits](#game-kits) |
 | Drag pieces into slots, reorder a list | `gs.drag` | [Game kits](#game-kits) |
+| Undo and redo moves | `gs.history` | [Game kits](#game-kits) |
+| An inventory, crafting recipes | `gs.items` | [Game kits](#game-kits) |
+| A point-and-click adventure | `gs.adventure` | [Game kits](#game-kits) |
+| Hex maps, isometric views | `gs.hex` | [Game kits](#game-kits) |
+| Strategy controls, tower defence | `gs.rts` | [Game kits](#game-kits) |
+| A fighting game | `gs.fight` | [Game kits](#game-kits) |
+| Bullet patterns (shoot-'em-ups) | `gs.bullets` | [Game kits](#game-kits) |
+| Falling sand, blastable ground | `gs.sand` | [Game kits](#game-kits) |
+| Monsters, faces, loot, towns from a seed | `gs.art` | [Game kits](#game-kits) |
+| Team sports AI | `gs.sports` | [Game kits](#game-kits) |
+| Quiz questions (about 2,700) | `gs.trivia` (Open Trivia Database) | [Game kits](#game-kits) |
+| Rivers, waterfalls, lava, floods | `gs.flow` (+ `gs.outdoors` `River`, `FloodWater` in 3D) | [Game kits](#game-kits) |
 | Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
 | Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
 | Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
@@ -1190,6 +1202,116 @@ const { level } = proven(s => cave(40, 30, { seed: s }), l => { const n = reach(
 and pieces lift, snap into slots you `accept`, or slide home. With `list: { x, y, axis }` the pieces
 form a row you reorder by dragging.
 
+**Undo and redo** (`gs.history.History(start, { max })`): `push(state, label)` after each change keeps a
+copy; `undo()` and `redo()` hand back a fresh copy of that step (null when there's none). `canUndo`,
+`canRedo`, `undoLabel` for the buttons, `undos` to count them (fewer undos, more stars). Pushes with the
+same `merge` key in a row are one step (a dragged slider); `group(state, label, fn)` makes several one.
+A change after an undo drops the steps ahead. `pack()` / `unpack()` for `api.save`.
+
+```js
+reset() { board = newBoard(); hist = new History(board); }
+tap(x, y) { flip(board, x, y); hist.push(board, 'flip'); }
+undo() { board = hist.undo() ?? board; }
+```
+
+**Inventories and crafting** (`gs.items`): `Inventory(defs, { slots, extra, stack, weight })` is a grid
+of slots holding stacks (`defs[id].stack` most per slot, `kind`, `weight`). `add(id, n)` returns what
+didn't fit; `take`, `count`, `has`; `move(from, to, n)` merges or swaps, and equip slots in `extra`
+(`{ hand: 'tool' }`) only take their kind; `split`, `sort`, `save` / `load`. `Recipes(defs)`:
+`add(id, needs, { makes, keep, at, time })`, then `can(inv)` (what can be made now), `missing(id, inv)`,
+`times`, `uses(item)`, `make(id, inv, station)`. Recipes with `time` are made over seconds by
+`book.timer` (`update(dt)`, `progress(job)`, `on('done')`). gs.battle's `Bag` works as `inv` too.
+
+**Point-and-click adventures** (`gs.adventure.Adventure({ start, bag })`): `room(id, { map: [col, row] })`
+then `.spot(id, { x, y, w, h } | { x, y, r } | { poly }, look, take, exit, locked, talk, when, walk })`.
+`tap(x, y, item)` finds the topmost spot and does it: a use rule when an item is held
+(`rule(item, spot, fn)`; fn returns the line to say), else take, exit (unless locked), talk or look; it
+returns `{ spot, did, text }` and fires `say`, `enter` and the rest. `act(spot, item, 'look')` after the
+hero has walked to `walkTo(spot)`. `combine(a, b)` for items in the bag, `flag(k, v)`, `unlock`,
+`map()` / `drawMap(c, x, y)` for the rooms seen, `save` / `load`. Use an `Inventory` as the bag for
+slots and limits, and `gs.story` for conversations.
+
+**Hex maps and isometric views** (`gs.hex`, hex maths from honeycomb-grid): `HexMap({ size, pointy, shape:
+'rect' | 'hex', w, h, radius, x, y })` gives cells with `q, r`, centre `x, y`, `corners` to draw and your
+own `data`. `at(x, y)` is the hex under a tap; `neighbours`, `distance`, `line`, `range`, `ring`;
+`reach(from, moves, cost)` is everywhere a unit can move (a Map of cell to points spent, `cost(cell)`
+Infinity for blocked); `path(a, b, cost)` the cheapest route; `sees(a, b, blocks)` line of sight.
+`Iso({ tw, th, x, y })`: `toScreen(tx, ty, z)`, `toTile(x, y)` for taps, `corners`, `sort(things)` back to front.
+
+**Strategy controls** (`gs.rts`): `Select(() => things, { radius })` with `down/move/up` picks by tap or
+a dragged box (`sel.box` to draw it), a double tap picks every one of that `kind`, and `up` returns
+false for a tap on nothing (that's an order). `formation(units, x, y, { shape: 'grid' | 'line' | 'wedge'
+| 'circle', gap })` gives each unit its place. `FlowField(w, h, size, cost).to(tx, ty)` then `dir(x, y)`
+steers any number of units round walls. `BuildGrid(w, h, size)`: `snap` a dragged building to tiles,
+`fits`, `place`, `remove`, `at`. `target(tower, enemies, { range, by: 'first' | 'last' | 'near' |
+'strong' | 'weak' })` picks who a tower shoots.
+
+**Fighting games** (`gs.fight`): `Reader({ window, buffer })` gets `feed(stickX, stickY, { P, K }, dt,
+facing)` each frame (a `gs.controls.Stick` on touch) and keeps the last moments: `did('236P')` for
+motions in numpad notation (forward follows `facing`), `special(moves)` for the first move whose
+`input` was done, `take('P')` for a press up to `buffer` seconds old. `Fighter(moves, { x, facing, hurt
+})`: moves are `{ start, active, recover }` in 60ths of a second with `hit` boxes `[x, y, w, h]` from the
+feet (facing right), `stun`, `blockStun`, `stop`, `low`/`high`, `cancel: [names]` (once it has hit);
+`start(name)`, `update(dt)`, `phase`. `clash(a, b)` checks a's hit boxes against b's hurt boxes once per
+move, sets stun, block stun (b.blocking, b.blockLow) and hit stop, and returns `{ move, blocked, x, y }`.
+
+**Bullet patterns** (`gs.bullets`): `Bullets({ max, w, h })` keeps thousands of bullets in flat arrays:
+`fire(x, y, speed, angle, { accel, turn, wave, home, kind, life })`, `update(dt, target)`, `each(fn)` to
+draw, `hit(x, y, r, graze)` (`{ hit, grazed }`: near misses count once) and `clear(fn, x, y, r)` for
+bombs and turning bullets into points. `Emitter(bullets, { every, rotate, times, delay })` fires a
+volley built from `ring(n, speed)`, `spread(n, arc, speed, aim)`, `spiral(arms, speed, step)`,
+`burst(n, speed, aim)` and `custom(fn)` each time; `update(dt, x, y)` from where the boss is.
+
+**Falling sand and blastable ground** (`gs.sand`): `Sand(w, h)` is a grid of materials (`M.EMPTY`,
+`WALL`, `DIRT`, `WOOD`, `SAND`, `WATER`, `OIL`, `FIRE`, `SMOKE`, `ACID`, `STEAM`, `LAVA`, `STONE`) that
+behave by themselves: sand piles, water and oil flow and settle by weight, fire burns wood and oil into
+smoke, water puts fire out as steam, acid eats ground, slow lava sets things alight and turns to stone
+where water touches it. `fill(fn)`, `paint(x, y, r, m)`, `blast(x, y, r)` (a
+hole whose edge falls as rubble), `solid(x, y)` for heroes to stand on, `count(m, box)` for goals,
+`update(dt)` (60 steps a second), `picture()` to draw scaled up with smoothing off, `colour(m, [r, g,
+b, variation])` for your own look. It runs on the CPU in flat arrays: about 120 x 200 cells is
+comfortable on a phone.
+
+**Procedural art** (`gs.art`): the same seed always gives the same thing, drawn in code.
+`creature(seed, { hue })` (body, legs, eyes, horns, wings: read them for the rules),
+`face(seed)` (draw with a mood -1..1), `item(seed, 'sword' | 'potion' | 'gem' | 'shield' | 'key' | 'ring')`
+(with a `rarity` and `power`), `building(seed)` (draw with night 0..1 for lit windows), `sprite(seed, w,
+h, palette)` (a mirrored pixel sprite for the Pocket styles), `name(seed, 'person' | 'place' | 'thing')`.
+Each has `draw(c, x, y, size)`; `{ hue }` or `{ palette }` keeps a set in one colour family.
+
+**Team sports AI** (`gs.sports`): `Pitch({ w, h, goal })` (team 0 attacks the top) and `Team(pitch,
+side, { formation: '2-2' | 'k-3-2' | ..., skill })`. `team.think({ ball, foes }, dt)` returns a Map of
+each player (not marked `human`) to `{ do, x, y, kick }`: one chases the ball, the rest slide with the
+formation, find space when you have the ball or mark someone goal side when you don't; the one with
+the ball shoots at the most open corner, passes along the clearest lane, or runs on. Your game moves
+the players towards x, y and applies the kick. `home(p, ball)` is where a player belongs now.
+
+**Quiz questions** (`gs.trivia`, about 2,700 from the Open Trivia Database, CC BY-SA 4.0; loads on
+first use, so make it in `make()` or `reset()`): games can't carry data files, so the bank lives here.
+`categories()` lists `{ id, name, count }` (general, animals, geography, history, science, maths,
+computers, sports, art, myths, vehicles, books, music; grown-up topics left out). `new Quiz({ categories,
+difficulty, kind: 'choice' | 'truefalse', climb, seed })` deals them in a seeded order with no repeats
+(`gs.math.daily('quiz')` for the same quiz for everyone today). `next()` gives `{ text, answers, kind,
+difficulty, category }` with the answers shuffled (the right one isn't in it); `answer(i)` gives `{ right,
+correct, streak, score }`; `timeout()` is a miss; `fifty()` is two wrong answers to take away; with
+`climb: 3` it starts easy and steps up after three right in a row, down after a miss. `pack()` is a tiny
+save to `resume` from. Show `CREDIT` somewhere in the game: the licence asks for it.
+
+**Flowing liquids** (`gs.flow`, 2D top-down or 3D ground): `new Streams({ space: '3d' })` holds rivers,
+pools and whirlpools. `river(path, { width, speed, depth, kind: 'water' | 'lava' | 'acid' | 'mud' | 'deep',
+hurt })` follows a `gs.paths` Path: fastest in the middle, slow at the banks, bending round `rock(d, side,
+r)`, and pulling down where the path drops steeply (a waterfall). `pool(at, r, { kind: 'lava' })` and
+`whirl(at, r, spin, pull)` are round (or boxes with `w`, `h`). `at(p)` says what the liquid is doing at
+a point (`{ in, kind, depth, speed, current, edge, fall, foam, hurt, level }`), `carry(obj, dt, { drag })`
+moves a raft or a swimmer with it, `hurt(obj, dt)` is this frame's damage from lava or acid (with
+`on('enter' | 'leave')`). `new Flood({ size, cells, ground: (x, z) => land.height(x, z), edges: 'wall' |
+'drain' })` is shallow water that spreads, runs downhill and fills hollows: `pour(x, z, rate, r)` (a tap;
+negative drains), `add(x, z, volume)` (a burst dam), `rain(rate)`, then `depth`, `wet`, `level`, `current`
+and `volume()` anywhere; `ground(fn)` again after digging. In 3D, `gs.outdoors` draws them:
+`new River(stream)` (moving water with foam at rocks, banks and falls; lava with glowing cracks and a
+crust that cools downstream; acid; mud) and `new FloodWater(flood, { view })`, which on WebGPU runs the
+flood on the graphics chip. `gs.sand` has lava too, for 2D.
+
 **Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
 `Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran
 on this phone (at most a week), for money earned while away.
@@ -1332,7 +1454,7 @@ the ground is, `flatten()` makes a pad for a village or a landing strip, `paint(
 colours it by height in your palette, `solid(world)` makes it solid in `gs.physics3d`, `grass()` scatters
 blades that sway (only near the camera), and `scatter(props, 'tree', 300, { above: 1, steep: .3 })` puts
 `gs.props` things on suitable ground. `tree({ kind: 'pine' | 'round' | 'palm' | 'bush' })` and `rock()`
-make simple shapes to scatter. Next Gen worlds can paint it instead with `looks.ground` (fields, hedges, lanes, mud, puddles), ring it with far hills (`horizon(land)`) and give rocks and leaves their looks: see [Next Gen outdoor looks](nextgen-3d.md#outdoor-looks-ground-hills-rock-leaves). `Water({ level, waves })` is a sea of rolling waves you can ask about
+make simple shapes to scatter. Next Gen worlds can paint it instead with `looks.ground` (fields, hedges, lanes, mud, puddles), ring it with far hills (`horizon(land)`) and give rocks and leaves their looks: see [Next Gen outdoor looks](nextgen-3d.md#outdoor-looks-ground-hills-rock-leaves-water-and-lava). `River(stream)` and `FloodWater(flood)` draw `gs.flow` rivers, waterfalls, lava and floods (see Flowing liquids). `Water({ level, waves })` is a sea of rolling waves you can ask about
 anywhere (`height(x, z)`, `normal`, `depth(p)`); call `update(dt, camera.position)` each frame.
 
 `new Wind({ x: 3, z: 0, gust: .4 })` is one wind for the whole world: `land.wind = wind` sways the

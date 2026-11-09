@@ -42,6 +42,17 @@
 //   gs.battle    turn-based battles: fighters, moves, types, status effects, items (Bag), XP and loot
 //   gs.gen       levels made by code: dungeons, caves, mazes, islands, heightmaps, tile patterns, field of view
 //   gs.drag      drag, drop and snap pieces into slots; reorderable lists
+//   gs.history   undo and redo: each step of the round, back and forward, undos counted
+//   gs.items     inventories (slots, stacks, equip slots, sort) and crafting (recipes, what's missing, timed making)
+//   gs.adventure point-and-click: rooms, hotspots, take, use X on Y, exits, flags, a map of rooms seen
+//   gs.hex       hex maps (honeycomb-grid): taps, neighbours, ranges, movement reach, paths, sight; Iso views
+//   gs.rts       strategy controls: tap and box select, formations, flow fields, build grids, tower targets
+//   gs.fight     fighting games: motion inputs with a buffer, moves in frames, hit and hurt boxes, cancels, stun
+//   gs.bullets   shoot-'em-up bullets: thousands in flat arrays, rings, spreads, spirals, homing, grazing
+//   gs.sand      falling sand and blastable ground: sand, water, oil, fire, smoke, acid, lava; solid() for heroes
+//   gs.flow      flowing liquids for play: river current round rocks, waterfalls, whirlpools, lava and acid that hurt (2D or 3D)
+//   gs.art       procedural art from a seed: creatures, faces, loot items, buildings, pixel sprites, names
+//   gs.sports    team sports AI from above: formations that slide, chase, mark, find space, shoot or pass
 //   gs.idle      idle maths: rising prices, affordable counts, short big numbers, Earner (and api.away())
 //   gs.party     pass-and-play turns with a hand-over screen, and split-screen halves for two to four
 //   gs.rhythm    a beat clock in step with the music, note charts, Perfect/Good/Miss, tap-lag calibration
@@ -71,6 +82,7 @@
 //   gs.cards     decks, deals, hands, blackjack totals, rummy sets and runs, poker hands (pokersolver)
 //   gs.dice      dice notation ('4d6kh3'), odds, tumbling 2D dice, real 3D dice read by the top face
 //   gs.words     an English dictionary (SCOWL): check, pick, find words in letters or grids, compare guesses
+//   gs.trivia    about 2,700 quiz questions (Open Trivia Database): seeded quizzes, no repeats, streaks, climbing difficulty, 50:50
 //   gs.ui        layout with no look (Yoga flexbox): boxes, taps, holds, drags, scrolling lists, focus for pads
 //   gs.hear      hearing everyday sounds (YAMNet: dog, whistle, clapping...) and spoken words, on the phone itself
 //   gs.doodle    knows what the player drew (46 things: sword, umbrella, bridge...), a tiny model on the phone
@@ -119,6 +131,17 @@ import * as battle from './kit/battle.js';
 import * as gen from './kit/gen.js';
 import * as drag from './kit/drag.js';
 import * as idle from './kit/idle.js';
+import * as history from './kit/history.js';
+import * as items from './kit/items.js';
+import * as adventure from './kit/adventure.js';
+import * as hex from './kit/hex.js';
+import * as rts from './kit/rts.js';
+import * as fight from './kit/fight.js';
+import * as bullets from './kit/bullets.js';
+import * as sand from './kit/sand.js';
+import * as flow from './kit/flow.js';
+import * as art from './kit/art.js';
+import * as sports from './kit/sports.js';
 import * as party from './kit/party.js';
 import * as rhythm from './kit/rhythm.js';
 import * as strokes from './kit/strokes.js';
@@ -138,6 +161,7 @@ export const HIDDEN = {
   vision: ['stopVision'],
   gen: ['loadGen'],
   words: ['loadWords'],
+  trivia: ['loadTrivia'],
   ui: ['loadUI'],
   hear: ['loadHear', 'stopHearing'],
   doodle: ['loadDoodle'],
@@ -190,7 +214,7 @@ const GROUPS = {
   ai: { parts: ['ai'], load: () => import('./kit/ai.js').then(m => ({ ai: pick('ai', m) })) },
   action: { parts: ['combat', 'tactics', 'climb', 'missions', 'cutscene', 'prompts', 'stealth', 'gadgets', 'campaign', 'arena'],
     load: () => import('./gs-action.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
-  play: { parts: ['craft', 'soft', 'cards', 'dice', 'words', 'ui'],
+  play: { parts: ['craft', 'soft', 'cards', 'dice', 'words', 'trivia', 'ui'],
     load: () => import('./gs-play.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
   smart: { parts: ['hear', 'doodle', 'phoneai'],
     load: () => import('./gs-smart.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
@@ -256,6 +280,17 @@ const core = {
   gen: pick('gen', gen),
   drag: pick('drag', drag),
   idle: pick('idle', idle),
+  history: pick('history', history),
+  items: pick('items', items),
+  adventure: pick('adventure', adventure),
+  hex: pick('hex', hex),
+  rts: pick('rts', rts),
+  fight: pick('fight', fight),
+  bullets: pick('bullets', bullets),
+  sand: pick('sand', sand),
+  flow: pick('flow', flow),
+  art: pick('art', art),
+  sports: pick('sports', sports),
   party: pick('party', party),
   rhythm: pick('rhythm', rhythm),
   strokes: pick('strokes', strokes),

@@ -705,6 +705,245 @@ console.log('physics ok');
   console.log('drag: reject and home, drop and snap ok');
 }
 {
+  const { History } = await import('../src/kit/history.js');
+  let b = { cells: [0, 0, 0] }; const h = new History(b, { max: 3 });
+  b.cells[0] = 1; h.push(b, 'a'); b.cells[1] = 1; h.push(b, 'b');
+  assert.equal(h.undoLabel, 'b'); b = h.undo(); assert.deepEqual(b.cells, [1, 0, 0], 'undo gives the step before'); b.cells[2] = 9;
+  assert.deepEqual(h.now().cells, [1, 0, 0], 'the copy it gives back is the game\'s own'); b = h.redo(); assert.deepEqual(b.cells, [1, 1, 0], 'redo');
+  h.undo(); b = h.now(); b.cells[2] = 2; h.push(b, 'c'); assert.equal(h.canRedo, false, 'a new change drops what was ahead');
+  for (let i = 0; i < 5; i++) { b.cells[0] = i; h.push(b, 'x' + i); } assert.equal(h.back, 3, 'keeps at most max steps');
+  for (let i = 0; i < 4; i++) { b.cells[1] = i; h.push(b, 'drag', { merge: 'slider' }); } h.undo(); assert.notEqual(h.now().cells[1], 2, 'merged pushes are one step');
+  const g = new History({ n: 0 }); const st = { n: 0 }; g.group(st, 'two', () => { st.n = 1; g.push(st); st.n = 2; g.push(st); }); assert.equal(g.back, 1); assert.equal(g.now().n, 2, 'group is one step');
+  assert.equal(g.undo().n, 0); assert.equal(g.undos, 1);
+  const pk = JSON.parse(JSON.stringify(g.redo() && g.pack())); assert.equal(new History({}).unpack(pk).now().n, 2, 'pack and unpack');
+  console.log('history: undo, redo, drop ahead, max, merge, group, pack ok');
+}
+{
+  const { Inventory, Recipes } = await import('../src/kit/items.js');
+  const D = { wood: { stack: 10 }, stone: { stack: 10 }, axe: { stack: 1, kind: 'tool' }, hat: { stack: 1, kind: 'head', weight: 2 } };
+  const inv = new Inventory(D, { slots: 3, extra: { hand: 'tool' } });
+  assert.equal(inv.add('wood', 14), 0); assert.deepEqual(inv.slots.map(s => s?.n ?? 0), [10, 4, 0], 'stacks fill, then a new slot');
+  assert.equal(inv.add('stone', 25), 15, 'what does not fit comes back'); assert.equal(inv.take('wood', 20), false); assert.ok(inv.take('wood', 5)); assert.equal(inv.count('wood'), 9);
+  const inv2 = new Inventory(D, { slots: 4, extra: { hand: 'tool', head: 'head' } }); inv2.add('wood', 3); inv2.add('axe');
+  assert.equal(inv2.move(0, 'hand'), false, 'equip slots take only their kind'); assert.ok(inv2.move(1, 'hand')); assert.equal(inv2.equip.hand.id, 'axe');
+  inv2.add('wood', 4); assert.equal(inv2.count('wood'), 7); assert.equal(inv2.split(0), 1); assert.ok(inv2.move(1, 0), 'merge back'); assert.equal(inv2.slots[0].n, 7);
+  inv2.add('stone', 2); inv2.sort(); assert.deepEqual(inv2.slots.filter(Boolean).map(s => s.id), ['stone', 'wood']);
+  assert.deepEqual(new Inventory(D, { slots: 4, extra: { hand: 'tool', head: 'head' } }).load(JSON.parse(JSON.stringify(inv2.save()))).save(), inv2.save(), 'save and load');
+  const heavy = new Inventory(D, { slots: 9, weight: 5 }); assert.equal(heavy.add('hat', 4), 2, 'weight limit');
+  const book = new Recipes(D).add('plank', { wood: 1 }, { makes: 4 }).add('axe', { wood: 3, stone: 2 }, { keep: ['bench'] }).add('lamp', { stone: 1 }, { at: 'forge', time: 2 });
+  const bag = new Inventory(D, { slots: 6 }); bag.add('wood', 3); bag.add('stone', 1);
+  assert.deepEqual(book.missing('axe', bag), { bench: 1, stone: 1 }, 'missing lists tools and parts');
+  assert.deepEqual(book.can(bag).map(r => r.id), ['plank']); assert.equal(book.times('plank', bag), 3);
+  assert.ok(book.make('plank', bag)); assert.equal(bag.count('plank'), 4); assert.equal(book.make('axe', bag), null);
+  assert.equal(book.make('lamp', bag), null, 'a station recipe needs the station'); assert.ok(book.make('lamp', bag, 'forge')); assert.equal(bag.count('stone'), 0);
+  let done = 0; book.timer.on('done', () => done++); book.timer.update(1); assert.equal(bag.count('lamp'), 0); book.timer.update(1.1); assert.equal(bag.count('lamp'), 1); assert.equal(done, 1, 'timed making');
+  assert.deepEqual(book.uses('stone').map(r => r.id), ['axe', 'lamp']);
+  console.log('items: stacks, take, equip kinds, split, merge, sort, save, weight, recipes, missing, stations, timed ok');
+}
+{
+  const { Adventure } = await import('../src/kit/adventure.js');
+  const adv = new Adventure({ start: 'hall' }), said = []; adv.on('say', t => said.push(t));
+  adv.room('hall', { map: [0, 0] }).spot('door', { x: 300, y: 200, w: 60, h: 160, look: 'Oak.', exit: 'lib', locked: 'Locked.' })
+    .spot('key', { x: 80, y: 500, r: 20, take: true, took: 'Got it.' }).spot('rug', { poly: [[100, 600], [260, 600], [240, 640], [120, 640]], look: 'Lumpy.', when: () => !adv.flag('moved') })
+    .spot('chest', { x: 300, y: 500, w: 80, h: 60, z: 1, look: 'A chest.' });
+  adv.room('lib', { map: [1, 0] }).spot('back', { x: 10, y: 300, w: 20, h: 600, exit: 'hall' });
+  adv.rule('key', 'door', () => { adv.unlock('hall', 'door'); return 'Click!'; });
+  adv.rule('rope', 'hook', () => { adv.bag.add('grapple'); return 'A grapple.'; });
+  assert.equal(adv.tap(300, 200).did, 'locked'); assert.equal(adv.tap(0, 0).did, 'nothing'); assert.equal(adv.tap(180, 620).text, 'Lumpy.', 'polygon spots');
+  assert.equal(adv.tap(80, 505).did, 'take'); assert.ok(adv.bag.has('key')); assert.equal(adv.at(80, 505), null, 'taken things are gone');
+  assert.equal(adv.tap(300, 500, 'key').did, 'cant'); assert.ok(adv.bag.has('key'), 'a wrong use keeps the item');
+  assert.equal(adv.tap(300, 200, 'key').text, 'Click!'); assert.ok(!adv.bag.has('key'), 'used up');
+  assert.equal(adv.tap(300, 200).did, 'exit'); assert.equal(adv.here, 'lib');
+  adv.flag('moved', true); assert.equal(adv.spots('hall').some(s => s.id === 'rug'), false, 'when() hides a spot');
+  const m = adv.map(); assert.equal(m.length, 2); assert.deepEqual(m.find(r => r.id === 'hall').links, ['lib']); assert.ok(m.find(r => r.id === 'lib').here);
+  adv.bag.add('rope'); adv.bag.add('hook'); assert.equal(adv.combine('hook', 'rope'), 'A grapple.'); assert.ok(adv.bag.has('grapple') && !adv.bag.has('rope'), 'combine either way round');
+  const back = new Adventure({ start: 'hall' }); back.room('hall'); back.room('lib'); back.load(JSON.parse(JSON.stringify(adv.save())));
+  assert.equal(back.here, 'lib'); assert.ok(back.flag('moved') && back.bag.has('grapple') && back.unlocked.has('hall:door'), 'save and load');
+  assert.deepEqual(said.slice(0, 2), ['Locked.', 'Lumpy.'], 'tapping nothing says nothing');
+  console.log('adventure: hotspots (rect, circle, polygon, z), take, use, locks, exits, when, map, combine, save ok');
+}
+{
+  const { HexMap, Iso } = await import('../src/kit/hex.js');
+  for (const pointy of [true, false]) {
+    const m = new HexMap({ size: 10, pointy, w: 6, h: 5, x: 5, y: 7 }); assert.equal(m.list.length, 30);
+    for (const c of m.list) assert.equal(m.at(c.x + 2, c.y - 2), c, 'a tap finds its hex');
+    assert.equal(m.at(-50, -50), null); const mid = m.list.find(c => m.neighbours(c).length === 6); assert.ok(mid, 'inner cells have six neighbours');
+    for (const n of m.neighbours(mid)) assert.equal(m.distance(mid, n), 1);
+  }
+  const h = new HexMap({ size: 10, shape: 'hex', radius: 3 }); assert.equal(h.list.length, 37, 'a hex of radius 3 has 37 cells');
+  assert.ok(Math.abs(Math.min(...h.list.flatMap(c => c.corners.map(p => p[0])))) < 1e-6, 'its corner at x');
+  const centre = h.list.find(c => h.neighbours(c).length === 6 && h.ring(c, 3).length === 18); assert.ok(centre); assert.equal(h.range(centre, 1).length, 7);
+  const edge = h.ring(centre, 3)[0], far = h.list.find(c => h.distance(c, edge) === 6); assert.equal(h.line(edge, far).length, 7);
+  const wall = new Set(h.ring(centre, 1).slice(0, 5)); const cost = c => wall.has(c) ? Infinity : 1;
+  const p = h.path(edge, far, cost); assert.ok(p && p[0] === edge && p.at(-1) === far && !p.some(c => wall.has(c)), 'a path round the wall');
+  const r = h.reach(centre, 2, cost); assert.ok(!r.has(h.ring(centre, 1)[0]) && r.has(h.ring(centre, 1)[5]), 'reach stops at blocked hexes');
+  assert.equal(h.sees(edge, far, c => c === centre), !h.line(edge, far).slice(1, -1).includes(centre));
+  centre.data.town = 1; const h2 = new HexMap({ size: 10, shape: 'hex', radius: 3 }).load(JSON.parse(JSON.stringify(h.save()))); assert.equal(h2.cell(centre.q, centre.r).data.town, 1, 'save and load');
+  const iso = new Iso({ tw: 32, th: 16, x: 100, y: 20 }); const s = iso.toScreen(3, 2); const t = iso.toTile(s.x, s.y);
+  assert.ok(Math.abs(t.tx - 3) < 1e-9 && Math.abs(t.ty - 2) < 1e-9, 'iso screen and back'); assert.deepEqual(iso.sort([{ tx: 2, ty: 2 }, { tx: 0, ty: 1 }]).map(o => o.tx), [0, 2]);
+  console.log('hex: taps (pointy and flat), neighbours, hex shape, range, ring, line, path, reach, sight, save; iso ok');
+}
+{
+  const { Select, formation, FlowField, BuildGrid, target } = await import('../src/kit/rts.js');
+  const U = [{ x: 10, y: 10, kind: 'a' }, { x: 50, y: 12, kind: 'a' }, { x: 200, y: 200, kind: 'b' }, { x: 300, y: 20, kind: 'a' }];
+  const sel = new Select(() => U);
+  sel.down(0, 0); sel.move(60, 30); assert.ok(sel.box); assert.ok(sel.up(60, 30)); assert.deepEqual(sel.list, [U[0], U[1]], 'box select');
+  sel.down(198, 201); assert.ok(sel.up(198, 201)); assert.deepEqual(sel.list, [U[2]], 'tap select');
+  sel.down(500, 500); assert.equal(sel.up(500, 500), false, 'a tap on nothing is an order'); assert.deepEqual(sel.list, [U[2]]);
+  sel.down(11, 10); sel.up(11, 10); sel.down(11, 10); sel.up(11, 10); assert.equal(sel.list.length, 3, 'double tap picks the kind');
+  for (const shape of ['grid', 'line', 'wedge', 'circle']) {
+    const f = formation(U, 100, 100, { shape, gap: 20 }); assert.equal(new Set(f.map(p => p[1])).size, 4, shape + ': a place each');
+    for (const [, a] of f) for (const [, b] of f) if (a !== b) assert.ok(Math.hypot(a.x - b.x, a.y - b.y) > 10, shape + ': places apart');
+  }
+  const bg = new BuildGrid(10, 10, 10); assert.ok(bg.place({}, 4, 0, 1, 9)); assert.equal(bg.fits(3, 0, 2, 2), false); const sn = bg.snap(12, 12, 2, 2); assert.deepEqual([sn.tx, sn.ty, sn.ok], [0, 0, true]);
+  const ff = new FlowField(10, 10, 10, (tx, ty) => bg.free(tx, ty) ? 1 : Infinity).to(8, 1);
+  let p = { x: 15, y: 15 }; for (let i = 0; i < 400 && ff.at(...Object.values(ff.tile(p.x, p.y))) > 0; i++) { const d = ff.dir(p.x, p.y); p.x += d.x * 2; p.y += d.y * 2; assert.ok(bg.free(Math.floor(p.x / 10), Math.floor(p.y / 10)), 'steers round the wall'); }
+  assert.deepEqual(ff.tile(p.x, p.y), { tx: 8, ty: 1 }, 'flow field reaches the goal');
+  const foes = [{ x: 0, y: 30, left: 5, hp: 3 }, { x: 0, y: 60, left: 2, hp: 9 }, { x: 0, y: 500, left: 0, hp: 1 }];
+  assert.equal(target({ x: 0, y: 0 }, foes, { range: 100 }), foes[1], 'first: furthest along, in range'); assert.equal(target({ x: 0, y: 0 }, foes, { by: 'near' }), foes[0]); assert.equal(target({ x: 0, y: 0 }, foes, { by: 'strong' }), foes[1]);
+  console.log('rts: box, tap, double tap, orders, formations, build grid, flow field, targets ok');
+}
+{
+  const { Reader, Fighter, clash } = await import('../src/kit/fight.js');
+  const F = 1 / 60, r = new Reader(), step = (x, y, b = {}, n = 2, facing = 1) => { for (let i = 0; i < n; i++) r.feed(x, y, b, F, facing); };
+  step(0, -1); step(1, -1); step(1, 0); step(1, 0, { P: true }); assert.ok(r.did('236P'), 'quarter circle forward');
+  step(0, 0, { P: false }, 2); assert.equal(r.did('236P'), false, 'the press was taken');
+  step(0, 0, {}, 40); step(0, -1); step(-1, -1); step(-1, 0, {}, 2, 1); step(-1, 0, { P: true }, 1, 1); assert.equal(r.did('236P'), false, 'the wrong way round');
+  step(0, 0, { P: false }, 40); step(1, 0); step(0, 0); step(1, 0); assert.ok(r.did('66'), 'dash'); step(0, 0, {}, 60); step(1, 0); assert.equal(r.did('66'), false, 'too slow is not a dash');
+  step(0, -1, {}, 2, -1); step(-1, -1, {}, 2, -1); step(-1, 0, { K: true }, 2, -1); assert.ok(r.did('236K'), 'forward follows facing');
+  step(0, 0, { P: true }, 1); step(0, 0, { P: false }, 5); assert.ok(r.take('P'), 'a press is kept in the buffer'); step(0, 0, { P: true }, 1); step(0, 0, { P: false }, 20); assert.equal(r.take('P'), false, 'and lets go after it');
+  const M = { jab: { start: 3, active: 2, recover: 6, hit: [[10, -50, 30, 14]], damage: 4, stun: 12, cancel: ['fb'] }, fb: { start: 10, active: 1, recover: 20, input: '236P' }, low: { start: 2, active: 2, recover: 4, hit: [[10, -10, 30, 10]], low: true } };
+  step(0, 0, {}, 30); step(0, -1); step(1, -1); step(1, 0, { P: true }); assert.equal(r.special(M), 'fb');
+  const a = new Fighter(M, { x: 0 }), b = new Fighter(M, { x: 40, facing: -1 }); let hits = 0; a.on('hit', () => hits++);
+  assert.ok(a.start('jab')); assert.equal(a.start('jab'), false, 'busy'); a.update(F * 2); assert.equal(a.phase, 'start'); assert.equal(clash(a, b), null);
+  a.update(F * 1.5); assert.equal(a.phase, 'active'); const h = clash(a, b); assert.ok(h && !h.blocked && b.stun === 12 && hits === 1); assert.equal(clash(a, b), null, 'one hit per move');
+  assert.ok(a.stop > 0); a.update(.2); assert.ok(a.canCancel('fb') && a.start('fb'), 'cancel after a hit');
+  const e = new Fighter(M, { x: 0 }), g = new Fighter(M, { x: 40, facing: -1 }); g.blocking = true; e.start('jab'); e.update(F * 3.5); assert.ok(clash(e, g).blocked, 'blocked high'); assert.equal(g.stun, 6, 'block stun is half');
+  const i = new Fighter(M, { x: 0 }), j = new Fighter(M, { x: 40, facing: -1 }); j.blocking = true; i.start('low'); i.update(F * 2.5); assert.equal(clash(i, j).blocked, false, 'a low hits a standing block');
+  for (let k = 0; k < 60; k++) i.update(F); assert.equal(i.phase, 'idle', 'the move ends');
+  console.log('fight: motions, dash, facing, buffer, specials, frames, boxes, one hit, hit stop, cancels, block, low ok');
+}
+{
+  const { Bullets, Emitter } = await import('../src/kit/bullets.js');
+  const b = new Bullets({ max: 100, w: 300, h: 300 }), ring = new Emitter(b, { every: .5, rotate: .1, times: 3 }).ring(8, 50);
+  ring.update(0, 150, 150); assert.equal(b.count, 8, 'a ring of eight'); ring.update(1.2, 150, 150); assert.equal(b.count, 24); assert.ok(ring.done); ring.update(5, 150, 150); assert.equal(b.count, 24, 'stops after times');
+  b.update(1); let far = 0; b.each((x, y) => { far = Math.max(far, Math.hypot(x - 150, y - 150)); }); assert.ok(Math.abs(far - 50) < 1, 'moved at their speed');
+  for (let i = 0; i < 40; i++) b.update(.25); assert.equal(b.count, 0, 'gone off screen');
+  const p = { x: 150, y: 290 }, aimed = new Emitter(b, { every: 1 }).spread(3, .4, 100, () => p); aimed.update(0, 150, 10);
+  let mid = null; b.each((x, y, k, a) => { if (Math.abs(a - Math.PI / 2) < 1e-6) mid = a; }); assert.ok(mid, 'aimed at the player');
+  b.clear(); const i = b.fire(100, 100, 0, 0); assert.equal(b.hit(130, 100, 3, 0).hit, -1); const g = b.hit(112, 100, 3, 10); assert.equal(g.grazed, 1, 'a graze'); assert.equal(b.hit(112, 100, 3, 10).grazed, 0, 'once');
+  assert.ok(b.hit(103, 100, 3, 10).hit >= 0); assert.equal(b.count, 0, 'the hit bullet goes'); void i;
+  b.fire(0, 150, 100, 0, { home: 3 }); for (let k = 0; k < 30; k++) b.update(1 / 30, { x: 150, y: 50 }); let hy = 0; b.each((x, y) => { hy = y; }); assert.ok(hy < 140, 'homing turns towards the target');
+  b.clear(); for (let k = 0; k < 150; k++) b.fire(150, 150, 1, 0); assert.equal(b.count, 100, 'never more than max');
+  let pts = 0; assert.equal(b.clear(() => pts++, 150, 150, 10), 100); assert.equal(pts, 100, 'clearing into points');
+  console.log('bullets: ring, rotate, times, speed, off screen, aimed spread, hit, graze, homing, max, clear ok');
+}
+{
+  const { Sand, M } = await import('../src/kit/sand.js');
+  const s = new Sand(60, 80); s.fill((x, y) => y >= 70 ? M.DIRT : x === 0 || x === 59 ? M.WALL : M.EMPTY);
+  s.paint(30, 10, 5, M.SAND); const n = s.count(M.SAND); for (let i = 0; i < 200; i++) s.step();
+  assert.equal(s.count(M.SAND), n, 'sand is kept'); assert.equal(s.get(30, 69), M.SAND, 'sand falls to the ground'); assert.ok(s.solid(30, 69));
+  let top = 99; for (let y = 0; y < 80; y++) if (s.get(30, y) === M.SAND) { top = y; break; } assert.ok(top > 55, 'and spreads into a pile');
+  const w = new Sand(40, 40); w.fill((x, y) => y >= 35 || x === 0 || x === 39 ? M.WALL : M.EMPTY); w.paint(20, 5, 4, M.OIL); w.paint(20, 15, 4, M.WATER);
+  for (let i = 0; i < 400; i++) w.step(); let oilY = 0, waterY = 0, no = 0, nw = 0;
+  for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) { if (w.get(x, y) === M.OIL) { oilY += y; no++; } if (w.get(x, y) === M.WATER) { waterY += y; nw++; } }
+  assert.ok(oilY / no < waterY / nw, 'oil floats on water'); assert.ok(Math.max(...[...Array(38)].map((_, x) => w.get(x + 1, 34) === M.WATER ? 1 : 0)) === 1, 'water spreads along the floor');
+  const f = new Sand(30, 30); f.fill((x, y) => y >= 20 && y < 25 && x > 5 && x < 25 ? M.WOOD : M.EMPTY); const wood = f.count(M.WOOD); f.set(15, 19, M.FIRE);
+  for (let i = 0; i < 600; i++) { f.step(); if (i % 40 === 0) f.paint(15, 19, 1, M.FIRE); } assert.ok(f.count(M.WOOD) < wood, 'fire burns wood');
+  const g = new Sand(40, 40); g.fill((x, y) => y > 20 ? M.DIRT : M.EMPTY); const gone = g.blast(20, 25, 5, { fire: false });
+  assert.ok(gone > 60 && g.get(20, 25) === M.EMPTY, 'a blast makes a hole'); assert.ok(g.count(M.SAND) > 0, 'and loose rubble');
+  const l = new Sand(40, 40); l.fill((x, y) => y >= 35 || x === 0 || x === 39 ? M.WALL : y >= 30 && x < 20 ? M.WATER : y >= 30 && x >= 30 ? M.WOOD : M.EMPTY);
+  l.paint(20, 10, 4, M.LAVA); const wood2 = l.count(M.WOOD); for (let i = 0; i < 900; i++) l.step();
+  assert.ok(l.count(M.STONE) > 0, 'water cools lava to stone'); assert.ok(l.solid(...(() => { for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) if (l.get(x, y) === M.STONE) return [x, y]; })()), 'stone is solid');
+  assert.ok(l.count(M.WOOD) < wood2 || l.count(M.FIRE) > 0, 'lava sets wood alight');
+  console.log('sand: falling, piles, oil on water, flowing, fire, lava to stone, blasts ok');
+}
+{
+  const { creature, face, item, building, sprite, name } = await import('../src/kit/art.js');
+  const strip = o => JSON.stringify(o, (k, v) => typeof v === 'function' ? undefined : v);
+  for (const f of [creature, face, item, building]) { assert.equal(strip(f(7)), strip(f(7)), f.name + ': the same seed, the same thing'); assert.notEqual(strip(f(7)), strip(f(8)), f.name + ': another seed, another'); }
+  const calls = []; const c = new Proxy({}, { get: (t, k) => k in t ? t[k] : (...a) => { calls.push(k); return { addColorStop() {} }; }, set: (t, k, v) => { t[k] = v; return true; } });
+  for (let i = 0; i < 20; i++) { creature(i).draw(c, 0, 0, 50, 1); face(i).draw(c, 0, 0, 50); item(i).draw(c, 0, 0, 40); building(i).draw(c, 0, 0, 100, 1); } assert.ok(calls.length > 500, 'they draw');
+  assert.equal(creature(3, { hue: 120 }).colour.hue, 120, 'a colour family'); assert.ok(['common', 'uncommon', 'rare', 'epic', 'legendary'].includes(item(5).rarity));
+  const rare = [...Array(400)].map((_, i) => item(i).rarity).filter(r => r === 'legendary').length; assert.ok(rare < 10, 'legendary is rare');
+  const sp = sprite(4, 10, 8); for (let y = 0; y < 8; y++) for (let x = 0; x < 10; x++) assert.equal(sp.mask[y * 10 + x], sp.mask[y * 10 + 9 - x], 'mirrored');
+  assert.ok(sp.mask.some(v => v === 1) && sp.mask.some(v => v === 2), 'a body and an outline');
+  assert.equal(name(5), name(5)); assert.match(name(9, 'place'), /^[A-Z][a-z]+$/); assert.match(name(2), /^[A-Z][a-z]+$/);
+  console.log('art: seeded creatures, faces, items, buildings, rarity, mirrored sprites, names ok');
+}
+{
+  const { Pitch, Team } = await import('../src/kit/sports.js');
+  const P = new Pitch({ w: 300, h: 500 }), rnd = () => .5, home = new Team(P, 0, { formation: 'k-2-2', rnd }), away = new Team(P, 1, { formation: '2-2', rnd });
+  assert.equal(home.players.length, 5); assert.ok(home.players[0].y > 470, 'team 0 defends the bottom: its keeper starts there');
+  const ball = { x: 150, y: 250, vx: 0, vy: 0, owner: null };
+  let plan = home.think({ ball, foes: away.players }); const chasers = [...plan.values()].filter(a => a.do === 'chase'); assert.equal(chasers.length, 1, 'one goes for the ball');
+  assert.equal(plan.get(home.players[0]).do, 'keep', 'the keeper keeps');
+  const h1 = home.home(home.players[3], { x: 150, y: 100 }), h2 = home.home(home.players[3], { x: 150, y: 450 }); assert.ok(h1.y < h2.y, 'the formation slides up with the ball');
+  const striker = home.players[3]; striker.x = 150; striker.y = 80; ball.owner = striker; ball.x = 150; ball.y = 80;
+  for (const f of away.players) { f.x = 20; f.y = 480; } home.thinkT = 0; plan = home.think({ ball, foes: away.players }); assert.equal(plan.get(striker).do, 'shoot', 'clear in front of goal: shoot');
+  assert.ok(plan.get(striker).kick.y < 0, 'towards the top goal');
+  striker.y = 400; ball.y = 400; const mate = home.players[4]; mate.x = 220; mate.y = 200; away.players[0].x = 128; away.players[0].y = 405;
+  home.thinkT = 0; plan = home.think({ ball, foes: away.players }); assert.equal(plan.get(striker).do, 'pass', 'pressed far out: pass'); assert.equal(plan.get(striker).to, mate);
+  ball.owner = away.players[1]; away.players[1].x = 100; away.players[1].y = 300; home.thinkT = 0; plan = home.think({ ball, foes: away.players });
+  assert.ok([...plan.values()].some(a => a.do === 'mark'), 'without the ball: mark');
+  const human = home.players[2]; human.human = true; home.thinkT = 0; assert.ok(!home.think({ ball, foes: away.players }).has(human), 'the human is left alone');
+  console.log('sports: formation, keeper, chase, slide, shoot, pass under pressure, marking, human ok');
+}
+{
+  const { Streams, Flood } = await import('../src/kit/flow.js'); const { Path } = await import('../src/kit/paths.js');
+  // 2D
+  const w = new Streams(); const r = w.river(new Path([[0, 100], [400, 100]], { kind: 'line' }), { width: 40, speed: 50 });
+  let h = w.at({ x: 200, y: 100 }); console.log(h.speed, h.current, h.edge);
+  assert.ok(h.in && h.current.x > 49 && Math.abs(h.current.y) < 1e-6);
+  const hb = w.at({ x: 200, y: 118 }); assert.ok(hb.in && hb.speed < h.speed && hb.edge > .8, 'slower at the bank'); assert.ok(!w.at({ x: 200, y: 130 }).in);
+  r.rock(200, 0, 5); const front = w.at({ x: 194, y: 100.5 }), past = w.at({ x: 200, y: 108 }); console.log('rock', front.current, past.current, past.foam);
+  assert.ok(Math.abs(front.current.x) < 30, 'slowed before the rock'); assert.ok(past.speed > 50, 'faster past its side');
+  assert.equal(w.at({ x: 200, y: 101 }).speed, 0, 'none inside');
+  const boat = { x: 50, y: 100 }; for (let i = 0; i < 60; i++) w.carry(boat, 1 / 60); assert.ok(Math.abs(boat.x - 100) < 2, 'carried');
+  const lava = w.pool({ x: 600, y: 600 }, 20, { kind: 'lava' }); const hero = { x: 600, y: 600 }; let ev = [];
+  w.on('enter', (o, s) => ev.push('in ' + s.kind)).on('leave', (o, s) => ev.push('out ' + s.kind));
+  assert.equal(w.hurt(hero, .5), 15); hero.x = 700; assert.equal(w.hurt(hero, .5), 0); assert.deepEqual(ev, ['in lava', 'out lava']);
+  const wh = w.whirl({ x: 0, y: 600 }, 30, 4, 2); const q = w.at({ x: 20, y: 600 }); console.log('whirl', q.current); assert.ok(q.current.y > 0 && q.current.x < 0);
+  // 3D with a waterfall
+  const w3 = new Streams({ space: '3d' });
+  const fallR = w3.river(new Path([{ x: 0, y: 10, z: 0 }, { x: 20, y: 10, z: 0 }, { x: 21, y: 0, z: 0 }, { x: 40, y: 0, z: 0 }], { kind: 'line' }), { width: 6, speed: 3 });
+  const top = w3.at({ x: 10, y: 10, z: 1 }), fall = w3.at({ x: 20.6, y: 5, z: 0 }), low = w3.at({ x: 30, y: 0, z: 0 });
+  assert.ok(top.in && !top.fall && top.current.x > 2.5 && Math.abs(top.current.y) < 1e-9 && Math.abs(top.level - 10) < .01);
+  assert.ok(fall.fall && fall.current.y < -1, 'a waterfall pulls down'); assert.ok(Math.abs(low.level) < .01);
+  // a bowl on the left, a hill on the right
+  const f = new Flood({ size: 40, cells: 80, ground: (x, z) => x < 0 ? Math.hypot(x + 10, z) * .1 - 1 : 2 - Math.hypot(x - 10, z) * .1 });
+  f.add(10, 0, 30, 2); const v0 = f.volume(); console.log('v0', v0);
+  for (let i = 0; i < 60 * 20; i++) f.update(1 / 60);
+  assert.ok(Math.abs(f.volume() - v0) < v0 * 1e-3, 'water is kept');
+  assert.ok(f.depth(10, 0) < .01 && f.depth(-10, 0) > .3, 'runs off the hill into the hollow');
+  assert.ok(Math.abs(f.level(-10, 0) - f.level(-8, 1)) < .02, 'and settles flat');
+  const d = new Flood({ size: 20, cells: 20, edges: 'drain' }); d.add(0, 0, 10, 3); for (let i = 0; i < 600; i++) d.update(1 / 60); console.log('drained', d.volume()); assert.ok(d.volume() < 9);
+  const p = new Flood({ size: 20, cells: 20 }); const tap = p.pour(0, 0, 2, 1); for (let i = 0; i < 300; i++) p.update(1 / 60); console.log('poured', p.volume()); assert.ok(Math.abs(p.volume() - 10) < .2);
+  const c = new Flood({ size: 20, cells: 40, ground: (x) => -x * .05 }); c.add(-8, 0, 20, 2); for (let i = 0; i < 40; i++) c.update(1 / 60); console.log('current', c.current(-6, 0)); assert.ok(c.current(-6, 0).x > .1, 'flows downhill');
+  console.log('flow: current, banks, rocks, carry, lava hurt, whirlpools, waterfalls, flood fills hollows, drains, taps, runs downhill ok');
+}
+{
+  const { Quiz, categories, loadTrivia, CREDIT } = await import('../src/kit/trivia.js');
+  assert.throws(() => new Quiz(), /still loading/, 'loads first'); await loadTrivia();
+  const cats = categories(); assert.ok(cats.length >= 10 && cats.every(c => c.count > 0), 'categories'); assert.ok(CREDIT.includes('CC BY-SA'));
+  const a = new Quiz({ seed: 7 }), b = new Quiz({ seed: 7 }), qa = a.next(), qb = b.next();
+  assert.deepEqual(qa, qb, 'same seed, same quiz'); assert.equal(qa.correct, undefined, 'the answer is not given away');
+  const total = a.left + 1, ids = new Set([qa.id]); let q;
+  while ((q = a.next())) { assert.ok(!ids.has(q.id), 'no repeats'); ids.add(q.id); assert.ok(q.answers.length === (q.kind === 'truefalse' ? 2 : 4)); }
+  assert.equal(ids.size, total, 'asks every question once'); assert.equal(a.next(), null);
+  const s = new Quiz({ categories: 'animals', difficulty: 'easy', kind: 'choice', seed: 'day' });
+  for (let i = 0; i < 5; i++) { const x = s.next(); assert.equal(x.categoryId, 'animals'); assert.equal(x.difficulty, 'easy'); assert.equal(x.kind, 'choice'); }
+  const c = new Quiz({ climb: 2, seed: 3 }); c.next(); assert.equal(c.difficulty, 'easy');
+  const right = () => c.answer(c.q.correct); right(); assert.equal(c.answer(0).streak >= 0, true, 'a second answer to one question is ignored'); c.next(); right();
+  assert.equal(c.difficulty, 'medium', 'two right: up a level'); assert.equal(c.score, 2); assert.equal(c.streak, 2);
+  const nq = c.next(); assert.equal(nq.difficulty, 'medium'); const r = c.answer((c.q.correct + 1) % nq.answers.length);
+  assert.ok(!r.right && r.streak === 0 && c.difficulty === 'easy', 'a miss: back down'); assert.equal(c.best, 2);
+  const f = new Quiz({ kind: 'choice', seed: 1 }); f.next(); const gone = f.fifty(); assert.equal(gone.length, 2); assert.ok(!gone.includes(f.q.correct), '50:50 keeps the right one');
+  const g = new Quiz({ seed: 9 }); const first = [g.next(), g.next(), g.next()].map(x => x.id); const saved = g.pack(); assert.ok(JSON.stringify(saved).length < 40, 'small save');
+  const h = new Quiz({ seed: 1, resume: saved }), n = h.next(); assert.ok(!first.includes(n.id), 'resumes without repeats'); assert.equal(n.id, g.next().id, 'and in the same order');
+  console.log('trivia: bank, categories, seeded order, no repeats, filters, climb, 50:50, pack/resume ok');
+}
+{
   const { dungeon, cave, maze, islands, pattern, fov, loadGen, proven, reach } = await import('../src/kit/gen.js');
   await loadGen();
   const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });

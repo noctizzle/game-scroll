@@ -855,6 +855,171 @@ export interface Drag {
   down(x: number, y: number, id?: number): DragThing | null; move(x: number, y: number, id?: number): void; up(x: number, y: number, id?: number): void;
   place(p: DragThing, s: DragThing | null): Drag; update(dt: number): Drag;
 }
+export interface History<S = Loose> {
+  max: number; at: number; undos: number; redos: number; readonly steps: { state: S; label: string }[];
+  readonly canUndo: boolean; readonly canRedo: boolean; readonly undoLabel: string | null; readonly redoLabel: string | null; readonly back: number; readonly ahead: number;
+  on(ev: 'change' | 'undo' | 'redo', fn: (h: History<S>) => void): History<S>;
+  push(state: S, label?: string, o?: { merge?: string | number | null }): History<S>; group(state: S, label: string, fn: () => void): History<S>;
+  undo(n?: number): S | null; redo(n?: number): S | null; now(i?: number): S; restart(): S; clear(state: S): History<S>;
+  pack(keep?: number): Loose; unpack(d: Loose): History<S>;
+}
+export interface HistoryPart { History: new <S = Loose>(start: S, o?: { max?: number }) => History<S> }
+export interface ItemDef { stack?: number; kind?: string; weight?: number; [k: string]: Loose }
+export interface ItemStack { id: string; n: number }
+export interface Inventory {
+  defs: Record<string, ItemDef>; slots: (ItemStack | null)[]; equip: Record<string, ItemStack | null>; extra: Record<string, string>; readonly weight: number; readonly free: number;
+  on(ev: 'add' | 'take' | 'full' | 'move' | 'sort', fn: (...a: Loose[]) => void): Inventory;
+  count(id: string): number; has(id: string, n?: number): boolean; all(): ItemStack[]; add(id: string, n?: number): number; take(id: string, n?: number): boolean;
+  at(where: number | string): ItemStack | null; fits(s: ItemStack | null, where: number | string): boolean; move(from: number | string, to: number | string, n?: number): boolean;
+  split(from: number | string): number; sort(by?: ((a: string, b: string) => number) | null): Inventory; save(): Loose; load(d: Loose): Inventory;
+}
+export interface Recipe { id: string; needs: Record<string, number>; makes: number; keep: string[]; at: string | null; time: number; name: string }
+export interface CraftJob { recipe: Recipe; left: number; inv: Loose }
+export interface Recipes {
+  list: Recipe[];
+  add(id: string, needs: Record<string, number>, o?: { makes?: number; keep?: string[]; at?: string | null; time?: number; name?: string }): Recipes;
+  recipe(id: string, inv?: Loose, at?: string | null): Recipe | null; missing(id: string, inv: Loose, at?: string | null): Record<string, number> | null;
+  can(inv: Loose, at?: string | null): Recipe[]; times(id: string, inv: Loose, at?: string | null): number; uses(item: string): Recipe[]; make(id: string, inv: Loose, at?: string | null): Recipe | null;
+  timer: { jobs: CraftJob[]; on(ev: 'done', fn: (r: Recipe, over: number) => void): Loose; progress(job: CraftJob): number; update(dt: number): void; clear(): void };
+}
+export interface ItemsPart {
+  Inventory: new (defs?: Record<string, ItemDef>, o?: { slots?: number; extra?: Record<string, string>; stack?: number; weight?: number }) => Inventory;
+  Recipes: new (defs?: Record<string, ItemDef>) => Recipes;
+}
+export interface AdvSpot { id: string; room: string; x?: number; y?: number; w?: number; h?: number; r?: number; poly?: [number, number][]; z?: number; look?: string | ((s: AdvSpot) => string); take?: boolean | string; took?: string; exit?: string; locked?: string | boolean; talk?: string | ((s: AdvSpot) => string); cant?: string | ((item: string) => string); when?: () => boolean; walk?: [number, number]; [k: string]: Loose }
+export interface AdvRoom { id: string; name: string; spots: AdvSpot[]; map?: [number, number]; spot(id: string, s: Partial<AdvSpot>): AdvRoom; [k: string]: Loose }
+export interface AdvResult { spot: AdvSpot | null; did: 'take' | 'exit' | 'use' | 'look' | 'talk' | 'locked' | 'cant' | 'nothing'; text: string | null }
+export interface Adventure {
+  rooms: Map<string, AdvRoom>; here: string; seen: Set<string>; flags: Record<string, Loose>; bag: Loose; lines: { nothing: string; cant: string };
+  on(ev: 'say' | 'enter' | 'take' | 'exit' | 'use' | 'look' | 'talk' | 'locked' | 'cant' | 'nothing' | 'flag' | 'combine', fn: (...a: Loose[]) => void): Adventure;
+  room(id: string, o?: { map?: [number, number]; name?: string; [k: string]: Loose }): AdvRoom; spot(id: string, room?: string): AdvSpot | null; spots(room?: string): AdvSpot[]; at(x: number, y: number, room?: string): AdvSpot | null;
+  rule(item: string, target: string, fn: (spot: AdvSpot | null, item: string, other?: string) => string | void, o?: { keep?: boolean }): Adventure;
+  flag(k: string): Loose; flag(k: string, v: Loose): Adventure; unlock(room: string, spot: string): Adventure; isLocked(s: AdvSpot): boolean; go(room: string): Adventure; say(text: string, spot?: AdvSpot): string;
+  tap(x: number, y: number, item?: string | null): AdvResult; act(s: AdvSpot, item?: string | null, verb?: 'look' | null): AdvResult; combine(a: string, b: string): string | null;
+  walkTo(s: AdvSpot, floorY?: number | null): { x: number; y: number };
+  map(): { id: string; name: string; col: number; row: number; here: boolean; links: string[] }[];
+  drawMap(c: CanvasRenderingContext2D, x: number, y: number, o?: { w?: number; h?: number; gap?: number; room?: string; here?: string; line?: string; text?: string; font?: string }): void;
+  save(): Loose; load(d: Loose): Adventure;
+}
+export interface AdventurePart { Adventure: new (o?: { start?: string | null; bag?: Loose }) => Adventure }
+export interface HexCell { q: number; r: number; x: number; y: number; corners: [number, number][]; data: Record<string, Loose> }
+export interface HexMap {
+  size: number; pointy: boolean; cells: Map<string, HexCell>; readonly list: HexCell[];
+  add(q: number, r: number): HexCell; remove(c: HexCell): HexMap; cell(q: number, r: number): HexCell | null; at(x: number, y: number): HexCell | null; each(fn: (c: HexCell) => void): HexMap;
+  neighbours(c: HexCell): HexCell[]; distance(a: HexCell, b: HexCell): number; line(a: HexCell, b: HexCell): HexCell[]; range(c: HexCell, n: number): HexCell[]; ring(c: HexCell, n: number): HexCell[];
+  reach(from: HexCell, moves: number, cost?: (c: HexCell, from: HexCell) => number): Map<HexCell, number>; path(a: HexCell, b: HexCell, cost?: (c: HexCell, from: HexCell) => number): HexCell[] | null;
+  sees(a: HexCell, b: HexCell, blocks?: (c: HexCell) => boolean): boolean; save(): Loose; load(d: Loose): HexMap;
+}
+export interface Iso {
+  tw: number; th: number; x: number; y: number; zh: number;
+  toScreen(tx: number, ty: number, z?: number): { x: number; y: number }; toTile(x: number, y: number): { tx: number; ty: number }; corners(tx: number, ty: number, z?: number): [number, number][];
+  sort<T extends { tx: number; ty: number; z?: number }>(list: T[]): T[];
+}
+export interface HexPart {
+  HexMap: new (o?: { size?: number; pointy?: boolean; shape?: 'rect' | 'hex' | 'none'; w?: number; h?: number; radius?: number; x?: number; y?: number }) => HexMap;
+  Iso: new (o?: { tw?: number; th?: number; x?: number; y?: number; zh?: number | null }) => Iso;
+}
+export interface XY { x: number; y: number; [k: string]: Loose }
+export interface Select<T extends XY = XY> {
+  chosen: Set<T>; readonly list: T[]; box: { x: number; y: number; w: number; h: number } | null;
+  on(ev: 'change', fn: (list: T[]) => void): Select<T>; has(t: T): boolean; set(list: T[]): Select<T>; clear(): Select<T>; near(x: number, y: number): T | null;
+  down(x: number, y: number): void; move(x: number, y: number): void; up(x: number, y: number): boolean;
+}
+export interface FlowField { w: number; h: number; size: number; dist: Float32Array; tile(x: number, y: number): { tx: number; ty: number }; to(tx: number, ty: number, force?: boolean): FlowField; at(tx: number, ty: number): number; dir(x: number, y: number): { x: number; y: number } }
+export interface BuildGrid { w: number; h: number; size: number; things: Set<Loose>; at(tx: number, ty: number): Loose; free(tx: number, ty: number): boolean; fits(tx: number, ty: number, fw?: number, fh?: number): boolean; snap(x: number, y: number, fw?: number, fh?: number): { tx: number; ty: number; x: number; y: number; ok: boolean }; place(thing: Loose, tx: number, ty: number, fw?: number, fh?: number): boolean; remove(thing: Loose): BuildGrid }
+export interface RtsPart {
+  Select: new <T extends XY = XY>(things: () => T[], o?: { radius?: number; drag?: number; kind?: (t: T) => Loose; doubleTap?: number }) => Select<T>;
+  formation<T extends XY>(units: T[], x: number, y: number, o?: { shape?: 'grid' | 'line' | 'wedge' | 'circle'; gap?: number; facing?: number | null }): [T, { x: number; y: number }][];
+  FlowField: new (w: number, h: number, size: number, cost?: (tx: number, ty: number) => number) => FlowField;
+  BuildGrid: new (w: number, h: number, size: number, o?: { blocked?: (tx: number, ty: number) => boolean }) => BuildGrid;
+  target<T extends XY>(from: XY, things: Iterable<T>, o?: { range?: number; by?: 'first' | 'last' | 'near' | 'far' | 'strong' | 'weak'; progress?: (t: T) => number; hp?: (t: T) => number }): T | null;
+}
+export type FBox = [number, number, number, number];
+export interface FightMove { start: number; active: number; recover: number; hit?: FBox[] | FBox[][]; hurt?: FBox[]; input?: string; damage?: number; stun?: number; blockStun?: number; stop?: number; low?: boolean; high?: boolean; cancel?: string[]; cancelAny?: boolean; [k: string]: Loose }
+export interface FightReader { window: number; buffer: number; dead: number; readonly dir: number; feed(x: number, y: number, buttons?: Record<string, boolean>, dt?: number, facing?: number): FightReader; take(b: string): boolean; holding(b: string): boolean; did(cmd: string): boolean; special(moves: Record<string, FightMove>): string | null; clear(): void }
+export interface Fighter {
+  moves: Record<string, FightMove>; x: number; y: number; facing: number; hp: number; maxHp: number; move: string | null; frame: number; stun: number; stop: number; blocking: boolean; blockLow?: boolean;
+  readonly phase: 'start' | 'active' | 'recover' | 'stun' | 'idle'; readonly busy: boolean;
+  on(ev: 'start' | 'active' | 'end' | 'hit' | 'blocked' | 'hurt' | 'block', fn: (...a: Loose[]) => void): Fighter;
+  canCancel(name: string): boolean; start(name: string): boolean; update(dt: number): Fighter; hitboxes(): { x: number; y: number; w: number; h: number }[]; hurtboxes(): { x: number; y: number; w: number; h: number }[];
+}
+export interface FightPart {
+  Reader: new (o?: { window?: number; buffer?: number; dead?: number }) => FightReader;
+  Fighter: new (moves: Record<string, FightMove>, o?: { x?: number; y?: number; facing?: number; hurt?: FBox[]; hp?: number }) => Fighter;
+  clash(a: Fighter, b: Fighter): { move: FightMove; name: string; blocked: boolean; x: number; y: number } | null;
+}
+export interface BulletOpts { accel?: number; turn?: number; wave?: [number, number]; home?: number; kind?: number; life?: number }
+export interface Bullets {
+  max: number; w: number; h: number; margin: number; n: number; readonly count: number; target: { x: number; y: number } | null;
+  x: Float32Array; y: Float32Array; sp: Float32Array; an: Float32Array; kind: Uint8Array;
+  fire(x: number, y: number, speed: number, angle: number, o?: BulletOpts): number; kill(i: number): void; update(dt: number, target?: { x: number; y: number } | null): void;
+  each(fn: (x: number, y: number, kind: number, angle: number, i: number) => void): void;
+  hit(x: number, y: number, r?: number, graze?: number, size?: (kind: number) => number): { hit: number; grazed: number; x: number; y: number };
+  clear(fn?: ((x: number, y: number, kind: number) => void) | null, x?: number, y?: number, r?: number): number;
+}
+type Aim = number | { x: number; y: number } | (() => { x: number; y: number } | null);
+export interface Emitter {
+  every: number; rotate: number; times: number; fired: number; on: boolean; readonly done: boolean;
+  ring(n: number, speed: number, o?: BulletOpts): Emitter; spread(n: number, arc: number, speed: number, aim?: Aim, o?: BulletOpts): Emitter; spiral(arms: number, speed: number, step?: number, o?: BulletOpts): Emitter;
+  burst(n: number, speed: number, aim: Aim, slow?: number, o?: BulletOpts): Emitter; custom(fn: (b: Bullets, x: number, y: number, angle: number, volley: number) => void): Emitter;
+  update(dt: number, x: number, y: number): number; reset(): Emitter;
+}
+export interface BulletsPart {
+  Bullets: new (o?: { max?: number; w?: number; h?: number; margin?: number }) => Bullets;
+  Emitter: new (bullets: Bullets, o?: { every?: number; rotate?: number; times?: number; delay?: number; o?: BulletOpts }) => Emitter;
+}
+export interface SandMaterials { readonly EMPTY: 0; readonly WALL: 1; readonly DIRT: 2; readonly WOOD: 3; readonly SAND: 4; readonly WATER: 5; readonly OIL: 6; readonly FIRE: 7; readonly SMOKE: 8; readonly ACID: 9; readonly STEAM: 10; readonly LAVA: 11; readonly STONE: 12 }
+export interface Sand {
+  w: number; h: number; rate: number; bg: [number, number, number, number]; t: Uint8Array;
+  get(x: number, y: number): number; set(x: number, y: number, m: number): void; solid(x: number, y: number): boolean; inside(x: number, y: number): boolean;
+  fill(fn: (x: number, y: number) => number): Sand; paint(x: number, y: number, r: number, m: number, o?: { over?: boolean; chance?: number }): Sand;
+  blast(x: number, y: number, r: number, o?: { fire?: boolean }): number; count(m: number, x?: number, y?: number, w?: number, h?: number): number;
+  update(dt: number): Sand; step(): void; colour(m: number, rgbv: [number, number, number, number]): Sand; picture(bg?: [number, number, number, number]): HTMLCanvasElement | OffscreenCanvas;
+}
+export interface SandPart { M: SandMaterials; Sand: new (w?: number, h?: number, o?: { seed?: number }) => Sand }
+export interface FlowHere { in: boolean; kind: string | null; depth: number; speed: number; current: { x: number; y: number; z: number }; edge: number; fall: boolean; foam?: number; hurt: number; level?: number; d?: number; side?: number; stream: Loose }
+export interface FlowStream { path: Loose; width: number; speed: number; depth: number; kind: string; hurt: number; push: number; readonly length: number; rock(d: number, side: number, r?: number): FlowStream; surface(d: number, side?: number): { x: number; y: number; z: number }; isFall(d: number): boolean }
+export interface FlowOptions { width?: number; speed?: number; depth?: number; kind?: 'water' | 'lava' | 'acid' | 'mud' | 'deep'; hurt?: number; push?: number; fall?: number }
+export interface FloodPart {
+  N: number; size: number; l: number; D: Float32Array; B: Float32Array; edges: 'wall' | 'drain'; rate: number;
+  ground(fn: (x: number, z: number) => number): FloodPart; pour(x: number, z: number, rate?: number, r?: number): { x: number; z: number; rate: number; r: number }; drain(x: number, z: number, rate?: number, r?: number): Loose; remove(src: Loose): FloodPart;
+  rain(rate: number): FloodPart; add(x: number, z: number, volume: number, r?: number): FloodPart; depth(x: number, z: number): number; wet(x: number, z: number, deep?: number): boolean; level(x: number, z: number): number;
+  current(x: number, z: number): { x: number; z: number; speed: number }; volume(): number; update(dt: number): FloodPart; step(h: number): void;
+}
+export interface FlowPart {
+  /** Rivers, pools, whirlpools: current that carries things, waterfalls, lava and acid that hurt. space '2d' (x, y) or '3d' (ground x, z). */
+  Streams: new (o?: { space?: '2d' | '3d' }) => On<Loose> & {
+    list: Loose[]; river(path: Loose, o?: FlowOptions): FlowStream; pool(at: { x: number; y?: number; z?: number }, r: number, o?: FlowOptions & { w?: number; h?: number; spin?: number; pull?: number }): Loose;
+    whirl(at: { x: number; y?: number; z?: number }, r: number, spin?: number, pull?: number, o?: FlowOptions): Loose; remove(s: Loose): Loose;
+    at(p: { x: number; y?: number; z?: number }): FlowHere; carry(obj: { x: number; y: number; z?: number }, dt: number, o?: { drag?: number }): FlowHere; hurt(obj: Loose, dt: number): number;
+  };
+  /** Shallow water that floods: spreads, runs downhill, fills hollows. */
+  Flood: new (o?: { size?: number; cells?: number; x?: number; z?: number; y?: number | null; ground?: (x: number, z: number) => number; edges?: 'wall' | 'drain'; damp?: number; rate?: number }) => FloodPart;
+}
+export interface ArtLook { hue?: number; palette?: string[] }
+export interface ArtColours { main: string; dark: string; light: string; accent: string; hue: number }
+export interface ArtCreature { body: 'round' | 'tall' | 'wide' | 'drop' | 'bean'; legs: number; eyes: number; horns: boolean; spots: boolean; mouth: string; wings: boolean; colour: ArtColours; draw(c: CanvasRenderingContext2D, x: number, y: number, size?: number, time?: number): void }
+export interface ArtFace { skin: string; hairCol: string; hair: string; eyes: string; mouth: string; glasses: boolean; beard: boolean; freckles: boolean; draw(c: CanvasRenderingContext2D, x: number, y: number, size?: number, mood?: number): void }
+export interface ArtItem { kind: 'sword' | 'potion' | 'gem' | 'shield' | 'key' | 'ring'; rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'; rarityColour: string; power: number; colour: ArtColours; draw(c: CanvasRenderingContext2D, x: number, y: number, size?: number): void }
+export interface ArtBuilding { floors: number; bays: number; roof: 'flat' | 'peak' | 'dome'; draw(c: CanvasRenderingContext2D, x: number, y: number, size?: number, night?: number): void }
+export interface ArtSprite { canvas: HTMLCanvasElement | OffscreenCanvas | null; mask: Uint8Array; w: number; h: number; draw(c: CanvasRenderingContext2D, x: number, y: number, scale?: number): void }
+export interface ArtPart {
+  creature(seed: number, o?: ArtLook): ArtCreature; face(seed: number, o?: { skin?: string; hair?: string }): ArtFace;
+  item(seed: number, kind?: ArtItem['kind'] | null, o?: ArtLook): ArtItem; building(seed: number, o?: ArtLook): ArtBuilding;
+  sprite(seed: number, w?: number, h?: number, colours?: string[], o?: { fill?: number }): ArtSprite; name(seed: number, kind?: 'person' | 'place' | 'thing'): string;
+}
+export interface SportsPitch { w: number; h: number; goal: number; x: number; y: number; goalFor(side: 0 | 1): { x: number; y: number; half: number }; toPitch(side: 0 | 1, u: number, v: number): { x: number; y: number }; upfield(side: 0 | 1, p: { x: number; y: number }): number }
+export interface SportsAct { do: 'chase' | 'shoot' | 'pass' | 'dribble' | 'support' | 'mark' | 'keep'; x: number; y: number; to?: Loose; kick?: { x: number; y: number; power: number } }
+export interface SportsTeam {
+  pitch: SportsPitch; side: 0 | 1; skill: number; keeper: boolean; shootRange: number; players: Loose[]; chaser: Loose; plan: Map<Loose, SportsAct>;
+  home(p: Loose, ball: { x: number; y: number }): { x: number; y: number };
+  think(world: { ball: { x: number; y: number; vx?: number; vy?: number; owner?: Loose }; mates?: Loose[]; foes?: Loose[] }, dt?: number): Map<Loose, SportsAct>;
+  kick(p: { x: number; y: number }, at: { x: number; y: number }, power: number): { x: number; y: number; power: number };
+}
+export interface SportsPart {
+  Pitch: new (o?: { w?: number; h?: number; goal?: number; x?: number; y?: number }) => SportsPitch;
+  Team: new (pitch: SportsPitch, side: 0 | 1, o?: { formation?: string | [number, number][]; skill?: number; shootRange?: number | null; keeper?: boolean | null; players?: Loose[] | null; rnd?: () => number }) => SportsTeam;
+}
 export interface DragPart { Drag: new (o?: { snap?: number; accept?: (piece: DragThing, slot: DragThing) => boolean; lift?: number; speed?: number; list?: { x: number; y: number; gap?: number; axis?: 'x' | 'y' } | null; swap?: boolean }) => Drag }
 
 export interface Earner {
@@ -1142,7 +1307,15 @@ export interface OutdoorsPart {
     hills(material: Loose, o?: { wood?: string | number[]; scale?: number; woods?: number }): { uniforms: Record<string, { value: Loose }> };
     rock(material: Loose, o?: { detail?: Loose; scale?: number; moss?: string | number[]; mossy?: number }): { uniforms: Record<string, { value: Loose }> };
     leaves(material: Loose, o?: { time?: number | { value: number }; wind?: number | { value: number } | WindPart; sun?: Loose; sway?: number; above?: number; glow?: number; atlas?: [number, number] }): { uniforms: Record<string, { value: Loose }> };
+    /** Moving water for a River mesh (its lkFlow / lkDir attributes). */
+    flow(material: Loose, o?: { deep?: string | number[]; shallow?: string | number[]; foam?: string | number[]; scale?: number; ripple?: number; froth?: number; time?: number | { value: number } }): { uniforms: Record<string, { value: Loose }> };
+    /** Molten lava for a River mesh: glowing cracks, cooling crust. */
+    lava(material: Loose, o?: { glow?: string | number[]; crust?: string | number[]; heat?: number; cool?: number; scale?: number; time?: number | { value: number }; length?: number }): { uniforms: Record<string, { value: Loose }> };
   };
+  /** Draws a gs.flow river, waterfall or pool: moving water with foam, or lava (kind 'lava'), acid, mud. update(dt) each frame. */
+  River: new (stream: Loose, o?: { step?: number; across?: number; lift?: number; look?: Loose; material?: Loose }) => { mesh: Loose; stream: Loose; look: { uniforms: Record<string, { value: Loose }> }; update(dt: number): Loose; dispose(): void };
+  /** Draws a gs.flow Flood (and runs it on the graphics chip on WebGPU when given the view). update() each frame after flood.update(dt). */
+  FloodWater: new (flood: FloodPart, o?: { view?: Loose; deep?: string; shallow?: string; opacity?: number; rough?: number; full?: number }) => { mesh: Loose; flood: FloodPart; update(): Loose; dispose(): void };
   /** One wind for a world: grass (land.wind), leaves, rain, particles, cloud shadows; at(x, z) for bullets and flags. */
   Wind: new (o?: { x?: number; z?: number; gust?: number; gustSize?: number; sway?: number; grass?: number }) => WindPart;
   /** Far stand-in for a tree: crossed cards with baked pictures of it (null without 3D). Use as a props lod level: [dist, imp.geometry, imp.material]. */
@@ -1304,6 +1477,17 @@ export interface WordsPart {
   score(word: string, o?: { values?: Record<string, number>; mult?: number }): number;
   Bag: new (o?: { size?: number; blanks?: number; seed?: number | string | null; letters?: Record<string, number> }) => { tiles: string[]; readonly left: number; shuffle(): Loose; draw(n?: number): string[]; put(...tiles: (string | string[])[]): Loose };
 }
+export interface TriviaQuestion { id: number; text: string; answers: string[]; kind: 'choice' | 'truefalse'; difficulty: 'easy' | 'medium' | 'hard'; category: string; categoryId: string; correct?: undefined }
+export interface TriviaPart {
+  /** A quiz from the question bank (loads on first use: make it in make() or reset()). Show CREDIT somewhere in the game. */
+  Quiz: new (o?: { categories?: string | string[] | null; difficulty?: 'easy' | 'medium' | 'hard' | ('easy' | 'medium' | 'hard')[] | null; kind?: 'choice' | 'truefalse' | null; climb?: boolean | number; seed?: number | string | (() => number) | null; resume?: { s: number; u: number } | null }) => {
+    score: number; asked: number; streak: number; best: number; readonly left: number; readonly difficulty: 'easy' | 'medium' | 'hard' | null;
+    next(): TriviaQuestion | null; answer(i: number): { right: boolean; correct: number; streak: number; score: number }; timeout(): { right: boolean; correct: number; streak: number; score: number };
+    fifty(): number[]; pack(): { s: number; u: number };
+  };
+  categories(): { id: string; name: string; count: number }[];
+  CREDIT: string;
+}
 export interface UINode {
   id?: string; kids: UINode[]; parent: UINode | null; box: { x: number; y: number; w: number; h: number }; clip: { x: number; y: number; w: number; h: number }; shown: boolean;
   pressed: boolean; focused: boolean; press: number; depth: number; sx: number; sy: number; contentW: number; contentH: number; data?: Loose; [k: string]: Loose;
@@ -1379,11 +1563,11 @@ export interface GS {
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
-  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
+  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; fight: FightPart; bullets: BulletsPart; sand: SandPart; flow: FlowPart; art: ArtPart; sports: SportsPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
-  outdoors: OutdoorsPart; city: CityPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; ui: UIPart;
+  outdoors: OutdoorsPart; city: CityPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; trivia: TriviaPart; ui: UIPart;
   hear: HearPart; doodle: DoodlePart; phoneai: PhoneaiPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;

@@ -144,6 +144,47 @@ async function beamsScene() {
   v.beams = null; v.cam.rotation.y -= .2; v.cam.updateMatrixWorld(); v.t = 0; v.render(x, 240, 320);
   return [[sunPic, lampPic, c.toDataURL()], window.__hd.info.backend];
 }
+// a river over a waterfall round a rock, beside a lava stream (gs.flow + gs.outdoors River: the flow and lava looks)
+async function riverScene() {
+  window.__hd.force = 2;
+  const { River } = gs.outdoors, { Streams } = gs.flow, { Path } = gs.paths;
+  const v = new gs.hd.HDView({ bg: '#8aa4c0', fog: .004, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(4, 4.5, 12); v.cam.lookAt(0, 2, -4); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 24, [-.45, 1, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const rockM = gs.hd.pbr('#6a6458', { rough: .95 });
+  const B = (w, h, d, px, py, pz) => { const m = new T.Mesh(new T.BoxGeometry(w, h, d), rockM); m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; v.scene.add(m); };
+  B(40, 4, 14, 0, 2, -13); B(40, 1, 26, 0, -.5, 7);   // a cliff and the ground below
+  const flow = new Streams({ space: '3d' });
+  const river = flow.river(new Path([{ x: -2, y: 4.02, z: -18 }, { x: -1.5, y: 4.02, z: -6.2 }, { x: -1.45, y: .1, z: -5.7 }, { x: -1, y: .02, z: 0 }, { x: -4, y: .02, z: 10 }], { kind: 'line' }), { width: 4, speed: 2.5 });
+  river.rock(16, .6, .5);
+  const lava = flow.river(new Path([{ x: 5, y: .03, z: -6 }, { x: 6, y: .03, z: 2 }, { x: 9, y: .03, z: 8 }]), { width: 2.4, speed: .6, kind: 'lava' });
+  const pool = flow.pool({ x: 5, y: .04, z: -6 }, 2.2, { kind: 'lava' });
+  const rk = new T.Mesh(new T.DodecahedronGeometry(.55, 0), rockM); const rp = river.surface(16, .6); rk.position.set(rp.x, rp.y + .1, rp.z); rk.castShadow = true; v.scene.add(rk);
+  const looks = [new River(river), new River(lava), new River(pool)];
+  for (const l of looks) { l.update(1.7); v.scene.add(l.mesh); }
+  v.bloom = .6;
+  for (let i = 0; i < 3; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
+// shallow water poured onto bumpy ground, filling the hollows (gs.flow Flood + gs.outdoors FloodWater:
+// on WebGPU the flood itself runs on the graphics chip)
+async function floodScene() {
+  window.__hd.force = 2;
+  const { FloodWater } = gs.outdoors, { Flood } = gs.flow;
+  const v = new gs.hd.HDView({ bg: '#8aa4c0', fog: .004, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 14, 16); v.cam.lookAt(0, 0, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 24, [-.45, 1, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const H = (x, z) => Math.sin(x * .35) * .9 + Math.cos(z * .3) * .8 + Math.hypot(x, z) * .12;
+  const g = new T.PlaneGeometry(24, 24, 96, 96).rotateX(-Math.PI / 2), P = g.attributes.position; for (let i = 0; i < P.count; i++) P.setY(i, H(P.getX(i), P.getZ(i))); g.computeVertexNormals();
+  const ground = new T.Mesh(g, gs.hd.pbr('#7a6a50', { rough: .95 })); ground.receiveShadow = true; v.scene.add(ground);
+  const flood = new Flood({ size: 24, cells: 64, ground: H });
+  flood.pour(-3, -2, 3, 1.2);
+  const water = new FloodWater(flood, { view: v }); v.scene.add(water.mesh);
+  for (let i = 0; i < 150; i++) { flood.update(1 / 60); water.update(); v.t = 0; v.render(x, 240, 320); if (i % 10 === 0) await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + (water.twin ? ', flood on the graphics chip' : '')];
+}
 // an outdoor valley (gs.outdoors looks, gs.sky, gs.props): painted ground with fields, a lane and mud,
 // far hills, mossy rocks, leaf cards and their impostors, a sky with clouds and its own reflections,
 // air with cloud shadows, rain-wet surfaces, a near shadow cascade, sun shafts and depth of field.
@@ -221,6 +262,8 @@ try {
   [out.people, backends.people] = await peopleScene();
   [out.room, backends.room] = await roomScene();
   { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; }
+  [out.river, backends.river] = await riverScene();
+  [out.flood, backends.flood] = await floodScene();
   [out.city, backends.city] = await cityScene();
   for (const t of [1, 3]) [out['outdoor-tier' + t], backends['outdoor-tier' + t]] = await outdoor(t);
   [out['outdoor-physical'], backends['outdoor-physical']] = await outdoor(3, true);
