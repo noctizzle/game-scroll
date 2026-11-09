@@ -72,6 +72,8 @@
 	<string>Some games use the camera, like finding real-world colours. Nothing is saved or sent.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Some games react to your voice, like shouting to launch a rocket. Audio is never recorded or sent.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Some games listen for spoken commands like "jump". Your words are understood on your phone and never sent.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CFBundleURLTypes</key>

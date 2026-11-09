@@ -17,6 +17,7 @@ dependencies {
     implementation project(':capacitor-share')
     implementation project(':game-services')
     implementation project(':native-ar')
+    implementation project(':phone-ai')
     implementation project(':rich-haptics')
 
 }

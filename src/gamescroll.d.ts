@@ -1170,6 +1170,57 @@ export interface UIPart {
   wrap(c: CanvasRenderingContext2D, text: string, width: number): string[];
 }
 
+/** gs.hear: everyday sounds (YAMNet) and spoken words, recognised on the phone itself. Always give a touch way to play. */
+export interface HearPart {
+  /** Hears everyday sounds: 'Dog', 'Whistling', 'Clapping', 'Laughter', 'Knock', 'Bell'... Make it in make() or reset(); start() from a tap. */
+  Sounds: new (o?: { want?: string[]; sure?: number; every?: number }) => {
+    ready: boolean; running: boolean; failed: unknown; top: { name: string; sure: number } | null;
+    start(): Promise<Loose>; stop(): void; update(dt?: number): Loose;
+    /** True once for each time the sound started (since the last call). */
+    heard(name: string): boolean;
+    /** How sure it is that the sound is going on now, 0..1. */
+    hearing(name: string): number;
+  };
+  /** Spoken commands. available is false on phones that can't listen on the phone itself: use touch then. */
+  Voice: new (o?: { words?: string[]; also?: Record<string, string[]>; language?: string }) => {
+    available: boolean | null; listening: boolean; heard: string[];
+    /** Call from a tap. Resolves to true if it's listening. */
+    start(): Promise<boolean>; stop(): void;
+    /** True once for each time the word was said (since the last call). */
+    said(word: string): boolean;
+  };
+}
+
+/** gs.doodle: what the player drew, from 46 things (a tiny model on the phone). */
+export interface DoodlePart {
+  /** Make it in make() or reset() (the model loads first). */
+  Doodle: {
+    new (): {
+      readonly things: string[];
+      /** Most likely first, sures adding up to 1. strokes: arrays of { x, y } or gs.strokes Strokes. */
+      guess(strokes: Loose[], o?: { among?: string[] }): { name: string; sure: number }[];
+    };
+    /** Every thing it can recognise. */
+    readonly things: string[];
+  };
+  /** The strokes drawn into a 28 x 28 picture (0..1), the way the model sees them. */
+  picture(strokes: Loose[], size?: number): Float32Array;
+  scores(img: Float32Array, model: Loose): Float32Array;
+}
+
+/** gs.phoneai: the phone's own built-in AI, for flavour only. Every ask has a fallback; play must never depend on it. */
+export interface PhoneaiPart {
+  PhoneAI: new (o?: { persona?: string; words?: number; temperature?: number; timeout?: number }) => {
+    available: boolean | null; last: string | null;
+    ready(): Promise<boolean>;
+    /** Resolves to a short checked answer, or fallback. */
+    ask(prompt: string, o?: { fallback?: string; words?: number; fresh?: boolean }): Promise<string>;
+    forget(): Loose;
+  };
+  /** Tidies a model's answer, or null if it shouldn't be shown. */
+  tidy(text: string, words?: number): string | null;
+}
+
 export interface GS {
   sound: SoundPart; device: DevicePart; util: UtilPart; math: MathPart; palettes: PalettesPart;
   juice: JuicePart; effects: { Feel: typeof Feel }; controls: ControlsPart; pad: PadPart; moves: MovesPart;
@@ -1182,6 +1233,7 @@ export interface GS {
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
   outdoors: OutdoorsPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; ui: UIPart;
+  hear: HearPart; doodle: DoodlePart; phoneai: PhoneaiPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;
   /** three.js itself. */

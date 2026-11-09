@@ -26,5 +26,8 @@ project(':game-services').projectDir = new File('../plugins/game-services/androi
 include ':native-ar'
 project(':native-ar').projectDir = new File('../plugins/native-ar/android')
 
+include ':phone-ai'
+project(':phone-ai').projectDir = new File('../plugins/phone-ai/android')
+
 include ':rich-haptics'
 project(':rich-haptics').projectDir = new File('../plugins/rich-haptics/android')

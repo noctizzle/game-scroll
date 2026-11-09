@@ -1,0 +1,13 @@
+{
+  "name": "phone-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Game Scroll's on-device smarts: speech recognition that never leaves the phone (Apple Speech with on-device recognition, Android's on-device SpeechRecognizer) and the phone's own built-in language model (Apple Foundation Models, Gemini Nano through ML Kit GenAI).",
+  "main": "index.js",
+  "files": ["index.js", "Package.swift", "ios/Sources", "android/src/main", "android/build.gradle"],
+  "capacitor": {
+    "ios": { "src": "ios" },
+    "android": { "src": "android" }
+  },
+  "peerDependencies": { "@capacitor/core": "^8.0.0" }
+}
