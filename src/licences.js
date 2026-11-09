@@ -34,6 +34,7 @@ export const OPEN_SOURCE = [
   { name: 'anime.js', for: 'animation timelines in games, by Julian Garnier', licence: 'MIT', spdx: 'MIT', packages: ['animejs'] },
   { name: 'pitchy (with fft.js)', for: 'hearing sung and whistled notes in mic games', licence: 'MIT', spdx: 'MIT', packages: ['pitchy'] },
   { name: 'Capacitor Text to Speech', for: 'characters that speak, by the Capacitor Community', licence: 'MIT', spdx: 'MIT', packages: ['@capacitor-community/text-to-speech'] },
+  { name: 'Slop New York', for: 'the city kit\'s facade looks and lit windows, and its idea of building the city round the player, by Mr.doob', licence: 'MIT', spdx: 'MIT', vendored: 'src/kit/city.js', notice: '© 2026 Mr.doob' },
   { name: 'ZzFX', for: 'sound effects, by Frank Force', licence: 'MIT', spdx: 'MIT', vendored: 'src/kit/zzfx.js' },
   { name: 'simplex-noise', for: 'noise for terrain and motion', licence: 'MIT', spdx: 'MIT', packages: ['simplex-noise'] },
   { name: 'troika-three-text', for: '3D text', licence: 'MIT', spdx: 'MIT', packages: ['troika-three-text'] },

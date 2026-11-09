@@ -1,0 +1,108 @@
+# Cities (`gs.city`)
+
+`gs.city` makes a whole 3D city from a seed number: streets and junctions, blocks of buildings with
+lit windows and shops, parks and plazas, trees and street lamps, traffic that keeps to its lanes and
+stops at the lights, and people who walk the pavements and cross at the corners. The same seed always
+makes the same city, so leaderboards stay fair. Nothing is loaded from files: the city, its textures
+and its sounds are all made in code.
+
+It works with Next Gen (`gs.hd`) views, and with any view that has `.scene` and `.cam`. As with every
+kit, the city gives answers (where the roads go, what you hit, where to put the next pickup) and your
+game sets the rules and draws its own HUD.
+
+## A city in a few lines
+
+```js
+import gs from '../gamescroll.js';
+const { HDView, sun } = gs.hd, { City } = gs.city, { Sky } = gs.sky;
+
+let v, light, sky, city;
+function setup() {
+  v = new HDView({ fog: .003 }); v.cam.far = 900; v.cam.updateProjectionMatrix();
+  light = sun('#ffc890', 2.4, 60); v.scene.add(light, light.target); v.onTier(T => light.setTier(T));
+  sky = new Sky(v, { time: 18.3, sun: light, physical: true });
+  city = new City(v, { seed: 7, blocks: 6, style: 'downtown', sky });   // sky: windows light up as it gets dark
+}
+function make(api) {
+  return {
+    reset() { if (!v) setup(); city.reset(); /* your player at city.start */ },
+    update(dt) {
+      city.avoid(player, 1.4);          // cars brake for the player
+      city.update(dt, player);          // builds what's coming into view, moves cars and people
+      sky.update(dt);
+    },
+    draw(c) { /* camera */ v.render(c, W, H); },
+  };
+}
+```
+
+Make the city once (in `make()` or the first `reset()`, like the view) and call `city.reset()` from
+`reset()` to put the cars and people back. `src/games/parcel-dash.js` is a full game made with it.
+
+## Options
+
+`new City(view, { ... })`:
+
+| Option | What it does |
+| --- | --- |
+| `seed` | Which city (a number). The same seed gives the same streets and buildings. |
+| `blocks` | How many blocks across: `6`, or `[8, 4]` for a long city. Each block is 50 to 100 m. |
+| `style` | `'downtown'` (towers in the middle), `'oldtown'` (brick and plaster, 3 to 6 floors), `'harbour'` (warehouses and a quay on the water), `'suburb'` (houses with gardens and pitched roofs), or your own (below). |
+| `side` | `'right'` (drive on the right) or `'left'`. |
+| `traffic`, `people` | How busy, 1 = normal. Scaled down on slower phones by itself. |
+| `night` | 0 (day) to 1 (night): windows, shop signs, street lamps and car lights. |
+| `sky` | A `gs.sky` Sky: the city follows its `night`. |
+| `lamps` | Real lights from the nearest street lamps at night (default on). |
+| `sound` | The city's hum, horns from cars stuck behind you, birds in the parks, a far siren (default on). |
+| `at` | Where the player starts (that part is built first). |
+| `detail` | Metres within which awnings, cornices and fire escapes show (default 260). |
+
+Any style setting can be passed straight in too: `new City(v, { style: 'oldtown', floors: [2, 4], trees: 1 })`.
+A style is `STYLES.downtown` and friends: `block` (sizes), `street` and `avenue` (road widths; every
+`every`-th road is an avenue with two lanes each way), `floors`, `tall` (storeys in the busiest middle),
+`core`, `gap` (between buildings), `facades` (how often each look is picked), `shops`, `parks`,
+`plazas`, `trees`, `houses`, `setbacks`, `tanks`, `fire`, `water`, and the `ground` and `pavement`
+colours. `FACADES` holds the building looks: wall, trim and glass colours, window width, storey
+height, how many windows are lit at night and how warm their light is. A style picks from the nine
+by name: `stone`, `brick`, `plaster`, `concrete`, `glass`, `dark`, `silver`, `house` and `shed`
+(`facades: { brick: 3, glass: 1 }`).
+
+## Answers for your game
+
+| Call | Answer |
+| --- | --- |
+| `city.collide(p, r, y)` | Pushes a circle (`{ x, z }` or a Vector3) out of the buildings; returns the building it touched. `y`: things above a roof pass over it. |
+| `city.ray(from, dir, far)` | The first building along a ray: `{ point, normal, dist, building }`. |
+| `city.route(a, b)` | A driving route on the right side of the roads: `{ points, path, length }`. `path` is a `gs.paths` Path, so a `Follower` can drive it. |
+| `city.road(x, z)` | The nearest point in a lane, with its `heading`. |
+| `city.spot(kind, { near, min, max, rnd })` | A place: `'door'` (outside a building, facing it), `'rooftop'`, `'corner'`, `'street'` (in a lane), `'pavement'`, `'park'`. |
+| `city.buildingAt(x, z)`, `city.ground(x, z)` | The building there; the height of the ground (road 0, pavement 0.15, a roof's top). |
+| `city.signal(node, axis)` | A junction's light: `'g'`, `'a'` or `'r'`. |
+| `city.cars` | `list`, `near(p, r)`, `hit(p, r)` (the car you ran into), `bump(car)` (stops it for a moment). |
+| `city.people` | `list`, `near(p, r)`, `hit(p, r)`, `scare(p, r)` (everyone near runs), `knock(person, dx, dz)` (a cartoon tumble; they get up and hurry off). |
+| `city.avoid(p, r)` | Cars brake for this point this frame: the player, a fallen sign, a parade. |
+| `city.walls()` | The building meshes, for `gs.camera`'s `walls` so the camera never goes inside one. |
+| `city.solid(world)` | Makes the buildings and kerbs solid in a `gs.physics3d` World3D. |
+| `city.occluders()` | The buildings as boxes, for skipping what's hidden behind them. |
+| `city.plan` | The whole layout as plain numbers (blocks, buildings, junctions, roads, spots). `gs.city.layout({ seed })` gives it without any 3D. |
+| `city.drawMap(c, x, y, w, h, { at, range, turn })` + `city.mapPoint(p)` | A quick top-down map for your HUD, and where a point lands on it. Or draw your own from `city.plan`. |
+
+## How it stays quick on a phone
+
+- Buildings are merged into a handful of meshes for each 2 × 2 blocks, so a whole city is a few
+  hundred draw calls at most, and the ones off screen are skipped.
+- Blocks are built a few at a time, nearest first, in about 2.5 ms a frame; `city.warm()` builds the
+  lot at once.
+- Awnings, cornices and fire escapes only show within `detail` metres.
+- Trees, lamps, traffic lights, benches and roof tanks are `gs.props`: culled, and simpler far away.
+- Cars live within about 190 m of the player and people within 100 m; ones that drift further away
+  come back somewhere nearer and out of sight. How many follows the phone's speed.
+- Facade textures are made once and shared by every city (smaller on slower phones). Each building
+  starts at a different window, so the lit windows don't repeat.
+- Stock three.js materials only (no shader patches), so it draws the same on WebGL and WebGPU.
+
+## Credits
+
+The facade colours, window sizes and lit-window numbers, and the idea of building detail round the
+player, come from [Slop New York](https://github.com/mrdoob/slop-newyork) by Mr.doob (MIT). The cities
+here are made up: no map data is used.
