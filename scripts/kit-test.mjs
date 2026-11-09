@@ -1076,3 +1076,32 @@ console.log('physics ok');
   assert.notEqual(JSON.stringify(layout({ seed: 1 }).buildings), JSON.stringify(layout({ seed: 2 }).buildings), 'another seed, another city');
   console.log('city: layouts for all styles are repeatable, tidy and joined up');
 }
+
+// behaviour trees and wants (gs.ai.Tree, gs.ai.Choose)
+{
+  const { Tree, Choose } = await import('../src/kit/bt.js');
+  const me = { hp: 10, sees: false, log: [] };
+  let walkLeft = 2;
+  const t = new Tree(`root { selector {
+      sequence { condition [Hurt] action [Flee] }
+      sequence while(Sees) until(Hurt) { action [Chase] }
+      sequence until(Sees) { action [Walk] wait [500] }
+  } }`, {
+    Hurt: () => me.hp < 3, Sees: () => me.sees,
+    Flee: () => { me.log.push('flee'); return Tree.ok; },
+    Chase: () => { me.log.push('chase'); },
+    Walk: () => { me.log.push('walk'); return --walkLeft <= 0 ? Tree.ok : undefined; },
+  });
+  t.update(.1); t.update(.1); assert.deepEqual(me.log, ['walk', 'walk'], 'walks until done');
+  t.update(.3); assert.equal(t.state, 'running', 'waits in game time'); t.update(.3); t.update(.1);
+  me.sees = true; me.log.length = 0; t.update(.1); t.update(.1); t.update(.1); assert.deepEqual(me.log, ['chase', 'chase'], 'seeing stops the walk, then it chases');
+  assert.ok(t.path().includes('action') || t.path().length > 1, 'path lists running nodes ' + t.path());
+  me.hp = 1; me.log.length = 0; t.update(.1); t.update(.1); t.update(.1); assert.ok(me.log.includes('flee'), 'a guard drops the chase, then it flees ' + me.log);
+  const s = { food: .9, tired: .2, hp: 10, near: 0 };
+  const want = new Choose({ eat: [() => 1 - s.food, Choose.quad], sleep: () => s.tired, fight: { score: [() => s.near, () => s.hp / 10], weight: 1.5 } }, { stick: .1 });
+  assert.equal(want.pick(), 'sleep', 'sleep when tired and fed');
+  s.food = .1; assert.equal(want.pick(), 'eat', 'eat when hungry');
+  s.near = 1; assert.equal(want.pick(), 'fight', 'fight when the player is close');
+  s.near = .55; s.tired = .6; s.food = .9; const a = want.pick(); assert.equal(a, 'fight', 'stickiness keeps the current pick near a tie (' + JSON.stringify(want.scores) + ')');
+  console.log('behaviour trees: selector, guards, game-time waits; wants: curves, weights, stickiness ok');
+}

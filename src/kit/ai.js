@@ -27,6 +27,7 @@
 import * as YUKA from 'yuka';
 export { YUKA };
 export { Swarm } from './swarm.js';
+export { Tree, Choose } from './bt.js';
 const { Vehicle, EntityManager, Vector3, SeekBehavior, FleeBehavior, ArriveBehavior, PursuitBehavior, EvadeBehavior, WanderBehavior,
   FollowPathBehavior, SeparationBehavior, AlignmentBehavior, CohesionBehavior, Path, Graph, NavNode, NavEdge, AStar } = YUKA;
 

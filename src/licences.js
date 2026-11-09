@@ -21,6 +21,7 @@ export const OPEN_SOURCE = [
   { name: 'YAMNet', for: 'recognising everyday sounds, by Google (model downloaded on first use)', licence: 'Apache 2.0', spdx: 'Apache-2.0', vendored: 'src/kit/vision-files.js' },
   { name: 'Quick, Draw! dataset', for: 'the drawings the doodle recogniser learned from, by Google', licence: 'CC BY 4.0', spdx: 'CC-BY-4.0', vendored: 'src/kit/doodle-model.js', notice: 'Quick, Draw! drawings © Google, CC BY 4.0, quickdraw.withgoogle.com/data' },
   { name: 'Yuka', for: 'game AI', licence: 'MIT', spdx: 'MIT', packages: ['yuka'] },
+  { name: 'mistreevous', for: 'behaviour trees', licence: 'MIT', spdx: 'MIT', packages: ['mistreevous'] },
   { name: 'Recast Navigation', for: '3D path finding', licence: 'MIT', spdx: 'MIT', packages: ['recast-navigation'] },
   { name: 'PixiJS', for: '2D screen effects and fast sprites', licence: 'MIT', spdx: 'MIT', packages: ['pixi.js'] },
   { name: 'pixi-filters', for: '2D screen effects', licence: 'MIT', spdx: 'MIT', packages: ['pixi-filters'] },

@@ -29,6 +29,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Enemies that chase, flee, flock, find a path | `gs.ai` (Yuka) | [AI](#ai) |
 | Seeded random, daily seed, smooth noise, timers | `gs.math` | [Maths](#maths) |
 | 3D text, 3D particles, outlines, glitch, trails | `gs.fx3d` | [3D extras](#3d-extras) |
+| Enemies that plan: behaviour trees, "what do I want most" | `gs.ai.Tree` (mistreevous), `gs.ai.Choose` | [Behaviour trees and wants](#behaviour-trees-and-wants) |
 | Thousands of fish, bats or zombies that flock | `gs.ai.Swarm` (WebGPU compute, CPU fallback) | [Swarms](#swarms-thousands-of-flockers) |
 | Play with your face or your hands | `gs.vision` (MediaPipe) | [Face and hands](#face-and-hands) |
 | To see frame rate, hitboxes, slow motion | press `` ` `` in `npm run dev` | [Debug overlay](#debug-overlay) |
@@ -417,6 +418,53 @@ update(dt) { crowd.update(dt); }                             // read bat.x, bat.
 - `Brain(start, { state: { enter, update(dt), exit } })`: `go(name)`, `is(name)`, `time` in the state.
 - All of Yuka is there as `gs.ai.YUKA` (fuzzy logic, goals, vision cones, nav meshes).
 
+
+### Behaviour trees and wants
+
+`gs.ai.Tree` is a behaviour tree (mistreevous): a short text of what to try, in what order, and when
+to give up. Your object gives every action and condition by name. A condition returns true or false;
+an action returns `Tree.ok` (done), `Tree.fail`, or nothing (still going, ask again next frame).
+
+```js
+const { Tree, Choose } = gs.ai;
+reset() {
+  guard = new Tree(`root {
+    selector {
+      sequence { condition [Hurt] action [Flee] }
+      sequence while(SeesPlayer) until(Hurt) { action [Chase] action [Strike] }
+      sequence until(SeesPlayer) { action [Walk] wait [1000, 2500] }
+    }
+  }`, {
+    Hurt: () => me.hp < 3, SeesPlayer: () => sees(me, player),
+    Flee: () => (runFrom(player), far(player) ? Tree.ok : undefined),
+    Chase: () => moveTo(player) ? Tree.ok : undefined, Strike: () => (hit(player), Tree.ok),
+    Walk: () => moveTo(nextPost()) ? Tree.ok : undefined,
+  }, { seed: 3 });
+}
+update(dt) { guard.update(dt); }
+```
+
+Nodes: `sequence`, `selector`, `parallel`, `race`, `all`, `lotto [2, 1]` (weighted random), `repeat`,
+`retry`, `flip`, `succeed`, `fail`, `wait [ms]` or `wait [min, max]` (game time), `branch [Name]`
+(subtrees), and guards on any node: `while(Cond)` / `until(Cond)` cut a running branch short when they
+change. A selector doesn't look back up its list while a later branch is running, so put a guard on each
+branch for whatever should interrupt it (above: seeing the player stops the walk, getting hurt stops the
+chase). `tree.path()` lists what's running (handy as a debug label). A finished tree starts again at the top.
+
+`gs.ai.Choose` is utility AI: each want scores 0 to 1 from one or more things (multiplied, shaped by an
+optional curve), and the highest wins, with a little stickiness so it doesn't flicker:
+
+```js
+const want = new Choose({
+  eat: [() => 1 - me.food, Choose.quad],
+  sleep: () => me.tired,
+  fight: { score: [() => closeness(player), () => me.hp / 10], weight: 1.5 },
+}, { stick: .1 });
+const goal = want.pick();   // 'eat', 'sleep' or 'fight'; want.scores has them all
+```
+
+Curves: `Choose.linear`, `quad`, `root`, `invert`, `logistic(mid, k)`, `step(at)`. Use a Choose inside a
+tree action, or to pick a `Brain` state.
 
 ### Swarms: thousands of flockers
 
