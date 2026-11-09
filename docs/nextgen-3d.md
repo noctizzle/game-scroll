@@ -207,6 +207,20 @@ s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
   Color or `[r, g, b]`). It runs in the final pass. `v.grade = null` turns it off.
 - **Sun glare** (`v.glare = 0..1`): a soft glow round the sun and two faint lens ghosts across the
   picture, only while the sun itself shows (it fades behind a wall or a tree).
+- **Shadow cascades** (`s.fit(v, { far: 320, near: 40, ... })`): a second sun light whose shadow
+  covers only the first `near` metres, so the grass at your feet gets a sharp shadow while the far one
+  still reaches the hills. Each spot takes the sun from one of the two (fading across the near box's
+  edge), so it's never lit twice. High and ultra tiers only, with `v.air()` on; turn it off (`near: 0`)
+  while a scope is up, where `around` already keeps the shadows sharp round the target.
+- **Physical sky** (`new Sky(v, { physical: true })`, or `{ haze, blue, mie, glow, bright }`): the sky's
+  colours come from how sunlight scatters in air (the Preetham model): deep blue overhead, pale at the
+  horizon, an orange sun as it sets. Clouds, reflections (`env`), the air's colours, fog and the sky
+  light all follow it; the day keys then only set how strong the sun and fill are. `sky.physical` can be
+  switched any time (a clear morning on one mission, a grey storm with the day keys' colours on the next).
+- **Depth of field** (`v.focus = { at, range, depth, blur }`): what's `at` metres away, give or take
+  `range`, stays sharp; things `depth` x `at` metres nearer or further are fully soft, up to `blur`
+  pixels. Made for scopes and cutscene close-ups; `v.focus = null` turns it off. It reads the depth the
+  ambient occlusion already draws, so it's on high and ultra only and costs one full-screen pass.
 - `v.envFrom(scene)` makes the reflections from any scene of your own (a painted room, a sunset dome);
   `v.env = null` goes back to the studio.
 - `gs.hd.noiseTex()` is a shared 256 x 256 tiling noise texture (four sizes of noise in r, g, b and a)

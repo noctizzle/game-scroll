@@ -1202,6 +1202,15 @@ blades that sway (only near the camera), and `scatter(props, 'tree', 300, { abov
 make simple shapes to scatter. Next Gen worlds can paint it instead with `looks.ground` (fields, hedges, lanes, mud, puddles), ring it with far hills (`horizon(land)`) and give rocks and leaves their looks: see [Next Gen outdoor looks](nextgen-3d.md#outdoor-looks-ground-hills-rock-leaves). `Water({ level, waves })` is a sea of rolling waves you can ask about
 anywhere (`height(x, z)`, `normal`, `depth(p)`); call `update(dt, camera.position)` each frame.
 
+`new Wind({ x: 3, z: 0, gust: .4 })` is one wind for the whole world: `land.wind = wind` sways the
+grass with it, `looks.leaves(m, { wind })` makes the trees lean and stream downwind, `Weather({ wind })`
+blows the rain, `new Particles(v, { wind, blow: .6 })` carries smoke and dust, `v.air({ wind })` drifts
+the cloud shadows, and `wind.at(x, z)` is the push right there (gusts roll across the land downwind, so
+grass shows a gust before it reaches you): use it for bullets, flags and sails. `wind.update(dt)` each
+frame; change `wind.x`, `wind.z` any time. `impostor(geometry, material)` bakes a far-away stand-in for
+a tree: a few crossed cards with pictures of the real tree, lit live. Use it as the last `gs.props`
+level: `lod: [[90, mid], [240, imp.geometry, imp.material]]` (a level can have a material of its own).
+
 **Planes, boats and hover craft** (`gs.craft`): `Plane({ at, speed, ground })` flies like arcade games
 feel: it banks into turns, holds its height when level, stalls when slow, lands, touches down and
 crashes (`plane.events`). Feed it `update(dt, { throttle, pitch, roll, yaw, brake })` from a stick or
