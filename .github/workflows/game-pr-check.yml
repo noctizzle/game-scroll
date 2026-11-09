@@ -1,15 +1,19 @@
-# Checks pull requests that add or change games: builds every game as a streamed file (fails if a
-# file name and its id differ), then plays the changed games in a headless browser (smoke + fold,
-# plus sweep for Console games, and the speed budget). A second job flags game code that touches the network, storage or
-# native features (scripts/game-lint.mjs), and lists changed files outside src/games/ that need a
-# careful read. Two more jobs: a mutation check of the server and licence guards, and a maths probe
-# across JavaScript engines (both only when those parts change). Runs with read-only permissions and no secrets, so it is safe for pull requests from
-# forks. See CONTRIBUTING.md.
+# Checks pull requests. "check" runs the fast tests (game build, licences, types, kits, Tiny Brains,
+# feed ranking, website build). "plan" works out which games to play: the changed games, plus, when
+# shared code changes (kits, gamescroll.js, the app, three.js and other packages, the test scripts,
+# this file), the 3 games from each style that use the most engine parts, split across 2 parallel
+# "play" jobs. Those play the games in a headless browser (smoke, streamed, fold, and sweep for
+# Console games and changed Next Gen games), plus the speed budget
+# and Tiny Brains check for changed games. "code-flags" flags game code that touches the network,
+# storage or native features (scripts/game-lint.mjs), and lists changed files outside src/games/ that
+# need a careful read. Two more jobs: a mutation check of the server and licence guards, and a maths
+# probe across JavaScript engines (both only when those parts change). Runs with read-only
+# permissions and no secrets, so it is safe for pull requests from forks. See CONTRIBUTING.md.
 name: Game PR check
 
 on:
   pull_request:
-    paths: ['src/**', 'scripts/**', 'package.json', 'package-lock.json', '.github/**', 'workers/**', 'public/**', 'index.html', 'vite.config.js', '.env*']
+    paths: ['src/**', 'scripts/**', 'package.json', 'package-lock.json', '.nvmrc', '.github/**', 'workers/**', 'public/**', 'site/**', 'index.html', 'vite.config.js', '.env*']
 
 permissions:
   contents: read
@@ -21,11 +25,9 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45   # a PR that touches every game smoke-tests all of them
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         with:
@@ -53,60 +55,126 @@ jobs:
       - name: For you ranking and feed brain (made-up players)
         run: npm run recommend
 
-      - name: Find changed games
-        id: changed
+      - name: Website builds (game-scroll.com)
+        run: npm run site
+
+  # Which games to play, and how to split them across the play jobs.
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Pick the games
+        id: plan
         env:
           BASE: ${{ github.base_ref }}
         run: |
-          ids=$(git diff --name-only --diff-filter=AM "origin/$BASE...HEAD" -- 'src/games/*.js' | sed -n 's#^src/games/\([a-z0-9-]*\)\.js$#\1#p' | tr '\n' ' ')
-          console=$(for id in $ids; do grep -q "era: *'console'" "src/games/$id.js" && echo -n "$id "; done || true)
-          echo "ids=$ids" >> "$GITHUB_OUTPUT"
-          echo "console=$console" >> "$GITHUB_OUTPUT"
-          echo "Changed games: ${ids:-none}"
+          files=$(git diff --name-only "origin/$BASE...HEAD")
+          changed=$(echo "$files" | grep -E '^src/games/[a-z0-9-]+\.js$' | while read -r f; do [ -f "$f" ] && basename "$f" .js; done | tr '\n' ' ')
+          # Shared code runs inside every game, so a change there also plays a sample: from each style, the
+          # 3 games that use the most engine parts (scripts/pick-games.mjs), plus the changed games.
+          shared=$(echo "$files" | grep -E '^(src/|public/|index\.html|vite\.config\.js|package(-lock)?\.json|\.nvmrc|\.env|scripts/(smoke|fold|sweep|stream-smoke|build-games|pick-games)\.|\.github/workflows/game-pr-check\.yml)' | grep -vE '^src/(games/|licences\.js)' || true)
+          # Sweep (fast-forwarded long play at odd sizes): Console games, and Next Gen games the PR changes
+          # (Next Gen draws in software here, so sweeping all of them would take too long).
+          sweepable() { grep -qE "era: *'console'" "src/games/$1.js" || { grep -qE "era: *'nextgen'" "src/games/$1.js" && case " $changed " in *" $1 "*) true;; *) false;; esac; }; }
+          if [ -n "$shared" ]; then
+            echo "Shared code changed, so the engine-heavy games are played too:"; echo "$shared" | sed 's/^/  /'
+            all=$(echo $(node scripts/pick-games.mjs 3 --why) $changed | tr ' ' '\n' | awk 'NF && !seen[$0]++' | tr '\n' ' ')
+            SHARDS=2
+          else
+            all=$changed; SHARDS=1
+          fi
+          if [ -z "$(echo $all)" ]; then echo "No games to play."; echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"; exit 0; fi
+          # Deal the games out like cards, so each job gets a fair share of the slow 3D ones.
+          json='{"include":['; sep=''
+          for k in $(seq 0 $((SHARDS-1))); do
+            ids=$(echo $all | tr ' ' '\n' | awk -v n=$SHARDS -v k=$k 'NR%n==k' | tr '\n' ' ')
+            [ -z "$(echo $ids)" ] && continue
+            sweep=$(for id in $ids; do sweepable "$id" && echo -n "$id "; done || true)
+            mine=$(for id in $ids; do case " $changed " in *" $id "*) echo -n "$id ";; esac; done || true)
+            json="$json$sep{\"part\":$((k+1)),\"ids\":\"${ids% }\",\"sweep\":\"${sweep% }\",\"changed\":\"${mine% }\"}"; sep=','
+          done
+          json="$json]}"
+          echo "matrix=$json" >> "$GITHUB_OUTPUT"
+          echo "$json"
+
+  play:
+    needs: plan
+    if: needs.plan.outputs.matrix != '{"include":[]}'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: play (${{ matrix.part }})
+    env:
+      IDS: ${{ matrix.ids }}
+      SWEEP: ${{ matrix.sweep }}
+      CHANGED: ${{ matrix.changed }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Which Playwright
+        id: pw
+        run: echo "version=$(npm view playwright version)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the browser
+        id: pwcache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
       - name: Install Playwright
-        if: steps.changed.outputs.ids != ''
-        run: npm i --no-save playwright && npx playwright install --with-deps chromium
+        env:
+          PW: ${{ steps.pw.outputs.version }}
+        run: |
+          npm i --no-save "playwright@$PW"
+          if [ "${{ steps.pwcache.outputs.cache-hit }}" = "true" ]; then npx playwright install-deps chromium; else npx playwright install --with-deps chromium; fi
 
       - name: Build the app with games inside
-        if: steps.changed.outputs.ids != ''
+        id: build
         run: npm run build:bundled
 
       - name: Smoke test
-        if: steps.changed.outputs.ids != ''
-        env:
-          IDS: ${{ steps.changed.outputs.ids }}
         run: node scripts/smoke.cjs $IDS
 
       - name: Streamed test (runs the games the way the store apps do)
-        if: steps.changed.outputs.ids != ''
-        env:
-          IDS: ${{ steps.changed.outputs.ids }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: node scripts/stream-smoke.mjs $IDS
 
       - name: Fold test
-        if: steps.changed.outputs.ids != ''
-        env:
-          IDS: ${{ steps.changed.outputs.ids }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: node scripts/fold.cjs $IDS
 
+      - name: Sweep test (Console games, and changed Next Gen games)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && matrix.sweep != '' }}
+        run: node scripts/sweep.cjs $SWEEP
+
       - name: Tiny Brains in changed games don't get harder for a losing player
-        if: steps.changed.outputs.ids != ''
-        env:
-          IDS: ${{ steps.changed.outputs.ids }}
-        run: node scripts/brain-check.mjs --games $IDS
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && matrix.changed != '' }}
+        run: node scripts/brain-check.mjs --games $CHANGED
 
-      - name: Speed budget (frame time and memory on a slowed CPU)
-        if: steps.changed.outputs.ids != ''
-        env:
-          IDS: ${{ steps.changed.outputs.ids }}
-        run: node scripts/budget.cjs $IDS
-
-      - name: Sweep test (Console games)
-        if: steps.changed.outputs.console != ''
-        env:
-          IDS: ${{ steps.changed.outputs.console }}
-        run: node scripts/sweep.cjs $IDS
+      - name: Speed budget for changed games (frame time and memory on a slowed CPU)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && matrix.changed != '' }}
+        run: node scripts/budget.cjs $CHANGED
 
   # Flags risky code for review. Fails (red) when a changed game reaches the network, storage,
   # Capacitor or other windows, or hides code; the flagged lines show on the Files tab.
@@ -198,9 +266,27 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      - name: Which Playwright
+        if: steps.changed.outputs.run
+        id: pw
+        run: echo "version=$(npm view playwright version)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the browsers
+        if: steps.changed.outputs.run
+        id: pwcache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-webkit-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
       - name: Install Playwright with Chromium and WebKit
         if: steps.changed.outputs.run
-        run: npm ci && npm i --no-save playwright && npx playwright install --with-deps chromium webkit
+        env:
+          PW: ${{ steps.pw.outputs.version }}
+        run: |
+          npm ci && npm i --no-save "playwright@$PW"
+          if [ "${{ steps.pwcache.outputs.cache-hit }}" = "true" ]; then npx playwright install-deps chromium webkit; else npx playwright install --with-deps chromium webkit; fi
+
 
       - name: Same maths in every engine?
         if: steps.changed.outputs.run

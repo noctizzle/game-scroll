@@ -2,16 +2,19 @@
 # Every push to main replaces the "Latest Android build" release, so the phone download link never changes:
 #   https://github.com/robthewizzuk/game-scroll/releases/latest/download/game-scroll.apk
 # Pull requests build the APK too (as a run artifact) so a broken Android build shows up before merging.
+# Changes that never reach the app (docs, the website, the Workers) skip it.
 name: Android APK
 
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md', 'site/**', 'workers/**', 'store/**', '.github/ISSUE_TEMPLATE/**']  # not in the app
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md', 'site/**', 'workers/**', 'store/**', '.github/ISSUE_TEMPLATE/**']
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: android-apk-${{ github.ref }}
@@ -59,10 +62,23 @@ jobs:
           path: game-scroll.apk
           retention-days: 14
 
+  # Only this job can write to the repository, and only for pushes to main.
+  release:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: game-scroll-apk
+
       - name: Publish as the latest release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release delete android-latest --cleanup-tag --yes || true
           gh release create android-latest game-scroll.apk \
