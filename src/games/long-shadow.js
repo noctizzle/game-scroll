@@ -17,7 +17,7 @@ const { clamp, rnd } = gs.util;
 const { fbm, rng, noise3 } = gs.math;
 const { Juice } = gs.juice;
 const { HDView, Particles, pbr, rbox, sun, surface, speckle, THREE } = gs.hd;
-const { Land, Water, looks, groundDetail, horizon } = gs.outdoors;
+const { Land, Water, Wind, looks, groundDetail, horizon, impostor } = gs.outdoors;
 const { Props } = gs.props;
 const { Sky, Weather } = gs.sky;
 const { Rig } = gs.poses;
@@ -116,7 +116,10 @@ const CELL = 4, GX0 = -200, GZ0 = -180, GC = 110, GR = 90;
 // shadows, a colour grade and sun glare; gs.sky: clouds and the sky's own light). The game paints the
 // ground (patchwork fields, hedges, rutted lanes, mud by the river, puddles in the rain), grows the
 // trees (cards of painted leaves that sway in the wind) and builds the village.
-const GU = { uTime: { value: 0 }, uWet: { value: 0 }, uWind: { value: .6 }, uSun: { value: new Vector3(0, 1, 0) } };
+const GU = { uTime: { value: 0 }, uWet: { value: 0 }, uSun: { value: new Vector3(0, 1, 0) } };
+// one wind for the valley (gs.outdoors Wind): it sways the grass and trees, carries smoke, dust and
+// rain, and pushes the bullets; its gusts roll down the valley, so the grass shows one coming
+const AIR = new Wind({ x: 2.5, z: 0, gust: .45, gustSize: 90, sway: .1, grass: .25 });
 function dataTex(data, w, h = w, { srgb = false, clampEdge = false } = {}) {
   const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
   t.wrapS = t.wrapT = clampEdge ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
@@ -318,7 +321,7 @@ function firGeo(lod, seed = 7) {
 // towards the sun through them
 function leafMat(atlas) {
   const m = new THREE.MeshStandardMaterial({ map: atlas, vertexColors: true, roughness: .82, alphaTest: .5, side: THREE.DoubleSide });
-  looks.leaves(m, { time: GU.uTime, wind: GU.uWind, sun: GU.uSun, atlas: [1024, 512] });
+  looks.leaves(m, { time: GU.uTime, wind: AIR, sun: GU.uSun, atlas: [1024, 512] });
   return m;
 }
 
@@ -427,6 +430,7 @@ function world() {
   land.flatten(MILL.x, MILL.z - 3, 9, 4.2, 6);
   land.masks(groundMasks);
   v.scene.add(land.object);
+  land.wind = AIR;
   land.grass({ count: 9000, colour: '#6c8638', tint: ['#4f6a2a', '#9a9850'], above: 14, steep: .35, far: 42, height: .8, wind: .6 });
   v.scene.add(horizon(land, { inner: 300, outer: 1300, lower: (x, z) => z > 0 && Math.abs(x) < 400 ? .55 : 0 }));   // far hills, lower to the south
 
@@ -710,7 +714,12 @@ function world() {
   // ---- trees and rocks (instanced: fewer leaves far away, painted cards further still)
   const props = new Props(v.scene), atlas = treeAtlas(), leaves = leafMat(atlas);
   for (const [k, make_] of [['oak', oakGeo], ['poplar', poplarGeo], ['fir', firGeo]]) {
-    const near = make_(1), m = props.kind(k, make_(0), leaves, { lod: [[TREE_LOD[0], near], [TREE_LOD[1], make_(2)]], shadowFar: 70 });
+    // far away: an impostor (gs.outdoors: cards with baked pictures of the leafy tree), or the painted
+    // cards when there's no 3D to bake with; the painted cards still cast the far shadows
+    const near = make_(1), cards = make_(2), imp = impostor(make_(0), leaves, { cards: 3, size: 256, round: .6, material: { roughness: .85 } });
+    const lod = imp ? [[TREE_LOD[0], near], [TREE_LOD[1], imp.geometry, imp.material], [1e9, cards]] : [[TREE_LOD[0], near], [TREE_LOD[1], cards]];
+    if (imp) looks.leaves(imp.material, { time: GU.uTime, wind: AIR, sun: GU.uSun, sway: .004, above: 3, atlas: [768, 256] });
+    const m = props.kind(k, make_(0), leaves, { lod, shadowFar: 70 });
     m.addShadowLOD(near, 0);   // close shadows from the leafy shape, far ones from the cards
   }
   props.kind('rock', boulder(1.6, 4), M.rock, { lod: [[60, boulder(1.6, 4, undefined, 8)]], shadowFar: 50 });
@@ -739,10 +748,10 @@ function world() {
 
   // ---- moving things
   WD.train = makeTrain(M); v.scene.add(WD.train);
-  WD.dust = new Particles(v, { max: 500, additive: false });
+  WD.dust = new Particles(v, { max: 500, additive: false, wind: AIR, blow: .3 });
   WD.sparks = new Particles(v, { max: 300, additive: true });
-  WD.trail = new Particles(v, { max: 260, additive: false });
-  WD.smoke = new Particles(v, { max: 200, additive: false });
+  WD.trail = new Particles(v, { max: 260, additive: false, wind: AIR, blow: .4 });
+  WD.smoke = new Particles(v, { max: 200, additive: false, wind: AIR, blow: .6 });
   const bullet = new Mesh(new CapsuleGeometry(.05, .22, 4, 8), M.brass); bullet.rotation.order = 'YXZ'; bullet.visible = false; v.scene.add(bullet); WD.bullet = bullet;
   // tracers from enemy fire (pooled)
   const trMat = pbr('#ffd890', { glow: 3.2 }), trGeo = new BoxGeometry(.028, .028, 1);
@@ -969,12 +978,12 @@ const DAY_STORM = [...NIGHT,
 ];
 const MOODS = {
   m1: {
-    time: 7.4, tilt: -.3, day: DAY_CLEAR, clouds: .3, gap: .55, cloudLight: null, cloudDark: null,
+    time: 7.4, tilt: -.3, day: DAY_CLEAR, physical: { haze: 3.2, bright: .6 }, clouds: .3, gap: .55, cloudLight: null, cloudDark: null,
     air: { haze: .00062, mist: .0035, mistFall: .13, mistY: -1.5, patchy: .9, cloudShade: .38, wind: [5, -1.5], wet: 0, colour: '#b4c0cc', sunColour: '#f2d4a4' },
     grade: { saturation: 1.12, contrast: 1.16, shadows: '#e2e8f4', highlights: '#fff4e4' }, glare: .85, shafts: .9, exposure: 1.08, bloom: .3, env: .6, windows: 0,
   },
   m2: {
-    time: 17.75, tilt: .12, day: DAY_STORM, clouds: .86, gap: .4, cloudLight: '#8c8a8a', cloudDark: '#2a2e36',
+    time: 17.75, tilt: .12, day: DAY_STORM, physical: false, clouds: .86, gap: .4, cloudLight: '#8c8a8a', cloudDark: '#2a2e36',
     air: { haze: .0014, mist: .005, mistFall: .1, mistY: -1, patchy: .7, cloudShade: .5, wind: [-8, 1], wet: .85, colour: '#5f646c', sunColour: '#a8785a' },
     grade: { saturation: .82, contrast: 1.1, shadows: '#d2dcee', highlights: '#ffeedc' }, glare: .4, shafts: .25, exposure: 1.02, bloom: .45, env: .65, windows: 1.8,
   },
@@ -1178,8 +1187,9 @@ function make(api) {
     }
     return null;
   }
+  const windAt = {};
   function stepBullet(b, dt) {
-    b.vy -= GRAV * dt; b.vx += wind.x * WIND_K * dt; b.vz += wind.z * WIND_K * dt;
+    const w = AIR.at(b.x, b.z, windAt); b.vy -= GRAV * dt; b.vx += w.x * WIND_K * dt; b.vz += w.z * WIND_K * dt;
     b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt; b.life -= dt;
   }
   // what a bullet path from p0 to p1 hits first: { t, s?, head?, box?, ground?, d }
@@ -1246,7 +1256,7 @@ function make(api) {
       const wet = rain.amount > .2 && h.ground, col = stoneHit ? [.7, .68, .62] : h.box ? [.74, .66, .54] : wet ? [.32, .27, .2] : [.52, .44, .32];
       const bl = Math.hypot(b.vx, b.vy, b.vz) || 1, bx = -b.vx / bl, bz = -b.vz / bl;   // back towards the shooter, the way debris flies
       for (let i = 0; i < 12; i++) WD.dust.emit({ x, y: y + .1, z, vx: rnd(-1.5, 1.5) + bx * 1.5, vy: rnd(.5, 3.5), vz: rnd(-1.5, 1.5) + bz * 1.5, life: rnd(1, 1.6), size: .4, grow: 2.2, col, a: .8, drag: 2.5, grav: 3, fadeIn: true });
-      for (let i = 0; i < 4; i++) WD.dust.emit({ x: x + rnd(-.4, .4), y: y + .4, z: z + rnd(-.4, .4), vx: wind.x * .3, vy: rnd(.2, .5), vz: wind.z * .3, life: rnd(2.5, 3.5), size: 1, grow: 2, col, a: .25, drag: .8, fadeIn: true, ease: 2 });
+      for (let i = 0; i < 4; i++) WD.dust.emit({ x: x + rnd(-.4, .4), y: y + .4, z: z + rnd(-.4, .4), vx: 0, vy: rnd(.2, .5), vz: 0, life: rnd(2.5, 3.5), size: 1, grow: 2, col, a: .25, drag: .8, fadeIn: true, ease: 2 });
       for (let i = 0; i < 8; i++) WD.dust.emit({ x, y: y + .05, z, vx: rnd(-2.5, 2.5) + bx * 2, vy: rnd(2, 6), vz: rnd(-2.5, 2.5) + bz * 2, life: 1.2, size: .07, col: col.map(c => c * .55), a: 1, grav: 12, floor: h.ground ? WD.land.height(x, z) : y - 3 });
       holeAt(h, x, y, z, stoneHit, wet);
       if (stoneHit) for (let i = 0; i < 6; i++) WD.sparks.emit({ x, y, z, vx: rnd(-3, 3), vy: rnd(0, 3), vz: rnd(-3, 3), life: .25, size: .08, col: [4, 3, 1.4], drag: 1 });
@@ -1287,7 +1297,7 @@ function make(api) {
     const e = WD.v.cam.position, far = Math.hypot(x - e.x, y - e.y, z - e.z), core = Math.max(.2 * k, far * Math.tan(WD.v.cam.fov * Math.PI / 360) * .02);
     WD.sparks.emit({ x, y, z, life: .05, size: core, col: [5, 3.4, 1.5] });
     for (let i = 1; i <= 3; i++) { const o = core * i * .6; WD.sparks.emit({ x: x + dx * o, y: y + dy * o, z: z + dz * o, vx: dx * 5, vy: dy * 5, vz: dz * 5, life: .045, size: core * (1 - i * .25), col: [5, 2.8, 1] }); }
-    for (let i = 0; i < 4; i++) WD.smoke.emit({ x: x + dx * .3, y, z: z + dz * .3, vx: dx * rnd(.6, 2) + wind.x * .25 + rnd(-.2, .2), vy: rnd(.1, .5), vz: dz * rnd(.6, 2) + wind.z * .25 + rnd(-.2, .2), life: rnd(1.2, 2), size: .22 * k, grow: 5, col: [.62, .61, .58], a: .2, drag: 1.4, fadeIn: true });
+    for (let i = 0; i < 4; i++) WD.smoke.emit({ x: x + dx * .3, y, z: z + dz * .3, vx: dx * rnd(.6, 2) + rnd(-.2, .2), vy: rnd(.1, .5), vz: dz * rnd(.6, 2) + rnd(-.2, .2), life: rnd(1.2, 2), size: .22 * k, grow: 5, col: [.62, .61, .58], a: .2, drag: 1.4, fadeIn: true });
   };
   // a shot that misses you still lands close: dirt in front of you, or chips off the sill up a tower
   function nearMiss(from) {
@@ -1933,7 +1943,7 @@ function make(api) {
   // the mission's light: time of day, clouds, air, grade (the sky's reflections are redone next frame)
   function mood(id) {
     const md = MOODS[id], v = WD.v;
-    Object.assign(sky, { time: md.time, tilt: md.tilt, day: md.day, clouds: md.clouds, gap: md.gap, cloudLight: md.cloudLight ? new Color(md.cloudLight) : null, cloudDark: md.cloudDark ? new Color(md.cloudDark) : null });
+    Object.assign(sky, { time: md.time, tilt: md.tilt, day: md.day, physical: md.physical, clouds: md.clouds, gap: md.gap, cloudLight: md.cloudLight ? new Color(md.cloudLight) : null, cloudDark: md.cloudDark ? new Color(md.cloudDark) : null });
     v.air(md.air); v.grade = md.grade; v.glare = md.glare; v.shafts = md.shafts; v.exposure = md.exposure; v.bloom = md.bloom; v.envI = md.env;
     GU.uWet.value = md.air.wet; WD.wins.material.emissiveIntensity = md.windows;
     // the sky's reflections are redone once, just after the next frame is drawn (heavy GPU work, so it
@@ -1992,7 +2002,7 @@ function make(api) {
   function chimneySmoke() {
     const C = WD.chims; if (!C.length || frame % 5) return;
     const p = C[(frame / 5 | 0) % Math.min(C.length, 9)];
-    WD.smoke.emit({ x: p[0], y: p[1], z: p[2], vx: wind.x * .55 + rnd(-.15, .15), vy: .9, vz: wind.z * .55 + rnd(-.15, .15), life: 6, size: .7, grow: 4, col: mid === 'm2' ? [.5, .5, .52] : [.8, .8, .8], a: .22, drag: .15, fadeIn: true, ease: 1.5 });
+    WD.smoke.emit({ x: p[0], y: p[1], z: p[2], vx: rnd(-.15, .15), vy: .9, vz: rnd(-.15, .15), life: 6, size: .7, grow: 4, col: mid === 'm2' ? [.5, .5, .52] : [.8, .8, .8], a: .22, drag: .15, fadeIn: true, ease: 1.5 });
   }
   // ---- optional tilt aim: turn the phone to fine-tune the aim while looking through the scope or glasses
   let tiltAim = false;
@@ -2016,7 +2026,7 @@ function make(api) {
     reset() {
       audioDown();
       world(); layout();
-      if (!sky) { sky = new Sky(WD.v, { time: MOODS.m1.time, tilt: MOODS.m1.tilt, stars: 300, sun: WD.sl, day: DAY_CLEAR, clouds: MOODS.m1.clouds, gap: MOODS.m1.gap, env: true, fog: false }); rain = new Weather(WD.v, { kind: 'clear', amount: 0, wind: [-2, 0], area: 40 }); rain.onFlash = far => { storm = 1.6; thunder(far); }; }
+      if (!sky) { sky = new Sky(WD.v, { time: MOODS.m1.time, tilt: MOODS.m1.tilt, stars: 300, sun: WD.sl, day: DAY_CLEAR, clouds: MOODS.m1.clouds, gap: MOODS.m1.gap, env: true, fog: false }); rain = new Weather(WD.v, { kind: 'clear', amount: 0, wind: AIR, area: 40 }); rain.onFlash = far => { storm = 1.6; thunder(far); }; }
       fx.clear(); me.reset(); gun.ammo = gun.mag; gun.reloadLeft = 0; gun.reserve = Infinity; gun.shotsAtCs = 0;
       state = 'brief'; briefT = 0; t = 0; score = 0; heat = 0; located = false; alertedN = 0; frame = 0;
       scoped = false; glass = false; zoom = 7; breath = { v: 1, held: false }; gasp = 0; storm = 0;
@@ -2051,8 +2061,9 @@ function make(api) {
       WD.wheel.rotation.x += dt * .5; WD.sails.rotation.z += dt * .35;
       // wind gusts
       wind.x = wind.base + Math.sin(t * .23) * 1.2 + Math.sin(t * .71 + 2) * .5;
+      AIR.x = wind.x; AIR.z = wind.z; AIR.update(dt, WD.v.cam.position);
       for (const f of [WD.flagA, WD.flagB]) {
-        const p = f.cloth.geometry.attributes.position, b = f.base, s = Math.sign(wind.x) || 1, k = clamp(Math.abs(wind.x) / 6, .1, 1);
+        const fw = AIR.at(f.x, f.z ?? 0).x, p = f.cloth.geometry.attributes.position, b = f.base, s = Math.sign(fw) || 1, k = clamp(Math.abs(fw) / 6, .1, 1);
         f.cloth.position.x = f.x + s * 1; f.cloth.scale.x = s;
         for (let i = 0; i < p.count; i++) { const x = b[i * 3] + 1; p.setZ(i, Math.sin(x * 3 - t * 8 * k) * .14 * x * k); p.setY(i, b[i * 3 + 1] - (1 - k) * x * .35); }
         p.needsUpdate = true;
@@ -2199,9 +2210,11 @@ function make(api) {
       const lk = clamp(62 / cam.fov, 1, 12);
       if (Math.abs(lk - WD.lodK) > .05) { WD.lodK = lk; for (const k of ['oak', 'poplar', 'fir']) { const m = WD.props.mesh(k); m.updateLOD(1, TREE_LOD[0] * lk); m.updateLOD(2, TREE_LOD[1] * lk); m.updateShadowLOD(1, 70 * lk); } }
       // the sun's shadows cover what you can see (sharp round the target through the scope)
-      WD.sl.fit(v, { far: scoped ? 700 : 320, ground: WD.ground, around: scoped || glass ? 1.3 : 0, tall: 22 });
+      WD.sl.fit(v, { far: scoped ? 700 : 320, near: scoped || glass ? 0 : 40, ground: WD.ground, around: scoped || glass ? 1.3 : 0, tall: 22 });
+      // through the scope, what's in front of and behind the target goes soft (high and ultra)
+      focusOn(1 / 60);
       // the game's own shaders: time for the leaves, the sun for light through them, ripples
-      GU.uTime.value = v.t; v.sunDir(GU.uSun.value); GU.uWind.value = .4 + Math.abs(wind.x) * .1;
+      GU.uTime.value = v.t; v.sunDir(GU.uSun.value);
       for (const r of WD.ripples) r.offset.set(v.t * .011, v.t * .004);
       if (WD.train.visible) { WD.train.position.set(train.x, RAILH, RAILZ); }
       fx.begin(c); v.render(c, W, H); fx.end(c, W, H);
@@ -2277,6 +2290,13 @@ function make(api) {
     if (breath.held && scoped && breath.v > 0) { breath.v -= dt / 4.5; if (breath.v <= 0) { breath.v = 0; gasp = 2; tone(180, { len: .3, wave: 'triangle', vol: .04 }); } }
     else breath.v = Math.min(1, breath.v + dt * (gasp > 0 ? .1 : .35));
     gasp = Math.max(0, gasp - dt);
+  }
+  // depth of field through the scope: focused where the round would land, eased so it doesn't jump
+  function focusOn(dt) {
+    const v = WD.v;
+    if (!scoped || state !== 'play' || move || bulletCam) { v.focus = null; focusOn.d = 0; return; }
+    const mk = impactMark(), D = mk ? mk[2] : 450, f = focusOn.d = focusOn.d ? focusOn.d + (D - focusOn.d) * Math.min(1, dt * 5) : D;
+    v.focus = { at: f, range: Math.max(3, f * .05), depth: .5, blur: 3 + zoom * .35 + gasp * 2 };
   }
   // how far off the squad is on average (only the men already looking for you)
   function rangeOf() {
