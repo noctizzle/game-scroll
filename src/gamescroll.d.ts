@@ -614,7 +614,22 @@ export declare class Swarm {
   /** About how many this phone moves smoothly (8192 with the GPU, 2000 without). */
   static max(): number;
 }
-export interface AiPart { Crowd: new (...a: Loose[]) => Loose; NavGrid: new (...a: Loose[]) => Loose; Brain: new (...a: Loose[]) => Loose; YUKA: Loose; Swarm: typeof Swarm }
+export interface AiPart { Crowd: new (...a: Loose[]) => Loose; NavGrid: new (...a: Loose[]) => Loose; Brain: new (...a: Loose[]) => Loose; YUKA: Loose; Swarm: typeof Swarm; Tree: typeof Tree; Choose: typeof Choose }
+
+/** A behaviour tree (mistreevous MDSL text); agent gives each action and condition by name. Actions return Tree.ok, Tree.fail or nothing (still going). */
+export declare class Tree {
+  constructor(definition: string | object, agent: Record<string, (...a: Loose[]) => Loose>, o?: { seed?: number });
+  static ok: string; static fail: string; static run: string;
+  update(dt: number): this; reset(): this; readonly state: 'running' | 'ok' | 'failed'; path(): string[];
+}
+type Consideration = ((...a: Loose[]) => number) & { curve?: true };
+/** Utility AI: the option whose considerations score highest (0..1, multiplied) wins; stick keeps the current pick a little longer. */
+export declare class Choose {
+  constructor(options: Record<string, Consideration | Consideration[] | { score: Consideration | Consideration[]; weight?: number }>, o?: { stick?: number; noise?: number; seed?: number });
+  pick(...a: Loose[]): string; scores: Record<string, number>; current: string | null;
+  static linear: Consideration; static quad: Consideration; static root: Consideration; static invert: Consideration;
+  static logistic(mid?: number, k?: number): Consideration; static step(at?: number): Consideration;
+}
 
 /** Tiny Brains: a small neural network (tanh hidden layers, softmax out). */
 export declare class TinyNet {

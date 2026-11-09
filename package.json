@@ -72,6 +72,7 @@
     "game-services": "file:plugins/game-services",
     "inkjs": "2.4.0",
     "lil-gui": "0.21.0",
+    "mistreevous": "4.3.1",
     "native-ar": "file:plugins/native-ar",
     "npu": "file:plugins/npu",
     "phone-ai": "file:plugins/phone-ai",
