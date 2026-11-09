@@ -22,6 +22,7 @@ import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { FrameGen, frameGenMRT } from './framegen.js';
 
 const LUM = vec3(.2126, .7152, .0722);
 
@@ -399,6 +400,62 @@ function bloomChain(src, aoF) {
 }
 
 /* ---------- the screen effects ---------- */
+// The last touches on the finished picture: vignette, film grain and the hurt flash. t moves the
+// grain on; k is the size of a drawn pixel on the screen (the grain is one drawn pixel big, as before
+// upscaling). With frame generation they go on as each refresh is shown, so the grain is new every
+// refresh (blending two frames' grain would halve it on every other one) and the vignette and the
+// hurt flash stay put instead of moving with the picture.
+function touches(U, col, t, k) {
+  const d = screenUV.sub(.5), r2 = dot(d, d);
+  col = col.mul(float(1).sub(U.vig.mul(smoothstep(.12, .62, r2.mul(1.6)))));                       // vignette
+  const p = floor(vec2(screenCoordinate.x, screenSize.y.sub(screenCoordinate.y)).mul(k)).add(.5).add(t);   // (WebGL counts pixel rows from the bottom)
+  col = col.add(fract(sin(dot(p, vec2(12.9898, 78.233))).mul(43758.5453)).sub(.5).mul(.035));     // grain
+  return mix(col, col.mul(vec3(1.25, .45, .4)).add(vec3(.12, 0, 0)), U.hurt.mul(smoothstep(.04, .4, r2)));   // hurt
+}
+// Snapdragon GSR 1 on WebGPU: sgsr.js's one pass (Qualcomm, BSD 3-Clause; the licence and what changed
+// are in that file), written as TSL. The finished small picture is drawn at the render size, then this
+// draws it at the screen's size: a 12-tap Lanczos-like filter on the edges with adaptive sharpening,
+// the rest a plain bilinear read, alpha kept (AR draws over the camera). It works in WebGL's frame
+// (rows counted from the bottom), as the shader was written, by turning the reads over.
+function sgsr1Gpu(src) {
+  const low = rtt(src, 1, 1, { depthBuffer: false, type: HalfFloatType }), vp = uniform(new Vector4(1, 1, 1, 1));   // 1/w, 1/h, w, h of the small picture
+  const node = Fn(() => {
+    const H = int(vp.w), hi = ivec2(int(vp.z).sub(1), H.sub(1));
+    const g = p => low.load(ivec2(p.x, H.sub(1).sub(p.y))).g;
+    // textureGather(tex, coord, 1): the green of the 2 x 2 texels round coord, in gather order
+    const gather = c => {
+      const p = ivec2(floor(c.mul(vp.zw).sub(.5))), a = clamp(p, ivec2(0, 0), hi), b = clamp(p.add(1), ivec2(0, 0), hi);
+      return vec4(g(ivec2(a.x, b.y)), g(b), g(ivec2(b.x, a.y)), g(a));
+    };
+    const lanczos = x => { const wA = x.sub(4), wB = x.mul(wA).sub(wA); return wB.mul(wA.mul(wA)); };
+    const src0 = low.sample(screenUV), out = vec3(src0.rgb).toVar();
+    const imgCoord = vec2(screenUV.x, float(1).sub(screenUV.y)).mul(vp.zw).add(vec2(-.5, .5)), pix = floor(imgCoord), pl = imgCoord.sub(pix);
+    const coord = pix.mul(vp.xy).toVar(), left = gather(coord).toVar();
+    const edgeVote = abs(left.z.sub(left.y)).add(abs(out.y.sub(left.y))).add(abs(out.y.sub(left.z)));
+    If(edgeVote.greaterThan(8 / 255), () => {
+      coord.assign(coord.add(vec2(vp.x, 0)));
+      const right = gather(coord.add(vec2(vp.x, 0))).toVar();
+      const u0 = gather(coord.add(vec2(0, vp.y.negate()))), u1 = gather(coord.add(vec2(0, vp.y)));
+      const upDown = vec4(u0.w, u0.z, u1.y, u1.x).toVar();
+      const mean = left.y.add(left.z).add(right.x).add(right.w).mul(.25);
+      left.assign(left.sub(mean)); right.assign(right.sub(mean)); upDown.assign(upDown.sub(mean));
+      const cw = out.y.sub(mean);
+      const a4 = v => abs(v.x).add(abs(v.y)).add(abs(v.z)).add(abs(v.w));
+      const std = float(2.181818).div(max(a4(left).add(a4(right)).add(a4(upDown)), 1e-5));
+      const wy = (dx, dy, c) => { const w = lanczos(dx.mul(dx).add(dy.mul(dy)).mul(.55).add(clamp(abs(c).mul(std), 0, 1))); return vec2(w, w.mul(c)); };
+      const X = pl.x, Y = pl.y;
+      const aWY = wy(X, Y.add(1), upDown.x).add(wy(X.sub(1), Y.add(1), upDown.y)).add(wy(X.sub(1), Y.sub(2), upDown.z)).add(wy(X, Y.sub(2), upDown.w))
+        .add(wy(X.add(1), Y.sub(1), left.x)).add(wy(X, Y.sub(1), left.y)).add(wy(X, Y, left.z)).add(wy(X.add(1), Y, left.w))
+        .add(wy(X.sub(1), Y.sub(1), right.x)).add(wy(X.sub(2), Y.sub(1), right.y)).add(wy(X.sub(2), Y, right.z)).add(wy(X.sub(1), Y, right.w));
+      const maxY = max(max(left.y, left.z), max(right.x, right.w)), minY = min(min(left.y, left.z), min(right.x, right.w));
+      const finalY = clamp(aWY.y.div(aWY.x).mul(2), minY, maxY);   // edge sharpness 2
+      out.assign(clamp(out.add(clamp(finalY.sub(cw), -23 / 255, 23 / 255)), 0, 1));   // (smooth high-contrast input)
+    });
+    return vec4(out, src0.a);
+  })();
+  return { node, size(w, h) { if (vp.value.z !== w || vp.value.w !== h) { low.setSize(w, h); vp.value.set(1 / w, 1 / h, w, h); } }, dispose() { low.dispose?.(); } };
+}
+
 // One chain per view (it draws that view's scene and camera). rebuild() when the shape changes (AO on
 // or off, smoothing, see-through for AR); the numbers are uniforms set each frame.
 // Snapdragon GSR 2 on WebGPU: the same two passes as sgsr2.js (Qualcomm, BSD 3-Clause; the licence and
@@ -485,16 +542,19 @@ function sgsr2Gpu(fin, depthT) {
       U.rs.value.copy(f.renderSize); U.os.value.copy(f.outputSize); U.jit.value.copy(f.jitter); U.sr.value.copy(f.scaleRatio);
       U.fov.value = f.fovH; U.minLerp.value = f.minLerp; U.reset.value = f.reset; U.c2p.value.copy(f.clipToPrevClip);
     },
-    // draw (the scene and the small finished picture are drawn on the way, by the nodes the upscale reads)
-    render(r) {
+    // draw (the scene and the small finished picture are drawn on the way, by the nodes the upscale reads);
+    // show = false leaves the screen alone (frame generation shows it, or a made frame, itself)
+    render(r, show = true) {
       const tm = r.toneMapping, cs = r.outputColorSpace; r.toneMapping = NoToneMapping; r.outputColorSpace = LinearSRGBColorSpace;
       try {
         const into = H2[cur], from = H2[1 - cur]; histT.value = from.texture; outT.value = into.texture;
         r.setRenderTarget(into); qUp.render(r);
-        r.setRenderTarget(null); qCp.render(r);
+        r.setRenderTarget(null); if (show) qCp.render(r);
         cur = 1 - cur;
       } finally { r.toneMapping = tm; r.outputColorSpace = cs; }
     },
+    /** The picture the last render() made (it stays until the render after next: the two take turns). */
+    last() { return H2[1 - cur].texture; },
     dispose() { low.dispose(); mdc.dispose(); for (const t of H2) t.dispose(); upMat.dispose(); cpMat.dispose(); },
   };
 }
@@ -511,23 +571,33 @@ export class GpuChain {
       lens: uniform(new Vector4()), cn: uniform(.1), cf: uniform(1000), px: uniform(new Vector2(1, 1)),
       // sun shafts (hd3d.js SHAFT_*): strength x how much the sun shows, and the light's colour
       shaft: uniform(0), shaftTint: uniform(new Color(1, .9, .75)),
+      // frame generation's last touches: the grain's own clock and size (touches())
+      gt: uniform(0), gk: uniform(1),
     };
     this.bloomN = null; this.aoN = null;
+    // frame generation (framegen.js): the generator, what the next refresh between real frames does, and how often that refresh didn't come
+    this.fg = null; this.pend = null; this.fgMode = null; this.fgWin = { real: 0, missed: 0 };
   }
-  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false) {
-    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}`;
+  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, fg = false, s1 = false) {
+    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${fg}|${s1}`;
     if (key === this.key) return;
-    this.key = key;
-    this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose(); this.s2?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose();
-    this.aoN = this.dnN = this.bloomN = this.s2 = this.dofT = this.shM = this.shB = null;
+    this.key = key; this.fg?.reset(); this.pend = null;
+    this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose(); this.s2?.dispose(); this.s1?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose();
+    this.aoN = this.dnN = this.bloomN = this.s2 = this.s1 = this.dofT = this.shM = this.shB = null;
     const sp = this.sp = pass(this.scene, this.cam, { samples: msaa || 0 });
+    // frame generation: the scene's pass also writes each pixel's motion and where see-through things are
+    if (fg && this.clear) sp.setMRT(frameGenMRT());
     if (this.clear) {
-      // AR: just the scene on a see-through background, tone mapped (bloom and the grade would tint the room behind it)
-      this.pp.outputNode = renderOutput(sp); this.pp.needsUpdate = true; return;
+      // AR: just the scene on a see-through background, tone mapped (bloom and the grade would tint the room behind it);
+      // with SGSR 1, drawn small and upscaled (tone mapping named outright: drawn outside the pipeline's own)
+      if (s1) { this.s1 = sgsr1Gpu(renderOutput(sp, ACESFilmicToneMapping, SRGBColorSpace)); this.pp.outputNode = this.s1.node; }
+      else this.pp.outputNode = renderOutput(sp);
+      this.pp.needsUpdate = true; return;
     }
     // (the normals picture's alpha says whether a pixel takes ambient occlusion: see-through things,
     // leaf cards and anything marked noAO write 0, as WebGL's AO leaves them out: noAO() below)
-    if (aoOn) sp.setMRT(mrt({ output, normal: vec4(normalView, 1) }));
+    const nrm = aoOn ? { normal: vec4(normalView, 1) } : {};
+    if (fg) sp.setMRT(frameGenMRT(nrm)); else if (aoOn) sp.setMRT(mrt({ output, ...nrm }));
     const U = this.U, colT = sp.getTextureNode('output');
     let lit = colT.rgb, aoF = float(1);
     if (aoOn) {
@@ -600,27 +670,26 @@ export class GpuChain {
         .add(smoothstep(.06, .045, length(g1)).mul(.05)).add(smoothstep(.1, .08, length(g2)).mul(.035));
       return col.add(U.sunCol.mul(gl).mul(U.glare).mul(seen));
     })();
-    // tone mapping (ACES, the renderer's exposure) and sRGB (named outright under SGSR 2: drawn outside the pipeline)
-    let out = s2 ? renderOutput(vec4(graded, 1), ACESFilmicToneMapping, SRGBColorSpace) : renderOutput(vec4(graded, 1));
+    // tone mapping (ACES, the renderer's exposure) and sRGB (named outright under SGSR 2 and 1: drawn outside the pipeline)
+    let out = s2 || s1 ? renderOutput(vec4(graded, 1), ACESFilmicToneMapping, SRGBColorSpace) : renderOutput(vec4(graded, 1));
     if (smooth) out = fxaa(out);
-    const fin = Fn(() => {
-      let col = out.rgb;
-      col = col.mul(float(1).sub(U.vig.mul(smoothstep(.12, .62, r2.mul(1.6)))));                       // vignette
-      const p = vec2(screenCoordinate.x, screenSize.y.sub(screenCoordinate.y)).add(U.t);   // (WebGL counts pixel rows from the bottom)
-      col = col.add(fract(sin(dot(p, vec2(12.9898, 78.233))).mul(43758.5453)).sub(.5).mul(.035));     // grain
-      col = mix(col, col.mul(vec3(1.25, .45, .4)).add(vec3(.12, 0, 0)), U.hurt.mul(smoothstep(.04, .4, r2)));   // hurt
-      return vec4(col, 1);
-    })();
+    // with frame generation the last touches go on as each refresh is shown (show()), not here
+    const fin = fg ? vec4(out.rgb, 1) : Fn(() => vec4(touches(U, out.rgb, U.t, float(1)), 1))();
     if (s2) { this.s2 = sgsr2Gpu(fin, sp.getTextureNode('depth')); return; }
-    this.pp.outputNode = fin; this.pp.needsUpdate = true;
+    if (s1) this.s1 = sgsr1Gpu(fin);
+    this.pp.outputNode = s1 ? this.s1.node : fin; this.pp.needsUpdate = true;
   }
-  /** Sets the numbers from the view and tier, then draws. o: { ao (AO resolution, 0 = off), msaa, bloomScale, smooth, bloom, t, hurt, grade, glare, sunUV, sunCol, aspect } */
+  /** Sets the numbers from the view and tier, then draws. o: { ao (AO resolution, 0 = off), msaa, bloomScale, smooth, bloom, t, hurt, grade, glare, sunUV, sunCol, aspect,
+   *  fg (frame generation: { mode: 'blend' | 'ahead', reset, jd: SGSR 2's jitter change in NDC }) }. With fg, returns what it showed ('real' | 'made'). */
   render(o) {
-    // o.s2: SGSR 2's frame numbers (sgsr2.js SgsrFrame): the scene and effects at o.w x o.h, upscaled to o.fw x o.fh
-    const f = !this.clear && o.s2 ? o.s2 : null;
-    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn);
-    // the passes size themselves from the canvas: under SGSR 2 the canvas is the screen's size, so scale them down
-    const k = f ? (o.w + .5) / o.fw : 1;
+    // o.s2: SGSR 2's frame numbers (sgsr2.js SgsrFrame): the scene and effects at o.w x o.h, upscaled to o.fw x o.fh;
+    // o.s1: the same sizes, upscaled by SGSR 1
+    const f = !this.clear && o.s2 ? o.s2 : null, s1 = !f && !!o.s1, fg = o.fg || null;
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, !!fg, s1);
+    if (!fg) { this.pend = null; this.fgMode = null; }
+    if (this.s1) this.s1.size(o.w, o.h);
+    // the passes size themselves from the canvas: upscaled, the canvas is the screen's size, so scale them down
+    const k = f || s1 ? (o.w + .5) / o.fw : 1;
     if (this.sp.getResolutionScale() !== k) this.sp.setResolutionScale(k);
     if (!this.clear) {
       const U = this.U;
@@ -634,9 +703,69 @@ export class GpuChain {
       if (this.dofT) { this.dofT.setSize(o.w, o.h); const L = o.lens; U.lens.value.set(L ? L[0] : 0, L ? L[1] : 0, L ? L[2] : 0, L ? L[3] : 0); U.cn.value = o.near; U.cf.value = o.far; }
       if (this.shM) { const bw = Math.max(8, Math.round(o.w / 4)), bh = Math.max(8, Math.round(o.h / 4)); this.shM.setSize(bw, bh); this.shB.setSize(bw, bh); U.shaft.value = o.shaft || 0; if (o.shaftCol) U.shaftTint.value.copy(o.shaftCol); }
     }
+    if (fg) return this.realFrame(o, f);
     if (this.s2) { this.s2.size(o.w, o.h, o.fw, o.fh); this.s2.set(f); this.s2.render(this.r); }
     else this.pp.render();
   }
-  dispose() { this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose?.(); this.s2?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose(); this.pp.dispose?.(); }
+
+  /* ---------- frame generation (framegen.js) ---------- */
+  // The real frame is drawn into a picture (SGSR 2's own, or one of ours), handed to the generator,
+  // and shown by a copy. blend: this refresh shows the frame made halfway from the last real frame to
+  // this one, and the next refresh (between()) shows this one. ahead: this refresh shows this one, and
+  // the next shows a frame made half a frame past it. The refresh between is the one the feed skips
+  // when a game runs at half the screen's rate (src/main.js, speed.between).
+  realFrame(o, f) {
+    const r = this.r, fg = this.fg ||= new FrameGen(r), sp = this.sp;
+    // the refresh between the last two real frames never came (the phone is busy): what it would have
+    // kept is kept now, so this frame is made from the right one
+    if (this.pend) { if (!o.fg.reset) { this.fgWin.missed++; if (this.pend.keep) fg.keep(); } this.pend = null; }
+    let color;
+    if (this.s2) { this.s2.size(o.w, o.h, o.fw, o.fh); this.s2.set(f); this.s2.render(r, false); color = this.s2.last(); }
+    else {
+      const rt = this.fgRT ||= new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false });
+      if (rt.width !== o.fw || rt.height !== o.fh) rt.setSize(o.fw, o.fh);
+      const was = r.getRenderTarget(); r.setRenderTarget(rt);
+      try { this.pp.render(); } finally { r.setRenderTarget(was); }
+      color = rt.texture;
+    }
+    const mode = o.fg.mode === 'ahead' ? 'ahead' : 'blend';
+    if (o.fg.reset || mode !== this.fgMode) fg.reset();
+    this.fgMode = mode;
+    const vel = sp.getTexture('velocity');
+    this.U.gk.value = vel.image.width / o.fw;
+    fg.real({ color, velocity: vel, reactive: sp.getTexture('reactive'), depth: sp.getTextureNode('depth').value,
+      renderSize: [vel.image.width, vel.image.height], outputSize: [o.fw, o.fh], camera: this.cam, jitterDelta: o.fg.jd });
+    this.fgWin.real++;
+    if (mode === 'ahead') { this.show(color); this.pend = { make: 1.5 }; return 'real'; }
+    if (fg.make(.5)) { this.show(fg.output); this.pend = { show: color, keep: true }; return 'made'; }
+    this.show(color); this.pend = { keep: true }; return 'real';
+  }
+  /** The refresh after a real frame: shows what frame generation planned for it. Returns what it showed ('real' | 'made'), or false. */
+  between() {
+    const p = this.pend; if (!p) return false;
+    this.pend = null;
+    let shown = false;
+    if (p.show) { this.show(p.show); shown = 'real'; }
+    if (p.keep) this.fg.keep();
+    if (p.make && this.fg.make(p.make)) { this.show(this.fg.output); shown = 'made'; }
+    return shown;
+  }
+  /** How often, out of the last real frames, the refresh between them didn't come (0..1), then starts counting again. */
+  missRate() { const w = this.fgWin, m = w.real ? w.missed / w.real : 0; w.real = w.missed = 0; return m; }
+  // a picture onto the screen (already tone mapped and in sRGB), with the last touches (AR: as it is, see-through)
+  show(tex) {
+    if (!this.showQ) {
+      const m = new NodeMaterial(), T = this.showT = texture(tex), U = this.U; m.name = 'Frame gen show';
+      m.fragmentNode = this.clear ? T.sample(screenUV) : Fn(() => vec4(touches(U, T.sample(screenUV).rgb, U.gt, U.gk), 1))();
+      this.showQ = new QuadMesh(m);
+    }
+    this.showT.value = tex; this.U.gt.value = (this.U.gt.value + .37) % 10;
+    const r = this.r, tm = r.toneMapping, cs = r.outputColorSpace; r.toneMapping = NoToneMapping; r.outputColorSpace = LinearSRGBColorSpace;
+    try { r.setRenderTarget(null); this.showQ.render(r); } finally { r.toneMapping = tm; r.outputColorSpace = cs; }
+  }
+  dispose() {
+    this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose?.(); this.s2?.dispose(); this.s1?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose(); this.pp.dispose?.();
+    this.fg?.dispose(); this.fgRT?.dispose(); this.showQ?.material.dispose(); this.fg = this.fgRT = this.showQ = null; this.pend = null;
+  }
 }
 export { gpuSparks } from './particles-gpu.js';

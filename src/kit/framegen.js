@@ -10,10 +10,13 @@
 // fresh in TSL (three.js's node language) so it runs as WebGPU compute, beside SGSR 2.
 //
 //   scenePass.setMRT(frameGenMRT());                 // the scene's pass writes motion and a see-through mask too
-//   const fg = new FrameGen(renderer);               // kit use: hd3d.js makes one per Next Gen / AR view
+//   const fg = new FrameGen(renderer);               // kit use: hd3d-gpu.js GpuChain makes one per Next Gen / AR view
 //   after each real frame:  fg.real({ color, velocity, reactive, depth, renderSize, outputSize, jitterDelta })
-//   on a refresh between:   fg.make(t) then draw fg.output (t = 0.5 halfway between the last two real
-//                            frames; t = 1.5 guesses half a frame ahead with no added lag)
+//   then fg.make(t) and draw fg.output (t = 0.5 halfway between the last two real frames, shown before
+//   the newest, which then needs fg.keep() before the next real frame; t = 1.5 guesses half a frame
+//   ahead, shown on the refresh after the newest, with no added lag)
+// hd3d-gpu.js decides what each refresh shows and src/main.js calls it on the refreshes between real
+// frames (src/kit/speed.js says when frame generation is on).
 //
 // Two modes: 'blend' (t = .5, interpolation) shows each real frame half a frame late but has the
 // fewest smears; 'ahead' (t = 1.5, extrapolation) adds no lag, for reflex and rhythm games, and its
@@ -159,14 +162,18 @@ export class FrameGen {
       // compared as distance from the camera (the depth picture bunches everything far away near 1)
       const lin = v => U.near.mul(U.far).div(U.far.sub(v.mul(U.far.sub(U.near))));
       const L = lin(z), tol = L.mul(U.tol);
-      const okN = in01(uN).and(lin(dep.load(pixOf(uN)).x).greaterThan(L.sub(tol)));
+      const inN = in01(uN), inP = in01(uP).and(U.interp.greaterThan(.5));
+      const okN = inN.and(lin(dep.load(pixOf(uN)).x).greaterThan(L.sub(tol)));
       const pP = pdep.load(pixOf(uP));
       // the last frame's see-through things were where they were, not where the background went: skip it there
-      const okP = in01(uP).and(lin(pP.x).greaterThan(L.sub(tol))).and(U.interp.greaterThan(.5)).and(pP.y.lessThan(.25));
+      const okP = inP.and(lin(pP.x).greaterThan(L.sub(tol))).and(pP.y.lessThan(.25));
       // unmarked see-through things (a game's own blending) would show twice: where the two frames disagree
       // a lot about a pixel that is barely moving, keep the newest
       const still = length(d.mul(U.os)).lessThan(1.5), differ = abs(dot(cN.sub(cP), LUMA)).greaterThan(.2);
-      const wN = select(okN, select(okP, select(still.and(differ), float(1), U.t), float(1)), select(okP, float(0), float(1)));
+      // neither sees the same surface: the newest frame, unless that pixel has gone off the screen's edge
+      // and the last frame still has it (else the edge row would be stretched into streaks)
+      const lost = select(inN.not().and(inP), float(0), float(1));
+      const wN = select(okN, select(okP, select(still.and(differ), float(1), U.t), float(1)), select(okP, float(0), lost));
       const made = mix(cP, cN, clamp(wN, 0, 1));
       // marked see-through things, here or where this pixel's colour comes from: the newest frame, unmoved
       // (faint glass is mostly left to the motion, as what shows through it moves with the background)
@@ -196,7 +203,7 @@ export class FrameGen {
   }
   /** Call after real() and BEFORE the next real frame is drawn: copies the newest frame to be next time's last frame. */
   keep() {
-    this.r.compute(this.cKeepC); this.r.compute(this.cKeepD);
+    if (this.frames) this.r.compute([this.cKeepC, this.cKeepD]);
   }
   /**
    * Makes the in-between frame into this.output (a StorageTexture at the screen's size). t: .5 between
@@ -207,7 +214,8 @@ export class FrameGen {
     if (!this.ready) return false;
     const r = this.r, t0 = performance.now();
     this.U.t.value = t; this.U.interp.value = t <= 1 ? 1 : 0;
-    r.compute(this.cClear); r.compute(this.cSplat); r.compute(this.cResolve); r.compute(this.cFill); r.compute(this.cCompose);
+    // one compute pass: WebGPU finishes each step's writes before the next step reads them
+    r.compute([this.cClear, this.cSplat, this.cResolve, this.cFill, this.cCompose]);
     this.stats.made++; this.stats.ms = this.stats.ms * .9 + (performance.now() - t0) * .1;   // CPU time to queue it (the GPU time is measured by the app)
     return true;
   }

@@ -5,7 +5,7 @@
 // still and moving, and a box moving across the scene. Each is scored against the full-size picture.
 import gs, { loadParts } from '../../src/gamescroll.js';
 import { setGpuPick, prepareGPU } from '../../src/kit/gpu.js';
-// ?gpu: on WebGPU (upscale-compare.cjs --webgpu), where SGSR 1 isn't ported (it stretches)
+// ?gpu: on WebGPU (upscale-compare.cjs --webgpu), with hd3d-gpu.js's TSL versions of SGSR 1 and 2
 const GPU = new URLSearchParams(location.search).has('gpu');
 setGpuPick(GPU ? 'webgpu' : 'webgl');
 await loadParts();
@@ -34,7 +34,7 @@ const draw = () => { v.t = 0; v.render(x, W, H); return x.getImageData(0, 0, W, 
 const err = (a, b) => { let s = 0; for (let i = 0; i < a.length; i += 4) s += (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])) / 3; return s / (a.length / 4); };
 // flicker: how much the picture changes from frame to frame with nothing moving
 const out = { scale: K, scenes: {} }, shots = {};
-const run = async (name, frames, moveCam, moveBox, modes = GPU ? ['plain', 'sgsr2'] : ['plain', 'sgsr1', 'sgsr2']) => {
+const run = async (name, frames, moveCam, moveBox, modes = ['plain', 'sgsr1', 'sgsr2']) => {
   set('full'); pose(moveCam ? frames : 0); place(moveBox ? frames : 0);
   draw(); for (let i = 0; i < 2; i++) await new Promise(r => requestAnimationFrame(r)); const ref = draw();   // (a resized WebGPU canvas shows the old picture until the next frame)
   const res = {};

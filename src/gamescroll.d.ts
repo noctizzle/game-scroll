@@ -83,6 +83,15 @@ export interface GameDef {
   location?: 'coarse' | 'precise';
   /** Save versions: raise version when the save's shape changes; migrate turns an older save into the new shape. */
   save?: { version: number; migrate?(data: Loose, from: number): unknown };
+  /** The most frames a second this game wants (the app picks a rate per phone, never above this). */
+  fps?: number;
+  /**
+   * Next Gen and AR: frame generation on WebGPU, which makes the frames between real ones where the game
+   * runs at half the screen's rate. Default: on, blending the last two frames. 'ahead': guess half a frame
+   * past the newest instead (no added delay, for reflex and rhythm games). false: never (a game whose
+   * look flickers on purpose, or whose picture changes in ways motion can't follow).
+   */
+  frameGen?: false | 'ahead';
   make(api: GameApi): Game;
   [more: string]: Loose;
 }
@@ -534,7 +543,7 @@ export interface BonesPart { Rig: typeof Rig }
 
 export interface ToonPart { View: new (...a: Loose[]) => Loose; G: Loose; part: Loose; grp: Loose; blob: Loose; toon: Loose; flat: Loose; dude: Loose; has3D(): boolean; THREE: Loose }
 /** An HDView's extras for the ray-traced look: v.reflect(...meshes) (reflections on top-end phones), v.contact({ y, size }) (soft contact shadows) (mesh.userData.noAO = true keeps a mesh out of ambient occlusion). */
-/** HDView extras: v.decal(mesh, point, normal, { size, colour, paint, life }), v.clearDecals(), v.bakeLight(at, { radius, strength }) (light probes, blended by v.probeAt or the camera), v.clearProbes(), v.shafts = 0..2 (sun shafts), v.upscaler = 'sgsr1' (one-frame upscaling instead of Snapdragon GSR 2), v.focus = { at, range, depth, blur } | null (depth of field, high and ultra), sun().fit(view, { far, near }) (near: a sharp shadow cascade over the first metres). */
+/** HDView extras: v.decal(mesh, point, normal, { size, colour, paint, life }), v.clearDecals(), v.bakeLight(at, { radius, strength }) (light probes, blended by v.probeAt or the camera), v.clearProbes(), v.shafts = 0..2 (sun shafts), v.upscaler = 'sgsr1' (one-frame upscaling instead of Snapdragon GSR 2), v.focus = { at, range, depth, blur } | null (depth of field, high and ultra), v.cut() (the camera jumped somewhere new: the upscaler and frame generation start fresh; big jumps are found by themselves), sun().fit(view, { far, near }) (near: a sharp shadow cascade over the first metres). */
 export interface HdPart { ContactShadows: new (o?: { y?: number; size?: number; blur?: number; darkness?: number; opacity?: number; height?: number }) => Loose; HDView: new (...a: Loose[]) => Loose; HD: Loose; TIERS: Loose; hasHD(): boolean; pbr: Loose; rbox: Loose; surface: Loose; speckle: Loose; /** pulse(material, { at, radius, strength, color, width, fill }): a glowing ring sweeping out from a point (sonar, shockwave). */ pulse(m: Loose, o?: { at?: { value: Loose }; radius?: { value: number }; strength?: { value: number }; color?: number[] | Loose; width?: number; fill?: number }): Loose; Particles: Loose;
   /** Tens of thousands of particles moved on the graphics chip with WebGPU (capped on the CPU with WebGL). new GPUParticles(view, opts); p.emit(count, burst); p.update(dt). Looks only: positions can't be read back. */
   GPUParticles: new (view: Loose, o?: { max?: number; additive?: boolean; gravity?: number; drag?: number; bounce?: number; floor?: number | null; turbulence?: { strength?: number; scale?: number; speed?: number } | null; wind?: Loose }) => {

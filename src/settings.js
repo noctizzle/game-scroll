@@ -4,7 +4,7 @@ import { fmt } from './util.js';
 import { playstats } from './playstats.js';
 import { HEARTS_URL } from './hearts.js';
 import { nativeARSupported } from './kit/native-ar.js';
-import { fpsPick, setFpsPick, autoFps, phoneClass, screenHz } from './kit/speed.js';
+import { fpsPick, setFpsPick, autoFps, phoneClass, screenHz, frameGenPick, setFrameGenPick, frameGenHow, setFrameGenHow } from './kit/speed.js';
 import { geoSettings } from './geo.js';
 import { gpuPick, setGpuPick, hasWebGPU } from './kit/gpu.js';
 import { OPEN_SOURCE, OTHER_PARTS } from './licences.js';
@@ -42,6 +42,10 @@ export function openSettings({ stream, cached, clear, arTest }) {
         <h3>Graphics (test)</h3>
         <p class="qa-help">Draw Next Gen and AR games with WebGPU, the newer graphics system, instead of WebGL. They should look the same and may run smoother. Games with an effect that isn't ready for WebGPU yet keep using WebGL.${webgpuHere === false ? ' This phone doesn’t offer WebGPU, so games keep using WebGL.' : ''}</p>
         <label class="set-toggle"><input type="checkbox" class="set-gpu"${gpuPick() === 'webgpu' ? ' checked' : ''}> Use WebGPU for 3D games</label>
+        ${gpuPick() === 'webgpu' ? `<p class="qa-help"><b>Frame generation.</b> When a 3D game draws 60 frames a second on a fast screen, make a frame between each pair so it moves at the screen's rate. Auto does it for games that can't reach the screen's rate; Always draws half the frames of every 3D game and makes the rest (cooler, more detail). Needs Frame rate on Auto.${screenHz() < 100 ? ` This screen runs at ${screenHz()} Hz, so there are no refreshes in between to fill.` : ''}</p>
+        <div class="qa-actions set-fg">${[['auto', 'Auto'], ['always', 'Always'], ['off', 'Off']].map(([v, n]) => `<button data-fg="${v}"${frameGenPick() === v ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}>${n}</button>`).join('')}</div>
+        <p class="qa-help">Blend makes the frame halfway between the last two (the fewest flaws; each real frame shows a moment later). Ahead guesses half a frame past the newest (no delay; edges a little softer when things move fast). Game's choice is blend unless a game asks for ahead.</p>
+        <div class="qa-actions set-fg-how">${[['game', 'Game’s choice'], ['blend', 'Blend'], ['ahead', 'Ahead']].map(([v, n]) => `<button data-how="${v}"${frameGenHow() === v ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}>${n}</button>`).join('')}</div>` : ''}
       </section>` : ''}
       ${arTest ? `<section class="set-row">
         <h3>AR test</h3>
@@ -79,7 +83,9 @@ export function openSettings({ stream, cached, clear, arTest }) {
     el.querySelector('.qa-x').onclick = () => el.close();
     el.querySelector('.set-ar')?.addEventListener('click', () => { el.close(); arTest(); });
     el.querySelectorAll('.set-fps button').forEach(b => b.addEventListener('click', () => { setFpsPick(b.dataset.fps); render(); }));
-    el.querySelector('.set-gpu')?.addEventListener('change', e => setGpuPick(e.target.checked ? 'webgpu' : 'webgl'));
+    el.querySelector('.set-gpu')?.addEventListener('change', e => { setGpuPick(e.target.checked ? 'webgpu' : 'webgl'); render(); });
+    el.querySelectorAll('.set-fg button').forEach(b => b.addEventListener('click', () => { setFrameGenPick(b.dataset.fg); render(); }));
+    el.querySelectorAll('.set-fg-how button').forEach(b => b.addEventListener('click', () => { setFrameGenHow(b.dataset.how); render(); }));
     el.querySelector('.set-loc').addEventListener('change', e => { geoSettings.enabled = e.target.checked; });
     el.querySelector('.set-stats')?.addEventListener('change', e => { playstats.enabled = e.target.checked; });
     el.querySelector('.set-forget')?.addEventListener('click', () => { resetRecommendations(); render(); });
