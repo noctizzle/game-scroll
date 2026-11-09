@@ -72,10 +72,12 @@ export const screenHz = () => hz;
 /* ---------- frame rate per game ---------- */
 const is3D = def => def && (def.era === 'nextgen' || def.era === 'ar');
 let settled = store.get(SETTLE_KEY, {}) || {};
-let pick = store.get(PICK_KEY, 'auto');
+// 'auto' or a pinned rate; anything else saved (a bad write) counts as Auto
+const okPick = v => [120, 60, 30].includes(+v) ? +v : 'auto';
+let pick = okPick(store.get(PICK_KEY, 'auto'));
 /** The player's choice in Settings: 'auto', 120, 60 or 30. */
 export const fpsPick = () => pick;
-export function setFpsPick(v) { pick = v === 'auto' ? 'auto' : +v; store.set(PICK_KEY, pick); }
+export function setFpsPick(v) { pick = okPick(v); store.set(PICK_KEY, pick); }
 
 /** What Auto would choose for this game on this phone, before any stepping down. */
 export function autoFps(def) {
@@ -117,6 +119,22 @@ export function frameGenFor(def) {
   // Auto: only a game that can't reach the screen's rate (it settled at 60); Always: any that can do half
   const on = fgPick === 'always' ? f >= half * .8 : f >= half * .8 && f < hz * .9;
   return on ? how : false;
+}
+/** One line for Settings: whether the game on screen makes frames in between now, and if not, why. */
+export function frameGenStatus(def) {
+  const name = def?.title || 'This game';
+  if (!def || !is3D(def)) return 'Only Next Gen and AR games use it; the game on screen isn’t one.';
+  if (def.frameGen === false) return `${name} turns it off.`;
+  if (fgPick === 'off') return 'Off.';
+  if (pick !== 'auto') return `Off while Frame rate is set to ${pick}: set it to Auto.`;
+  if (hz < 100) return `Off: this screen runs at ${hz} Hz, so there are no refreshes in between to fill.`;
+  if (!speed.gpu) return `Off: ${name} draws with WebGL here (an effect it uses isn’t ready for WebGPU).`;
+  if (fgFailed.has(def.id)) return `Off for ${name} until the app restarts: the phone was too busy for the frames in between.`;
+  const how = frameGenFor(def);
+  if (how) return `${name}: draws ${Math.round(hz / 2)} frames a second and makes ${Math.round(hz / 2)} more (${how}).`;
+  const f = realFps(def);
+  return f >= hz * .9 ? `${name} already draws ${Math.round(f)} frames a second, the screen’s rate, so Auto leaves it. Pick Always to try it.`
+    : `${name} runs at ${Math.round(f)} frames a second here, too few to fill in between.`;
 }
 /** The 3D kit found the refreshes between real frames didn't come (the phone is too busy): no frame generation for this game until the app restarts. */
 export function frameGenFailed(id) { if (id) fgFailed.add(id); }

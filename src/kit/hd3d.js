@@ -126,6 +126,8 @@ export const HD = {
   set frameGen(v) { speed.forceFrameGen = v || null; }, get frameGen() { return speed.forceFrameGen; },
   /** Tests: fgTap(kind, canvas, when) runs after each frame frame generation puts on the screen ('real' | 'made'; when: 'frame' | 'between'), while the canvas still holds it. */
   fgTap: null,
+  /** A gap between real frames longer than this (ms) counts as a pause: frame generation starts afresh. Tests on slow software GPUs raise it. */
+  fgGap: 250,
   /** Tests: run the refresh between now (where the test browser is too slow to have one), as the feed does on a refresh it skips. */
   between() { const b = speed.between; speed.between = null; b?.(); },
   /** Show the 3D canvas directly on the card (false: copy each frame into the card's canvas, as tests and screenshots need). */
@@ -1159,7 +1161,7 @@ export class HDView {
     if (how) {
       this.scene.updateMatrixWorld(); this.cam.updateMatrixWorld();
       const m = cameraMove(this.cam, this._fgCam); this._fgCam = m.last;
-      fg = { mode: how, reset: cut || m.jumped || now - (this._fgT || 0) > 250, jd: [0, 0] }; this._fgT = now;
+      fg = { mode: how, reset: cut || m.jumped || now - (this._fgT || 0) > HD.fgGap, jd: [0, 0] }; this._fgT = now;
     } else this._fgCam = null;
     if (s2) { o.s2 = GS2 ||= new SgsrFrame(); this.scene.updateMatrixWorld(); o.s2.begin(this.cam, pw, ph, o.fw, o.fh, this, now, cut, true); }   // WebGPU pictures count rows from the top
     // SGSR 2 moves the camera by a fraction of a pixel each frame (its jitter) and three's motion picture
