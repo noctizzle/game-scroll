@@ -9,9 +9,9 @@
 
 export const OPEN_SOURCE = [
   { name: 'three.js', for: '3D graphics', licence: 'MIT', spdx: 'MIT', packages: ['three'] },
-  { name: 'Capacitor', for: 'the phone app and its haptics, motion, location and share plugins', licence: 'MIT', spdx: 'MIT',
+  { name: 'Capacitor', for: 'the phone app and its haptics, motion, location, share and file plugins', licence: 'MIT', spdx: 'MIT',
     packages: ['@capacitor/android', '@capacitor/ios', '@capacitor/core', '@capacitor/app', '@capacitor/device',
-      '@capacitor/geolocation', '@capacitor/haptics', '@capacitor/motion', '@capacitor/share'] },
+      '@capacitor/filesystem', '@capacitor/geolocation', '@capacitor/haptics', '@capacitor/motion', '@capacitor/share'] },
   { name: 'Rapier', for: '2D and 3D physics', licence: 'Apache 2.0', spdx: 'Apache-2.0',
     packages: ['@dimforge/rapier2d-compat', '@dimforge/rapier3d-compat', '@dimforge/rapier2d-simd-compat', '@dimforge/rapier3d-simd-compat'] },
   { name: 'MediaPipe', for: 'face and hand tracking, sound recognition, and their models', licence: 'Apache 2.0', spdx: 'Apache-2.0',

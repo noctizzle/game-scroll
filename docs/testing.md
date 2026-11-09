@@ -28,6 +28,8 @@ How to check a change without waiting longer than you need to. Written for peopl
 | Shaders built mid-round (hd3d `holdNew`) | `node scripts/shader-hold.cjs [--webgpu]` | about a minute |
 | Frame generation | `node scripts/framegen-test.cjs --check` (8 suites against `scripts/framegen-test/baseline.json`; `--save` after a change meant to move the numbers), `node scripts/framegen-games.cjs [--jobs n]` | about 3 min, then 1 to 4 min |
 | Engine speed (CPU per frame) | `node scripts/perf-bench.cjs [id ...] --json before.json` before, `--vs before.json` after (see below) | about 15 s a game per backend |
+| The frame lab (`src/framelab.js`) | `node scripts/framelab-test.cjs [2d-id] [3d-id] [--shots dir] [--report file.html]` | about 3 min |
+| How a game really runs (pacing, hitch causes, upscaler, frame gen) | the frame lab on a phone: QA panel › Frame lab, Rec, Report ([frame-lab.md](frame-lab.md)) | |
 | Everything (before a big engine PR) | `node scripts/smoke.cjs` (all 162 games) | about 3.5 min |
 
 The PR check (`.github/workflows/game-pr-check.yml`) runs the node checks (`npm run games`,

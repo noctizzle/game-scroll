@@ -6,9 +6,10 @@
 //   power.saving   true while the phone is warm, in power saving, or under 20% and not charging
 //   power.why      which, in words for Settings ('the phone is warm', 'battery saver is on', 'the battery is low')
 //   power.heat     0 cool, 1 warm, 2 hot
+//   power.thermal, power.headroom   the raw readings (null where unknown), for the frame lab
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
-export const power = { heat: 0, saver: false, level: 1, charging: true, saving: false, why: '' };
+export const power = { heat: 0, saver: false, level: 1, charging: true, saving: false, why: '', thermal: null, headroom: null };
 
 const native = Capacitor.isNativePlatform();
 const plugin = native && Capacitor.isPluginAvailable('PowerState') ? registerPlugin('PowerState') : null;
@@ -34,7 +35,7 @@ export function judge(p, now) {
 
 async function ask() {
   try {
-    if (plugin) { const o = await plugin.get(); power.heat = heatOf(o); power.saver = !!o.saver; }
+    if (plugin) { const o = await plugin.get(); power.heat = heatOf(o); power.saver = !!o.saver; power.thermal = o.thermal ?? null; power.headroom = o.headroom ?? null; }
   } catch (_) { /* an older app without the plugin: heat unknown */ }
   try {
     if (native) {

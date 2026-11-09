@@ -1,0 +1,119 @@
+// Checks the frame lab (src/framelab.js): turns it on, plays a 2D game and a Next Gen game (on WebGPU where
+// the test browser has it), records, runs A/B, Shimmer and FG check, folds and unfolds (Galaxy Z Fold 8
+// sizes) and makes the report. Fails on any page error or a tool that doesn't produce its result.
+//   npm run build:bundled && node scripts/framelab-test.cjs [--shots dir] [--report file.html] [2d-id] [3d-id]
+// Timings here are software 3D and mean nothing; this checks that the tools work, not how fast games are.
+const { chromium } = require('playwright');
+const fs = require('fs'), path = require('path');
+const SIZES = { cover: { width: 374, height: 591 }, inner: { width: 549, height: 735 } };
+(async () => {
+  const argv = process.argv.slice(2), opt = k => { const i = argv.indexOf(k); return i >= 0 ? argv.splice(i, 2)[1] : null; };
+  const shots = opt('--shots'), reportFile = opt('--report'); if (shots) fs.mkdirSync(shots, { recursive: true });
+  const [id2d = 'stack', id3d = 'bunker-breakout'] = argv;
+  const server = await (await import('vite')).preview({ preview: { port: 4187 } });
+  const icd = path.join(path.dirname(chromium.executablePath()), 'vk_swiftshader_icd.json');
+  const b = await chromium.launch({ args: ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--use-angle=vulkan', '--enable-features=Vulkan'], env: { ...process.env, VK_ICD_FILENAMES: icd } });
+  const ctx = await b.newContext({ viewport: SIZES.cover, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const p = await ctx.newPage(), errs = [], fails = [];
+  p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (/\[framelab\]/.test(m.text())) errs.push(m.text()); });
+  const check = (ok, what) => { console.log(`${ok ? 'PASS' : 'FAIL'} ${what}`); if (!ok) fails.push(what); };
+  const shot = async name => { if (!shots) return; const t = Date.now(); await p.screenshot({ path: path.join(shots, name + '.png'), timeout: 120000 }).catch(e => console.log('   (no screenshot ' + name + ': ' + e.message.split('\n')[0] + ')')); if (Date.now() - t > 5000) console.log(`   (screenshot ${name} took ${Date.now() - t} ms)`); };
+  const play = async ms => {
+    const r = await p.evaluate(() => { const c = __gs.active.canvas.getBoundingClientRect(); return { x: c.x, y: c.y, w: c.width, h: c.height }; });
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      if (await p.evaluate(() => __gs.active.state) !== 'playing') await p.evaluate(() => __gs.start());
+      const x = r.x + r.w * (.2 + .6 * Math.random()), y = r.y + r.h * (.45 + .45 * Math.random());
+      await p.mouse.move(x, y); await p.mouse.down(); await p.mouse.move(x + 40 * (Math.random() - .5), y + 40 * (Math.random() - .5), { steps: 3 });
+      await p.waitForTimeout(80 + Math.random() * 120); await p.mouse.up();
+    }
+  };
+  await p.goto('http://localhost:4187/?lab'); await p.waitForFunction(() => window.__gs, null, { timeout: 30000 });
+  await p.waitForFunction(() => document.querySelector('.fl'), null, { timeout: 10000 }).catch(() => {});
+  check(await p.evaluate(() => !!document.querySelector('.fl')), 'lab opens from ?lab');
+
+  // 2D: record a few seconds of play
+  await p.evaluate(id => __gs.only(id), id2d); await p.waitForTimeout(500);
+  const lab = () => p.evaluate(() => __gs.lab(true));
+  await lab(); await p.evaluate(() => __gs.start());
+  await p.evaluate(async () => (await __gs.lab(true)).rec(true));
+  await play(3500);
+  const sum2 = await p.evaluate(async () => { const L = await __gs.lab(true); L.rec(false); return L.summary(); });
+  console.log('   ' + sum2.split('\n').join('\n   '));
+  check(/avg [\d.]+ fps/.test(sum2), `${id2d}: recording measures fps, lows and pacing`);
+  check(await p.evaluate(() => /fps/.test(document.querySelector('.fl-sum').textContent)), `${id2d}: live numbers in the panel`);
+  await shot('2d-cover');
+
+  // fold open mid-round: the panel stays on screen and the resize shows up as an event
+  await p.setViewportSize(SIZES.inner); await p.waitForTimeout(900);
+  const box = await p.evaluate(() => { const r = document.querySelector('.fl').getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, vw: innerWidth, vh: innerHeight }; });
+  check(box.l >= 0 && box.r <= box.vw + 1 && box.t >= 0 && box.b <= box.vh, `panel on screen unfolded (${Math.round(box.r - box.l)}x${Math.round(box.b - box.t)} of ${box.vw}x${box.vh})`);
+  check(await p.evaluate(async () => (await __gs.lab(true)).events.some(e => e.k === 'F')), 'fold logged as an event');
+  await shot('2d-inner');
+  await p.setViewportSize(SIZES.cover); await p.waitForTimeout(600);
+
+  // Next Gen on WebGPU where there is one
+  await p.evaluate(id => __gs.only(id), id3d);
+  await p.waitForFunction(() => __gs.active && !__gs.active.loading, null, { timeout: 60000 });
+  const gpu = await p.evaluate(async () => { while (!window.__gpu) await new Promise(r => setTimeout(r, 50)); return !!(await window.__gpu.ready()); });
+  await p.evaluate(() => { __hd.fgGap = 5000; __gs.start(); }); await p.waitForTimeout(1500);
+  await p.evaluate(async () => (await __gs.lab(true)).rec(true));
+  await play(4000);
+  const info = await p.evaluate(() => ({ ...__hd.info }));
+  check(info.rw > 0 && info.ow > 0, `${id3d}: resolution counter (3D ${info.rw}x${info.rh} -> ${info.ow}x${info.oh}, ${info.backend}${gpu ? '' : ', no WebGPU here'})`);
+  const txt = await p.evaluate(() => document.querySelector('.fl pre').textContent);
+  check(/3D \d+×\d+ → \d+×\d+/.test(txt), `${id3d}: panel shows the 3D size`);
+  await shot('3d-cover');
+
+  const ab = async key => {
+    const n0 = await p.evaluate(async () => (await __gs.lab(true)).shots.length);
+    await p.evaluate(async k => (await __gs.lab(true)).ab(k), key);
+    const n1 = await p.evaluate(async () => (await __gs.lab(true)).shots.length);
+    const open = await p.evaluate(() => !!document.querySelector('.fl-view'));
+    check(n1 === n0 + 1 && open, `A/B ${key}: two pictures, viewer open`);
+    if (open && key === 'sgsr') {
+      for (const m of ['wipe', 'side', 'diff', 'flip']) { await p.click(`.fl-view [data-m="${m}"]`); await p.waitForTimeout(150); if (m === 'side') { await p.click('.fl-view [data-z="8"]'); await shot('ab-side-8x'); } }
+      await p.click('.fl-view [data-z="1"]'); await p.click('.fl-view [data-m="wipe"]'); await shot('ab-wipe');
+    }
+    await p.evaluate(() => document.querySelector('.fl-view [data-a="x"]')?.click());
+  };
+  await ab('sgsr');
+  await ab('res');
+  if (gpu) await ab('backend');
+  const restored = await p.evaluate(() => ({ up: __hd.upscale, sc: __hd.scale, f: __hd.force }));
+  check(restored.up === true && restored.sc == null && restored.f == null, 'A/B puts the settings back');
+
+  await p.evaluate(async () => (await __gs.lab(true)).shimmer());
+  const sh = await p.evaluate(async () => { const L = await __gs.lab(true); const s = L.shots[L.shots.length - 1]; return s && s.kind === 'shimmer' ? s.notes[0] : ''; });
+  check(!!sh, 'shimmer scan: ' + sh); await shot('shimmer');
+  await p.evaluate(() => document.querySelector('.fl-view [data-a="x"]')?.click());
+
+  if (gpu && info.backend === 'webgpu') {
+    await p.evaluate(() => { window.__fgDone = false; __gs.lab(true).then(L => L.fg()).finally(() => { window.__fgDone = true; }); });
+    for (let i = 0; i < 12 && !await p.evaluate(() => window.__fgDone); i++) await play(1500);
+    await p.waitForFunction(() => window.__fgDone, null, { timeout: 60000 });
+    const fg = await p.evaluate(async () => { const L = await __gs.lab(true); const s = L.shots[L.shots.length - 1]; return s && s.kind === 'fg' ? s.notes[0] : document.querySelector('.fl-msg').textContent; });
+    console.log('   FG check: ' + fg);
+    check(!/did not|Error/.test(fg), 'FG check runs');
+    if (/made frames checked/.test(fg)) await shot('fg-check');
+    await p.evaluate(() => document.querySelector('.fl-view [data-a="x"]')?.click());
+  } else console.log('SKIP FG check (no WebGPU in this browser)');
+
+  await p.evaluate(async () => (await __gs.lab(true)).rec(false));
+  const sum3 = await p.evaluate(async () => (await __gs.lab(true)).summary());
+  console.log('   ' + sum3.split('\n').join('\n   '));
+  check(/avg [\d.]+ fps/.test(sum3), `${id3d}: recording summary`);
+  const html = await p.evaluate(async () => (await __gs.lab(true)).html());
+  check(html.length > 5000 && html.includes('Frame lab report'), `report made (${(html.length / 1048576).toFixed(2)} MB)`);
+  if (reportFile) fs.writeFileSync(reportFile, html);
+  // the report page itself draws without errors
+  const rp = await ctx.newPage(), rerr = []; rp.on('pageerror', e => rerr.push(e.message));
+  await rp.setContent(html); await rp.waitForTimeout(400); check(!rerr.length && await rp.evaluate(() => document.querySelectorAll('canvas').length >= 4), 'report page draws its charts' + (rerr.length ? ': ' + rerr.join('; ') : ''));
+  if (shots) await rp.screenshot({ path: path.join(shots, 'report.png'), fullPage: true }); await rp.close();
+
+  await p.evaluate(async () => (await __gs.lab(true)).close());
+  check(await p.evaluate(() => !document.querySelector('.fl') && !document.querySelector('.fl-tint')), 'lab closes cleanly');
+  check(!errs.length, 'no page errors' + (errs.length ? ':\n   ' + errs.join('\n   ') : ''));
+  await b.close(); server.httpServer.close();
+  console.log(fails.length ? `${fails.length} failed` : 'all passed'); process.exit(fails.length ? 1 : 0);
+})();

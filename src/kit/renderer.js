@@ -1,6 +1,7 @@
 // Makes the app's WebGL renderers (Classic Console, Next Gen and AR), in one place so the WebGPU move
 // (docs/webgpu-move.md) changes one file. The WebGPU renderer is gpu.js prepareGPU(). Kit use only.
 import { WebGLRenderer } from 'three';
+import { glStats } from './gpu.js';
 
 const KEEP_MAX = 800;   // shader programs kept for the session (each is a few KB on the graphics chip)
 
@@ -17,8 +18,9 @@ export function makeRenderer(o = {}) {
   // makes endless one-off shaders.
   const render = r.render.bind(r); let seen = 0, kept = 0;
   r.render = (scene, cam) => {
-    render(scene, cam);
+    render(scene, cam); glStats.r = r;
     const list = r.info.programs; if (!list || list.length === seen) return;
+    if (list.length > seen) glStats.programs += list.length - seen;   // (kept programs are never deleted, so growth = shaders built)
     seen = list.length; for (const p of list) if (!p.gsKept && kept < KEEP_MAX) { p.gsKept = true; p.usedTimes++; kept++; }
   };
   // keep the page alive if the phone takes the graphics context away (the kits make it again)

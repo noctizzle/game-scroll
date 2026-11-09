@@ -836,6 +836,10 @@ score and state. For hitboxes, give your game object a `debug(c)` method that ou
 like in game units; it is drawn on top while hitboxes are on. A physics game can just call
 `phys.debugDraw(c)`.
 
+For how a game runs on a real phone (frame pacing, 1% lows, hitch causes, resolution, upscaler and
+frame generation checks), use the [frame lab](frame-lab.md): F3 in `npm run dev`, or the QA panel on
+the phone.
+
 ## Tiny Brains
 
 Tiny Brains are small neural networks that learn while people play, with no training step. A brain
