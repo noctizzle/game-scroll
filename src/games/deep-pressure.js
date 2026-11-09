@@ -3,7 +3,7 @@ const { Timers } = gs.math;
 const { sounds, tone, noise } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
-const { HDView, Particles, pbr, rbox, surface, speckle, spot, THREE } = gs.hd;
+const { HDView, Particles, pbr, rbox, surface, speckle, spot, pulse, THREE } = gs.hd;
 const { Group, Mesh, InstancedMesh, Object3D, Vector3, CatmullRomCurve3, TubeGeometry, CylinderGeometry, SphereGeometry, CapsuleGeometry, ConeGeometry, IcosahedronGeometry, BoxGeometry, BackSide, Color } = THREE;
 
 // Deep Pressure: steer a little submarine down a pitch-black ocean trench. Your lamp only shows a
@@ -16,16 +16,8 @@ let W = 300, H = 300;
 const R = 6.5, NF = 1400, HULL = 3;
 
 const PING = { pos: { value: new Vector3() }, r: { value: 0 }, a: { value: 0 } };
-function sonar(m) {   // add the sonar ring to a standard material: a bright band at distance r from the ping
-  m.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, { pingPos: PING.pos, pingR: PING.r, pingA: PING.a });
-    sh.vertexShader = 'varying vec3 vWP;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  vWP = (modelMatrix * vec4(transformed, 1.)).xyz;\n#ifdef USE_INSTANCING\n  vWP = (modelMatrix * instanceMatrix * vec4(transformed, 1.)).xyz;\n#endif');
-    sh.fragmentShader = 'varying vec3 vWP; uniform vec3 pingPos; uniform float pingR; uniform float pingA;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>',
-      '#include <emissivemap_fragment>\n  float pd = distance(vWP, pingPos); float band = exp(-pow((pd - pingR) / 1.4, 2.)) + .22 * step(pd, pingR) * (1. - pd / max(pingR, .01));\n  totalEmissiveRadiance += vec3(.15, .95, 1.) * band * pingA * 2.2;');
-  };
-  m.customProgramCacheKey = () => 'sonar';
-  return m;
-}
+// the sonar ring on a lit material: a bright band at distance r from the ping (gs.hd.pulse; works on WebGL and WebGPU)
+const sonar = m => pulse(m, { at: PING.pos, radius: PING.r, strength: PING.a, color: [.15 * 2.2, .95 * 2.2, 2.2] });
 
 let MT = null;
 function looks() {
