@@ -229,10 +229,10 @@ s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
 - `gs.hd.noiseTex()` is a shared 256 x 256 tiling noise texture (four sizes of noise in r, g, b and a)
   for your own shaders: clouds, water, grass, dirt.
 
-## WebGPU (test)
+## WebGPU
 
-On top phones, Settings › Graphics (test) › "Use WebGPU for 3D games" draws Next Gen and AR views
-with three's WebGPU renderer instead of WebGL. Nothing changes in a game: a view that uses a part not
+On any device that offers WebGPU, Next Gen and AR views draw with three's WebGPU renderer; everywhere
+else they use WebGL. There is no setting. Nothing changes in a game: a view that uses a part not
 ported yet (see `docs/webgpu-move.md`) stays on WebGL by itself. `node scripts/gpu-games.cjs <id>`
 plays a game on both and says which it drew on. Everything in Long Shadow (outdoor looks, sky, shafts,
 focus, cascades, Props trees) and Deep Pressure has a WebGPU version.

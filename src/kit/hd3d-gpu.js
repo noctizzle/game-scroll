@@ -1,6 +1,6 @@
 // The Next Gen look on WebGPU: three.js's WebGPURenderer with the screen effects written as TSL nodes.
-// It loads only when the player turns WebGPU on (Settings › Graphics, top phones) and the device has
-// it; gpu.js imports it. hd3d.js asks gpuFits(view) each frame and draws a view here only when
+// It loads on any device that has WebGPU (there is no setting: WebGPU where supported, else WebGL);
+// gpu.js imports it. hd3d.js asks gpuFits(view) each frame and draws a view here only when
 // everything in it has a WebGPU version, so a game with a part that doesn't yet (docs/webgpu-move.md)
 // keeps drawing on WebGL as before.
 //
