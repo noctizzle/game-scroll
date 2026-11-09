@@ -329,6 +329,10 @@ spin and tumble, and you can join them with hinges, springs, ropes, welds and sl
 bridges, wrecking balls, ragdolls, cars, stacking, pinball. Everything is in your game's units
 (pixels, y down); angles are radians, clockwise on screen, so `c.rotate(t.angle)` just works.
 
+Phones with WebAssembly SIMD (nearly all from the last few years) get Rapier's SIMD build, which
+turns into ARM Neon and steps about 10-20% faster; older phones get the plain build. Same engine,
+same results for your game, only one is downloaded. `?nosimd` in the URL tries the plain build in dev.
+
 ```js
 reset() {
   phys = new Physics({ gravity: 900, walls: [0, 0, W, H] });   // in make() or reset(): the engine loads first
@@ -819,6 +823,90 @@ time, less when the player is losing).
 
 Brains are small (`inputs`, `hidden` and `actions` multiplied out stay under 1,200 numbers).
 
+### The player, fun, personalities and tells
+
+**One profile across every game.** `gs.brains.Player` is a small private record of how this player
+plays: the skill their brains settle at, reaction time, aim. Every Brain reads it, so a game they've
+never played starts at their level instead of the middle, and adds to it after a few rounds. Games
+can add their own: `me.note('reaction', .31)`, `me.note('aim', hit ? 1 : 0)`, `me.get('patience', .5)`.
+It stays on the phone (and the player's own cloud save) and is never shared. `profile: false` keeps a
+brain out of it.
+
+**Fun signals.** The app tells your brains how fun each round looked: played again within 30 s (+1),
+hearted (+1), Meh (-1), or left the game-over screen within 4 s (-0.5). A brain compares that with how
+tense the round was, and learns whether this player enjoys more pressure or less (`bot.lean`, at most
+±0.3). The win-rate rail still decides: it never adds pressure while the player is losing more than
+the target. Nothing to call; `fun: false` turns it off.
+
+**Personalities.** `styles: ['careful', 'bold', 'sneaky']` gives one brain several characters: the
+style is an extra input, your teacher and rules get it as a third argument (`teacher: (see, style) =>
+...`), and `bot.style = 'bold'` or `bot.style = { bold: .7, sneaky: .3 }` switches. In a wave,
+`wave.mind({ style: 'sneaky' })` gives each enemy its own, so a squad feels like a cast.
+
+**Tells.** `tells: true` (or `{ windup: .2, unsure: 1 }`) makes the brain wind up before it changes
+what it's doing, so the player can read it and react: longer when the skill dial is low and when it's
+torn. While `bot.telling` is set (`{ action, left, t }`), draw a glance, a crouch or a flash. Each
+wave mind has its own `mind.telling`. `bot.unsure` (0..1) is how torn its last choice was.
+
+### Nemesis, Shadow and teaching by playing
+
+**Nemesis: a rival who remembers you.** It keeps the record between sessions (meetings, wins, losses,
+streaks, days away) and your habits (a `Predict` inside). Your game writes the lines; it picks one
+that fits and fills in `{move}`, `{wins}`, `{streak}`, `{days}`, `{name}`.
+
+```js
+const grub = new gs.brains.Nemesis(api, { name: 'grub', moves: ['left', 'right', 'jump'], lines: {
+  first: ['New here?'], back: ['Back for more?'], long: ['{days} days! Thought you ran off.'],
+  habit: ['You always go {move}...'], won: ['Lucky! Again!'], lost: ['Good try. Rematch?'], streak: ['{streak} in a row?!'],
+} });
+reset() { banner(grub.met()); }
+// each player move: grub.see(move);   guard against: const m = grub.counter(bot.skill);
+// game over: banner(grub.result(playerWon));
+```
+
+Guard rails: it only brings up a habit when it's sure and the player isn't on a losing run;
+`counter()` uses a habit at most 60% of the time (less while the player is losing, never on a losing
+run). Write the `lost` lines kindly: they're what a player hears after losing.
+
+**Shadow: your own clone.** Feed it what the player sees and does while they play, and it learns to
+play like them: race your own ghost that thinks, fight yourself, or play a friend's "you". `me.like`
+is how well it copies (0..1) and `me.ready` says it has watched enough.
+
+```js
+const me = new gs.brains.Shadow(api, { inputs: 3, actions: ['left', 'right', 'jump', 'wait'] });
+// while the player plays:  me.watch([dx / W, dy / H, vx / 300], playerMove);
+// the clone:               me.act(see, dt); if (me.action === 'jump') ...
+```
+
+**Teach by playing (makers).** Instead of writing a teacher, play it yourself in `npm run dev`: feed a
+`Shadow` (or `bot.watch(see, move)`) your own moves, press **B** in the debug overlay to copy the
+starting brain, and paste it in as `start`:
+
+```js
+const bot = new Brain(api, { inputs: 3, actions: [...], start: 'tb1:3x12x4:0.0123:...' });
+```
+
+The bot then plays like you from the first frame, and learns from there inside the same guard rails.
+It works best when the bot plays the same role the player does (duels, races, sports). The debug
+overlay also lists each brain's skill, win rate against its target, trust, fun lean, how torn it is
+and any tell.
+
+**Tune the feel (makers).** `gs.brains.tune({ params, trial, want })` searches number ranges for the
+ones whose `trial(params)` result is closest to `want`: run a quick bot round with your own update and
+return how long it lasted, or how often a jump was made. It's for tests and the dev console, not for
+players' phones.
+
+```js
+const best = gs.brains.tune({ params: { jump: [300, 700], gravity: [800, 2000] }, trial: p => botRound(p).seconds, want: 45 });
+```
+
+**The cruelty test.** `npm run brains` plays made-up weak, middling and strong players against a
+brain for hundreds of rounds, plus a badly made game that rewards hurting the player and fun signals
+that always ask for more, and fails if a weak player stops winning about as often as the target or
+any number leaves its rail. `node scripts/brain-check.mjs --games <id>` (after `npm run build:bundled`)
+plays your game with random taps and fails if a brain got harder while that player was losing. The
+PR check runs both.
+
 ## Hot reload and tweak sliders
 
 In `npm run dev`, saving your game file swaps the new code into the card you're playing, in about a
@@ -954,6 +1042,17 @@ like a small example). They give the same text `gs.tiles.TileMap.fromText()` rea
 `E` exit marks. Pass a `seed` (`gs.math.daily()` for a level of the day). `fov(map, col, row, r)` is
 what a hero can see.
 
+**Proven levels** (`gs.gen.proven`): makes levels until one passes your check, so nobody gets one
+that can't be beaten or is over in two steps. `make(seed)` builds a level, `check(level)` returns
+false to throw it away or a number (higher is better); it stops at the first that scores `good`,
+else keeps the best of `tries`. `reach(text, 'S', 'E')` is the walk from one mark to another (-1
+when there's no way through). For jumps and physics, play the level in `check` with an `Imagine`
+plan or a bot driving your own update. Seeded, so a level of the day is the same for everyone.
+
+```js
+const { level } = proven(s => cave(40, 30, { seed: s }), l => { const n = reach(l.text); return n > 30 && n; }, { seed: daily(), good: 60 });
+```
+
 **Drag and drop** (`gs.drag.Drag({ snap, accept })`): add pieces and slots, pass down/move/up through,
 and pieces lift, snap into slots you `accept`, or slide home. With `list: { x, y, axis }` the pieces
 form a row you reorder by dragging.
@@ -1075,6 +1174,13 @@ wall). `ears.place(camera.position, forward)` each frame, then `ears.play('boom'
 `ears.tone()`, `ears.zzfx(pos, ...)`, and `ears.loop(pos)` for engines that follow something.
 `music({ ..., drums2, lead2, layers: { drums2: .3, lead2: .7 } })` builds up with `tune.intensity(x)`:
 quiet while sneaking, full when the fight starts.
+
+**Living music** (`gs.sound.follow(song)`): the tune follows the play by itself. `live.feel(1)` on a
+close call builds tension, it settles when things calm down, `live.lost()` brings it straight down,
+`live.won()` gives a lift, and `live.tap()` on each input leans the tempo a little towards the
+player's own pace (`pace`: taps a second that count as normal; `tempo: [.92, 1.12]` the range).
+Call `live.update(dt)` each frame; give the song `layers` so the intensity has parts to bring in.
+`brain: bot` keeps the tension up while a Tiny Brain's mood is high.
 
 **Bigger levels on phones** (`gs.props`, 3D, InstancedMesh2): `Props` draws thousands of the same thing
 (trees, rocks, crates) in one go, skips the ones off screen and swaps far ones for simpler shapes

@@ -4,9 +4,12 @@
 // reference) and drawn smaller then upscaled by plain stretch, SGSR 1 and SGSR 2, with the camera
 // still and moving, and a box moving across the scene. Each is scored against the full-size picture.
 import gs, { loadParts } from '../../src/gamescroll.js';
-import { setGpuPick } from '../../src/kit/gpu.js';
-setGpuPick('webgl');
+import { setGpuPick, prepareGPU } from '../../src/kit/gpu.js';
+// ?gpu: on WebGPU (upscale-compare.cjs --webgpu), where SGSR 1 isn't ported (it stretches)
+const GPU = new URLSearchParams(location.search).has('gpu');
+setGpuPick(GPU ? 'webgpu' : 'webgl');
 await loadParts();
+if (GPU && !await prepareGPU()) { window.result = { error: 'WebGPU did not start in this browser' }; throw new Error(window.result.error); }
 const T = gs.THREE, HD = window.__hd, W = 480, H = 640, Q = new URLSearchParams(location.search), K = +(Q.get('scale') || 1.5);
 HD.force = 0;
 const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .002, amb: .3 }), c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
@@ -31,16 +34,18 @@ const draw = () => { v.t = 0; v.render(x, W, H); return x.getImageData(0, 0, W, 
 const err = (a, b) => { let s = 0; for (let i = 0; i < a.length; i += 4) s += (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])) / 3; return s / (a.length / 4); };
 // flicker: how much the picture changes from frame to frame with nothing moving
 const out = { scale: K, scenes: {} }, shots = {};
-const run = async (name, frames, moveCam, moveBox, modes = ['plain', 'sgsr1', 'sgsr2']) => {
-  set('full'); pose(moveCam ? frames : 0); place(moveBox ? frames : 0); const ref = draw();
+const run = async (name, frames, moveCam, moveBox, modes = GPU ? ['plain', 'sgsr2'] : ['plain', 'sgsr1', 'sgsr2']) => {
+  set('full'); pose(moveCam ? frames : 0); place(moveBox ? frames : 0);
+  draw(); for (let i = 0; i < 2; i++) await new Promise(r => requestAnimationFrame(r)); const ref = draw();   // (a resized WebGPU canvas shows the old picture until the next frame)
   const res = {};
   for (const mode of modes) {
     set(mode); let prev = null, flick = 0, ms = 0;
     for (let f = 0; f <= frames; f++) {
       pose(moveCam ? f : 0); place(moveBox ? f : 0);
-      const t0 = performance.now(), d = draw(); ms += performance.now() - t0;
+      const t0 = performance.now(); let d = draw(); ms += performance.now() - t0;
+      if (GPU && f === frames) d = draw();   // the last frame again, so the copy has caught up
       if (prev && f > frames - 8) flick += err(d, prev) / 8; prev = d;
-      if (f === frames) { res[mode] = { error: +err(d, ref).toFixed(2), flicker: +flick.toFixed(2), ms: +(ms / (frames + 1)).toFixed(1), used: HD.info.upscaled }; if (Q.has('shots')) shots[name + '.' + mode] = c.toDataURL(); }
+      if (f === frames) { res[mode] = { error: +err(d, ref).toFixed(2), flicker: +flick.toFixed(2), ms: +(ms / (frames + 1)).toFixed(1), used: HD.info.upscaled, backend: HD.info.backend }; if (Q.has('shots')) shots[name + '.' + mode] = c.toDataURL(); }
       await new Promise(r => requestAnimationFrame(r));
     }
   }

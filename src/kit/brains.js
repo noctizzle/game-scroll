@@ -30,10 +30,19 @@
 // Wave). Racing and physics: Imagine tries moves ahead with your game's own step function. Board,
 // card, rhythm and turn games: Predict learns the player's habits and guesses their next move.
 //
+// More parts: Player (one private profile of how this player plays, read by every game's brains, so a
+// new game starts at their level), styles (one brain, several personalities), tells (a wind-up the
+// player can read before the brain changes what it's doing), Nemesis (a rival who remembers you
+// between sessions), Shadow (copies how you play: race your own clone, or make a starting brain from
+// your own play while making the game), and tune() (finds the game-feel numbers that hit a target).
+// The app also tells every brain how fun each round looked (played again, hearted, left in a hurry),
+// and the brain leans its pressure towards what this player enjoys, always inside the win-rate rail.
+//
 // Runs on the phone's CPU in plain JavaScript (a decision takes microseconds).
 
 import { rng } from './math.js';
 import { phoneClass } from './speed.js';
+import { currentOwner } from './cleanup.js';
 
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 const MAX_PARAMS = 1200;   // keeps a brain (and its starting copy) inside the game's brain slot
@@ -149,7 +158,60 @@ function slot(api, name) {
     save: text => (b ? b.save(name, text) : memory.set(name, text)),
     shared: shape => (b && b.shared ? b.shared(name, shape) : Promise.resolve(null)),
     share: (shape, w, steps) => b && b.share && b.share(name, shape, w, steps),
+    onFun: fn => (b && b.onFun ? b.onFun(name, fn) : () => {}),
   };
+}
+
+// Live brains, for the debug overlay (dev builds) and the cruelty test: weakly held, tagged with the
+// card that made them.
+const LIVE = new Set();
+const track = o => { o.owner = currentOwner(); LIVE.add(new WeakRef(o)); if (LIVE.size > 200) for (const r of LIVE) if (!r.deref()) LIVE.delete(r); };
+/** The brains (Brain, Shadow, Nemesis) still alive, optionally only those a card made. */
+export const brainStats = b => b.target && !b.habits ? { name: b.name, kind: 'brain', skill: b.skill, skill0: b.skill0, winRate: b.winRate, target: b.target, rounds: b.rounds, trust: b.trust, lean: b.lean, fun: b.fun, ok: b.net.w.every(Number.isFinite) }
+  : b.habits ? { name: b.name, kind: 'nemesis', ...b.record } : { name: b.name, kind: 'shadow', like: b.like, seen: b.seen, ok: b.net.w.every(Number.isFinite) };
+export function liveBrains(owner) {
+  const out = [];
+  for (const r of LIVE) { const o = r.deref(); if (!o) LIVE.delete(r); else if (owner === undefined || o.owner === owner) out.push(o); }
+  return out;
+}
+
+// ---------------------------------------------------------------- Player
+
+// When a game has no app (tests): one profile for this session.
+const memProfile = (() => { let k = {}; return { read: () => JSON.parse(JSON.stringify(k)), write: (kind, v, n) => { k[kind] = { v, n }; return true; }, clear: () => { k = {}; } }; })();
+
+/**
+ * How this player plays, across every game: one small private profile on the phone (and their own
+ * cloud save, never shared). Every Brain reads it, so a brand new game starts at the player's level
+ * instead of the middle; games can note more and read it too.
+ *
+ *   const me = new gs.brains.Player(api);
+ *   me.skill        0..1: where this player's brains tend to settle (.5 before any)
+ *   me.reaction     seconds from a cue to their tap (.45 before any)
+ *   me.aim          0..1: how often their aimed shots land (.5 before any)
+ *   me.note('reaction', .31); me.note('aim', hit ? 1 : 0); me.get('patience', .5)
+ *
+ * Each note moves the number a little (the newest notes count most), so it follows the player as
+ * they improve. Kinds are short names; the whole profile stays under 1 KB.
+ */
+export class Player {
+  constructor(api) { this.store = (api && api.brains && api.brains.player) || memProfile; }
+  /** A kind's number, or fallback before any notes. */
+  get(kind, fallback = 0) { const e = this.store.read()[kind]; return e && e.n > 0 && isFinite(e.v) ? e.v : fallback; }
+  /** How many notes a kind has. */
+  count(kind) { const e = this.store.read()[kind]; return e ? e.n | 0 : 0; }
+  /** Adds what the player just did to a kind (the newest count most: at least 1/20 of the number). */
+  note(kind, v) {
+    v = +v; if (!isFinite(v)) return this;
+    const e = this.store.read()[kind] || { v, n: 0 }, n = e.n + 1;
+    this.store.write(kind, e.v + (v - e.v) * Math.max(1 / n, .05), n);
+    return this;
+  }
+  get skill() { return clamp(this.get('skill', .5), .05, 1); }
+  get reaction() { return clamp(this.get('reaction', .45), .08, 3); }
+  get aim() { return clamp(this.get('aim', .5), 0, 1); }
+  /** Forgets the profile. */
+  clear() { this.store.clear && this.store.clear(); return this; }
 }
 
 // ---------------------------------------------------------------- Brain
@@ -172,6 +234,17 @@ function slot(api, name) {
  *               learn speed suits any game's inputs (true)
  *   odds        learn the player's real win chance at each skill level, and set the skill where
  *               that chance is the target (true); winChance(skill) reads it
+ *   styles      personalities, e.g. ['careful', 'bold', 'sneaky']: the brain sees which one it's
+ *               playing as an extra input, the teacher and rules get it as a third argument, and
+ *               brain.style = 'bold' (or { bold: .7, sneaky: .3 }) switches; a Wave can give each
+ *               enemy its own (wave.mind({ style }))
+ *   tells       a wind-up before it changes what it's doing, so the player can read it: true, or
+ *               { windup: seconds (.2), unsure: extra share when it's torn (1) }. brain.telling is
+ *               { action, left, t } during one (draw a glance, a crouch, a flash), else null
+ *   start       a starting brain made from your own play (Shadow.pack()), used instead of copying a
+ *               teacher: see "teach by playing" in docs/maker-kit.md
+ *   fun         lean towards what this player finds fun, from the app's signals (true)
+ *   profile     start a fresh brain at the player's usual level and add to it (true)
  */
 export class Brain {
   constructor(api, opts = {}) {
@@ -189,11 +262,37 @@ export class Brain {
     this.useOdds = opts.odds !== false;
     this.teacher = opts.teacher || null;
     this.rules = opts.rules || null;
+    // personalities: one input each, after the game's own
+    this.styles = Array.isArray(opts.styles) && opts.styles.length ? opts.styles.map(String) : null;
+    if (this.styles) { this.net = new Net([(opts.inputs | 0 || 1) + this.styles.length, ...(opts.hidden || [12]), nAct], hashName(this.name)); this.sv = new Float32Array(this.styles.length); this.sv[0] = 1; this.styleName = this.styles[0]; }
+    this.xbuf = null;
+    const t = opts.tells; this.tells = t ? { windup: .2, unsure: 1, ...(t === true ? {} : t) } : null;
     this.slot = slot(api, this.name);
+    this.player = opts.profile === false ? null : new Player(api);
     this.r = rng(hashName(this.name) ^ 0x9e3779b9);
     this.fresh();
     this.restore(this.slot.load());
-    if (opts.share !== false && this.steps < 200) this.slot.shared(this.net.shape).then(s => this.adoptShared(s)).catch(() => {});
+    if (opts.share !== false && this.steps < 200 && !this.started) this.slot.shared(this.net.shape).then(s => this.adoptShared(s)).catch(() => {});
+    if (opts.fun !== false) this.slot.onFun(x => this.funSignal(x));
+    this.skill0 = this.skill;     // where it started this session (the cruelty test compares)
+    track(this);
+  }
+  /** The personality it's playing ('bold'), or set one: a name, or { bold: .7, sneaky: .3 } to mix. */
+  get style() { return this.styleName; }
+  set style(v) {
+    if (!this.styles) return;
+    this.sv.fill(0);
+    if (typeof v === 'string') { const i = Math.max(0, this.styles.indexOf(v)); this.sv[i] = 1; this.styleName = this.styles[i]; return; }
+    let top = 0, name = this.styles[0];
+    for (const [k, w] of Object.entries(v || {})) { const i = this.styles.indexOf(k); if (i >= 0) { this.sv[i] = clamp(+w || 0, 0, 1); if (this.sv[i] > top) { top = this.sv[i]; name = k; } } }
+    this.styleName = name;
+  }
+  /** What the network sees: the game's inputs, then the personality. */
+  input(see) {
+    if (!this.styles) return see;
+    const n = see.length, x = this.xbuf && this.xbuf.length === n + this.sv.length ? this.xbuf : (this.xbuf = new Float32Array(n + this.sv.length));
+    for (let i = 0; i < n; i++) x[i] = see[i];
+    x.set(this.sv, n); return x;
   }
   fresh() {
     this.anchor = null;           // the brain it started as (set once it has copied the teacher)
@@ -207,6 +306,48 @@ export class Brain {
     this.steps = 0; this.wait = 0; this.since = 1; this.last = -1; this.trace = []; this.saveIn = 10;
     this.ledByNet = false;
     this.odds = new Float32Array(ODDS * 2);   // per skill bucket: player wins, rounds (fading)
+    this.rounds = 0;              // results seen
+    this.fun = 0;                 // how fun rounds have looked to the app lately (-1..1)
+    this.lean = 0;                // more (+) or less (-) pressure than usual, learned from fun (-.3..3)
+    this.rSum = 0; this.rN = 0; this.lastRound = null; this.moodAvg = 0;   // feel() this round, last round, usual
+    this.unsure = 0;              // how torn the last decision was (0 sure .. 1 torn)
+    this.tellNext = -1; this.tellLeft = 0; this.tellLen = 0;
+    this.started = false;
+    // a starting brain from the maker's own play
+    const st = this.opts.start ? Net.unpack(this.opts.start) : null;
+    if (st && st.shape === this.net.shape) { this.net = st; this.net.even = this.even; this.anchor = st.copy(); this.trust = this.teacher ? .6 : 1; this.started = true; }
+    // a fresh brain starts at the player's usual level
+    if (this.player && this.player.count('skill') > 0) this.skill = clamp(this.player.skill, .2, .85);
+  }
+  /** During a wind-up (tells): { action, left: seconds, t: 0..1 through it }, else null. */
+  get telling() {
+    if (this.tellNext < 0) return null;
+    return { action: this.names ? this.names[this.tellNext] : this.tellNext, left: this.tellLeft, t: this.tellLen ? 1 - this.tellLeft / this.tellLen : 1 };
+  }
+  /** The starting brain as text: what Shadow.pack() gives, for opts.start. */
+  pack() { return this.net.pack(); }
+  /**
+   * Learns from a move someone showed it (the maker in dev, or a demo): on these inputs, this action.
+   * The same imitation the teacher gives, so the guard rails still apply.
+   */
+  watch(see, action, amount = .05) { this.net.learn(this.input(see), this.index(action), amount * this.rate); this.guard(this.net); return this; }
+  // which way pressure should go: the win-rate rail, plus a lean towards what this player enjoys
+  // (never more pressure while they're losing more than they should)
+  push() {
+    const lean = this.winRate < this.target - .1 ? Math.min(0, this.lean) : this.lean;
+    return clamp((this.winRate - this.target) * 4 + .25 + lean, -1, 1);
+  }
+  /**
+   * The app's view of how fun the last round was (-1..1): played again soon +1, hearted +1, left the
+   * game-over screen at once -0.5, Meh -1. Was that round tenser than usual? Then this player likes
+   * pressure (or doesn't), and the brain leans that way next time.
+   */
+  funSignal(x) {
+    x = clamp(+x || 0, -1, 1);
+    this.fun += (x - this.fun) * .2;
+    if (this.lastRound == null) return;
+    const d = clamp((this.lastRound - this.moodAvg) * 4, -1, 1);
+    this.lean = clamp(this.lean + x * d * .06, -.3, .3);
   }
   /** The last action's name (or number when actions is a count). */
   get action() { return this.names ? this.names[this.last] : this.last; }
@@ -215,10 +356,17 @@ export class Brain {
   /** Picks an action for what it sees (an array of numbers), once per frame with dt. Returns its index. */
   act(see, dt = 1 / 60, net = this.net) {
     this.wait -= dt; this.since += dt;
+    // a wind-up (tells): keep doing what it was doing until the tell has played out
+    if (this.tellNext >= 0) {
+      this.tellLeft -= dt;
+      if (this.tellLeft > 0) return this.last;
+      this.last = this.tellNext; this.tellNext = -1; this.since = 0; return this.last;
+    }
     if (this.wait > 0 && this.last >= 0) return this.last;
+    const raw = see; see = this.input(see);
     // reaction time: slower when the skill dial is low, never faster than limits.react
     this.wait = this.limits.react * (1 + (1 - this.skill) * 1.5);
-    const p = net.run(see), teach = this.teacher ? this.index(this.teacher(see)) : -1;
+    const p = net.run(see), teach = this.teacher ? this.index(this.teacher(raw, this.styleName)) : -1;
     // learning, a tiny bit every decision: copy the teacher while it's still learning the game
     if (teach >= 0) {
       const best = argmax(p);
@@ -232,11 +380,19 @@ export class Brain {
     let a = this.ledByNet || teach < 0 ? sample(p, this.r, 1.6 - this.skill * 1.2) : teach;
     const noise = Math.max(this.limits.minNoise, (1 - this.skill) * .25);
     if (this.r() < noise) a = Math.floor(this.r() * p.length);
-    if (this.rules) a = this.index(this.rules(see, this.names ? this.names[a] : a) ?? a);
+    if (this.rules) a = this.index(this.rules(raw, this.names ? this.names[a] : a, this.styleName) ?? a);
     // changes of mind: at most perSecond
     if (this.last >= 0 && a !== this.last && this.since < 1 / this.limits.perSecond) a = this.last;
-    if (a !== this.last) this.since = 0;
-    this.last = a;
+    // how torn it was: the gap between its top two choices
+    { let t1 = 0, t2 = 0; for (const v of p) { if (v > t1) { t2 = t1; t1 = v; } else if (v > t2) t2 = v; } this.unsure = clamp(1 - (t1 - t2), 0, 1); }
+    if (this.tells && this.last >= 0 && a !== this.last) {
+      // a tell the player can read: longer when the skill dial is low and when it's torn
+      this.tellLen = this.tellLeft = this.tells.windup * (1.5 - this.skill) * (1 + this.unsure * this.tells.unsure);
+      this.tellNext = a;
+    } else {
+      if (a !== this.last) this.since = 0;
+      this.last = a;
+    }
     this.trace.push([Array.from(see), a, net]); if (this.trace.length > 12) this.trace.shift();
     this.steps++;
     this.guard(net);
@@ -250,11 +406,11 @@ export class Brain {
    */
   feel(x = 1) {
     x = clamp(+x || 0, -2, 2);
-    this.mood += (x - this.mood) * .05;
+    this.mood += (x - this.mood) * .05; this.rSum += x; this.rN++;
     if (this.ledByNet) this.byNet += (x - this.byNet) * .05; else this.byTeacher += (x - this.byTeacher) * .05;
     // the win-rate guard rail turns the signal: pressure is good while the player wins too easily, and
     // something to back off from while they lose too often
-    const dir = clamp((this.winRate - this.target) * 4 + .25, -1, 1);
+    const dir = this.push();
     const amount = .02 * this.rate * x * dir;
     let decay = 1;
     for (let i = this.trace.length - 1; i >= 0; i--, decay *= .7) { const [s, a, net] = this.trace[i]; net.learn(s, a, amount * decay); }
@@ -279,6 +435,10 @@ export class Brain {
     this.skill = clamp(this.skill + (this.winRate - this.target) * .3, .05, 1);
     if (this.useOdds) this.calibrate(w, played);
     if (this.losses >= 3) { this.skill = clamp(this.skill - .25, .05, 1); this.trust *= .5; this.losses = 0; }
+    // this round's excitement, for the fun signal that may follow
+    this.lastRound = this.rN ? this.rSum / this.rN : 0; this.moodAvg += (this.lastRound - this.moodAvg) * .2; this.rSum = 0; this.rN = 0;
+    this.rounds++;
+    if (this.player && this.rounds >= 5) this.player.note('skill', this.skill);
     this.persist();
     if (this.opts.share !== false && this.steps > 500 && this.r() < .2) this.slot.share(this.net.shape, this.net.pack(), this.steps);
   }
@@ -321,11 +481,11 @@ export class Brain {
   }
 
   /** Forgets everything it learned (on this phone). */
-  reset() { this.net = new Net(this.net.sizes, hashName(this.name)); this.net.even = this.even; this.fresh(); this.persist(); return this; }
+  reset() { this.net = new Net(this.net.sizes, hashName(this.name)); this.net.even = this.even; this.fresh(); if (this.styles) this.style = this.styleName; this.persist(); return this; }
 
   persist() {
     const s = JSON.stringify({ w: this.net.pack(), a: this.anchor ? this.anchor.pack() : '', t: +this.trust.toFixed(3), k: +this.skill.toFixed(3),
-      r: +this.winRate.toFixed(3), g: +this.agree.toFixed(3), n: this.steps, ...(this.useOdds ? { o: Array.from(this.odds, v => +v.toFixed(2)) } : {}) });
+      r: +this.winRate.toFixed(3), g: +this.agree.toFixed(3), n: this.steps, q: this.rounds, f: +this.lean.toFixed(3), ...(this.useOdds ? { o: Array.from(this.odds, v => +v.toFixed(2)) } : {}) });
     try { this.slot.save(s); } catch (_) {}
   }
   restore(text) {
@@ -335,7 +495,7 @@ export class Brain {
     this.net = n; this.anchor = d.a ? Net.unpack(d.a) : null;
     this.trust = clamp(+d.t || 0, 0, 1); if (!this.teacher) this.trust = 1;
     this.skill = clamp(+d.k || .5, .05, 1); this.winRate = clamp(+d.r || this.target, 0, 1);
-    this.agree = clamp(+d.g || 0, 0, 1); this.steps = d.n | 0;
+    this.agree = clamp(+d.g || 0, 0, 1); this.steps = d.n | 0; this.rounds = Math.max(0, d.q | 0); this.lean = clamp(+d.f || 0, -.3, .3);
     this.net.even = this.even;
     if (Array.isArray(d.o) && d.o.length === this.odds.length) d.o.forEach((v, i) => { this.odds[i] = clamp(+v || 0, 0, 1e4); });
   }
@@ -363,7 +523,7 @@ export class Brain {
  */
 export class Wave {
   constructor(brain, { change = .08 } = {}) { this.brain = brain; this.change = change; this.pair = null; this.r = rng(hashName(brain.name) + 7); this.live = new Set(); }
-  mind() {
+  mind({ style } = {}) {
     const b = this.brain, n = b.net.w.length;
     let sign = 1, eps;
     if (this.pair && !this.pair.taken) { eps = this.pair.eps; sign = -1; this.pair.taken = true; }
@@ -373,11 +533,16 @@ export class Wave {
     let total = 0, time = 0, alive = true;
     // each mind keeps its own reaction timer and last choice, so a squad of enemies that all act in
     // the same frame each decide for themselves (rather than getting whatever the last one chose)
-    const own = { wait: 0, since: 1, last: -1 }, swap = () => { for (const k in own) [own[k], b[k]] = [b[k], own[k]]; };
+    const own = { wait: 0, since: 1, last: -1, tellNext: -1, tellLeft: 0, tellLen: 0, unsure: 0 };
+    if (b.styles) { const keep = [b.sv.slice(), b.styleName]; b.style = style ?? b.styleName; own.sv = b.sv.slice(); own.styleName = b.styleName; b.sv.set(keep[0]); b.styleName = keep[1]; }
+    const swap = () => { for (const k in own) [own[k], b[k]] = [b[k], own[k]]; };
     const self = this; this.live.add(net);
     return {
       act(see, dt = 1 / 60) { time += dt; swap(); try { return b.act(see, dt, net); } finally { swap(); } },
       get action() { return own.last < 0 ? undefined : b.names ? b.names[own.last] : own.last; },
+      get telling() { swap(); try { return b.telling; } finally { swap(); } },
+      get unsure() { return own.unsure; },
+      get style() { return own.styleName; },
       feel(x = 1) { total += clamp(+x || 0, -2, 2); b.feel(x); },
       done() {
         if (!alive) return; alive = false; self.live.delete(net);
@@ -389,7 +554,8 @@ export class Wave {
   /** How much the live minds disagree on inputs `see`: 0 when they all pick alike, towards 1 apart. */
   unsure(see) {
     const ps = [];
-    for (const net of this.live) ps.push(Float64Array.from(net.run(see), Math.sqrt));
+    const x = this.brain.input(see);
+    for (const net of this.live) ps.push(Float64Array.from(net.run(x), Math.sqrt));
     const n = ps.length; if (n < 2) return 0;
     // 1 - the average overlap (squared Bhattacharyya coefficient) of every pair of minds' choices
     let sum = 0;
@@ -398,7 +564,7 @@ export class Wave {
   }
   learn(pair) {
     const b = this.brain, w = b.net.w, [up, down] = pair.score;
-    const dir = clamp((b.winRate - b.target) * 4 + .25, -1, 1);   // same win-rate guard rail as feel()
+    const dir = b.push();   // same win-rate guard rail as feel()
     const k = clamp((up - down) * dir, -1, 1) * .5 * b.rate;
     for (let i = 0; i < w.length; i++) w[i] += k * pair.eps[i];
     b.guard(b.net);
@@ -442,7 +608,7 @@ export class Imagine {
     outer: for (let t = 0; t < this.tries; t++, this.tried = t) for (let a = 0; a < this.n; a++) {
       let s = state, sum = 0;
       for (let d = 0; d < this.depth; d++) {
-        const act = d < hold ? a : this.brain && this.see ? argmax(this.brain.net.run(this.see(s))) : (this.r() < .7 ? a : Math.floor(this.r() * this.n));
+        const act = d < hold ? a : this.brain && this.see ? argmax(this.brain.net.run(this.brain.input(this.see(s)))) : (this.r() < .7 ? a : Math.floor(this.r() * this.n));
         s = this.step(s, act, this.dt); sum += this.score(s) * Math.pow(.97, d);
       }
       totals[a] += sum; counts[a]++;
@@ -453,7 +619,7 @@ export class Imagine {
     let a = best;
     const b = this.brain;
     if (b) {
-      if (this.see) b.net.learn(this.see(state), best, .03 * b.rate);   // the brain learns from the plan
+      if (this.see) b.net.learn(b.input(this.see(state)), best, .03 * b.rate);   // the brain learns from the plan
       if (this.r() < Math.max(b.limits.minNoise, (1 - b.skill) * .3)) a = Math.floor(this.r() * this.n);   // the skill dial
       if (b.rules) { const x = this.see ? this.see(state) : []; a = b.index(b.rules(x, this.names ? this.names[a] : a) ?? a); }
     }
@@ -469,7 +635,7 @@ export class Imagine {
     let a = this.last;
     if (this.fallback) { const f = this.fallback(state); a = typeof f === 'number' ? f | 0 : this.names ? Math.max(0, this.names.indexOf(f)) : 0; }
     else if (this.brain && this.see) {
-      const x = this.see(state); a = argmax(this.brain.net.run(x));
+      const x = this.see(state); a = argmax(this.brain.net.run(this.brain.input(x)));
       if (this.brain.rules) a = this.brain.index(this.brain.rules(x, this.names ? this.names[a] : a) ?? a);
     }
     this.last = a; return a;
@@ -587,6 +753,212 @@ export class Predict {
 }
 const PRED_ROWS = 256, PRED_FULL = 30;
 function predHash(a, b, c, k) { let h = Math.imul(k * 0x9e3779b1 ^ a, 0x85ebca6b); h = Math.imul(h ^ b, 0xc2b2ae35); h = Math.imul(h ^ c, 0x27d4eb2f); return (h ^ (h >>> 15)) >>> 0; }
+
+// ---------------------------------------------------------------- Nemesis
+
+/**
+ * A rival who remembers you between sessions: how often you've met, who's ahead, your habits (a
+ * Predict inside), and when you last played. Your game writes the lines and draws the rival; the
+ * kit picks a fitting line and keeps the rival fair.
+ *
+ *   const grub = new gs.brains.Nemesis(api, { name: 'grub', moves: ['left', 'right', 'jump'], lines: {
+ *     first: ['New face, huh?'], back: ['Back for more?'], long: ['{days} days! Thought you ran off.'],
+ *     habit: ['You always go {move}...'], won: ['Lucky. Again!'], lost: ['Good try! Rematch?'], streak: ['{streak} in a row?!'],
+ *   } });
+ *   reset() { say(grub.met()); }                 // a line for this meeting
+ *   on each player move: grub.see('left');
+ *   const m = grub.counter(bot.skill);            // the move to guard against, or null
+ *   at the end: say(grub.result(playerWon));
+ *
+ * Guard rails: it only brings up a habit when it's sure and you aren't on a losing run; counter()
+ * guesses only some of the time (never more than `skill`, at most 60%, and less while you're
+ * losing); after you lose it uses the 'lost' lines, which should be kind (write them that way).
+ */
+export class Nemesis {
+  constructor(api, opts = {}) {
+    if (api && !opts.moves && api.moves) { opts = api; api = null; }
+    this.name = String(opts.name || 'nemesis');
+    this.lines = opts.lines || {};
+    this.target = clamp(opts.target ?? .6, .2, .9);
+    this.habits = new Predict(api, { moves: opts.moves || 2, name: this.name.slice(0, 18) + '-habit' });
+    this.slot = slot(api, this.name);
+    this.r = rng(hashName(this.name) ^ 0x5bd1e995);
+    this.used = new Map();
+    this.forget(false);
+    this.load();
+    track(this);
+  }
+  /** Forgets the whole rivalry (the habits too). */
+  forget(save = true) {
+    this.record = { met: 0, wins: 0, losses: 0, streak: 0, last: 0 };   // wins and losses are the player's; streak: + player wins in a row, - losses
+    this.winRate = this.target;
+    if (save) { this.habits.forget(); this.save(); }
+    return this;
+  }
+  /** 0..1: how much it wants a rematch (you've been beating it). */
+  get grudge() { const r = this.record; return clamp((r.wins - r.losses) / Math.max(4, r.met) + (r.streak > 0 ? r.streak * .1 : 0), 0, 1); }
+  /** Your habit it has spotted, { move, sure }, or null (not sure yet, or you're on a losing run). */
+  get habit() {
+    const h = this.habits;
+    if (h.seen < 12 || h.sure < .5 || h.right < .45 || this.record.streak <= -2 || this.winRate < this.target - .15) return null;
+    return { move: h.guess(), sure: h.sure };
+  }
+  /** Start of a meeting: a line for it ('first', 'long' after 3+ days away, 'habit', else 'back'). */
+  met(now = Date.now()) {
+    const r = this.record, days = r.last ? Math.floor((now - r.last) / 864e5) : 0;
+    const kind = !r.met ? 'first' : days >= 3 && this.lines.long ? 'long' : this.habit && this.lines.habit && this.r() < .5 ? 'habit' : 'back';
+    r.met++; r.last = now; this.save();
+    return this.line(kind, { days });
+  }
+  /** The player made a move. */
+  see(move) { this.habits.see(move); return this; }
+  /** The move to guard against, or null: only when it's sure, and only some of the time. */
+  counter(skill = .5) {
+    const h = this.habit; if (!h) return null;
+    const ease = this.winRate < this.target ? .5 : 1;
+    return this.r() < Math.min(.6, clamp(skill, 0, 1)) * ease * h.sure ? h.move : null;
+  }
+  /** End of a meeting: did the player win? A line for it ('streak' after 3+ wins in a row, 'won' or 'lost'). */
+  result(playerWon) {
+    const r = this.record;
+    if (playerWon) { r.wins++; r.streak = r.streak > 0 ? r.streak + 1 : 1; } else { r.losses++; r.streak = r.streak < 0 ? r.streak - 1 : -1; }
+    this.winRate += ((playerWon ? 1 : 0) - this.winRate) * .2;
+    this.save();
+    return this.line(playerWon ? (r.streak >= 3 && this.lines.streak ? 'streak' : 'won') : 'lost');
+  }
+  /** One of your lines of a kind, not the one it used last, with {move} {wins} {losses} {streak} {met} {days} {name} filled in. Null if there are none. */
+  line(kind, vars = {}) {
+    const list = this.lines[kind]; if (!Array.isArray(list) || !list.length) return null;
+    let i = Math.floor(this.r() * list.length);
+    if (list.length > 1 && i === this.used.get(kind)) i = (i + 1) % list.length;
+    this.used.set(kind, i);
+    const r = this.record, h = this.habit;
+    const v = { move: h ? h.move : '', wins: r.wins, losses: r.losses, streak: Math.abs(r.streak), met: r.met, days: 0, name: this.name, ...vars };
+    return String(list[i]).replace(/\{(\w+)\}/g, (m, k) => (k in v ? String(v[k]) : m));
+  }
+  save() { const r = this.record; try { this.slot.save(JSON.stringify({ v: 1, ...r, wr: +this.winRate.toFixed(3) })); } catch (_) {} }
+  load() {
+    let d; try { d = JSON.parse(this.slot.load() || 'null'); } catch (_) { return; }
+    if (!d || d.v !== 1) return;
+    const n = x => Math.max(0, Math.min(1e6, x | 0));
+    this.record = { met: n(d.met), wins: n(d.wins), losses: n(d.losses), streak: clamp(d.streak | 0, -99, 99), last: Math.max(0, +d.last || 0) };
+    this.winRate = clamp(+d.wr || this.target, 0, 1);
+  }
+}
+
+// ---------------------------------------------------------------- Shadow
+
+/**
+ * Copies how you play. Give it what you see and what you did, as you play; then it can play like
+ * you: race your own clone, fight yourself, or hand a friend "your" bot. It's also how a maker teaches
+ * a brain by playing (pack() gives a starting brain for new Brain({ start })).
+ *
+ *   const me = new gs.brains.Shadow(api, { inputs: 3, actions: ['left', 'right', 'jump', 'wait'] });
+ *   while the player plays:   me.watch([dx / W, dy / H, vx / 300], playerMove);
+ *   the clone, next round:    const a = me.act(see, dt);   me.action
+ *   me.like                   how well it copies you lately (0..1)
+ *   me.ready                  true once it has watched enough to be worth racing
+ *
+ * It plays with your own pace (limits.react, perSecond like Brain), a little randomness, and your
+ * game's rules. What it learned stays in the game's brain slot (name, default 'shadow'); reset()
+ * forgets it. It is never shared.
+ */
+export class Shadow {
+  constructor(api, opts = {}) {
+    if (api && !opts.inputs && api.inputs) { opts = api; api = null; }
+    this.opts = opts;
+    this.names = Array.isArray(opts.actions) ? opts.actions.slice() : null;
+    const nAct = this.names ? this.names.length : Math.max(2, opts.actions | 0 || 2);
+    this.name = String(opts.name || 'shadow');
+    this.sizes = [opts.inputs | 0 || 1, ...(opts.hidden || [12]), nAct];
+    this.limits = { react: .1, perSecond: 10, minNoise: .03, ...(opts.limits || {}) };
+    this.rules = opts.rules || null;
+    this.rate = opts.learn ?? 1;
+    this.slot = slot(api, this.name);
+    this.r = rng(hashName(this.name) ^ 0x27d4eb2f);
+    this.reset(false);
+    this.load();
+    track(this);
+  }
+  /** Forgets how you play. */
+  reset(save = true) {
+    this.net = new Net(this.sizes, hashName(this.name)); this.net.even = true;
+    this.like = 0; this.seen = 0; this.last = -1; this.wait = 0; this.since = 1; this.saveIn = 120;
+    if (save) this.save();
+    return this;
+  }
+  get action() { return this.names ? this.names[this.last] : this.last; }
+  get ready() { return this.seen >= 300 && this.like > .5; }
+  index(a) { if (typeof a === 'number') return a | 0; const i = this.names ? this.names.indexOf(a) : -1; return i < 0 ? 0 : i; }
+  /** The player, on these inputs, did this. Call it each frame (or each decision) while they play. */
+  watch(see, action) {
+    const y = this.index(action), p = this.net.run(see);
+    this.like += ((argmax(p) === y ? 1 : 0) - this.like) * .01;
+    this.net.learn(see, y, .05 * this.rate, true);
+    this.seen++;
+    if (--this.saveIn <= 0) { this.saveIn = 600; this.save(); }
+    return this;
+  }
+  /** Plays like you: picks an action for what it sees, every frame. Returns its index. */
+  act(see, dt = 1 / 60) {
+    this.wait -= dt; this.since += dt;
+    if (this.wait > 0 && this.last >= 0) return this.last;
+    this.wait = this.limits.react;
+    const p = this.net.run(see);
+    let a = sample(p, this.r, 1);
+    if (this.r() < this.limits.minNoise) a = Math.floor(this.r() * p.length);
+    if (this.rules) a = this.index(this.rules(see, this.names ? this.names[a] : a) ?? a);
+    if (this.last >= 0 && a !== this.last && this.since < 1 / this.limits.perSecond) a = this.last;
+    if (a !== this.last) this.since = 0;
+    return this.last = a;
+  }
+  /** What it learned as text: a starting brain for new Brain(api, { start }) with the same inputs and actions. */
+  pack() { return this.net.pack(); }
+  save() { try { this.slot.save(JSON.stringify({ v: 1, w: this.net.pack(), l: +this.like.toFixed(3), n: this.seen })); } catch (_) {} }
+  load() {
+    let d; try { d = JSON.parse(this.slot.load() || 'null'); } catch (_) { return; }
+    if (!d || d.v !== 1) return;
+    const n = Net.unpack(d.w); if (!n || n.shape !== this.net.shape) return;
+    n.even = true; this.net = n; this.like = clamp(+d.l || 0, 0, 1); this.seen = Math.max(0, d.n | 0);
+  }
+}
+
+// ---------------------------------------------------------------- tune
+
+/**
+ * Finds game-feel numbers that hit a target, for makers (run it from a test, a script or the dev
+ * console, not on players' phones). trial(params) plays a quick round with those numbers (usually a
+ * bot or an Imagine plan driving your own update) and returns a number: how long the round lasted,
+ * the bot's score, how often the jump was made. tune() searches the ranges for params whose result
+ * is closest to `want`.
+ *
+ *   const best = gs.brains.tune({
+ *     params: { jump: [300, 700], gravity: [800, 2000] },
+ *     trial: p => playBotRound(p).seconds,     // your own quick simulation
+ *     want: 45, tries: 80, seed: 1,
+ *   });
+ *   // best = { params: { jump: 512, gravity: 1310 }, result: 44.6, tried: 80, log: [...] }
+ *
+ * Each candidate is tried `repeats` times (results averaged) since bot rounds vary. It starts with a
+ * spread of guesses across the ranges, then keeps narrowing around the best one.
+ */
+export function tune({ params, trial, want, tries = 60, repeats = 3, seed = 1 }) {
+  const keys = Object.keys(params || {}); if (!keys.length || typeof trial !== 'function') throw new Error('tune: give params { name: [min, max] } and trial(params)');
+  const r = rng(seed), lo = keys.map(k => +params[k][0]), hi = keys.map(k => +params[k][1]);
+  const run = x => { const p = {}; keys.forEach((k, i) => { p[k] = x[i]; }); let s = 0; for (let i = 0; i < repeats; i++) s += +trial(p) || 0; return { p, v: s / repeats }; };
+  let best = null, spread = .5; const log = [], first = Math.max(4, tries / 4 | 0);
+  for (let t = 0; t < tries; t++) {
+    const x = keys.map((k, i) => {
+      if (!best || t < first) return lo[i] + (hi[i] - lo[i]) * r();   // a spread of guesses first
+      const c = best.x[i] + (r() * 2 - 1) * spread * (hi[i] - lo[i]);
+      return clamp(c, Math.min(lo[i], hi[i]), Math.max(lo[i], hi[i]));
+    });
+    const { p, v } = run(x), gap = Math.abs(v - want);
+    log.push({ params: p, result: v });
+    if (!best || gap < best.gap) best = { x, p, v, gap }; else if (t >= first) spread = Math.max(.02, spread * .93);
+  }
+  return { params: best.p, result: best.v, tried: tries, log };
+}
 
 // ---------------------------------------------------------------- helpers
 

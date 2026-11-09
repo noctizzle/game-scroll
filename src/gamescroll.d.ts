@@ -106,6 +106,8 @@ export interface SoundPart {
   /** Plays a tune like 'C5 E5 G5 - C6' ('-' is a rest). */
   notes(seq: string, o?: { len?: number; gap?: number; wave?: OscillatorType; vol?: number }): void;
   /** Background music from patterns; start it in update(), not reset(). */
+  /** Living music: the tune follows the play (tension from close calls, settles, a loss calms it, tempo leans to the player's pace). */
+  follow(song: Loose, o?: { calm?: number; ease?: number; tempo?: [number, number]; pace?: number; brain?: Brain }): { readonly tension: number; readonly speed: number; feel(x?: number): Loose; tap(): Loose; lost(): Loose; won(): Loose; update(dt: number): Loose };
   music(o?: { tempo?: number; vol?: number; swing?: number; lead?: string; bass?: string; drums?: string; layers?: Record<string, number>; [part: string]: Loose }): { start(): Loose; stop(): void; pause(): void; resume(): void; speed(x: number): Loose; layer(name: string, level?: number, fade?: number): Loose; intensity(x: number, fade?: number): Loose; readonly level: number; readonly playing: boolean; [k: string]: Loose };
   /** 3D sound: the listener follows the camera; sounds play at points in the world (HRTF in headphones). */
   Ears: new (o?: { ref?: number; max?: number; rolloff?: number; hrtf?: boolean; flat?: boolean; space?: { tail: AudioNode } | null; send?: number }) => {
@@ -609,6 +611,16 @@ export interface BrainOptions {
   even?: boolean;
   /** Learn the player's real win chance at each skill level and aim the skill at the target (true). */
   odds?: boolean;
+  /** Personalities: one extra input each; brain.style switches; the teacher and rules get it as a third argument. */
+  styles?: string[];
+  /** A wind-up before it changes what it's doing, so the player can read it (brain.telling). */
+  tells?: boolean | { windup?: number; unsure?: number };
+  /** A starting brain from your own play (Shadow.pack() or the debug overlay's B key). */
+  start?: string;
+  /** Lean towards what this player finds fun, from the app's signals (true). */
+  fun?: boolean;
+  /** Start a fresh brain at the player's usual level, and add to the profile (true). */
+  profile?: boolean;
 }
 /** A Tiny Brain that learns as you play, with guard rails. */
 export declare class Brain {
@@ -626,6 +638,38 @@ export declare class Brain {
   winChance(skill?: number): number;
   /** Forgets what it learned. */
   reset(): this;
+  /** The personality it's playing; set a name or a mix ({ bold: .7, sneaky: .3 }). */
+  style: string | Record<string, number> | undefined;
+  /** During a wind-up (tells): what it's about to do. */
+  readonly telling: { action: number | string; left: number; t: number } | null;
+  /** How torn its last decision was, 0..1. */
+  unsure: number;
+  /** How fun rounds have looked lately (-1..1), and its learned lean (-0.3..0.3). */
+  fun: number; lean: number; rounds: number;
+  /** Learns from a move someone showed it (teach by playing). */
+  watch(see: number[], action: number | string, amount?: number): this;
+  /** The brain as text (for start). */
+  pack(): string;
+}
+/** How this player plays, across every game (private, on the phone). */
+export declare class Player {
+  constructor(api: GameApi | null);
+  readonly skill: number; readonly reaction: number; readonly aim: number;
+  get(kind: string, fallback?: number): number; count(kind: string): number; note(kind: string, value: number): this; clear(): this;
+}
+/** A rival who remembers you between sessions. */
+export declare class Nemesis {
+  constructor(api: GameApi | null, opts: { name?: string; moves: number | string[]; target?: number; lines?: Partial<Record<'first' | 'back' | 'long' | 'habit' | 'won' | 'lost' | 'streak', string[]>> });
+  record: { met: number; wins: number; losses: number; streak: number; last: number };
+  readonly grudge: number; readonly habit: { move: number | string; sure: number } | null;
+  met(now?: number): string | null; see(move: number | string): this; counter(skill?: number): number | string | null;
+  result(playerWon: boolean): string | null; line(kind: string, vars?: Record<string, Loose>): string | null; forget(): this;
+}
+/** Copies how you play: race your own clone, or teach a brain by playing. */
+export declare class Shadow {
+  constructor(api: GameApi | null, opts: { name?: string; inputs: number; actions: number | string[]; hidden?: number[]; limits?: { react?: number; perSecond?: number; minNoise?: number }; rules?(see: number[], action: number | string): number | string | void; learn?: number });
+  readonly action: number | string; like: number; seen: number; readonly ready: boolean;
+  watch(see: number[], action: number | string): this; act(see: number[], dt?: number): number; pack(): string; reset(): this;
 }
 /** Learns the player's habits and guesses their next move. */
 export declare class Predict {
@@ -645,14 +689,19 @@ export declare class Predict {
   /** Forgets every habit. */
   forget(): this;
 }
-export interface BrainMind { act(see: number[], dt?: number): number; readonly action: number | string; feel(x?: number): void; done(): void; }
+export interface BrainMind { act(see: number[], dt?: number): number; readonly action: number | string; feel(x?: number): void; done(): void; readonly telling: { action: number | string; left: number; t: number } | null; readonly unsure: number; readonly style: string | undefined; }
 export interface BrainsPart {
   Net: typeof TinyNet;
   Brain: typeof Brain;
   /** Every enemy in a wave is an experiment: wave.mind() per enemy (each with its own reaction time and action), mind.done() when it leaves. */
-  Wave: new (brain: Brain, o?: { change?: number }) => { mind(): BrainMind; /** How much the live minds disagree on these inputs, 0..1. */ unsure(see: number[]): number };
+  Wave: new (brain: Brain, o?: { change?: number }) => { mind(o?: { style?: string }): BrainMind; /** How much the live minds disagree on these inputs, 0..1. */ unsure(see: number[]): number };
   /** Learns the player's habits and guesses their next move (board, card, rhythm, turn games). */
   Predict: typeof Predict;
+  Player: typeof Player;
+  Nemesis: typeof Nemesis;
+  Shadow: typeof Shadow;
+  /** Finds game-feel numbers whose trial result is closest to want (for makers, not players' phones). */
+  tune(o: { params: Record<string, [number, number]>; trial(p: Record<string, number>): number; want: number; tries?: number; repeats?: number; seed?: number }): { params: Record<string, number>; result: number; tried: number; log: { params: Record<string, number>; result: number }[] };
   /** Tries moves ahead with your game's own step function. */
   Imagine: new <S>(o: { actions: number | string[]; step(state: S, action: number, dt: number): S; score(state: S): number; depth?: number; dt?: number; tries?: number; budget?: number; /** Always try every move: the same pick on every phone. */ fixed?: boolean; /** Switch planning off on low phones or when picks average over maxMs. */ auto?: boolean; maxMs?: number; /** The move while planning is off. */ fallback?(state: S): number | string; brain?: Brain; see?(state: S): number[] }) => { pick(state: S): number; readonly action: number | string; /** Rounds of tries the last pick used. */ readonly tried: number; /** Planning (false once auto switched it off). */ on: boolean; /** Why it's off: 'low phone' | 'too slow' | ''. */ why: string; /** Smoothed ms per pick. */ readonly cost: number };
   packWeights(sizes: number[], w: ArrayLike<number>): string;
@@ -726,6 +775,10 @@ export interface GenPart {
   islands(w?: number, h?: number, o?: { seed?: number | string; sea?: number; scale?: number }): GenMap & { heights: Loose };
   pattern(sample: string, w?: number, h?: number, o?: { seed?: number | string; n?: number; symmetry?: number; periodic?: boolean; tries?: number }): GenMap | null;
   fov(map: string | ((col: number, row: number) => boolean), col: number, row: number, radius?: number): Set<string>;
+  /** Proven levels: makes levels until one passes check (false/null = throw away; true or a number, higher is better). Seeded. */
+  proven<L>(make: (seed: number) => L, check: (level: L) => boolean | number | null | undefined, o?: { seed?: number | string; tries?: number; good?: number }): { level: L | null; score: number; tried: number; seed: number };
+  /** Steps from one mark to another through anything that isn't a wall, or -1. */
+  reach(text: string, from?: string | { col: number; row: number }, to?: string | { col: number; row: number }, o?: { walls?: string }): number;
 }
 
 export interface DragThing { x: number; y: number; w?: number; h?: number; r?: number; [k: string]: Loose }

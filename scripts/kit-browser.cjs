@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
   const p = await b.newPage(); const errs = [];
   p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-  await p.goto('http://localhost:4181/scripts/kit-browser/');
+  await p.goto('http://localhost:4181/scripts/kit-browser/' + (process.env.KIT_QUERY || ''));
   await p.waitForFunction(() => window.result, null, { timeout: 400000 }).catch(() => {});
   const r = await p.evaluate(() => window.result || ['FAIL no result']);
   console.log(r.join('\n')); if (errs.length) console.log('page errors:\n  ' + errs.join('\n  '));

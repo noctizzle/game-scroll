@@ -155,10 +155,10 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.replay`: `Ghost` (record a run, `pack()` for `api.save`, race it), `Recorder` / `Replayer` (whole rounds).
 - `gs.look2d`: `Lights` (darkness, coloured lights, shadows off walls), `Screen` (lazy: crt, bloom, grade,
   glitch, film, shockwave...), `Batch` (lazy: thousands of WebGL sprites).
-- `gs.brains` (Tiny Brains): `Brain(api, { inputs, actions, teacher, limits, rules })` learns as you play with guard rails (`act`, `feel`, `result`), `Wave` (each enemy an experiment, `unsure(see)`), `Imagine` (tries moves ahead; `fixed: true` for replays), `Predict` (learns the player's habits: `see`, `guess`, `sure`).
+- `gs.brains` (Tiny Brains): `Brain(api, { inputs, actions, teacher, limits, rules })` learns as you play with guard rails (`act`, `feel`, `result`), `Wave` (each enemy an experiment, `unsure(see)`), `Imagine` (tries moves ahead; `fixed: true` for replays), `Predict` (learns the player's habits: `see`, `guess`, `sure`), `Player` (one private profile across games: `skill`, `note`), `Nemesis` (a rival who remembers you), `Shadow` (copies how you play; `pack()` for `start`), `tune()`; brain options `styles`, `tells`, `start`.
 - `gs.board.Board` (match, fall, refill, `slide` 2048-style, `flood`, `hint`), `gs.battle` (`Fighter`, `Battle`
   turn order + types + statuses, `Bag`, `gainXp`, `loot`), `gs.gen` (lazy: `dungeon`, `cave`, `maze`, `islands`,
-  `pattern`, `fov`; seeded, same text as TileMap), `gs.drag.Drag` (pieces, slots, snap, lists), `gs.idle`
+  `pattern`, `fov`, `proven` + `reach`; seeded, same text as TileMap), `gs.drag.Drag` (pieces, slots, snap, lists), `gs.idle`
   (`cost`, `afford`, `short`, `Earner`; `api.away()` for time away), `gs.party` (`Turns` with hand-over, `Split`
   screens), `gs.rhythm` (`Beat`, `Chart`, `Calibrate`), `gs.strokes` (`Stroke`, `Shapes` recogniser, `toPhysics`),
   `gs.vehicles` (`Car`, `Kart`, `Laps`; `World3D.vehicle()` for suspension), `gs.level3d.Level3D(text)`, `gs.sky`
@@ -168,7 +168,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   (`Mission` scripts, `zone`), `gs.cutscene`, `gs.prompts` (quick-time), `gs.destruction` (`shatter`, `slice`, `Rubble`),
   `gs.stealth` (`lightAt`, `Takedown`, `Bodies`, `Floors`, `Disguise`), `gs.gadgets` (`Grapple`, `Zipline`, `Wires`, `Lock`,
   `Code`), `gs.arena` (`Arena`, `BallCar`, `chaseBall`), `gs.campaign.Campaign`, `gs.sound.Ears` (3D sound) and
-  `music({ layers }).intensity()`, `gs.props` (`Props` instancing + LOD, `Areas`, `Chunks`, `simplify`).
+  `music({ layers }).intensity()` + `follow(song)` (living music), `gs.props` (`Props` instancing + LOD, `Areas`, `Chunks`, `simplify`).
 - Worlds, craft, soft things, cards and menus: `gs.outdoors` (`Land` terrain + `grass`/`scatter`, `Water`, `tree`, `rock`, `Wind`, `impostor`),
   `gs.craft` (`Plane`, `Boat`, `Hover`, `Floater`), `gs.soft` (`Soft` cloth/rope/jelly with `grab`/`cut`, `Liquid`),
   `gs.cards` (`Deck`, `total`, `groups`, `poker`, `winners`, `stacks`), `gs.dice` (`roll('4d6kh3')`, `odds`, `Dice`, `Dice3D`),
