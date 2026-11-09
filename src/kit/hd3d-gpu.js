@@ -768,3 +768,4 @@ export class GpuChain {
     this.fg?.dispose(); this.fgRT?.dispose(); this.showQ?.material.dispose(); this.fg = this.fgRT = this.showQ = null; this.pend = null;
   }
 }
+export { gpuSparks } from './particles-gpu.js';

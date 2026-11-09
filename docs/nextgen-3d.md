@@ -274,6 +274,22 @@ against the truth on test scenes (moving things, a turning camera, glass, sparks
 `npm run build:bundled && node scripts/framegen-games.cjs [id ...] [--shots dir]` plays the Next Gen and
 AR games with it on and checks every made frame sits between the real frames round it.
 
+## Lots of particles
+
+`new gs.hd.GPUParticles(v, { max: 20000, gravity: 9, drag: .3, floor: 0, turbulence: { strength: 2 } })`
+moves its particles on the graphics chip when the view draws with WebGPU, so tens of thousands of
+sparks, embers, confetti or rain splashes cost little. On WebGL they move on the CPU, capped to what the
+phone can afford (`p.max`). Ask for bursts and step it once a frame:
+
+```js
+fire.emit(200, { at: [x, 1, z], vel: [0, 4, 0], spread: 3, life: [.6, 1.2], size: [.12, .02], color: [3, 1.5, .4], to: [1, .1, 0] });
+fire.update(dt);
+```
+
+Burst fields: `at`, `radius` (start anywhere in a ball), `vel`, `spread` (a random extra speed), `life`,
+`size` and `color`/`to` (start and end), `alpha`, `fadeIn`, `ease`. Up to 16 bursts a frame. They are for
+looks only (positions can't be read back); use `Particles` for the few the game must know about.
+
 ## Glowing rings
 
 `gs.hd.pulse(material, { at, radius, strength, color, width, fill })` adds a glowing ring that
