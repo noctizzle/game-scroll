@@ -27,12 +27,23 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // Google Play upload key. CI writes it from GitHub secrets (.github/workflows/android-play.yml,
+        // docs/google-play.md); it is never in the repository. Without it the store build is unsigned.
+        if (System.getenv('PLAY_UPLOAD_KEYSTORE')) {
+            release {
+                storeFile file(System.getenv('PLAY_UPLOAD_KEYSTORE'))
+                storePassword System.getenv('PLAY_UPLOAD_STORE_PASSWORD')
+                keyAlias System.getenv('PLAY_UPLOAD_KEY_ALIAS')
+                keyPassword System.getenv('PLAY_UPLOAD_KEY_PASSWORD') ?: System.getenv('PLAY_UPLOAD_STORE_PASSWORD')
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
+            if (System.getenv('PLAY_UPLOAD_KEYSTORE')) signingConfig signingConfigs.release
             // Shrink the store build: drops unused classes and resources (Play Services, ARCore...).
             // Capacitor, ARCore and the Play libraries bring their own keep rules; ours are in proguard-rules.pro.
             minifyEnabled true
