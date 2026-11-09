@@ -67,8 +67,10 @@ export class Land {
   height(x, z) {
     const n = this.segments, s = this.size / n, fc = (x + this.size / 2) / s, fr = (z + this.size / 2) / s;
     const c = Math.max(0, Math.min(n - 1, Math.floor(fc))), r = Math.max(0, Math.min(n - 1, Math.floor(fr)));
-    const u = Math.max(0, Math.min(1, fc - c)), v = Math.max(0, Math.min(1, fr - r)), Z = this.z, w = n + 1, at = (rr, cc) => Z[(rr * w + cc) * 3 + 2];
-    return (at(r, c) * (1 - u) + at(r, c + 1) * u) * (1 - v) + (at(r + 1, c) * (1 - u) + at(r + 1, c + 1) * u) * v;
+    const u = Math.max(0, Math.min(1, fc - c)), v = Math.max(0, Math.min(1, fr - r)), Z = this.z, w = n + 1;
+    // (asked many times a frame: the four corners are read straight from the grid, with no helper made per call)
+    const i0 = (r * w + c) * 3 + 2, i1 = ((r + 1) * w + c) * 3 + 2;
+    return (Z[i0] * (1 - u) + Z[i0 + 3] * u) * (1 - v) + (Z[i1] * (1 - u) + Z[i1 + 3] * u) * v;
   }
   /** The ground's up direction at x, z ({ x, y, z }). */
   normal(x, z, e = this.size / this.segments) {

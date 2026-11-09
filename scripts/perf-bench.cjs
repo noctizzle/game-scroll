@@ -9,10 +9,10 @@ const { chromium, devices } = require('playwright');
 const fs = require('fs'), path = require('path');
 (async () => {
   const argv = process.argv.slice(2), opt = k => { const i = argv.indexOf(k); return i >= 0 ? argv.splice(i, 2)[1] : null; };
-  const secs = +(opt('--secs') || 8), out = opt('--json'), vs = opt('--vs');
+  const secs = +(opt('--secs') || 8), out = opt('--json'), vs = opt('--vs'), warm = +(opt('--warm') || 0);
   const backs = argv.includes('--gl') ? ['webgl'] : argv.includes('--gpu') ? ['webgpu'] : ['webgl', 'webgpu'];
   const ids0 = argv.filter(a => !a.startsWith('--'));
-  const prof = argv.includes('--profile');   // also name the slowest functions (runs the dev server, so names and lines are real)
+  const prof = argv.includes('--profile') || argv.includes('--alloc'), alloc = argv.includes('--alloc');   // --alloc: which functions allocate the most memory while playing (garbage the phone must collect)   // also name the slowest functions (runs the dev server, so names and lines are real)
   const vite = await import('vite');
   const server = prof ? await vite.createServer({ mode: 'bundled', server: { port: 4191, hmr: false }, logLevel: 'error' }) : await vite.preview({ preview: { port: 4191 } });
   if (prof) await server.listen();
@@ -47,7 +47,10 @@ const fs = require('fs'), path = require('path');
         requestAnimationFrame(tick);
       });
       const box = await p.evaluate(() => { const r = __gs.active.canvas.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; });
-      if (prof) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 200 }); await cdp.send('Profiler.start'); }
+      // --warm s: play this long before measuring (shaders built, caches full: the steady state)
+      if (warm) { const wEnd = Date.now() + warm * 1000; while (Date.now() < wEnd) { if (await p.evaluate(() => __gs.active.state !== 'playing')) await p.evaluate(() => __gs.start()).catch(() => {}); await p.mouse.click(box[0] + Math.random() * box[2], box[1] + Math.random() * box[3]); await p.waitForTimeout(200); } await p.evaluate(() => { const t = window.__bench; t.u.length = t.r.length = t.calls.length = t.tris.length = 0; }); }
+      if (alloc) await cdp.send('HeapProfiler.startSampling', { samplingInterval: 4096, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
+      if (prof && !alloc) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 200 }); await cdp.send('Profiler.start'); }
       const end = Date.now() + secs * 1000;
       while (Date.now() < end) {
         if (await p.evaluate(() => __gs.active.state !== 'playing')) await p.evaluate(() => __gs.start()).catch(() => {});
@@ -55,7 +58,8 @@ const fs = require('fs'), path = require('path');
         await p.mouse.move(box[0] + Math.random() * box[2], box[1] + Math.random() * box[3], { steps: 3 });
         await p.waitForTimeout(60 + Math.random() * 160); await p.mouse.up(); await p.waitForTimeout(40 + Math.random() * 120);
       }
-      const profile = prof ? (await cdp.send('Profiler.stop')).profile : null;
+      const profile = prof && !alloc ? (await cdp.send('Profiler.stop')).profile : null;
+      const allocs = alloc ? (await cdp.send('HeapProfiler.stopSampling')).profile : null;
       const T = await p.evaluate(() => { const t = window.__bench; window.__bench = null; return { u: t.u.slice(3), r: t.r.slice(3), calls: t.calls, tris: t.tris, back: t.back }; });
       await cdp.send('HeapProfiler.collectGarbage');
       const heap1 = (await cdp.send('Runtime.getHeapUsage')).usedSize;
@@ -66,6 +70,7 @@ const fs = require('fs'), path = require('path');
       const line = `${back.padEnd(6)} ${id.padEnd(16)} on ${T.back.padEnd(6)} load ${load} ms${d('load', 0)}  update p50 ${row.upd50.toFixed(2)}${d('upd50', 2)} p95 ${row.upd95.toFixed(2)}${d('upd95', 2)}  3D cpu p50 ${row.cpu50.toFixed(2)}${d('cpu50', 2)} p95 ${row.cpu95.toFixed(2)}${d('cpu95', 2)} ms  calls ${row.calls}${d('calls', 0)}  tris ${row.tris}  frames ${row.frames}  heap ${row.heapMB >= 0 ? '+' : ''}${row.heapMB.toFixed(1)} MB`;
       console.log(line);
       if (profile) for (const t of hot(profile)) console.log('    ' + t);
+      if (allocs) for (const t of allocated(allocs, secs)) console.log('    ' + t);
     }
   }
   if (errs.length) console.log('page errors:\n  ' + [...new Set(errs)].slice(0, 10).join('\n  '));
@@ -73,11 +78,11 @@ const fs = require('fs'), path = require('path');
   await b.close(); prof ? await server.close() : server.httpServer.close();
 })();
 
-// The functions with the most time of their own: the kit, the game and three.js (not the browser itself).
+// The functions with the most time of their own (share of the busy time): the kit, the game and three.js (not the browser itself).
 function hot(profile, n = 14) {
   const self = new Map(), dt = profile.timeDeltas, byId = new Map(profile.nodes.map(x => [x.id, x]));
   let total = 0;
-  profile.samples.forEach((sid, i) => { const x = byId.get(sid); if (!x) return; total += dt[i] || 0; self.set(x, (self.get(x) || 0) + (dt[i] || 0)); });
+  profile.samples.forEach((sid, i) => { const x = byId.get(sid); if (!x) return; if (x.callFrame.functionName !== '(idle)') total += dt[i] || 0; self.set(x, (self.get(x) || 0) + (dt[i] || 0)); });
   const sum = new Map();
   for (const [x, t] of self) {
     const f = x.callFrame, url = (f.url || '').replace(/\?.*$/, '');
@@ -88,4 +93,19 @@ function hot(profile, n = 14) {
     sum.set(k, (sum.get(k) || 0) + t);
   }
   return [...sum].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, t]) => `${(100 * t / (total || 1)).toFixed(1).padStart(5)}%  ${k}`);
+}
+
+// Memory allocated per function (its own, sampled) while playing: what makes the garbage collector run.
+function allocated(profile, secs, n = 16) {
+  const sum = new Map(); let total = 0;
+  const walk = x => {
+    const f = x.callFrame, url = (f.url || '').replace(/\?.*$/, ''), at = url.indexOf('/src/'), nm = url.lastIndexOf('/node_modules/');
+    const own = x.selfSize || 0; total += own;
+    const file = at >= 0 ? url.slice(at + 1) : nm >= 0 ? url.slice(nm + 14).replace(/^\.vite\/deps\//, '') : '(browser)';
+    const k = `${f.functionName || '(anonymous)'} ${file}:${f.lineNumber + 1}`;
+    if (own) sum.set(k, (sum.get(k) || 0) + own);
+    for (const c of x.children || []) walk(c);
+  };
+  walk(profile.head);
+  return [`allocated ${(total / 1048576 / secs).toFixed(2)} MB/s (sampled), most by:`, ...[...sum].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, b]) => `${(b / 1024 / secs).toFixed(0).padStart(6)} KB/s  ${k}`)];
 }

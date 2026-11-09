@@ -373,15 +373,16 @@ export function gpuProps(im) {
       const cp = cam.getWorldPosition(PV), cx = cp.x, cy = cp.y, cz = cp.z, R0 = levels[0].obj.geometry.boundingSphere?.radius ?? 1;
       for (let i = 0; i < n; i++) {
         if (!im.getActiveAndVisibilityAt(i)) continue;
-        const o = i * 16, sx = Math.hypot(D[o], D[o + 1], D[o + 2]), sy = Math.hypot(D[o + 4], D[o + 5], D[o + 6]), sz = Math.hypot(D[o + 8], D[o + 9], D[o + 10]);
+        const o = i * 16, sx = Math.sqrt(D[o] * D[o] + D[o + 1] * D[o + 1] + D[o + 2] * D[o + 2]), sy = Math.sqrt(D[o + 4] * D[o + 4] + D[o + 5] * D[o + 5] + D[o + 6] * D[o + 6]), sz = Math.sqrt(D[o + 8] * D[o + 8] + D[o + 9] * D[o + 9] + D[o + 10] * D[o + 10]);   // (Math.hypot made garbage for each copy)
         PS.center.set(D[o + 12], D[o + 13], D[o + 14]).applyMatrix4(wm); PS.radius = R0 * Math.max(sx, sy, sz) + 8;   // (+8 m: things just out of view still cast their shadows in)
         if (!PF.intersectsSphere(PS)) continue;
         if (occ && !im.castShadow && occ.hidden(PS.center, PS.radius - 8)) continue;
         const d = (PS.center.x - cx) ** 2 + (PS.center.y - cy) ** 2 + (PS.center.z - cz) ** 2;   // squared, like the levels
         let L = 0; while (L + 1 < levels.length && d >= levels[L + 1].dist) L++;
         const t = tw[L], k = t.count++;
-        t.instanceMatrix.array.set(D.subarray(o, o + 16), k * 16);
-        if (C) t.instanceColor.array.set(C.subarray(i * 4, i * 4 + 3), k * 3);
+        // (copied number by number: a subarray view per copy per frame was garbage for the collector)
+        const M = t.instanceMatrix.array, m0 = k * 16; for (let j = 0; j < 16; j++) M[m0 + j] = D[o + j];
+        if (C) { const A = t.instanceColor.array, a0 = k * 3, c0 = i * 4; A[a0] = C[c0]; A[a0 + 1] = C[c0 + 1]; A[a0 + 2] = C[c0 + 2]; }
       }
       for (const t of tw) { if (t.count) { t.instanceMatrix.needsUpdate = true; if (t.instanceColor) t.instanceColor.needsUpdate = true; } t.visible = t.count > 0; }
     },

@@ -779,6 +779,7 @@ const PF = `varying vec4 vT; uniform float soft; void main(){ vec2 d = gl_PointC
  * col: [r, g, b], a, drag, grav, blow }) then p.update(dt) once per frame. With { wind } (a gs.outdoors
  * Wind) they drift with it: blow is how much (1 = with the air, 0 = not at all; default the pool's blow).
  */
+const PART_ATTRS = [['position', 3], ['size', 1], ['tint', 4]];   // (made once, not every frame)
 export class Particles {
   constructor(view, { max = 300, additive = true, wind = null, blow = 1 } = {}) {
     this.max = max; this.list = []; this.wind = wind; this.blow = blow; this.wAt = {};
@@ -809,7 +810,7 @@ export class Particles {
       L[n++] = p;
     }
     L.length = n; g.setDrawRange(0, n); this.n = n;
-    for (const [a, k] of [['position', 3], ['size', 1], ['tint', 4]]) { const at = g.attributes[a]; at.clearUpdateRanges(); at.addUpdateRange(0, Math.max(1, n * k)); at.needsUpdate = true; }
+    for (const [a, k] of PART_ATTRS) { const at = g.attributes[a]; at.clearUpdateRanges(); at.addUpdateRange(0, Math.max(1, n * k)); at.needsUpdate = true; }
   }
 }
 
@@ -1700,7 +1701,13 @@ export function gpuFits(v) {
   if (v.env && !v.envSrc) return 'sky reflections (a texture of its own)';
   if (T.ssr && v.reflectors.length) return 'reflections';
   let why = '';
-  v.scene.traverse(o => { if (!why && o.material && !o.userData.gsTwin) for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (!materialFits(m)) { why = `a material with its own shader (${m.type}${o.name ? ' on ' + o.name : ''})`; break; } });
+  // (every frame: no array is made per thing, so the walk leaves no garbage behind)
+  const no = (o, m) => { why = `a material with its own shader (${m.type}${o.name ? ' on ' + o.name : ''})`; };
+  v.scene.traverse(o => {
+    const ms = o.material; if (why || !ms || o.userData.gsTwin) return;
+    if (!Array.isArray(ms)) { if (!materialFits(ms)) no(o, ms); return; }
+    for (let i = 0; i < ms.length; i++) if (!materialFits(ms[i])) { no(o, ms[i]); break; }
+  });
   return why;
 }
 // asked every frame (a quick walk over the scene), so a game that adds an effect mid-round moves back to WebGL before it draws
@@ -1741,15 +1748,17 @@ function gpuSwap(v, G) {
   // materials with a named look that has a WebGPU version (PORTED_LOOKS): set its nodes before
   // three first turns the material into a node material (it copies them over); with the air on, lit
   // standard materials also get wet in the rain (AIR_WET)
-  if (G) v.scene.traverse(o => {
+  const look = (o, m) => {
+    if (!m || gpuLooked.has(m) || m.isNodeMaterial) return;
+    gpuLooked.add(m);
+    for (const n of looksOf(m)) G.fx.gpuLooks[n]?.(m, lookSpec(m, n), o);
+    if (seeThrough3d(o)) G.fx.noAO(m);
+    if (v._air && m.isMeshStandardMaterial && m.fog !== false) G.fx.gpuWet(m, o, AIR);
+  };
+  if (G) v.scene.traverse(o => {   // (every frame: no array is made per thing)
     if (!o.isMesh) return;
-    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
-      if (!m || gpuLooked.has(m) || m.isNodeMaterial) continue;
-      gpuLooked.add(m);
-      for (const n of looksOf(m)) G.fx.gpuLooks[n]?.(m, lookSpec(m, n), o);
-      if (seeThrough3d(o)) G.fx.noAO(m);
-      if (v._air && m.isMeshStandardMaterial && m.fog !== false) G.fx.gpuWet(m, o, AIR);
-    }
+    const ms = o.material;
+    if (Array.isArray(ms)) { for (let i = 0; i < ms.length; i++) look(o, ms[i]); } else look(o, ms);
   });
   // gs.props (InstancedMesh2): plain instanced twins on WebGPU (hd3d-gpu.js gpuProps)
   // (listed first: adding and removing the twins while walking the scene skipped things and threw)
@@ -1843,15 +1852,31 @@ const OCC_LAYER = 30;
 // the layer things wait on while their shaders build (holdNew): nothing draws it
 const HOLD_LAYER = 29;
 // what makes a thing need its own shader: its materials (and their versions), its kind and its geometry's layout
+// (asked for every visible thing every frame: when nothing changed, the answer comes back without
+// building any strings, so it leaves no garbage)
 const KEYS = new WeakMap();
+function sameMats(c, mat, g) {
+  if (c.g !== (g?.id ?? '')) return false;
+  if (!Array.isArray(mat)) return c.n === -1 && c.m === mat && c.v === mat.version;
+  if (c.n !== mat.length) return false;
+  for (let i = 0; i < mat.length; i++) if (c.ids[i] !== mat[i].id || c.vs[i] !== mat[i].version) return false;
+  return true;
+}
 function shaderKey(o) {
-  const ms = Array.isArray(o.material) ? o.material : [o.material], g = o.geometry, c = KEYS.get(o);
+  const mat = o.material, g = o.geometry, c = KEYS.get(o);
+  if (c && sameMats(c, mat, g)) return c.key;
+  const ms = Array.isArray(mat) ? mat : [mat];
   const sig = ms.map(m => m.id + '.' + m.version).join(',') + '|' + (g?.id ?? '');
-  if (c?.sig === sig) return c.key;
+  if (c?.sig === sig) { remember(o, c.sig, c.key, mat, g); return c.key; }
   const key = sig.replace(/\|.*$/, '') + '|' + (o.isSkinnedMesh ? 's' : '') + (o.isInstancedMesh ? 'i' : '') + (o.isBatchedMesh ? 'b' : '') + (o.isPoints ? 'p' : o.isLine ? 'l' : o.isSprite ? 'S' : '') +
     (o.morphTargetInfluences ? 'm' : '') + (g ? '|' + Object.keys(g.attributes).sort().join(',') + (g.index ? '+i' : '') + '|' + Object.keys(g.morphAttributes || {}).join(',') : '');
-  KEYS.set(o, { sig, key });
+  remember(o, sig, key, mat, g);
   return key;
+}
+function remember(o, sig, key, mat, g) {
+  const arr = Array.isArray(mat);
+  KEYS.set(o, { sig, key, g: g?.id ?? '', n: arr ? mat.length : -1, m: arr ? null : mat, v: arr ? 0 : mat.version,
+    ids: arr ? mat.map(m => m.id) : null, vs: arr ? mat.map(m => m.version) : null });
 }
 export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
   const s = new DirectionalLight(col, i), c = s.shadow.camera, d = new Vector3(...dir).normalize();
