@@ -136,7 +136,8 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.physics3d.World3D` (Rapier 3D; lazy): `ball`, `box`, `capsule`, `hull`, `ground(mesh)`,
   `floor`, `mover()` (walking character), `ragdoll()`, `ray`, joints, `step(dt)` syncs meshes.
 - `gs.ai`: `Crowd` (`add(x, y).chase(t) / flee / wander / follow(route) / flock / hunt(t, nav)`),
-  `NavGrid` (`path`, `sees`), `Brain` (state machine), `YUKA`, `Swarm({ count, w, h, speed })` (thousands of flockers on the
+  `NavGrid` (`path`, `sees`), `Brain` (state machine), `Tree` (behaviour trees: mistreevous text, actions by name), `Choose`
+  (utility AI: the highest-scoring want), `YUKA`, `Swarm({ count, w, h, speed })` (thousands of flockers on the
   graphics chip where the phone can: `pull(x, y, { strength, radius })`, `obstacle`, `near`, `kill`, `x`/`y` arrays; `Swarm.max()`).
 - `gs.things.Things` (game objects): `add(obj, tag)`, `hit(obj, tag)`, `hits(tagA, tagB, fn)`, `near`, `nearest`, `kill`, `reuse`, `each`, `all`.
   `gs.things.Node`: parent and child places (`add`, `update()`, `wx`/`wy`/`wangle`, `toWorld`, `hit`, `pick`, `attach`, `draw`).
