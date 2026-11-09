@@ -649,6 +649,120 @@ export class Particles {
   }
 }
 
+/**
+ * Lots of particles: sparks, embers, smoke, rain splashes, magic, confetti, fireworks. new GPUParticles(v, { max })
+ * then p.emit(count, { at, radius, vel, spread, life, size, color, to, alpha, fadeIn, ease }) for a burst and
+ * p.update(dt) once a frame. With the view on WebGPU they move on the graphics chip (tens of thousands are
+ * cheap); on WebGL they move here on the CPU, capped to what the phone can afford (p.max says how many).
+ * Options: max (20000), additive (true: glows; false: smoke and dust), gravity (m/s² down, 0), drag (0),
+ * bounce (.35, off the floor), floor (a height they bounce on, or null), turbulence ({ strength, scale, speed }:
+ * a swirl), wind (a gs.outdoors Wind: they drift with the air where they are). Burst fields: at [x, y, z] (or a
+ * Vector3), radius (start anywhere in a ball this big, 0), vel [x, y, z] (0), spread (plus a random speed in any
+ * direction up to this, 1), life (seconds, or [min, max]; 1), size (metres, or [start, end]; .1), color (colour or
+ * [r, g, b], above 1 glows; white), to (colour at the end; color), alpha (1), fadeIn (false), ease (fade curve, 1).
+ * Up to 16 bursts a frame. Switching between WebGL and WebGPU starts them afresh (they are only for looks: the
+ * game can't read where they are; use Particles for the few that must).
+ */
+const SPARK_CPU = { top: 12000, high: 6000, mid: 3000, low: 1500 };
+const GPC = new Color();
+export class GPUParticles {
+  constructor(view, { max = 20000, additive = true, gravity = 0, drag = 0, bounce = .35, floor = null, turbulence = null, wind = null } = {}) {
+    this.maxGpu = Math.max(16, Math.min(262144, max | 0));
+    this.max = this.maxGpu;
+    Object.assign(this, { additive, gravity, drag, bounce, floor, turbulence, wind, view });
+    this.bursts = []; this.head = 0; this.time = 0; this.pendingDt = 0; this.seed = 1; this.n = 0; this.wAt = {};
+    this.cpuMax = Math.min(this.maxGpu, SPARK_CPU[phoneClass()] ?? 3000);
+    const n = this.cpuMax, g = new BufferGeometry();
+    this.P = new Float32Array(n * 4); this.V = new Float32Array(n * 4); this.C = new Float32Array(n * 4); this.E = new Float32Array(n * 4); this.S = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) { this.P[i * 4 + 3] = 1; this.V[i * 4 + 3] = 0; }   // all dead
+    g.setAttribute('position', new BufferAttribute(new Float32Array(n * 3), 3));
+    g.setAttribute('size', new BufferAttribute(new Float32Array(n), 1));
+    g.setAttribute('tint', new BufferAttribute(new Float32Array(n * 4), 4));
+    this.mat = new ShaderMaterial({ vertexShader: PV, fragmentShader: PF, transparent: true, depthWrite: false, blending: additive ? AdditiveBlending : NormalBlending, uniforms: { scale: { value: 300 }, soft: { value: additive ? 0 : 1 } } });
+    this.pts = new Points(g, this.mat); this.pts.frustumCulled = false; this.pts.renderOrder = 5; view.scene.add(this.pts); view.parts.push(this);
+    this.pts.userData.gsTwin = true;
+    this.onGpu = false;
+  }
+  /** A burst of count particles (see the class notes for the fields). */
+  emit(count, o = {}) {
+    if (this.bursts.length >= 16 || !(count > 0)) return this;
+    const cap = this.onGpu ? this.maxGpu : this.cpuMax; count = Math.min(count | 0, cap);
+    const at = o.at || [0, 0, 0], vel = o.vel || [0, 0, 0], V3 = a => a.isVector3 ? [a.x, a.y, a.z] : a;
+    const life = Array.isArray(o.life) ? o.life : [o.life ?? 1, o.life ?? 1], size = Array.isArray(o.size) ? o.size : [o.size ?? .1, o.size ?? .1];
+    const col = rgbOf(o.color ?? [1, 1, 1]), to = o.to != null ? rgbOf(o.to) : col;
+    this.bursts.push({ start: this.head, n: count, seed: (this.seed = (this.seed * 1103515245 + 12345) % 2147483648) / 2147483648 * 1000,
+      at: V3(at), radius: o.radius ?? 0, vel: V3(vel), spread: o.spread ?? 1, life, size, col, a: o.alpha ?? 1, to, ease: o.ease ?? 1, fadeIn: o.fadeIn ? 1 : 0 });
+    this.head = (this.head + count) % cap;
+    return this;
+  }
+  clear() { this.bursts.length = 0; for (let i = 0; i < this.cpuMax; i++) { this.P[i * 4 + 3] = 1; this.V[i * 4 + 3] = 0; } this.twin?.reset(); this.head = 0; }
+  update(dt) {
+    dt = Math.min(dt, .1); this.time += dt;
+    const gpu = !!this.view._onGpu;
+    if (gpu !== this.onGpu) {   // moved between WebGL and WebGPU: what was flying is dropped, bursts already asked for still start
+      this.onGpu = gpu; this.max = gpu ? this.maxGpu : this.cpuMax;
+      if (gpu) this.twin?.reset(); else { for (let i = 0; i < this.cpuMax; i++) { this.P[i * 4 + 3] = 1; this.V[i * 4 + 3] = 0; } this.head %= this.cpuMax; for (const b of this.bursts) { b.n = Math.min(b.n, this.cpuMax); b.start %= this.cpuMax; } }
+    }
+    if (gpu) { this.pendingDt += dt; return; }   // the WebGPU step runs at draw time (stepGpu)
+    this.spawnCpu(); this.stepCpu(dt);
+  }
+  windNow() { if (!this.wind) return [0, 0, 0]; const b = this.lastAt || [0, 0, 0], w = this.wind.at(b[0], b[2], this.wAt); return [w.x, 0, w.z]; }
+  spawnCpu() {
+    const N = this.cpuMax, { P, V, C, E, S } = this;
+    for (const b of this.bursts) {
+      this.lastAt = b.at;
+      for (let k = 0; k < b.n; k++) {
+        const i = (b.start + k) % N, j = i * 4, h = c => hashF(i, b.seed, c);
+        const u = h(1) * 2 - 1, a = h(2) * 6.2831853, q = Math.sqrt(Math.max(0, 1 - u * u)), rr = Math.cbrt(h(3)) * b.radius;
+        const u2 = h(4) * 2 - 1, a2 = h(5) * 6.2831853, q2 = Math.sqrt(Math.max(0, 1 - u2 * u2)), rv = Math.cbrt(h(6)) * b.spread;
+        P[j] = b.at[0] + q * Math.cos(a) * rr; P[j + 1] = b.at[1] + u * rr; P[j + 2] = b.at[2] + q * Math.sin(a) * rr; P[j + 3] = 0;
+        V[j] = b.vel[0] + q2 * Math.cos(a2) * rv; V[j + 1] = b.vel[1] + u2 * rv; V[j + 2] = b.vel[2] + q2 * Math.sin(a2) * rv; V[j + 3] = b.life[0] + (b.life[1] - b.life[0]) * h(7);
+        C[j] = b.col[0]; C[j + 1] = b.col[1]; C[j + 2] = b.col[2]; C[j + 3] = b.a;
+        E[j] = b.to[0]; E[j + 1] = b.to[1]; E[j + 2] = b.to[2]; E[j + 3] = b.ease;
+        S[j] = b.size[0]; S[j + 1] = b.size[1]; S[j + 2] = b.fadeIn;
+      }
+    }
+    this.bursts.length = 0;
+  }
+  stepCpu(dt) {
+    const N = this.cpuMax, { P, V, C, E, S } = this, g = this.pts.geometry, PP = g.attributes.position.array, SS = g.attributes.size.array, TT = g.attributes.tint.array;
+    const k = Math.max(0, 1 - this.drag * dt), gr = this.gravity, T = this.turbulence, ts = T?.strength ?? 0, tsc = T?.scale ?? 1, tt = this.time * (T?.speed ?? 1), w = this.windNow(), fl = this.floor;
+    let n = 0;
+    for (let i = 0; i < N; i++) {
+      const j = i * 4; if (!(P[j + 3] < V[j + 3])) continue;
+      let vx = V[j] * k, vy = V[j + 1] * k - gr * dt, vz = V[j + 2] * k;
+      if (ts) { const x = P[j] * tsc, y = P[j + 1] * tsc, z = P[j + 2] * tsc;
+        vx += (Math.sin(y + tt) + Math.sin(z * 1.7 - tt)) * .5 * ts * dt; vy += (Math.sin(z + tt * 1.3) + Math.sin(x * 1.3 + tt)) * .5 * ts * dt; vz += (Math.sin(x + tt * .7) + Math.sin(y * 1.9 - tt)) * .5 * ts * dt; }
+      let x = P[j] + (vx + w[0]) * dt, y = P[j + 1] + vy * dt, z = P[j + 2] + (vz + w[2]) * dt;
+      if (fl != null && y < fl) { y = fl; vy *= -this.bounce; vx *= .6; vz *= .6; }
+      P[j] = x; P[j + 1] = y; P[j + 2] = z; P[j + 3] += dt; V[j] = vx; V[j + 1] = vy; V[j + 2] = vz;
+      const f = Math.min(1, P[j + 3] / Math.max(1e-4, V[j + 3])); if (f >= 1) continue;
+      PP[n * 3] = x; PP[n * 3 + 1] = y; PP[n * 3 + 2] = z; SS[n] = S[j] + (S[j + 1] - S[j]) * f;
+      TT[n * 4] = C[j] + (E[j] - C[j]) * f; TT[n * 4 + 1] = C[j + 1] + (E[j + 1] - C[j + 1]) * f; TT[n * 4 + 2] = C[j + 2] + (E[j + 2] - C[j + 2]) * f;
+      TT[n * 4 + 3] = C[j + 3] * (1 - f) ** E[j + 3] * (S[j + 2] ? Math.min(1, f * 6) : 1);
+      n++;
+    }
+    g.setDrawRange(0, n); this.n = n;
+    for (const [a, kk] of [['position', 3], ['size', 1], ['tint', 4]]) { const at = g.attributes[a]; at.clearUpdateRanges(); at.addUpdateRange(0, Math.max(1, n * kk)); at.needsUpdate = true; }
+  }
+  /* WebGPU (hd3d.js swapTwins): the compute twin and its step for this frame */
+  makeTwin(G) { const t = G.fx.gpuSparks(this); this.twin = t; return t; }
+  stepGpu(G) {
+    const t = this.twin; if (!t) return;
+    const rows = this._rows ||= Array.from({ length: 16 * 7 }, () => new Vector4());
+    const B = this.bursts; for (let b = 0; b < B.length; b++) { const o = B[b], r = b * 7; this.lastAt = o.at;
+      rows[r].set(o.start, o.n, 0, o.seed); rows[r + 1].set(o.at[0], o.at[1], o.at[2], o.radius); rows[r + 2].set(o.vel[0], o.vel[1], o.vel[2], o.spread);
+      rows[r + 3].set(o.life[0], o.life[1], o.size[0], o.size[1]); rows[r + 4].set(o.col[0], o.col[1], o.col[2], o.a); rows[r + 5].set(o.to[0], o.to[1], o.to[2], o.ease); rows[r + 6].set(o.fadeIn, 0, 0, 0); }
+    const T = this.turbulence, w = this.windNow();
+    this._turb ||= new Vector4(); this._turb.set(T?.strength ?? 0, T?.scale ?? 1, T?.speed ?? 1, 0); this._wind ||= new Vector3(); this._wind.set(w[0], 0, w[2]);
+    t.step(G.r, { rows, count: B.length, dt: this.pendingDt, time: this.time, gravity: this.gravity, drag: this.drag, bounce: this.bounce, floor: this.floor, turb: this._turb, wind: this._wind });
+    B.length = 0; this.pendingDt = 0;
+  }
+  dispose() { this.pts.removeFromParent(); this.pts.geometry.dispose(); this.mat.dispose(); this.twin?.dispose(); this.twin?.sprite.removeFromParent(); const i = this.view.parts.indexOf(this); if (i >= 0) this.view.parts.splice(i, 1); }
+}
+const rgbOf = c => { if (Array.isArray(c)) return [c[0], c[1], c[2]]; const k = c.isColor ? c : GPC.set(c); return [k.r, k.g, k.b]; };
+function hashF(i, s, c) { const x = Math.sin(i * 12.9898 + s * 78.233 + c * 37.719) * 43758.5453; return x - Math.floor(x); }
+
 /* ---------- view ---------- */
 const C_WARM = new Color('#ffe2b8'), GV = new Vector3(), GP = new Vector3(), GW = new Vector3(), GQ = new Vector2(), GL = new Vector3(), GH = new Vector3();
 // a grade tint: '#rrggbb', a Color or [r, g, b] (1 = no change)
@@ -1238,9 +1352,9 @@ function gpuSwap(v, G) {
   });
   for (const p of v.parts) {
     if (G) {
-      const tw = p.gpuTwin?.r === G.r ? p.gpuTwin : (p.gpuTwin = { r: G.r, ...G.fx.gpuParticles(p) });
+      const tw = p.gpuTwin?.r === G.r ? p.gpuTwin : (p.gpuTwin = { r: G.r, ...(p.makeTwin ? p.makeTwin(G) : G.fx.gpuParticles(p)) });
       if (p.pts.parent) { p.pts.parent.add(tw.sprite); p.pts.removeFromParent(); }
-      tw.sync(p.n || 0);
+      if (p.stepGpu) p.stepGpu(G); else tw.sync(p.n || 0);
     } else if (p.gpuTwin?.sprite.parent) { p.gpuTwin.sprite.parent.add(p.pts); p.gpuTwin.sprite.removeFromParent(); }
   }
 }

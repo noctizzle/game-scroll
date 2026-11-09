@@ -61,6 +61,23 @@ async function pulseScene() {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend];
 }
+// GPU particles (gs.hd.GPUParticles): bursts with no random spread (so both backends draw the same), under
+// gravity, drag, a swirl and a floor, stepped a fixed time; glowing sparks and soft smoke
+async function sparksScene() {
+  window.__hd.force = 2;
+  const v = new gs.hd.HDView({ bg: '#0a0c14', fog: .02, env: .2, amb: .2 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 3, 9); v.cam.lookAt(0, 1.5, 0); v.cam.updateMatrixWorld();
+  v.scene.add(new T.Mesh(new T.PlaneGeometry(40, 40).rotateX(-Math.PI / 2), gs.hd.pbr('#30343c', { rough: .8 })));
+  const fire = new gs.hd.GPUParticles(v, { max: 4000, gravity: 6, drag: .4, floor: 0, turbulence: { strength: 2, scale: .8, speed: 1 } });
+  const smoke = new gs.hd.GPUParticles(v, { max: 1000, additive: false, drag: .8 });
+  v.render(x, 240, 320); await frame();
+  for (let f = 0; f < 24; f++) {
+    if (f < 12) for (let k = 0; k < 4; k++) { const a = f * .9 + k * 1.6; fire.emit(20, { at: [Math.cos(a) * .5, 2.5, Math.sin(a) * .5], vel: [Math.cos(a) * 3, 4 + k, Math.sin(a) * 3], spread: 0, life: 1.4, size: [.12, .04], color: [3, 1.6, .5], to: [1.5, .2, .1] }); }
+    if (f % 4 === 0) smoke.emit(10, { at: [-2 + f * .15, .5, -1], vel: [.3, 1, 0], spread: 0, life: 3, size: [.4, 1.2], color: '#8890a0', alpha: .5, fadeIn: true });
+    fire.update(1 / 30); smoke.update(1 / 30); v.t = 0; v.render(x, 240, 320); await frame();
+  }
+  return [c.toDataURL(), window.__hd.info.backend];
+}
 // an outdoor valley (gs.outdoors looks, gs.sky, gs.props): painted ground with fields, a lane and mud,
 // far hills, mossy rocks, leaf cards and their impostors, a sky with clouds and its own reflections,
 // air with cloud shadows, rain-wet surfaces, a near shadow cascade, sun shafts and depth of field.
@@ -122,6 +139,7 @@ try {
   [out['nextgen-wet'], backends['nextgen-wet']] = await nextgen(3, .3);
   for (const t of [0, 3]) [out['dark-tier' + t], backends['dark-tier' + t]] = await dark(t);   // rain on the air: WebGL only so far
   [out.pulse, backends.pulse] = await pulseScene();
+  [out.sparks, backends.sparks] = await sparksScene();
   for (const t of [1, 3]) [out['outdoor-tier' + t], backends['outdoor-tier' + t]] = await outdoor(t);
   [out['outdoor-physical'], backends['outdoor-physical']] = await outdoor(3, true);
   out.console = consoleScene();
