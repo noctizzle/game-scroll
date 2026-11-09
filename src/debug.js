@@ -6,11 +6,33 @@
 //   P                      pause the game
 //   .                      while paused: step one frame (1/60 s)
 //   H                      hitboxes on / off (draws your game's debug(c) hook)
+//   B                      Tiny Brains: copy each brain's and shadow's starting brain (pack()) to the
+//                          clipboard and the console, for new Brain(api, { start }) ("teach by playing")
 //
+// Tiny Brains in this game show in the panel too: skill, the player's win rate against its target,
+// trust (how often it decides instead of its teacher), the fun lean, how torn it is, and any tell.
 // The panel shows frames per second, how long update() and draw() take, the game's size, score and
 // state. Hitboxes: give your game object a debug(c) method that outlines whatever you like, in game
 // units (physics2d's world.debugDraw(c) outlines every body); it's drawn on top while H is on.
+import { liveBrains } from './kit/brains.js';
 const SPEEDS = [.1, .25, .5, 1, 2];
+const pct = v => (v * 100).toFixed(0).padStart(3) + '%';
+function brainLines(s) {
+  return liveBrains(s).slice(0, 6).map(b => {
+    if (b.habits) return `${b.name}  met ${b.record.met}  you ${b.record.wins}-${b.record.losses}  habit ${b.habit ? b.habit.move : '-'}`;
+    if (!b.target) return `${b.name}  copies you ${pct(b.like)}  seen ${b.seen}${b.ready ? '  ready' : ''}`;
+    const t = b.telling;
+    return `${b.name}${b.style ? ' (' + b.style + ')' : ''}  skill ${pct(b.skill)}  win ${pct(b.winRate)}/${pct(b.target)}\n` +
+      `  trust ${pct(b.trust)}  lean ${b.lean >= 0 ? '+' : ''}${b.lean.toFixed(2)}  torn ${pct(b.unsure)}${t ? '  tell ' + t.action : ''}`;
+  });
+}
+function copyBrains(s) {
+  const packs = liveBrains(s).filter(b => b.pack).map(b => `${b.name}: '${b.pack()}'`);
+  if (!packs.length) { console.info('[debug] this game has no Tiny Brains'); return; }
+  const text = packs.join('\n');
+  console.info('[debug] starting brains (use as new Brain(api, { start: ... })):\n' + text);
+  try { navigator.clipboard?.writeText(text); } catch (_) {}
+}
 
 export function makeDebug() {
   const D = { on: false, boxes: true, speed: 3, paused: false, steps: 0, el: null, fps: 60, upd: 0, drw: 0, lastPaint: 0 };
@@ -32,6 +54,7 @@ export function makeDebug() {
     else if (k === 'p') D.paused = !D.paused;
     else if (k === '.') { D.paused = true; D.steps++; }
     else if (k === 'h') D.boxes = !D.boxes;
+    else if (k === 'b') { if (D.s) copyBrains(D.s); }
     else used = false;
     if (used) { e.preventDefault(); e.stopImmediatePropagation(); }
   }, true);
@@ -44,6 +67,7 @@ export function makeDebug() {
   /** After the frame is painted: hitboxes and the stats panel. */
   D.after = (s, upd, drw, now) => {
     if (!D.on) return;
+    D.s = s;
     if (D.lastPaint) D.fps = D.fps * .92 + (1000 / Math.max(1, now - D.lastPaint)) * .08;
     D.lastPaint = now; D.upd = D.upd * .9 + upd * .1; D.drw = D.drw * .9 + drw * .1;
     if (D.boxes && s.game.debug) { const c = s.ctx; c.save(); try { s.game.debug(c); } catch (e) { console.warn('[debug]', e); } c.restore(); }
@@ -53,7 +77,8 @@ export function makeDebug() {
       `update ${D.upd.toFixed(2)} ms  draw ${D.drw.toFixed(2)} ms\n` +
       `size ${s.w}x${s.h}  score ${s.score}${s.def.goal ? '/' + s.def.goal : ''}\n` +
       `hitboxes ${s.game.debug ? (D.boxes ? 'on' : 'off') : '(add debug(c))'}\n` +
-      '[ ] speed  P pause  . step  H boxes';
+      brainLines(s).map(l => l + '\n').join('') +
+      '[ ] speed  P pause  . step  H boxes  B brains';
   };
   if (/[?&]debug\b/.test(location.search)) D.toggle(true);
   return D;

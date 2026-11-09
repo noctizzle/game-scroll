@@ -34,7 +34,8 @@ import { perf } from './perf.js';
 import { speed, fpsFor, tick as tickHz, screenHz } from './kit/speed.js';
 import { history } from './history.js';
 import { savesFor } from './saves.js';
-import { brainsFor } from './brainstore.js';
+import { brainsFor, sendFun } from './brainstore.js';
+import { liveBrains, brainStats } from './kit/brains.js';
 import { ran as gameRan, awayFor } from './away.js';
 import { geoFor, roundStarted, roundEnded } from './geo.js';
 import { makeDebug } from './debug.js';
@@ -115,9 +116,9 @@ function makeSlide(def){
   const likeBtn=el.querySelector('.like'),liked=rating(def.id)>0||(rating(def.id)===0&&store.get('gs_like_'+def.id,false));
   // Shared counts come from the hearts backend; dev/test builds without it keep the old local number.
   const setLike=v=>{likeBtn.setAttribute('aria-pressed',v);likeBtn.querySelector('.n').textContent=fmt(hearts.enabled?hearts.count(def.id,v):def.likes+(v?1:0))};setLike(liked);
-  likeBtn.onclick=()=>{const v=likeBtn.getAttribute('aria-pressed')!=='true';store.set('gs_like_'+def.id,v);setRating(def.id,v?1:0);hearts.set(def.id,v);rerank();document.querySelectorAll('.slide').forEach(x=>{if(x._s&&x._s.def.id===def.id)x._s.setLike(v)})};
+  likeBtn.onclick=()=>{const v=likeBtn.getAttribute('aria-pressed')!=='true';if(v)funNote(s,'heart');store.set('gs_like_'+def.id,v);setRating(def.id,v?1:0);hearts.set(def.id,v);rerank();document.querySelectorAll('.slide').forEach(x=>{if(x._s&&x._s.def.id===def.id)x._s.setLike(v)})};
   s.setLike=setLike;
-  el.querySelector('.meh').onclick=()=>{const was=rating(def.id);setRating(def.id,-1);if(likeBtn.getAttribute('aria-pressed')==='true'){store.set('gs_like_'+def.id,false);setLike(false);hearts.set(def.id,false)}
+  el.querySelector('.meh').onclick=()=>{funNote(s,'meh');const was=rating(def.id);setRating(def.id,-1);if(likeBtn.getAttribute('aria-pressed')==='true'){store.set('gs_like_'+def.id,false);setLike(false);hearts.set(def.id,false)}
     rerank();qaToast(`Hidden: ${def.title}`,()=>{setRating(def.id,was);rerank()});goNext(s)};
   el.querySelector('.nextbtn').onclick=()=>goNext(s);
   el.querySelector('.sharebtn').onclick=async()=>{haptic('light');const r=await shareGame(def,best(def.id));if(r==='copied')toast(el,'Link copied','info')};
@@ -224,10 +225,22 @@ function resumeGame(s){
 function clearPause(s){s.paused=false;s.pauseWhy=null;const el=s.screen.querySelector('.pause-ov');if(el)el.hidden=true}
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&active)pauseGame(active,'away')});
 
+// Fun signals for the game's Tiny Brains (src/brainstore.js): what the player did around a round
+// says how fun it was. Played again within 30 s +1, hearted +1 (during or within a minute of the
+// round), Meh -1, left the game-over screen within 4 s -0.5. One "again or left" signal per round.
+function funNote(s,what){
+  const id=s.api.brains,since=s.funAt?Date.now()-s.funAt:Infinity;
+  if(what==='heart'){if((s.state==='playing'||since<60000)&&!s.funHeart){s.funHeart=true;sendFun(id,1)}return}
+  if(what==='meh'){sendFun(id,-1);return}
+  if(s.funSent||!s.funAt)return;
+  if(what==='again'&&since<30000){s.funSent=true;sendFun(id,1)}
+  else if(what==='left'&&since<4000){s.funSent=true;sendFun(id,-.5)}
+}
 function startGame(s){
   if(active!==s)return;
   if(s.failed){bootGame(s);s.dirty=true;renderOverlay(s);return}   // the card's "Try again"
   if(s.loading)return;
+  if(s.state==='over')funNote(s,'again');s.funHeart=false;
   clearPause(s);
   // Boosts the player owns for this game are used up on this run; unlocks stay on.
   // (taken only once the round has started cleanly, so a game that fails to reset costs nothing)
@@ -255,7 +268,7 @@ function awardTrophies(s){
 }
 function gameOver(s){
   if(s.state!=='playing')return;clearPause(s);
-  s.state='over';s.overAt=Date.now();stopKits();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
+  s.state='over';s.overAt=Date.now();s.funAt=s.overAt;s.funSent=false;stopKits();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(progress.score(s.def.id,s.score))s.newBest=true;
   awardTrophies(s);services.reportRun(s.def);
   s.rank=null;const round=s.overAt;boards.submit(s.def.id,s.score,(s.overAt-s.startAt)/1000).then(r=>{if(r&&s.state==='over'&&s.overAt===round){s.rank=r;if(!s.overlay.hidden)renderOverlay(s)}});
@@ -437,6 +450,7 @@ function setActive(s){
   // the card being left: a round in play ends now; a finished one (the game-over screen) is reset
   // once the swipe has settled, as resetting can rebuild a whole 3D level, which mid-swipe is a stutter
   const prev=active;
+  if(prev&&prev.state==='over')funNote(prev,'left');
   if(prev&&prev.state==='playing')resetSlide(prev);
   else if(prev&&prev.state!=='ready')afterSettle(()=>{if(prev!==active&&prev.state!=='ready'&&!prev.dropped)resetSlide(prev)});
   feed.classList.remove('locked');active=s;speed.game=s.def;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);showTweaks(s);
@@ -619,4 +633,4 @@ if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refres
 
 // Test hook used by scripts/smoke.cjs and the other browser tests: dev and test builds, and any build
 // driven by a test browser. Never in the store apps, where a game could use it to reach the wallet.
-if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',only(id){filter='id:'+id;rebuild()}};
+if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',only(id){filter='id:'+id;rebuild()}};
