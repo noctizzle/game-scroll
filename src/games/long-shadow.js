@@ -658,7 +658,7 @@ function world() {
   mesh(rbox(70, 26, 7, .3), M.stone, STREAMX, dy + 1, -206); for (let i = -2; i <= 2; i++) mesh(rbox(3, 3, 8, .2), M.stone, STREAMX + i * 12, dy + 15.5, -206);
   // the chapel belfry on the south bank (M2's first nest)
   const ch = NESTS.chapel, chy = ground(ch.x, ch.z) - .2;
-  mesh(rbox(4.4, 11, 4.4, .1), M.stone, ch.x, chy + 5.5, ch.z);
+  mesh(rbox(4.4, 11, 4.4, .1), M.stone, ch.x, chy + 5.5, ch.z); box(ch.x, chy, ch.z, 4.4, 11, 4.4, 'stone');
   for (const [dx, dz] of [[-1.9, -1.9], [1.9, -1.9], [-1.9, 1.9], [1.9, 1.9]]) mesh(new BoxGeometry(.5, 2.6, .5), M.stone, ch.x + dx, chy + 12.3, ch.z + dz);
   mesh(new ConeGeometry(3.4, 3.6, 4), M.roof, ch.x, chy + 15.4, ch.z, Math.PI / 4);
   { // the ladder up the belfry's east face (Wren climbs it at the start of mission 2)
@@ -977,10 +977,10 @@ const DAY_STORM = [...NIGHT,
   [24, { top: '#06080f', horizon: '#161a28', sun: '#7088c0', sunI: .12, amb: .35 }],
 ];
 const MOODS = {
-  m1: {
-    time: 7.4, tilt: -.3, day: DAY_CLEAR, physical: { haze: 3.2, bright: .6 }, clouds: .3, gap: .55, cloudLight: null, cloudDark: null,
+  m1: {   // 8:24: the sun sits just above the view when you face it from the water tower
+    time: 8.4, tilt: -.3, day: DAY_CLEAR, physical: { haze: 3.2, bright: .6 }, clouds: .3, gap: .55, cloudLight: null, cloudDark: null,
     air: { haze: .00062, mist: .0035, mistFall: .13, mistY: -1.5, patchy: .9, cloudShade: .38, wind: [5, -1.5], wet: 0, colour: '#b4c0cc', sunColour: '#f2d4a4' },
-    grade: { saturation: 1.12, contrast: 1.16, shadows: '#e2e8f4', highlights: '#fff4e4' }, glare: .85, shafts: .9, exposure: 1.08, bloom: .3, env: .6, windows: 0,
+    grade: { saturation: 1.12, contrast: 1.16, shadows: '#e2e8f4', highlights: '#fff4e4' }, glare: .6, shafts: .6, exposure: 1.08, bloom: .3, env: .6, windows: 0,
   },
   m2: {
     time: 17.75, tilt: .12, day: DAY_STORM, physical: false, clouds: .86, gap: .4, cloudLight: '#8c8a8a', cloudDark: '#2a2e36',
@@ -1106,7 +1106,8 @@ function make(api) {
     // no arcade chime: a soft tick to say he's down, then the fall (loud in the bullet cam)
     tone(head ? 1760 : 1320, { len: .07, wave: 'sine', vol: .022 }); haptic(head ? 'success' : 'medium');
     { const k = viaCam ? 1 : .35; soon(.45, () => noise(.22, { vol: .14 * k, from: 420, to: 70, out: aud?.sp?.in })); soon(.62, () => noise(.12, { vol: .07 * k, from: 900, to: 160 })); }
-    for (let i = 0; i < 14; i++) WD.sparks.emit({ x: s.x, y: s.gy + 1.6, z: s.y, vx: rnd(-1.5, 1.5), vy: rnd(1, 3), vz: rnd(-1.5, 1.5), life: .9, size: .16, col: [3, 2.4, .6], drag: 2, grav: 2 });
+    // a gold burst you can see from the nest; seen up close in the bullet cam it's finer and spreads wider, or 14 of them read as one white blob
+    { const k = viaCam ? 2.4 : 1; for (let i = 0; i < 14; i++) WD.sparks.emit({ x: s.x, y: s.gy + 1.6, z: s.y, vx: rnd(-1.5, 1.5) * k, vy: rnd(1, 3) * k, vz: rnd(-1.5, 1.5) * k, life: .9, size: viaCam ? .04 : .16, col: viaCam ? [2.2, 1.7, .5] : [3, 2.4, .6], drag: 2, grav: 2 }); }
     // anyone close and calm hears it and gets suspicious
     for (const o of men) if (!o.ko && !o.alert && Math.hypot(o.x - s.x, o.y - s.y) < 26) o.sus = Math.max(o.sus, .6);
     if (squad.alerted) boss.feel(.3);
@@ -1148,7 +1149,8 @@ function make(api) {
     // bullet cam for good long shots (worked out ahead from where things are heading)
     if (!gs.prefs.reduceMotion) {
       const p = predict(b);
-      if (p && (p.d > 150 || (p.head && p.d > 90))) { b.cam = p; bulletCam = { b, t: 0, target: p.s, scale: clamp(p.time / 1.9, .02, .4), hold: 0, from: { x: eye.x, y: eye.y, z: eye.z } }; WD.bullet.visible = true; tone(880, { len: .5, wave: 'sine', vol: .04, slide: -500 }); }
+      if (p && (p.d > 150 || (p.head && p.d > 90))) { b.cam = p; WD.sparks.list = WD.sparks.list.filter(q => q.size < .5);   // a far muzzle flash is drawn big to show from the nest: up close in slow motion it would be a huge blob
+        bulletCam = { b, t: 0, target: p.s, scale: clamp(p.time / 1.9, .02, .4), hold: 0, from: { x: eye.x, y: eye.y, z: eye.z } }; WD.bullet.visible = true; tone(880, { len: .5, wave: 'sine', vol: .04, slide: -500 }); }
     }
     boltT = 1.1;
   }
@@ -1188,6 +1190,7 @@ function make(api) {
     return null;
   }
   const windAt = {};
+
   function stepBullet(b, dt) {
     const w = AIR.at(b.x, b.z, windAt); b.vy -= GRAV * dt; b.vx += w.x * WIND_K * dt; b.vz += w.z * WIND_K * dt;
     b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt; b.life -= dt;
@@ -1294,7 +1297,7 @@ function make(api) {
   // a muzzle flash: a hot core and a short cone along the barrel, then a puff of smoke that drifts
   // with the wind. Far off it keeps a few pixels, so you can see where a shot came from.
   const muzzle = (x, y, z, dx, dy, dz, k = 1) => {
-    const e = WD.v.cam.position, far = Math.hypot(x - e.x, y - e.y, z - e.z), core = Math.max(.2 * k, far * Math.tan(WD.v.cam.fov * Math.PI / 360) * .02);
+    const e = WD.v.cam.position, far = Math.hypot(x - e.x, y - e.y, z - e.z), core = bulletCam ? .2 * k : Math.max(.2 * k, far * Math.tan(WD.v.cam.fov * Math.PI / 360) * .02);
     WD.sparks.emit({ x, y, z, life: .05, size: core, col: [5, 3.4, 1.5] });
     for (let i = 1; i <= 3; i++) { const o = core * i * .6; WD.sparks.emit({ x: x + dx * o, y: y + dy * o, z: z + dz * o, vx: dx * 5, vy: dy * 5, vz: dz * 5, life: .045, size: core * (1 - i * .25), col: [5, 2.8, 1] }); }
     for (let i = 0; i < 4; i++) WD.smoke.emit({ x: x + dx * .3, y, z: z + dz * .3, vx: dx * rnd(.6, 2) + rnd(-.2, .2), vy: rnd(.1, .5), vz: dz * rnd(.6, 2) + rnd(-.2, .2), life: rnd(1.2, 2), size: .22 * k, grow: 5, col: [.62, .61, .58], a: .2, drag: 1.4, fadeIn: true });
@@ -1396,8 +1399,7 @@ function make(api) {
     const dest = NESTS[to];
     if (!kind && nestId === 'ridge' && to === 'tower') {
       zip = new Zipline(WD.zipA, WD.zipB, { gravity: 170, drag: .14 });
-      zip.ride(); move = { to, kind: 'zip', t: 0, fade: 0 };
-      noise(5, { vol: .06, from: 3000, to: 1500, filter: 'bandpass', q: 3 });
+      move = { to, kind: 'zip', t: 0, fade: 0, land: -1, sw: 0, swv: 0, lastV: 0, passed: false, hum: 0 };   // she clips on, jumps, then rides (zip.ride at 1 s)
       say('Riding the line down. Keep your head low.', OAKE, 2.4);
     } else {
       // the last 24 m of the run, from the side of the old nest, then in at the door or up the ladder
@@ -1435,10 +1437,7 @@ function make(api) {
   // where Wren is and how she moves at time t of the trip, and where the camera is
   function tripAt(m) {
     const t = m.t;
-    if (m.kind === 'zip') {
-      const h = zip.hands, d = zip.dir, yaw = Math.atan2(d.x, d.z), sx = Math.cos(yaw), sz = -Math.sin(yaw), k = Math.min(1, t / 1.5);
-      return { fig: { x: h.x, y: h.y - 2.02, z: h.z, yaw, pose: 'hang', speed: 0 }, cam: { p: [h.x - d.x * (4 + k) + sx * 2.2, h.y - d.y * 4 + .4, h.z - d.z * (4 + k) + sz * 2.2], l: [h.x + d.x * 9, h.y + d.y * 9 - 2, h.z + d.z * 9] } };
-    }
+    if (m.kind === 'zip') return zipAt(m);
     const { foot: f } = m;
     let fig, cam, yawRun = m.camYaw ?? 0;
     if (t < m.runT) {
@@ -1448,22 +1447,106 @@ function make(api) {
       m.camYaw = m.camYaw == null ? yawRun : m.camYaw + angDiff(yawRun, m.camYaw) * Math.min(1, (t - (m.lastT ?? t)) * 3 + .02); m.lastT = t; yawRun = m.camYaw;
       fig = { x, y: groundAt(x, z), z, yaw, pose: 'run', speed: 5.6 };
       const sx = Math.cos(yawRun) * m.side, sz = -Math.sin(yawRun) * m.side, back = lerp(5, 1.5, k);
-      let off = 6; while (off > 1.5 && solidAt(x + sx * off - Math.sin(yawRun) * back, z + sz * off - Math.cos(yawRun) * back, WD.solids)) off -= .75;   // not inside a wall
-      cam = { p: [x + sx * off - Math.sin(yawRun) * back, fig.y + 2.1, z + sz * off - Math.cos(yawRun) * back], l: [x + Math.sin(yawRun) * 2, fig.y + 1.1, z + Math.cos(yawRun) * 2] };
+      // not inside a wall, and nothing between us and her: try her side, then the other side, then straight behind
+      const her = { x, y: fig.y + 1.2, z }, at = (sd, off) => ({ x: x + sx * sd * off - Math.sin(yawRun) * back, y: fig.y + 2.1, z: z + sz * sd * off - Math.cos(yawRun) * back });
+      let cp = null;
+      for (const sd of [1, -1]) { for (let off = 6; off >= 1.5 && !cp; off -= .75) { const q = at(sd, off); if (roomAt(q) && clearLine(q, her)) cp = q; } if (cp) break; }
+      cp ||= { x: x - Math.sin(yawRun) * 2.5, y: fig.y + 2.3, z: z - Math.cos(yawRun) * 2.5 };
+      cam = { p: [cp.x, cp.y, cp.z], l: [x + Math.sin(yawRun) * 2, fig.y + 1.1, z + Math.cos(yawRun) * 2] };
     } else if (t < m.runT + m.climbT) {
       // up the ladder, facing the wall (-x)
       const k = sm(0, 1, (t - m.runT) / m.climbT), L = WD.ladder, y = lerp(L.y0, L.y1, k);
       fig = { x: L.x, y, z: L.z, yaw: -Math.PI / 2, pose: 'ladder', speed: 1.4 };
-      cam = { p: [L.x + 5.2, L.y0 + 1.5 + (y - L.y0) * .6, L.z - 3.6], l: [L.x, y + .9, L.z] };   // off the north-east corner, clear of the nave roof
+      const cc = climbCam(); cam = { p: [cc.x, L.y0 + 1.5 + (y - L.y0) * .6, cc.z], l: [L.x, y + .9, L.z] };   // a clear spot off the east face
     } else {
       // over the top into the belfry, or in through the door
       const k = clamp((t - m.runT - m.climbT) / Math.max(.01, m.inT || .5), 0, 1);
-      if (m.climbT) { const L = WD.ladder; fig = { x: L.x - k * 1.2, y: L.y1 + k * .3, z: L.z, yaw: -Math.PI / 2, pose: 'climb', speed: 0 }; cam = { p: [L.x + 5.2, L.y0 + 1.5 + (L.y1 - L.y0) * .6, L.z - 3.6], l: [L.x - k * .8, L.y1 + .9, L.z] }; }
+      if (m.climbT) { const L = WD.ladder, cc = climbCam(); fig = { x: L.x - k * 1.2, y: L.y1 + k * .3, z: L.z, yaw: -Math.PI / 2, pose: 'climb', speed: 0 }; cam = { p: [cc.x, L.y0 + 1.5 + (L.y1 - L.y0) * .6, cc.z], l: [L.x - k * .8, L.y1 + .9, L.z] }; }
       else { const x = f.x, z = f.z - k * 1.6; fig = { x, y: groundAt(x, z), z, yaw: Math.PI, pose: 'walk', speed: 1.8 }; cam = { p: [x + 3.5 * m.side, fig.y + 1.8, f.z + 5], l: [x, fig.y + 1.3, z - 2] }; }
     }
     return { fig, cam };
   }
-  function endMove() { WD.wren.visible = false; WD.trolley.visible = false; arrive(move.to, move.kind === 'climb'); }
+  // The zip line, in four shots: a low shot as she clips on and jumps; riding with her, the view
+  // widening as she speeds up; a camera on the line further down that she whooshes past; and from
+  // the tower top as she comes in, lets go and drops onto the tank.
+  const ZIP_PASS = .7;   // where on the line the fly-by camera waits
+  function zipAt(m) {
+    const t = m.t, h = zip.hands, d = zip.dir, yaw = Math.atan2(d.x, d.z), sx = Math.cos(yaw), sz = -Math.sin(yaw), A = WD.zipA, B = WD.zipB;
+    const sp = clamp(zip.speed / 45, 0, 1), k = zip.t;
+    let fig, cam;
+    if (t < 1) {
+      // on the rocks under the line: a crouch, then up to grab the bar (seen from the valley side, the pole behind her)
+      const gy = WD.land.height(A.x, A.z), up = sm(.45, .85, t), y = lerp(gy + .02, h.y - 2.02, up);
+      fig = { x: h.x, y, z: h.z, yaw, pose: t < .45 ? 'crouch' : t < .8 ? 'jump' : 'hang', speed: 0 };
+      cam = { p: [A.x + d.x * 4.5 - sx * 3.6, A.y - .9, A.z + d.z * 4.5 - sz * 3.6], l: [h.x, lerp(gy + 1, A.y - 1, up), h.z], fov: 56 };
+    } else if (m.land >= 0) {
+      // lets go over the tank: drops, lands crouched, stands
+      const fy = WD.land.height(NESTS.tower.x, NESTS.tower.z) + 13.02, drop = Math.max(0, (h.y - 2.02) - fy), q = sm(0, .22, m.land);
+      fig = { x: h.x + d.x * q * .8, y: fy + drop * (1 - q * q), z: h.z + d.z * q * .8, yaw, pose: m.land < .1 ? 'jump' : m.land < .75 ? 'land' : 'idle', speed: 0 };
+      cam = { p: [B.x + d.x * 3.6 + sx * 2.6, fy + 1.5, B.z + d.z * 3.6 + sz * 2.6], l: [fig.x, fy + .9, fig.z], fov: 60 };
+    } else {
+      fig = { x: h.x, y: h.y - 2.02, z: h.z, yaw, pose: 'hang', speed: 0, sw: m.sw, roll: Math.sin(t * 2.3) * .05 * sp };
+      if (k < ZIP_PASS - .09) {
+        // with her: behind and off to one side, pulling back and widening as she picks up speed
+        const back = 3.4 + sp * 1.4, j = sp * .05;
+        cam = { p: [h.x - d.x * back + sx * 1.8 + rnd(-j, j), h.y - d.y * back + .25 + rnd(-j, j), h.z - d.z * back + sz * 1.8], l: [h.x + d.x * 10, h.y + d.y * 10 - 1.6, h.z + d.z * 10], fov: 62 + sp * 14 };
+      } else if (k < .93) {
+        // waiting on the line: she comes at us and flashes past
+        const P = { x: A.x + (B.x - A.x) * ZIP_PASS, y: A.y + (B.y - A.y) * ZIP_PASS, z: A.z + (B.z - A.z) * ZIP_PASS };
+        cam = { p: [P.x - sx * 4.2 + d.x * 2, P.y - 2.6, P.z - sz * 4.2 + d.z * 2], l: [h.x, h.y - 1.2, h.z], fov: 50 };
+      } else {
+        // from the tower top, looking back up the line
+        const fy = WD.land.height(NESTS.tower.x, NESTS.tower.z) + 13.02;
+        cam = { p: [B.x + d.x * 3.6 + sx * 2.6, fy + 1.5, B.z + d.z * 3.6 + sz * 2.6], l: [h.x, h.y - 1.3, h.z], fov: 60 };
+      }
+    }
+    return { fig, cam };
+  }
+  // the ride itself: she swings back as she speeds up and forward as the line levels out; sparks off
+  // the trolley, a hum that rises with speed, a whoosh past the camera, a thump on the tank
+  function zipTick(m, dt) {
+    if (m.t >= 1 && !zip.riding && !zip.done) { zip.ride(); noise(.2, { vol: .05, from: 2400, to: 900 }); metal(0, 1400, .04); haptic('light'); }
+    if (m.land >= 0) {
+      const was = m.land; m.land += dt;
+      if (was < .22 && m.land >= .22) { const fy = WD.land.height(NESTS.tower.x, NESTS.tower.z) + 13.02, h = zip.hands; noise(.12, { vol: .07, from: 400, to: 90 }); haptic('medium'); fx.shake(4); for (let i = 0; i < 10; i++) WD.dust.emit({ x: h.x + rnd(-.6, .6), y: fy + .1, z: h.z + rnd(-.6, .6), vx: rnd(-1.5, 1.5), vy: rnd(.3, 1.2), vz: rnd(-1.5, 1.5), life: rnd(.6, 1.1), size: .3, grow: 2.5, col: [.6, .55, .46], a: .35, drag: 2.5 }); }
+      if (m.land > 1.25) { m.fade = Math.min(1, m.fade + dt * 4); if (m.fade >= 1) endMove(); }
+      return;
+    }
+    zip.update(dt);
+    if (!zip.riding) { if (zip.done) { m.land = 0; noise(.08, { vol: .05, from: 1800, to: 600 }); } return; }
+    const acc = (zip.speed - m.lastV) / Math.max(dt, 1e-3); m.lastV = zip.speed;
+    m.swv += (clamp(acc * .035, -.5, .5) - m.sw) * 22 * dt - m.swv * 3.2 * dt; m.sw += m.swv * dt;
+    const sp = clamp(zip.speed / 45, 0, 1), h = zip.hands;
+    if ((m.hum -= dt) <= 0) { m.hum = .11; noise(.16, { vol: .012 + sp * .035, from: 900 + sp * 2600, to: 700 + sp * 2000, filter: 'bandpass', q: 4 }); }
+    if (sp > .35 && frame % 2 === 0) WD.sparks.emit({ x: h.x, y: h.y + .02, z: h.z, vx: -zip.dir.x * 6 + rnd(-1, 1), vy: rnd(.5, 2), vz: -zip.dir.z * 6 + rnd(-1, 1), life: rnd(.12, .3), size: .08, col: [3, 2.2, 1.1] });
+    if (!m.passed && zip.t > ZIP_PASS) { m.passed = true; noise(.45, { vol: .09, from: 600, to: 2600, filter: 'bandpass', q: 2 }); noise(.5, { vol: .06, from: 2600, to: 500, filter: 'bandpass', q: 2, at: .25 }); haptic('light'); }
+  }
+  // does a straight line from a to b miss every wall and building?
+  function clearLine(a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    for (const s of WD.solids) {
+      let t0 = 0, t1 = 1, hit = true;
+      for (const [p, d, lo, hi] of [[a.x, dx, s.x0, s.x1], [a.y, dy, s.y0, s.y1], [a.z, dz, s.z0, s.z1]]) {
+        if (Math.abs(d) < 1e-9) { if (p < lo || p > hi) { hit = false; break; } continue; }
+        let u = (lo - p) / d, w = (hi - p) / d; if (u > w) [u, w] = [w, u]; t0 = Math.max(t0, u); t1 = Math.min(t1, w); if (t0 > t1) { hit = false; break; }
+      }
+      if (hit) return false;
+    }
+    return true;
+  }
+  // room round a camera spot: no wall within about a metre and a half, so a corner doesn't fill the shot
+  function roomAt(q) { for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) if (solidAt(q.x + dx, q.z + dz, WD.solids)) return false; return true; }
+  // where the camera watches the belfry climb from: the first spot east of the ladder that sees all of it
+  function climbCam() {
+    if (WD.climbCam) return WD.climbCam;
+    const L = WD.ladder, lo = { x: L.x, y: L.y0 + 1, z: L.z }, hi = { x: L.x, y: L.y1 + .5, z: L.z };
+    for (const r of [5, 6.5, 8.5]) for (const a of [-.55, -.3, -.8, 0, -1.05, .3, .55]) {
+      const q = { x: L.x + Math.cos(a) * r, y: L.y0 + 1.5 + (L.y1 - L.y0) * .5, z: L.z + Math.sin(a) * r };
+      if (roomAt(q) && clearLine(q, lo) && clearLine(q, hi)) return WD.climbCam = q;
+    }
+    return WD.climbCam = { x: L.x + 5.2, z: L.z - 3.6 };
+  }
+  function endMove() { WD.wren.rotation.x = 0; WD.wren.rotation.z = 0; WD.wren.visible = false; WD.trolley.visible = false; arrive(move.to, move.kind === 'climb'); }
   function arrive(to, quiet = false) {
     const old = nestId; nestId = to; nest = NESTS[to]; move = null; zip = null;
     if (!quiet) {
@@ -1615,6 +1698,7 @@ function make(api) {
         yield m.until(() => cs.ko);
         m.checkpoint('marksman');
         say('Moving onto the bridge. Cover us, Wren.', HALE, 2.6);
+        m.objective('Cover Hale\'s squad as they cross the bridge', { at: { x: BRIDGE.x, y: 3, z: 10 } });
         allyGo = 1;
         yield m.until(() => allies.some(a => a.y < 14) || m.time > 999);
         const g = men.filter(s => s.kind === 'mg' || s.kind === 'mg2'); mgOn = true;
@@ -1913,7 +1997,7 @@ function make(api) {
     for (const s of men || []) endMind(s);
     freeMen(); men = []; allies = null; shots = []; timers = [];
     // Wren herself, seen when she moves between nests
-    WD.wren = man('wren'); WD.wren.visible = false; WD.wren.userData.helmet.visible = true; WD.wren.userData.pack.visible = false; WD.wren.userData.aerial.visible = false; WD.wren.userData.rifle.visible = false;
+    WD.wren = man('wren'); WD.wren.userData.mesh.material = WD.wrenMat ||= (() => { const m = WD.wren.userData.mesh.material.clone(); m.emissive = new Color('#ffb57a'); m.emissiveIntensity = 0; return m; })(); WD.wren.visible = false; WD.wren.userData.helmet.visible = true; WD.wren.userData.pack.visible = false; WD.wren.userData.aerial.visible = false; WD.wren.userData.rifle.visible = false;
     if (!WD.wren.rig.poses.ladder) WD.wren.rig.add('ladder', ph => { const q = Math.sin(ph * TAU); return { j: { spine: [.12, 0, 0], head: [-.35, 0, 0], armL: [-2.5 + .45 * q, 0, -.12], armR: [-2.5 - .45 * q, 0, .12], foreL: [-.6 - .4 * Math.max(0, -q), 0, 0], foreR: [-.6 - .4 * Math.max(0, q), 0, 0], legL: [-.95 - .45 * q, 0, 0], shinL: [1.3 + .5 * q, 0, 0], legR: [-.95 + .45 * q, 0, 0], shinR: [1.3 - .5 * q, 0, 0] }, drop: 0 }; }, .8); tower?.g.removeFromParent(); for (const p of tower?.pieces || []) { p.removeFromParent(); p.geometry?.dispose(); }
     tower = null; drums = null; car = null; op = null; cs = null; boom.list.length = 0; if (WD.bags) WD.bags.visible = false;
     WD.solids = WD.solids.filter(b => !b.temp);
@@ -2072,7 +2156,7 @@ function make(api) {
         cut.update(dt); audioTick(dt);
         if (state === 'intro' && cut.done) { state = 'play'; const s = cut.shot; if (s?.look) { const dx = s.look.x - s.x, dy = s.look.y - s.y, dz = s.look.z - s.z; look.yaw = Math.atan2(-dx, -dz); look.pitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -.5, .35); } }
         updateMen(dt); updateAllies(dt); WD.dust.update(dt); WD.sparks.update(dt); WD.smoke.update(dt); WD.trail.update(dt);
-        if (state === 'outro') { mission.update(dt); trainUpdate(dt); }
+        if (state === 'outro') { mission.update(dt); trainUpdate(dt); if (mid === 'm1' && train.final) rideTrain(dt); }
         if (outroDone && state === 'outro') finish(true);
         return;
       }
@@ -2153,12 +2237,14 @@ function make(api) {
       // moving between nests
       if (move) {
         move.t += dt;
-        if (move.kind === 'zip') { zip.update(dt); if (zip.done) { move.fade = Math.min(1, (move.fade || 0) + dt * 4); if (move.fade >= 1) endMove(); } }
+        if (move.kind === 'zip') zipTick(move, dt);
         else if (move.t >= move.dur) endMove();
         if (move) {
-          const f = tripAt(move).fig, w = WD.wren; w.visible = true; w.position.set(f.x, f.y, f.z); w.rotation.y = f.yaw;
-          WD.trolley.visible = move.kind === 'zip'; if (move.kind === 'zip') { const h = zip.hands; WD.trolley.position.set(h.x, h.y + .05, h.z); WD.trolley.rotation.y = f.yaw; }
+          const f = tripAt(move).fig, w = WD.wren; w.visible = true; w.position.set(f.x, f.y, f.z); w.rotation.order = 'YXZ'; w.rotation.y = f.yaw; w.rotation.x = f.sw || 0; w.rotation.z = f.roll || 0;
+          if (f.sw) { const s_ = Math.sin(f.sw), c_ = Math.cos(f.sw); w.position.x -= 2.02 * s_ * Math.sin(f.yaw); w.position.y += 2.02 * (1 - c_); w.position.z -= 2.02 * s_ * Math.cos(f.yaw); }   // she swings from her hands, not her feet
+          WD.trolley.visible = move.kind === 'zip' && move.t >= .6; if (move.kind === 'zip') { const h = zip.hands; WD.trolley.position.set(h.x, h.y + .05, h.z); WD.trolley.rotation.y = f.yaw; }
           w.rig.play(f.pose, { fade: .15 }); w.rig.update(dt, { speed: f.speed });
+          WD.wrenMat.emissiveIntensity = mid === 'm2' ? .1 : 0;   // a little warm light on her at dusk, or she's lost against the dark stone
           // footsteps on the run, rungs on the ladder
           if (f.speed > 0 && Math.floor(move.t * (f.pose === 'ladder' ? 3 : 3.4)) !== move.step) { move.step = Math.floor(move.t * (f.pose === 'ladder' ? 3 : 3.4)); if (f.pose === 'ladder') tone(220, { len: .04, wave: 'triangle', vol: .02 }); else noise(.07, { vol: .025, from: 700, to: 200 }); }
         }
@@ -2170,7 +2256,8 @@ function make(api) {
       if (mission.failed && state === 'play') finish(false);
       WD.v.hurt = clamp(1 - me.frac, 0, 1) * .9;
       // the operator's and the marksman's scope glints, nest markers
-      if (cs && !cs.ko && frame % 2 === 0) { const g = .5 + cs.see * 2.5; WD.sparks.emit({ x: cs.x, y: cs.gy + 1.15, z: cs.y + .4, life: .1, size: .3 + cs.see * .6, col: [g * 2, g * 2, g * 1.6] }); }
+      if (cs && !cs.ko && !bulletCam && frame % 2 === 0) {   // (not in the bullet cam: in slow motion a glint hangs there, a huge blob up close)
+        const g = .5 + cs.see * 2.5; WD.sparks.emit({ x: cs.x, y: cs.gy + 1.15, z: cs.y + .4, life: .1, size: .3 + cs.see * .6, col: [g * 2, g * 2, g * 1.6] }); }
       if (spotting) for (const s of men) if (s.spotter && !s.ko && frame % 3 === 0) WD.sparks.emit({ x: s.x, y: s.gy + 1.6, z: s.y + .3, life: .1, size: .25, col: [2, 2, 1.6] });
       if (!move && nextNest() && (located || mission.time > 20) && frame % 4 === 0) { const n = NESTS[nextNest()], e = nestEye(n); WD.marks.emit({ x: e.x, y: e.y + 2.5, z: e.z, life: .2, size: 1.6, col: [3, 2.6, 1.2] }); }
       WD.marks.update(dtReal);
@@ -2204,7 +2291,7 @@ function make(api) {
         gunVis = !scoped && !glass && state === 'play';
       }
       WD.gun.visible = gunVis; if (gunVis) { WD.gun.position.y = -.15 - (boltT > 0 ? Math.sin(boltT * 3) * .02 : 0); WD.bolt.position.z = .05 + (boltT > .2 && boltT < .9 ? .06 : 0); }
-      const f = (state === 'play' && !move && !bulletCam) ? fovNow() : 62;
+      const f = (state === 'play' && !move && !bulletCam) ? fovNow() : move ? tripAt(move).cam.fov ?? 62 : 62;
       if (Math.abs(cam.fov - f) > .01) { cam.fov = f; cam.updateProjectionMatrix(); }
       // trees keep their leaves further out through the scope
       const lk = clamp(62 / cam.fov, 1, 12);
@@ -2225,7 +2312,7 @@ function make(api) {
       if (state === 'brief') return briefTap(x, y);
       if (state === 'intro' && cut) { cut.skip(); return; }
       if (state !== 'play') return;
-      if (move) { if (move.kind === 'zip') { zip.t = 1; zip.riding = false; zip.done = true; } else move.t = Math.max(move.t, move.dur - .35); return; }
+      if (move) { if (move.kind === 'zip') { zip.t = 1; zip.riding = false; zip.done = true; move.t = Math.max(move.t, 1); move.land = 1.25; } else move.t = Math.max(move.t, move.dur - .35); return; }
       if (qte.active) { qte.down(x, y); ptr.set(id, { x, y, sx: x, sy: y, role: 'qte' }); return; }
       if (bulletCam) { bulletCam = null; WD.bullet.visible = false; return; }
       if (inBtn(BTN.fire, x, y)) { fire(); ptr.set(id, { role: 'fire', x, y }); return; }
@@ -2305,6 +2392,12 @@ function make(api) {
     return k ? sum / k : 300;
   }
   function favourOf(id) { const list = mission?.nests || []; let all = 0; for (const n of list) all += favour[n] || 0; return all > 30 ? (favour[id] || 0) / all : 0; }
+  // the end of mission 1: Wren made the jump, and rides out crouched on the first wagon's roof
+  function rideTrain(dt) {
+    const w = WD.wren; w.visible = true; w.rotation.order = 'YXZ'; w.rotation.x = 0; w.rotation.z = Math.sin(t * 7) * .02;
+    w.position.set(train.x - 13.8, RAILH + 3.82, RAILZ + .3); w.rotation.y = Math.PI / 2;
+    w.rig.play('crouch', { fade: .2 }); w.rig.update(dt, { speed: 0 });
+  }
   function trainUpdate(dt) {
     if (!train.on) { train.next -= dt; if (train.next <= 0 && mid === 'm1') { train.on = true; train.x = -420; train.speed = 30; tone(520, { len: .9, wave: 'triangle', vol: .05 }); tone(620, { len: .9, wave: 'triangle', vol: .04, at: .1 }); } WD.train.visible = false; return; }
     WD.train.visible = true;
@@ -2527,12 +2620,23 @@ function make(api) {
     c.restore();
   }
   function tags(c, brass, red) {
+    // nearest first; men standing together share one label ("99m ×2") instead of printing over each other
+    const cp = WD.v.cam.position, list = [];
     for (const s of men) {
       if (!s.tagged || s.ko) continue;
       const [x, y, z] = WD.v.toScreen(s.x, s.gy + 2.2, s.y); if (z > 1 || x < 0 || x > W || y < 0 || y > H) continue;
-      c.fillStyle = s.alert ? red : brass; c.beginPath(); c.moveTo(x, y); c.lineTo(x - 4, y - 6); c.lineTo(x + 4, y - 6); c.fill();
-      if (!scoped) { c.font = '700 7px "Courier New", monospace'; c.textAlign = 'center'; c.fillText(Math.round(Math.hypot(s.x - WD.v.cam.position.x, s.y - WD.v.cam.position.z)) + 'm', x, y - 9); }
+      list.push({ s, x, y, d: Math.hypot(s.x - cp.x, s.y - cp.z) });
     }
+    list.sort((a, b) => a.d - b.d);
+    const labels = [];
+    for (const q of list) {
+      c.fillStyle = q.s.alert ? red : brass; c.beginPath(); c.moveTo(q.x, q.y); c.lineTo(q.x - 4, q.y - 6); c.lineTo(q.x + 4, q.y - 6); c.fill();
+      const l = labels.find(l => Math.abs(l.x - q.x) < 24 && Math.abs(l.y - q.y) < 11);
+      if (l) { l.n++; l.alert ||= q.s.alert; } else labels.push({ x: q.x, y: q.y, d: q.d, n: 1, alert: q.s.alert });
+    }
+    if (scoped) return;
+    c.font = '700 7px "Courier New", monospace'; c.textAlign = 'center'; c.lineWidth = 2.5; c.strokeStyle = '#0b0b0a99'; c.lineJoin = 'round';
+    for (const l of labels) { const txt = Math.round(l.d) + 'm' + (l.n > 1 ? ' ×' + l.n : ''); c.strokeText(txt, l.x, l.y - 9); c.fillStyle = l.alert ? red : brass; c.fillText(txt, l.x, l.y - 9); }
   }
   function koPops(c) {
     for (const s of men) {
