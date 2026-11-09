@@ -1450,7 +1450,9 @@ export class HDView {
     if (this.gi || this.rooms?.length) this.bakeExtras(G, r);
     // (built for the screen, not the chain's own picture: a pipeline built for that picture also bound it to read, which WebGPU refuses)
     this.holdNew(r, baking || off, now);
-    this.scene.traverse(o => { if (o.isInstancedMesh2 && o.userData.gpuHid) o.userData.gpuTwin.sync(this.cam, this.occlusion?.ready && HD.occlude !== false ? this.occlusion : null); });
+    const shc = this.shadowCams ||= []; shc.length = 0;
+    if (tier().shadow > 0) this.scene.traverseVisible(o => { if (o.isLight && o.castShadow && o.shadow?.camera) shc.push(o.shadow.camera); });
+    this.scene.traverse(o => { if (o.isInstancedMesh2 && o.userData.gpuHid) o.userData.gpuTwin.sync(this.cam, this.occlusion?.ready && HD.occlude !== false ? this.occlusion : null, shc); });
     for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
     // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
     const pw = up ? up.pw : r.domElement.width, ph = up ? Math.max(1, Math.floor(up.fh * (pw + .5) / up.fw)) : r.domElement.height;
@@ -1695,10 +1697,12 @@ export class HDView {
 const PORTED_LOOKS = new Set(['air', 'pulse', 'ground', 'hills', 'rock', 'leaves', 'room', 'flow', 'lava']);
 // kit ShaderMaterials with a node material twin (hd3d-gpu.js gpuMaterials; material.userData.gsGpu)
 const GPU_TWINS = new Set(['skyDome']);
+// (gs.props' InstancedMesh2 puts a material's own onBeforeCompile back as an own property after each draw: not a shader of its own)
+const BASE_OBC = Object.getPrototypeOf(MeshBasicMaterial.prototype).onBeforeCompile;
 function materialFits(m) {
   if (!m) return true;
   if (m.isShaderMaterial || m.isRawShaderMaterial) return GPU_TWINS.has(m.userData.gsGpu);
-  if (Object.hasOwn(m, 'onBeforeCompile')) { const l = looksOf(m); return l.length > 0 && l.every(n => PORTED_LOOKS.has(n)); }
+  if (Object.hasOwn(m, 'onBeforeCompile') && m.onBeforeCompile !== BASE_OBC) { const l = looksOf(m); return l.length > 0 && l.every(n => PORTED_LOOKS.has(n)); }
   return true;
 }
 /** '' if every part of this view has a WebGPU version, else what keeps it on WebGL (HD.info.webgl). */

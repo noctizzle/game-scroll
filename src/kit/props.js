@@ -12,9 +12,10 @@
 //     props.done();                                                      // builds the BVH once everything is placed
 //   }
 //   areas: areas.add('hall', hallGroup, box).add('vault', vaultGroup, box).link('hall', 'vault'); update: areas.update(camera.position)
+//   perCopy(instancedMesh): a finished InstancedMesh of still things (towers, trees, rocks) skips the copies off screen
 //   chunks: new Chunks(view.scene, { size: 40, radius: 2, make: (cx, cz) => buildChunk(cx, cz) }); update: chunks.update(player.pos)
 
-import { Vector3, Box3, Color } from 'three';
+import { Vector3, Box3, Color, Matrix4 } from 'three';
 import { MeshoptSimplifier } from 'three/examples/jsm/libs/meshopt_simplifier.module.js';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { InstancedMesh2 } from '@three.ez/instanced-mesh';
@@ -38,6 +39,32 @@ export function simplify(geometry, keep = .5) {
     g.setIndex(Array.from(out)); g.computeVertexNormals();   // (unused points stay in the arrays; only the triangles go)
     return g;
   } catch (_) { return g; }
+}
+
+/**
+ * A finished InstancedMesh of still things (towers, trees, rocks, track pieces) turned into an InstancedMesh2
+ * with the same copies, look and settings, put in its place: each copy is then checked on its own, so the
+ * ones off screen (and, with v.occluders, behind walls) aren't drawn, and shadows still come from the ones
+ * that cast into view. Call it once the matrices (and colours) are set; returns the new mesh. Copies that
+ * move every frame: keep a plain InstancedMesh.
+ */
+const PM4 = new Matrix4(), PC = new Color();
+export function perCopy(im, { renderer = null } = {}) {
+  const n = im.count, m = new InstancedMesh2(im.geometry, im.material, { capacity: Math.max(1, n), renderer: renderer || undefined });
+  for (const k of ['name', 'castShadow', 'receiveShadow', 'renderOrder', 'visible']) m[k] = im[k];
+  m.layers.mask = im.layers.mask; Object.assign(m.userData, im.userData);
+  m.position.copy(im.position); m.quaternion.copy(im.quaternion); m.scale.copy(im.scale);
+  if (n) m.addInstances(n);
+  for (let i = 0; i < n; i++) { im.getMatrixAt(i, PM4); m.setMatrixAt(i, PM4); if (im.instanceColor) { im.getColorAt(i, PC); m.setColorAt(i, PC); } }
+  m.computeBVH();
+  const par = im.parent; if (par) { par.children[par.children.indexOf(im)] = m; m.parent = par; im.parent = null; }
+  return m;
+}
+
+/** Frees the perCopy() / Props meshes under root (and their WebGPU twins) once it's thrown away (a rebuilt level). */
+export function freeCopies(root) {
+  const list = []; root?.traverse(o => { if (o.isInstancedMesh2) list.push(o); });   // (listed first: taking the twins out while walking skips things)
+  for (const o of list) { o.userData.gpuTwin?.dispose?.(); o.userData.gpuTwin?.group.removeFromParent(); o.userData.gpuTwin = null; o.dispose?.(); }
 }
 
 const rng = seed => { let s = (seed ?? Math.random() * 2 ** 31) | 0; return () => { s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };

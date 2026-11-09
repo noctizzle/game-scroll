@@ -1441,7 +1441,9 @@ Call `live.update(dt)` each frame; give the song `layers` so the intensity has p
 (trees, rocks, crates) in one go, skips the ones off screen and swaps far ones for simpler shapes
 made for you (`simplify()`, three's SimplifyModifier). `scatter()` spreads them over ground with
 gaps and keep-out zones. `Areas` hides rooms you can't see into, and `Chunks` builds a big world
-around the player a piece at a time and drops what's far away.
+around the player a piece at a time and drops what's far away. Already built an `InstancedMesh` of still things (towers, trees,
+track pieces)? `perCopy(mesh)` swaps it in place for one that skips the copies off screen, same look (`freeCopies(group)` when you throw
+the level away).
 
 ## Worlds, craft, soft things, cards and menus
 
