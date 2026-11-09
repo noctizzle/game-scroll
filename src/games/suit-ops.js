@@ -3,6 +3,7 @@ const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
 const { HDView, Particles, pbr, rbox, surface, speckle, sun, THREE } = gs.hd;
+const { perCopy, freeCopies } = gs.props;
 const {
   Group, Mesh, InstancedMesh, Object3D, SphereGeometry, CylinderGeometry, CapsuleGeometry, IcosahedronGeometry, PlaneGeometry, CircleGeometry,
   TorusGeometry, BufferAttribute, MeshBasicMaterial, PointLight, CanvasTexture, Color, DoubleSide, AdditiveBlending, SRGBColorSpace, Vector3,
@@ -178,7 +179,7 @@ function make(api) {
   }
   function buildWorld() {
     const { m, G, blobs } = looks(), mx = new Object3D();
-    if (world) { v.scene.remove(world); world.traverse(o => { if (o.isInstancedMesh) o.dispose(); }); }
+    if (world) { v.scene.remove(world); world.traverse(o => { if (o.isInstancedMesh) o.dispose(); }); freeCopies(world); }
     world = new Group(); v.scene.add(world);
     // trees in the play area + a dense wall of jungle beyond both edges
     const all = trees.map(tr => ({ x: tr.x, y: tr.y, s: tr.r / 12 }));
@@ -200,6 +201,7 @@ function make(api) {
           crowns.forEach((cm, k) => { const a = k * 2.1 + i, d = k ? 1.1 * s : 0; mx.position.set(X + Math.cos(a) * d, hgt + (k ? -.4 : .4) * s, Z + Math.sin(a) * d); mx.rotation.set(0, a, 0); mx.scale.setScalar((k ? 1.05 : 1.4) * s); mx.updateMatrix(); cm.setMatrixAt(i, mx.matrix); });
         });
         for (const im of [trunks, ...crowns]) { im.castShadow = im.receiveShadow = true; im.computeBoundingSphere(); world.add(im); }
+        for (const cm of crowns) perCopy(cm);   // each leafy crown checked on its own: the ones off screen aren't drawn (trunks are cheap: the strip check is enough)
       }
       if (fe.length) {
         const fi = new InstancedMesh(fernGeo, m.fern, fe.length * FR); fi.receiveShadow = true;
