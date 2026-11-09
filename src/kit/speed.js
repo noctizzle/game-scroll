@@ -126,13 +126,15 @@ export function frameGenFailed(id) { if (id) fgFailed.add(id); }
 // gpu: the 3D kit draws the game on screen with WebGPU (frame generation needs it). between: set by
 // the 3D kit after a real frame when it has a made frame to show; the feed calls it on the next
 // refresh it skips (src/main.js).
-export const speed = { game: null, offscreen: false, gpu: false, between: null, forceFrameGen: null };
+// busy(): the feed is moving or under a finger; playing(): a round is being played. Both set by the
+// feed (src/main.js): the 3D kit keeps heavy work it can put off (card pictures) out of those moments.
+export const speed = { game: null, offscreen: false, gpu: false, between: null, forceFrameGen: null, busy: () => false, playing: () => false };
 
 /** The 3D kit settled on a tier and frame rate for this game: start there next time. */
 export function settle(id, o) {
   if (!id) return;
   const was = settled[id] || {}, now = { ...was, ...o };
-  if (was.tier === now.tier && was.fps === now.fps) return;
+  if (was.tier === now.tier && was.fps === now.fps && was.lvl === now.lvl) return;
   settled[id] = now; store.set(SETTLE_KEY, settled);
 }
 export const settledFor = id => settled[id] || null;

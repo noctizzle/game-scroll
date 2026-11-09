@@ -466,7 +466,9 @@ function make(api) {
     // face the most open direction
     let bestA = 0, bestD = 0; for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4, d = ray(pl.x, pl.z, -Math.sin(a), -Math.cos(a), 30).d; if (d > bestD) { bestD = d; bestA = a; } } pl.a = bestA;
     holes.count = 0; holeN = 0; add.clear(); smoke.clear();
-    v.warmed = false;   // compile any new shaders before this floor's first frame, not mid-fight
+    // the new floor's shaders compile in the background while the screen is black; it fades in when they're ready
+    // (the first floor: the view warms itself before its first frame, as the round starts)
+    if (floorN > 0) { shadersReady = false; v.precompile().then(() => { shadersReady = true; }); }
     msg = { txt: `FLOOR ${floorN + 1}`, sub: floorN ? 'Find the green lift' : 'Find the green lift · knock out the guards', l: 2.6 };
   }
   function pickupMesh(k) {
@@ -666,7 +668,8 @@ function make(api) {
     if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
     for (const m of feed) m.l -= dt; feed = feed.filter(m => m.l > 0);
     hurtT = Math.max(0, hurtT - dt * 1.4); hitT = Math.max(0, hitT - dt); shake = Math.max(0, shake - dt * 2.5); kick = Math.max(0, kick - dt * 9);
-    if (state === 'clear') { stT += dt; fade = Math.min(1, stT / .6); if (stT > .8) { floorN++; buildFloor(); state = 'in'; stT = 0; } return; }
+    if (state === 'clear') { stT += dt; fade = Math.min(1, stT / .6); if (stT > .8) { floorN++; buildFloor(); state = 'in'; stT = 0; waitT = 0; } return; }
+    if (state === 'in' && waiting()) { waitT += dt; return; }   // still black: the new floor's shaders aren't ready yet
     if (state === 'in') { stT += dt; fade = Math.max(0, 1 - stT / .5); if (stT > .5) state = 'play'; }
     if (pl.dead) { pl.dead += dt; fade = Math.min(.85, pl.dead / 1.6); if (pl.dead > 1.8) { state = 'over'; api.over(); } return; }
     // input: drag stick (tank controls) + keys
@@ -855,7 +858,8 @@ function make(api) {
   }
   function rr(c, x, y, w, h, r) { r = Math.max(0, Math.min(r, w / 2, h / 2)); c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 
-  let hasSMG;
+  let hasSMG, shadersReady = true, waitT = 0;
+  const waiting = () => !shadersReady && waitT < 1.5;   // (never more than a second and a half)
   return {
     reset() { timers.clear();
       score = 0; floorN = 0; t = 0; feed = []; stick = null; look = null; keys = new Set(); fireCD = 0; auto = null; kick = 0; shake = 0; hurtT = 0; hurtDir = null; hitT = 0; fade = 0;
@@ -866,6 +870,8 @@ function make(api) {
     update(dt) { timers.update(dt); step(dt); fxTick(dt); },
     fx(dt) { t += dt; fxTick(dt); },
     draw(c) {
+      // between floors, while the new one's shaders compile: a black screen (drawing would compile them all at once)
+      if (state === 'in' && waiting()) { c.fillStyle = '#000'; c.fillRect(0, 0, W, H); return; }
       scene3d();
       v.render(c, W, H);
       hud(c);
