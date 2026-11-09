@@ -307,6 +307,12 @@ function groundTex(kind, base) {
   else if (kind === 'tiles') { g.fillStyle = shade(base, .7); for (let y = 0; y < S; y += 16) { g.fillRect(0, y, S, 2); for (let x = (y / 16 % 2) * 12; x < S; x += 24) g.fillRect(x, y, 2, 16); } dots(800, '#000', .15, 2); }
   const t = texOf(cv); TEX.set(key, t); return t;
 }
+// a speck for compiling materials up front (the attributes chunk meshes have: position, normal, uv, colour)
+let warmGeo = null;
+const WARM_GEO = () => warmGeo ||= (() => { const q = new Quads(); q.box(0, 0, 0, .01, .01, .01, { r: 1, g: 1, b: 1 }, 1); return q.geometry(); })();
+// the material a chunk mesh of kind k uses (k: 'f:<facade>', 'shop', 'roof', 'tiles', 'plain', 'metal', 'pave', 'plaza', 'grass')
+const chunkMat = (k, S) => k.startsWith('f:') ? facadeMat(k.slice(2)) : k === 'shop' ? shopMat() : k === 'roof' ? roofMat() : k === 'tiles' ? tileMat() : k === 'plain' ? plainMat() : k === 'metal' ? metalMat()
+  : k === 'pave' ? pavingMat(S.pavement) : k === 'plaza' ? pavingMat(shade(S.pavement, .85)) : grassMat();
 function mat(key, make) { if (!MATS.has(key)) MATS.set(key, make()); return MATS.get(key); }
 const facadeMat = name => mat('f:' + name, () => { const T = facadeTex(name), F = FACADES[name];
   return new MeshStandardMaterial({ map: T.map, emissiveMap: T.light, emissive: new Color('#ffffff'), emissiveIntensity: 0, roughnessMap: T.rough, roughness: 1, metalness: F.metal || .05, vertexColors: name === 'house' }); });
@@ -788,6 +794,13 @@ export class City {
     this.people = new People(this, Math.round(110 * people * scale));
     this.start = at || this.spot('pavement', { rnd: rng(seed + 9) }) || { x: 0, z: 0 };
     for (const c of [...this.chunks.values()].filter(c => Math.hypot(c.x - this.start.x, c.z - this.start.z) < 200)) this.build(c);
+    // The far chunks are built as you get near them, and their materials (a facade first seen there)
+    // would compile then, mid-round: a stutter. One tiny hidden mesh per material the plan can use lets
+    // the view compile them all with the rest before play (HDView.warm / prepare draw hidden things too).
+    const kinds = new Set(['pave', 'plaza', 'grass', 'plain', 'metal', 'roof', 'tiles', 'shop']); for (const b of P.buildings) kinds.add('f:' + b.facade);
+    this.warmers = new Group(); this.warmers.name = 'city shaders';
+    for (const k of kinds) { const m = new Mesh(WARM_GEO(), chunkMat(k, P.style)); m.castShadow = m.receiveShadow = true; m.visible = false; m.frustumCulled = false; this.warmers.add(m); }
+    this.group.add(this.warmers);
     this.ears = null; this.hum = null;
     this.applyNight(); this.reset();
   }
@@ -870,8 +883,7 @@ export class City {
       if (inner) Q(inner).top(b.x0 + b.sw, b.z0 + b.sw, b.x1 - b.sw, b.z1 - b.sw, KERB + .01, 4);
     }
     for (const bl of P.buildings) if (c.blocks.some(b => b.id === bl.block)) buildBuilding(bl, Q, D);
-    const matOf = k => k.startsWith('f:') ? facadeMat(k.slice(2)) : k === 'shop' ? shopMat() : k === 'roof' ? roofMat() : k === 'tiles' ? tileMat() : k === 'plain' ? plainMat() : k === 'metal' ? metalMat()
-      : k === 'pave' ? pavingMat(S.pavement) : k === 'plaza' ? pavingMat(shade(S.pavement, .85)) : grassMat();
+    const matOf = k => chunkMat(k, S);
     const g = new Group(), d = new Group(); g.name = 'chunk ' + c.key;
     for (const [k, q] of bufs) if (!q.empty) { const m = new Mesh(q.geometry(), matOf(k)); m.castShadow = k !== 'pave' && k !== 'grass' && k !== 'plaza'; m.receiveShadow = true; m.userData.city = k; g.add(m); }
     for (const [k, q] of det) if (!q.empty) { const m = new Mesh(q.geometry(), matOf(k)); m.castShadow = true; m.receiveShadow = true; d.add(m); }

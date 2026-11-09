@@ -251,7 +251,7 @@ function startGame(s){
   s.run={items:new Set(ready.map(it=>it.id))};
   s.won=false;s.paid=0;s.trophies=[];
   roundStarted(s.def.id);   // before reset(): a location game may ask where the player is there
-  if(!resetGame(s)){roundEnded(s.def.id);return}
+  s.stale=false;if(!resetGame(s)){roundEnded(s.def.id);return}
   for(const it of ready)if(it.kind!=='unlock')progress.use(s.def.id,it);
   progress.played(s.def.id);playstats.started(s.def.id);perf.started(s.def.id);s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
   s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');s.startPerf=performance.now();renderOverlay(s);
@@ -278,10 +278,14 @@ function gameOver(s){
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){if(isFull(s))leaveFull();stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.score=0;s.scoreEl.textContent='0';if(resetGame(s))renderOverlay(s);s.dirty=true}
+// later: the card is being swiped away, so its game resets (which can rebuild a whole 3D level) once
+// the swipe has settled, not in the frame the swipe starts (Play resets it anyway if it comes first)
+function resetSlide(s,later=false){if(isFull(s))leaveFull();stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.score=0;s.scoreEl.textContent='0';
+  if(later){s.stale=true;renderOverlay(s);whenCalm(()=>{if(s.stale&&s.state==='ready'&&!s.dropped){s.stale=false;if(resetGame(s))renderOverlay(s);s.dirty=true}});return}
+  s.stale=false;if(resetGame(s))renderOverlay(s);s.dirty=true}
 function goPrev(s){
   const i=slides.indexOf(s);if(i<=0)return;
-  if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
+  if(s.state==='playing')resetSlide(s,true);feed.classList.remove('locked');
   slides[i-1].el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
 }
 // While a game is running the feed is locked so in-game drags never scroll it. A swipe that starts
@@ -308,7 +312,7 @@ let lastGameInput=0;
   addEventListener('pointercancel',()=>{sw=null});
 }
 function goNext(s){
-  if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
+  if(s.state==='playing')resetSlide(s,true);feed.classList.remove('locked');
   const i=slides.indexOf(s);if(!slides[i+2])topUp();
   if(!slides[i+1])return;
   slides[i+1].el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
@@ -363,7 +367,9 @@ function pickDefs(n=6){
 // After a heart or Meh, a skip or a real play, or fresh stats from everyone, re-rank the games still
 // waiting in this cycle. The next few stay put: they're already downloading.
 function rerank(keep=0){if(queue.length<=keep+1)return;const head=queue.slice(0,keep);queue=head.concat(rankQueue(queue.slice(keep).filter(g=>!isHidden(g.id)),GAMES))}
-history.onChange((id,w)=>{if(w)rerank(3)});
+// (a view ends as the next card scrolls in: the re-rank waits until the feed is still)
+let rerankDue=false;
+history.onChange((id,w)=>{if(w&&!rerankDue){rerankDue=true;whenCalm(()=>{rerankDue=false;rerank(3)})}});
 // speed.offscreen tells the 3D kits this card isn't the one being played: draw it without taking the shared
 // 3D canvas or the frame-rate tuning away from the card on screen (src/kit/hd3d.js).
 const usesHD=d=>d.era==='nextgen'||d.era==='ar';
@@ -397,16 +403,47 @@ function topUp(){const ahead=slides.length-1-(active?slides.indexOf(active):0);i
 let topT=0,scrollAt=0;
 feed.addEventListener('scroll',()=>{scrollAt=performance.now()},{passive:true});
 const settling=()=>touches>0||performance.now()-scrollAt<150;
-function afterSettle(fn){setTimeout(()=>settling()?afterSettle(fn):fn(),150)}
-function topUpLater(wait=150){
+// Calm: the feed has been still, with no finger on it, for a moment (QUIET ms). People swipe on
+// quickly after a card lands, so work that can wait (building the next cards, resetting the card
+// just left, re-ranking) waits for a calm moment, and then runs one piece per idle slot, so a long
+// piece of it doesn't land just as the next swipe starts.
+const QUIET=350;let touchAt=0;
+const calm=()=>!touches&&performance.now()-Math.max(scrollAt,touchAt)>=QUIET;
+const idleSlot=fn=>typeof requestIdleCallback==='function'?requestIdleCallback(fn,{timeout:300}):setTimeout(fn,16);
+const calmJobs=[];let calmT=0;
+function whenCalm(fn){calmJobs.push(fn);if(!calmT)calmT=setTimeout(calmTick,QUIET)}
+function calmTick(){
+  calmT=0;if(!calmJobs.length)return;
+  if(!calm()){calmT=setTimeout(calmTick,100);return}
+  idleSlot(()=>{if(!calm()){calmT=setTimeout(calmTick,100);return}const f=calmJobs.shift();try{f()}catch(e){console.error(e)}if(calmJobs.length)calmT=setTimeout(calmTick,60)});
+}
+speed.busy=()=>!calm();speed.playing=()=>!!active&&active.state==='playing';
+function topUpLater(wait=QUIET){
   clearTimeout(topT);
+  const ahead=()=>slides.length-1-(active?slides.indexOf(active):0);
+  // with only one card left below (a very quick scroller), don't wait for a calm moment: build as
+  // soon as the swipe has come to rest
+  const ok=()=>ahead()<=1?!settling():calm();
   topT=setTimeout(()=>{
-    if(touches||performance.now()-scrollAt<150)return topUpLater(150);   // still moving: wait for it to settle
     if(active&&active.state==='playing')return topUpLater(1000);           // mid-round: after it
-    const ahead=slides.length-1-(active?slides.indexOf(active):0);
-    if(ahead<AHEAD){addBatch(1);if(ahead+1<AHEAD)topUpLater(50)}
+    if(!ok())return topUpLater(100);                                        // still moving: wait for it to settle
+    idleSlot(()=>{
+      if(!ok()||active&&active.state==='playing')return topUpLater(100);
+      const n=ahead();
+      if(n<AHEAD)addStaged(ok,()=>{if(n+1<AHEAD)topUpLater(120)});
+    });
   },wait);
 }
+// One card, in three pieces with an idle moment between each (making its game, sizing it, drawing
+// it the first time), so no single piece is long enough to be felt if a swipe starts meanwhile. A
+// card that comes on screen before it's finished is finished at once (setActive).
+function addStaged(ok,done){
+  const defs=pickDefs(1);if(!defs.length){addBatch(1);done();return}
+  const s=makeSlide(defs[0]);s.unready=true;feed.appendChild(s.el);slides.push(s);io.observe(s.el);feedMsg(null);
+  const step=(f,next)=>idleSlot(()=>{if(s.dropped||!s.unready)return done();if(!ok()){setTimeout(()=>step(f,next),100);return}f();next?next():done()});
+  step(()=>fit(s),()=>step(()=>{s.unready=false;paint(s)}));
+}
+function finishCard(s){if(!s.unready)return;s.unready=false;fit(s);paint(s)}
 let waiting=false;
 function addBatch(n=AHEAD+1){
   const defs=pickDefs(n);
@@ -456,11 +493,12 @@ function setActive(s){
   // once the swipe has settled, as resetting can rebuild a whole 3D level, which mid-swipe is a stutter
   const prev=active;
   if(prev&&prev.state==='over')funNote(prev,'left');
-  if(prev&&prev.state==='playing')resetSlide(prev);
-  else if(prev&&prev.state!=='ready')afterSettle(()=>{if(prev!==active&&prev.state!=='ready'&&!prev.dropped)resetSlide(prev)});
-  feed.classList.remove('locked');active=s;speed.game=s.def;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);showTweaks(s);
-  // the last card or two (playNow, a short feed): top up now, else when the swipe has settled
-  if(slides.indexOf(s)>=slides.length-2)topUp();else topUpLater();schedulePrune();
+  if(prev&&prev.state==='playing')resetSlide(prev,true);
+  else if(prev&&prev.state!=='ready')whenCalm(()=>{if(prev!==active&&prev.state!=='ready'&&!prev.dropped)resetSlide(prev)});
+  finishCard(s);feed.classList.remove('locked');active=s;speed.game=s.def;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);showTweaks(s);
+  // the last card (playNow, a short feed): top up now, else when the swipe has settled
+  // (only a feed with nothing below at all builds now, in the middle of the swipe)
+  if(!slides[slides.indexOf(s)+1])topUp();else topUpLater(slides.indexOf(s)>=slides.length-2?0:QUIET);schedulePrune();
 }
 
 // Cards you've scrolled past stay in the page so you can swipe back, but only the last BEHIND of
@@ -469,14 +507,14 @@ function setActive(s){
 // settled, and the scroll position is corrected in the same frame so nothing on screen moves.
 const BEHIND=8,PRUNE_BATCH=4;
 let pruneT=0,touches=0;
-addEventListener('pointerdown',()=>touches++,true);
-for(const ev of ['pointerup','pointercancel'])addEventListener(ev,()=>{touches=Math.max(0,touches-1)},true);
+addEventListener('pointerdown',()=>{touches++;touchAt=performance.now()},true);
+for(const ev of ['pointerup','pointercancel'])addEventListener(ev,()=>{touches=Math.max(0,touches-1);touchAt=performance.now()},true);
 function schedulePrune(wait=800){clearTimeout(pruneT);pruneT=setTimeout(pruneBehind,wait)}
 function pruneBehind(){
   const i=active?slides.indexOf(active):-1,n=i-BEHIND;
   if(n<PRUNE_BATCH)return;
   const top=()=>active.el.getBoundingClientRect().top-feed.getBoundingClientRect().top;
-  if(touches||Math.abs(top())>1)return schedulePrune();   // still moving or under a finger: try again soon
+  if(!calm()||Math.abs(top())>1)return schedulePrune(300);   // still moving or under a finger: try again soon
   const before=top();
   for(const s of slides.splice(0,n))dropSlide(s);
   feed.scrollTop+=top()-before;   // undo the jump (some browsers already did, then this adds 0)
@@ -548,7 +586,9 @@ function frame(now){
       const t1=performance.now();
       // a Next Gen / AR card scrolling into place already shows its picture: its first live frame (which
       // moves the shared 3D canvas onto it) waits until the swipe has settled
-      const hold=s.state==='ready'&&s.dirty&&usesHD(s.def)&&settling();
+      // (nor does a finished one keep drawing its game-over scene while it's being swiped away: a whole
+      // 3D frame each refresh, on the same graphics chip that's moving the feed)
+      const hold=usesHD(s.def)&&(s.state==='ready'&&s.dirty&&settling()||s.state==='over'&&performance.now()-scrollAt<150);
       if(!hold&&(s.state!=='ready'||s.dirty||(DBG&&DBG.on))){paint(s);s.dirty=false}
       if(DBG&&DBG.on)DBG.after(s,timed?t1-t0:0,performance.now()-t1,now);
       // frame timing for the anonymous stutter reports (src/perf.js)

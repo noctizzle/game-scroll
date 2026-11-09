@@ -2032,7 +2032,8 @@ function make(api) {
     GU.uWet.value = md.air.wet; WD.wins.material.emissiveIntensity = md.windows;
     // the sky's reflections are redone once, just after the next frame is drawn (heavy GPU work, so it
     // stays out of update(); until then the last ones carry on)
-    sky.apply(); sky.envAt = sky.envKey(); sky.envT = 3; envDirty = true;
+    // (only when the light changed: playing the same mission again keeps them, no stall as the round starts)
+    sky.apply(); const key = sky.envKey(); if (key !== envBaked) envDirty = true; sky.envAt = key; sky.envT = 3;
   }
   let wind = { x: 0, z: 0, base: 0 };
 
@@ -2098,7 +2099,7 @@ function make(api) {
     clampLook();
   });
   let briefRows = [], briefGo = null, failMsg = '', pathBudget = 0, thinkBudget = 0;
-  let beatT = 0, beat = 0, tiltBtn = null, ptrZoom = false, envDirty = false;
+  let beatT = 0, beat = 0, tiltBtn = null, ptrZoom = false, envDirty = false, envBaked = null;
   const grassAt = new Vector3(1e9, 0, 0);
   const later = [];
   function soon(sec, fn) { later.push({ in: sec, fn }); }
@@ -2305,7 +2306,7 @@ function make(api) {
       for (const r of WD.ripples) r.offset.set(v.t * .011, v.t * .004);
       if (WD.train.visible) { WD.train.position.set(train.x, RAILH, RAILZ); }
       fx.begin(c); v.render(c, W, H); fx.end(c, W, H);
-      if (envDirty && sky.makesEnv) { envDirty = false; try { sky.makeEnv(); } catch (e) { /* keeps the last reflections */ } }
+      if (envDirty && sky.makesEnv) { envDirty = false; try { sky.makeEnv(); envBaked = sky.envAt; } catch (e) { /* keeps the last reflections */ } }
       hud(c);
     },
     down(x, y, id) {
