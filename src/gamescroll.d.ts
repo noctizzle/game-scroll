@@ -1087,7 +1087,7 @@ export interface OutdoorsPart {
   /** One wind for a world: grass (land.wind), leaves, rain, particles, cloud shadows; at(x, z) for bullets and flags. */
   Wind: new (o?: { x?: number; z?: number; gust?: number; gustSize?: number; sway?: number; grass?: number }) => WindPart;
   /** Far stand-in for a tree: crossed cards with baked pictures of it (null without 3D). Use as a props lod level: [dist, imp.geometry, imp.material]. */
-  impostor(geometry: Loose, material: Loose, o?: { cards?: number; size?: number; round?: number; material?: Loose }): { geometry: Loose; material: Loose; texture: Loose; target: Loose; dispose(): void } | null;
+  impostor(geometry: Loose, material: Loose, o?: { cards?: number; size?: number; round?: number; material?: Loose }): { geometry: Loose; material: Loose; texture: Loose; dispose(): void } | null;
   /** Tiling detail, normal and ripple textures for ground and rock, made in code (shared: clone() before changing repeat). */
   groundDetail(o?: { seed?: number }): { detail: Loose; normal: Loose; ripple: Loose };
   /** A ring of far hills round a Land, with the hills look. */

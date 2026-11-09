@@ -8,12 +8,15 @@
 // hurt, smoothing), plus three's own GTAO for ambient occlusion and the outdoor air as a fog node.
 // scripts/look-compare.cjs --webgpu draws the same scenes both ways and compares them.
 // Kit use only.
-import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Color, Sprite, SpriteNodeMaterial, InstancedBufferAttribute, AdditiveBlending, NormalBlending,
+import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Vector4, Color, BackSide, Sprite, Group, InstancedMesh, BufferGeometry, Frustum, Sphere, InstancedBufferAttribute as IBA, SpriteNodeMaterial, InstancedBufferAttribute, AdditiveBlending, NormalBlending,
   MeshBasicNodeMaterial, NodeMaterial, QuadMesh, RenderTarget, Texture, Matrix4, HalfFloatType, NoToneMapping, ACESFilmicToneMapping, SRGBColorSpace, LinearSRGBColorSpace } from 'three/webgpu';
 import {
   pass, mrt, output, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
   positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min, materialEmissive, distance,
+  attribute, vertexColor, normalWorld, normalViewGeometry, positionLocal, positionGeometry, modelWorldMatrix, modelWorldMatrixInverse,
+  materialColor, materialOpacity, materialRoughness, cos, floor, step, fwidth, dFdx, dFdy, normalize, uniformArray, Loop, int, If, sqrt,
+  modelViewProjection, acos,
 } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
@@ -23,10 +26,63 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 const LUM = vec3(.2126, .7152, .0722);
 
 /** The studio reflections for this renderer (WebGL's can't be shared: it lives on the other GPU API). */
+// (three's WebGPU PMREMGenerator never updates its cube camera's projection after the first bake, so
+// the first bake's near and far stay for all of them: every bake here uses the same, ENV_FAR)
+const ENV_FAR = 5000;
 export function studioEnv(r) {
-  const pm = new PMREMGenerator(r), t = pm.fromScene(new RoomEnvironment(), .04).texture; pm.dispose();
+  const pm = new PMREMGenerator(r), t = pm.fromScene(new RoomEnvironment(), .04, .1, ENV_FAR).texture; pm.dispose();
   return t;
 }
+
+/** Sky reflections and light from a scene (hd3d.js envFrom, gs.sky's { env: true }), on this renderer. */
+const pmGens = new WeakMap();
+export function envFrom(r, scene, { size = 256, blur = .03 } = {}) {
+  let pm = pmGens.get(r); if (!pm) pmGens.set(r, pm = new PMREMGenerator(r));
+  return pm.fromScene(scene, blur, .1, ENV_FAR, { size });
+}
+
+/* ---------- kit materials with a shader of their own, as node materials ---------- */
+// hd3d.js swaps a mesh's material for its twin here while the view draws on WebGPU (material.userData.gsGpu
+// names it). The twin reads the WebGL material's own uniform objects, so changes show on both.
+export const gpuMaterials = {
+  // gs.sky's dome (sky.js): the sky gradient and sun glow, or Preetham scattering (pSun.z > 0), the sun's
+  // disc, and drifting clouds lit from the sun's side
+  skyDome(gm) {
+    const u = gm.uniforms, L = k => live(u[k]), clouds = 'CLOUDS' in (gm.defines || {});
+    const m = new MeshBasicNodeMaterial({ side: BackSide, depthWrite: false, fog: false });
+    m.name = 'sky';
+    m.colorNode = Fn(() => {
+      const d = normalize(positionLocal), sd = normalize(L('sunDir')), h = clamp(d.y, -1, 1), s = max(dot(d, sd), 0);
+      const pS = L('pSun'), pBR = L('pBR'), pBM = L('pBM'), sunCol = L('sunCol'), cloud = L('cloud'), c = vec3(0).toVar();
+      If(pS.z.greaterThan(0), () => {
+        // light scattered by the air towards the eye (Preetham)
+        const zen = acos(max(d.y, 0)), inv = float(1).div(cos(zen).add(pow(float(93.885).sub(zen.mul(57.29578)), -1.253).mul(.15)));
+        const fex = exp(pBR.mul(8400).mul(inv).add(pBM.mul(1250).mul(inv)).negate());
+        const ct = dot(d, sd), g2 = pS.y.mul(pS.y);
+        const r = pBR.mul(pow(ct.mul(.5).add(.5), 2).add(1).mul(.0596831)).add(pBM.mul(float(1).sub(g2).mul(.0795775).div(pow(float(1).sub(pS.y.mul(2).mul(ct)).add(g2), 1.5)))).div(pBR.add(pBM));
+        const lin = pow(r.mul(pS.x).mul(fex.oneMinus()), vec3(1.5)).mul(mix(vec3(1), sqrt(r.mul(pS.x).mul(fex)), pS.w));
+        const c1 = lin.add(fex.mul(.1)).mul(.04).add(vec3(0, .0003, .00075)).mul(pS.z);
+        c.assign(mix(c1, c1.mul(.55), clamp(h.negate().mul(3), 0, 1)));
+      }).Else(() => {
+        const c1 = mix(L('horizon'), L('top'), pow(max(h, 0), .55));
+        c.assign(mix(c1, L('horizon').mul(.55), clamp(h.negate().mul(3), 0, 1)).add(sunCol.mul(pow(s, 24).mul(.35).add(pow(s, 90).mul(.4)))));
+      });
+      let sun = smoothstep(L('size'), L('size').add(.0004), s);
+      if (clouds) {
+        // (worked out everywhere and faded out below the horizon: textures can't be read inside a branch)
+        const q = d.xz.div(max(h.add(.16), .13)).mul(.2).add(vec2(1, .4).mul(cloud.z)), N = u.noise.value;
+        const n = texture(N, q).r.mul(.62).add(texture(N, q.mul(3.1).add(.37)).g.mul(.38));
+        const cv = cloud.x.mul(float(1).sub(cloud.y.mul(pow(max(dot(normalize(d.xz.add(1e-4)), normalize(sd.xz.add(1e-4))), 0), 3)).mul(float(1).sub(smoothstep(.02, .22, h)))));
+        const cov = smoothstep(cv.oneMinus(), float(1.1).sub(cv.mul(.62)), n), dens = smoothstep(cv.oneMinus(), float(1.32).sub(cv.mul(.5)), n);
+        const cc = mix(L('cloudLit'), L('cloudDark'), dens.mul(.9)).add(sunCol.mul(cov).mul(dens.oneMinus()).mul(pow(s, 5).mul(2.2).add(.18)));
+        const a = cov.mul(smoothstep(-.03, .1, h)).mul(step(-.03, h));
+        c.assign(mix(c, cc.add(vec3(.75, .8, 1).mul(cloud.w)), a.mul(.97))); sun = sun.mul(a.oneMinus());
+      }
+      return c.add(sunCol.mul(sun).mul(L('disc'))).add(vec3(.25, .27, .32).mul(cloud.w).mul(max(h, 0).mul(.6).add(.4)));
+    })();
+    return m;
+  },
+};
 
 /* ---------- outdoor air (hd3d.js AIR_GLSL: haze and valley mist; the 'air' look effect) ---------- */
 // The same numbers as the WebGL patch: hd3d's AIR uniforms are copied in each frame (airSync).
@@ -62,6 +118,16 @@ export function airNodes(AIR) {
 // Named looks (looks.js lookPatch) as nodes on the material, which three copies onto the node material
 // it makes from it. 'air' is the scene's fog node instead (airNodes).
 const live = o => uniform(o.value).onRenderUpdate(() => o.value);   // follows the { value } the game changes
+// A look that changes the colour after the material's own (map, then vertex colours, as WebGL's
+// color_fragment leaves it): fn(rgb) => rgb. Node materials multiply vertex colours in after colorNode,
+// so the result is divided by them here; looks stack (each starts from the one before).
+function afterColor(m, o, fn) {
+  const vc = m.vertexColors && o?.geometry?.attributes?.color ? vertexColor() : null;
+  const base = m.colorNode ? vec4(m.colorNode) : materialColor, d = vc ? base.rgb.mul(vc.rgb) : base.rgb;
+  const out = fn(d);
+  m.colorNode = vec4(vc ? out.div(max(vc.rgb, 1e-4)) : out, base.a);
+}
+const hash2 = p => { const a = fract(vec3(p.x, p.y, p.x).mul(.1031)), b = a.add(dot(a, a.yzx.add(33.33))); return fract(b.x.add(b.y).mul(b.z)); };
 export const gpuLooks = {
   // hd3d.js pulse(): a glowing ring at distance r from a point
   pulse(m, s) {
@@ -69,7 +135,113 @@ export const gpuLooks = {
     const band = exp(d.sub(r).div(w).pow(2).negate()).add(float(u.gsPulseFill.value).mul(select(d.lessThanEqual(r), float(1), float(0))).mul(float(1).sub(d.div(max(r, .01)))));
     m.emissiveNode = materialEmissive.add(vec3(u.gsPulseCol.value).mul(band).mul(live(u.gsPulseA)));
   },
+  // looks.js ground(): painted ground in world metres (meadow, fields with hedges, forest floor, rock,
+  // trodden earth, river mud, lanes with ruts, puddles), from the land's gsMask and the detail textures
+  ground(m, s, o) {
+    const u = s.uniforms, L = k => live(u[k]), gA = L('lkGrassA'), gB = L('lkGrassB'), PL = L('lkPlough'), dirt = L('lkDirt');
+    const roads = uniformArray(u.lkRoads.value, 'vec4'), rn = L('lkRoadN');
+    const fields = (p, dt, dt2, grass) => {
+      const A = L('lkFieldAngle'), FS = L('lkFieldSize');
+      const f0 = vec2(cos(A).mul(p.x).sub(sin(A).mul(p.y)), sin(A).mul(p.x).add(cos(A).mul(p.y)));
+      const fp = vec2(f0.x.add(hash2(vec2(floor(f0.y.div(FS.y)), 3.1)).mul(FS.x)), f0.y);
+      const cell = floor(fp.div(FS)), f = fract(fp.div(FS));
+      const ns = floor(hash2(cell).mul(3)).add(1), si = floor(f.y.mul(ns)), sf = fract(f.y.mul(ns)), kind = hash2(cell.mul(1.7).add(si.mul(13.3)).add(2));
+      const edge = min(min(f.x, f.x.oneMinus()).mul(FS.x), min(sf, sf.oneMinus()).mul(FS.y).div(ns));
+      const fz = fp.y.mul(L('lkFurrows')), fur = mix(float(.5), sin(fz).mul(.5).add(.5), clamp(float(1).sub(fwidth(fz).mul(.35)), 0, 1));
+      const cA = mix(gA, gB, hash2(cell.add(9))).mul(dt.r.mul(.4).add(.8));
+      const cB = L('lkCropA').mul(fur.mul(.26).add(.84).add(dt.r.sub(.5).mul(.25))).mul(hash2(cell.add(2)).mul(.16).add(.92));
+      const cC = PL.mul(fur.mul(.55).add(.66)).mul(dt.g.mul(.24).add(.88));
+      const cD = mix(PL, gB.mul(1.1), fur.mul(.85)).mul(dt.r.mul(.2).add(.9));
+      const cE = L('lkCropB').mul(fur.mul(.2).add(.84).add(dt.g.sub(.5).mul(.2)));
+      const c = select(kind.lessThan(.34), cA, select(kind.lessThan(.58), cB, select(kind.lessThan(.72), cC, select(kind.lessThan(.86), cD, cE))));
+      const HG = L('lkHedge'), hw = HG.w.add(dt2.a.mul(.7)).mul(step(.22, hash2(cell.add(4.4)))), hedge = float(1).sub(smoothstep(hw.sub(.4), hw.add(.3), edge));
+      return mix(mix(c, grass, float(1).sub(smoothstep(hw.add(.3), hw.add(1.7), edge)).mul(.85)), HG.rgb.mul(dt.r.mul(.8).add(.55)), hedge);
+    };
+    const G = Fn(() => {
+      const wp = positionWorld, mask = attribute('gsMask', 'vec4'), sc = L('lkScale'), det = u.lkDetail.value;
+      const dt = texture(det, wp.xz.mul(sc.x)), dt2 = texture(det, wp.xz.mul(sc.y).add(.37)), nz = texture(u.lkNoise.value, wp.xz.mul(sc.z));
+      const grass = mix(mix(gA, gB, smoothstep(.25, .75, nz.r)), L('lkDry'), smoothstep(.55, .85, nz.g).mul(.65)).mul(dt.r.mul(dt2.a.mul(.6).add(.7)).mul(.5).add(.74));
+      const farm = mask.x.mul(smoothstep(.3, .5, nz.b.add(.25)));
+      let c = mix(grass, fields(wp.xz, dt, dt2, grass), farm.mul(L('lkFieldsOn')).mul(step(.01, farm))), rough = float(.95);
+      c = mix(c, L('lkForest').mul(dt.a.mul(.55).add(.65)).mul(dt.g.mul(.3).add(.85)), mask.y);
+      const rk = smoothstep(.35, .7, mask.z.add(dt2.b.sub(.5).mul(.5)));
+      c = mix(c, L('lkRock').mul(dt.b.mul(.65).add(.6)), rk); rough = mix(rough, .8, rk);
+      c = mix(c, mix(grass, dirt, .75).mul(dt.g.mul(.4).add(.8)), mask.w.mul(smoothstep(.25, .6, dt2.r.add(nz.a.mul(.4)))));
+      const B = L('lkBank'), bank = float(1).sub(smoothstep(B.x, B.y, wp.y.add(dt2.r.sub(.5).mul(1.2))));
+      c = mix(c, L('lkMud').mul(dt.g.mul(.6).add(.65)), bank); rough = mix(rough, .45, bank.mul(smoothstep(B.z, B.w, wp.y)));
+      const rd0 = float(1e4).toVar();
+      Loop({ start: int(0), end: int(rn), type: 'int', condition: '<' }, ({ i }) => {
+        const sg = roads.element(i), pa = wp.xz.sub(sg.xy), ba = sg.zw.sub(sg.xy), h = clamp(dot(pa, ba).div(max(dot(ba, ba), 1e-6)), 0, 1);
+        rd0.assign(min(rd0, length(pa.sub(ba.mul(h)))));
+      });
+      const R = L('lkRoad'), rd = rd0.add(dt2.g.sub(.5).mul(.9)), road = float(1).sub(smoothstep(R.x, R.y, rd));
+      const ruts = float(1).sub(smoothstep(.06, .42, abs(rd.sub(R.z)))), crown = float(1).sub(smoothstep(.2, .55, rd));
+      c = mix(c, mix(dirt.mul(dt.g.mul(.38).add(.8)).mul(float(1).sub(ruts.mul(.3))), grass.mul(.85), crown.mul(.6)), road); rough = mix(rough, .88, road);
+      const pud = L('lkWet').mul(smoothstep(.62, .7, dt2.a.mul(.6).add(ruts.mul(road).mul(.5)).add(nz.g.mul(.3))));
+      return vec4(c.mul(float(1).sub(pud.mul(.45))), mix(rough, .04, pud));
+    })().toVar('lkGround');
+    afterColor(m, o, () => G.rgb);
+    m.roughnessNode = G.a;
+  },
+  // looks.js hills(): woods, clearings and scree from noise over the hills' own colours
+  hills(m, s, o) {
+    const u = s.uniforms, sc = live(u.lkHillScale), N = u.lkNoise.value, W = live(u.lkWoods);
+    afterColor(m, o, d => {
+      const wp = positionWorld, n = texture(N, wp.xz.mul(sc)), mm = texture(N, wp.xz.mul(sc.mul(5.8)).add(.31)), q = texture(N, wp.xz.mul(sc.mul(37)).add(.7));
+      const bare = smoothstep(.62, .85, d.b.div(max(d.r, 1e-3))), wood = smoothstep(W.sub(.05), W.add(.05), n.g.mul(.75).add(mm.r.mul(.4))).mul(bare.oneMinus());
+      const c = mix(d.mul(mm.b.mul(.4).add(.78)), live(u.lkWood).mul(q.r.mul(.9).add(.55)), wood);
+      return c.mul(float(1).sub(bare.mul(.35).mul(smoothstep(.4, .7, q.g))));
+    });
+  },
+  // looks.js rock(): grit and cracks mapped three ways, moss on top
+  rock(m, s, o) {
+    const u = s.uniforms, D = u.lkDetail.value, k = live(u.lkRockScale);
+    afterColor(m, o, c0 => {
+      const wp = positionWorld, wn = normalWorld, w0 = pow(abs(wn), vec3(4)), w = w0.div(w0.x.add(w0.y).add(w0.z));
+      const d = texture(D, wp.zy.mul(k)).mul(w.x).add(texture(D, wp.xz.mul(k)).mul(w.y)).add(texture(D, wp.xy.mul(k)).mul(w.z));
+      const e = texture(D, wp.xz.mul(k.mul(.13)).add(.2));
+      const c = c0.mul(d.b.mul(.3).add(d.g.mul(.4)).add(d.a.mul(.3)).mul(.5).add(.66)).mul(e.a.mul(.3).add(.85));
+      const moss = smoothstep(.55, .85, wn.y.add(e.r.sub(.5).mul(.6)));
+      return mix(c, live(u.lkMoss).mul(d.r.mul(.6).add(.7)), moss.mul(live(u.lkMossy)));
+    });
+  },
+  // looks.js leaves(): sway (more towards the top, leaning downwind), light through towards the sun,
+  // outlines that hold up far away, and both sides lit alike
+  leaves(m, s, o) {
+    const u = s.uniforms, t = live(u.lkTime), sw = live(u.lkSway), dir = live(u.lkWindDir);
+    const wp = modelWorldMatrix.mul(vec4(positionLocal, 1)).xyz, hh = max(positionGeometry.y.sub(sw.y), 0), ph = wp.x.mul(.19).add(wp.z.mul(.23));
+    const k = live(u.lkWind).mul(hh).mul(sw.x);
+    const swing = vec3(sin(t.mul(1.7).add(ph)).add(sin(t.mul(3.1).add(ph.mul(2.3))).mul(.3)), 0, cos(t.mul(1.3).add(ph.mul(1.4)))).mul(k);
+    const lean = dir.mul(k).mul(sin(t.mul(.9).add(ph.mul(.5))).mul(.6).add(1.2));
+    m.positionNode = positionLocal.add(modelWorldMatrixInverse.mul(vec4(swing.add(vec3(lean.x, 0, lean.y)), 0)).xyz);
+    const lq = uv().mul(live(u.lkAtlas)), dx = dFdx(lq), dy = dFdy(lq);
+    m.opacityNode = (m.opacityNode ? float(m.opacityNode) : materialOpacity).mul(float(1).add(max(0, log2(max(dot(dx, dx), dot(dy, dy))).mul(.5)).mul(.35)));
+    afterColor(m, o, c => c.mul(float(1).add(live(u.lkGlow).mul(pow(max(dot(normalize(positionWorld.sub(cameraPosition)), live(u.lkSun)), 0), 4)))));
+    if (!m.normalMap) m.normalNode = normalViewGeometry;
+  },
 };
+// hd3d.js AIR_WET: wet, darker, shinier surfaces in the rain (lit standard materials with the air)
+export function gpuWet(m, o, AIR) {
+  const w = live(AIR.gsWet).mul(live(AIR.gsAirOn)).mul(smoothstep(.15, .85, normalWorld.y).mul(.7).add(.3));
+  m.roughnessNode = mix(m.roughnessNode ? float(m.roughnessNode) : materialRoughness, .12, w.mul(.8));
+  afterColor(m, o, c => c.mul(float(1).sub(w.mul(.3))));
+}
+// The sun's light on WebGPU: cloud shadows drifting over everything (hd3d.js gsShadeAt) and the near
+// shadow cascade's share (CASC_NEAR / CASC_W: the near light inside its box, fading at the edges, the far
+// one elsewhere), as the light's colour node. role: a uniform per light, 0 plain, 1 near, 2 far.
+const CASC = { m: uniform(new Matrix4()), fade: uniform(.06) };
+export function setCascade(near, fade) { if (near) CASC.m.value = near.shadow.matrix; CASC.fade.value = fade; }
+export function gpuSunLight(l, AIR, noise) {
+  const c = new Color(), col = uniform(c).onRenderUpdate(() => c.copy(l.color).multiplyScalar(l.intensity)), role = uniform(0);
+  const wp = positionWorld, S = live(AIR.gsSun), CL = live(AIR.gsCloud), DR = live(AIR.gsDrift);
+  const cuv = wp.xz.add(S.xz.div(max(S.y, .15)).mul(CL.z.sub(wp.y)));
+  const n = texture(noise, cuv.div(max(CL.w, 1)).add(DR)).r;
+  const shade = select(live(AIR.gsAirOn).greaterThan(.5).and(CL.y.greaterThan(0)), float(1).sub(CL.y.mul(smoothstep(float(1).sub(CL.x), float(1.12).sub(CL.x.mul(.6)), n))), float(1));
+  const sc = CASC.m.mul(vec4(wp, 1)), p = sc.xyz.div(sc.w), e = min(p.xy, p.xy.oneMinus());
+  const nearW = select(p.z.greaterThan(0).and(p.z.lessThan(1)), smoothstep(0, CASC.fade, min(e.x, e.y)), float(0));
+  l.colorNode = col.mul(shade).mul(select(role.equal(1), nearW, select(role.equal(2), nearW.oneMinus(), float(1))));
+  return role;
+}
 
 export function gpuParticles(parts) {
   const g = parts.pts.geometry, A = n => { const a = g.attributes[n]; return new InstancedBufferAttribute(a.array, a.itemSize); };
@@ -83,6 +255,60 @@ export function gpuParticles(parts) {
   const sp = new Sprite(m); sp.frustumCulled = false; sp.renderOrder = parts.pts.renderOrder; sp.count = 0;
   sp.userData.noAO = true;
   return { sprite: sp, sync(n) { for (const at of [pos, size, tint]) at.needsUpdate = true; sp.count = n; } };
+}
+
+/** A material that takes no ambient occlusion (hd3d.js seeThrough3d: see-through, cut-out, noAO). */
+export function noAO(m) { m.mrtNode = mrt({ output, normal: vec4(normalView, 0) }); }   // (output too: without an MRT in use, three draws the material's own MRT alone)
+
+/* ---------- gs.props on WebGPU ---------- */
+// Props draws each kind as an InstancedMesh2 (@three.ez/instanced-mesh), which reads its matrices from a
+// texture through a WebGL shader patch. Here each of its detail levels is a plain InstancedMesh instead,
+// filled each frame with the copies in view (a little wider, for their shadows) at that level's distance,
+// from the same matrices, visibility and colours.
+const PF = new Frustum(), PS = new Sphere(), PM = new Matrix4(), PV = new Vector3();
+export function gpuProps(im) {
+  const levels = im.LODinfo ? im.LODinfo.render.levels.map(l => ({ obj: l.object, dist: l.distance * (1 - (l.hysteresis || 0)) })) : [{ obj: im, dist: 0 }];   // (the library keeps distances squared)
+  const group = new Group(); group.name = im.name + ':webgpu';
+  let cap = 0, tw = [];
+  const make = () => {
+    for (const t of tw) { t.removeFromParent(); t.dispose(); }
+    cap = Math.max(16, im._capacity || im._instancesArrayCount || 16);
+    tw = levels.map(({ obj }) => {
+      const src = obj.geometry, g = new BufferGeometry();   // the same buffers, without the library's index attribute
+      for (const k in src.attributes) if (k !== 'instanceIndex') g.setAttribute(k, src.attributes[k]);
+      g.setIndex(src.index); g.groups = src.groups;
+      if (!src.boundingSphere) src.computeBoundingSphere(); g.boundingSphere = src.boundingSphere;
+      const m = new InstancedMesh(g, obj.material, cap); m.count = 0; m.frustumCulled = false;
+      m.castShadow = im.castShadow; m.receiveShadow = im.receiveShadow;
+      if (im.colorsTexture) m.instanceColor = new IBA(new Float32Array(cap * 3), 3);
+      group.add(m); return m;
+    });
+  };
+  make();
+  return {
+    group,
+    sync(cam) {
+      if ((im._capacity || 0) > cap) make();
+      const n = im._instancesArrayCount || 0, D = im.matricesTexture?._data, C = im.colorsTexture?._data, wm = im.matrixWorld;
+      for (const t of tw) t.count = 0;
+      if (!D) return;
+      cam.updateMatrixWorld(); PM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); PF.setFromProjectionMatrix(PM, cam.coordinateSystem);
+      const cp = cam.getWorldPosition(PV), cx = cp.x, cy = cp.y, cz = cp.z, R0 = levels[0].obj.geometry.boundingSphere?.radius ?? 1;
+      for (let i = 0; i < n; i++) {
+        if (!im.getActiveAndVisibilityAt(i)) continue;
+        const o = i * 16, sx = Math.hypot(D[o], D[o + 1], D[o + 2]), sy = Math.hypot(D[o + 4], D[o + 5], D[o + 6]), sz = Math.hypot(D[o + 8], D[o + 9], D[o + 10]);
+        PS.center.set(D[o + 12], D[o + 13], D[o + 14]).applyMatrix4(wm); PS.radius = R0 * Math.max(sx, sy, sz) + 8;   // (+8 m: things just out of view still cast their shadows in)
+        if (!PF.intersectsSphere(PS)) continue;
+        const d = (PS.center.x - cx) ** 2 + (PS.center.y - cy) ** 2 + (PS.center.z - cz) ** 2;   // squared, like the levels
+        let L = 0; while (L + 1 < levels.length && d >= levels[L + 1].dist) L++;
+        const t = tw[L], k = t.count++;
+        t.instanceMatrix.array.set(D.subarray(o, o + 16), k * 16);
+        if (C) t.instanceColor.array.set(C.subarray(i * 4, i * 4 + 3), k * 3);
+      }
+      for (const t of tw) { if (t.count) { t.instanceMatrix.needsUpdate = true; if (t.instanceColor) t.instanceColor.needsUpdate = true; } t.visible = t.count > 0; }
+    },
+    dispose() { for (const t of tw) t.dispose(); },
+  };
 }
 
 /* ---------- contact shadows (hd3d.js ContactShadows) ---------- */
@@ -281,20 +507,27 @@ export class GpuChain {
       t: uniform(0), hurt: uniform(0), vig: uniform(.32), gradeOn: uniform(0), sat: uniform(1), con: uniform(1),
       lo: uniform(new Vector3(1, 1, 1)), hi: uniform(new Vector3(1, 1, 1)), glare: uniform(0), sunUV: uniform(new Vector2(.5, .5)),
       sunCol: uniform(new Color()), aspect: uniform(1),
+      // depth of field (hd3d.js DOF): at, range, depth, blur in pixels; camera near and far; one pixel
+      lens: uniform(new Vector4()), cn: uniform(.1), cf: uniform(1000), px: uniform(new Vector2(1, 1)),
+      // sun shafts (hd3d.js SHAFT_*): strength x how much the sun shows, and the light's colour
+      shaft: uniform(0), shaftTint: uniform(new Color(1, .9, .75)),
     };
     this.bloomN = null; this.aoN = null;
   }
-  build(aoOn, smooth, msaa, s2 = false) {
-    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}`;
+  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false) {
+    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}`;
     if (key === this.key) return;
     this.key = key;
-    this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose(); this.s2?.dispose(); this.aoN = this.dnN = this.bloomN = this.s2 = null;
+    this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose(); this.s2?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose();
+    this.aoN = this.dnN = this.bloomN = this.s2 = this.dofT = this.shM = this.shB = null;
     const sp = this.sp = pass(this.scene, this.cam, { samples: msaa || 0 });
     if (this.clear) {
       // AR: just the scene on a see-through background, tone mapped (bloom and the grade would tint the room behind it)
       this.pp.outputNode = renderOutput(sp); this.pp.needsUpdate = true; return;
     }
-    if (aoOn) sp.setMRT(mrt({ output, normal: normalView }));
+    // (the normals picture's alpha says whether a pixel takes ambient occlusion: see-through things,
+    // leaf cards and anything marked noAO write 0, as WebGL's AO leaves them out: noAO() below)
+    if (aoOn) sp.setMRT(mrt({ output, normal: vec4(normalView, 1) }));
     const U = this.U, colT = sp.getTextureNode('output');
     let lit = colT.rgb, aoF = float(1);
     if (aoOn) {
@@ -303,13 +536,52 @@ export class GpuChain {
       this.aoN.radius.value = .6; this.aoN.distanceExponent.value = 1.4; this.aoN.thickness.value = 1.2; this.aoN.scale.value = 1.1; this.aoN.samples.value = 12;
       // (WebGL's GTAOPass smooths its own noise; here three's denoise does it)
       this.dnN = denoise(this.aoN.getTextureNode(), sp.getTextureNode('depth'), sp.getTextureNode('normal'), this.cam);
-      aoF = mix(float(1), this.dnN.r, .9); lit = lit.mul(aoF);
+      aoF = mix(float(1), this.dnN.r, sp.getTextureNode('normal').a.mul(.9)); lit = lit.mul(aoF);
     }
-    this.bloomN = bloomChain(colT, aoF); this.bloomK = uniform(.56);
-    const uv = screenUV, d = uv.sub(.5), r2 = dot(d, d);
+    // depth of field (v.focus; the views turn it on once they use it, so focusing doesn't rebuild the
+    // chain): what's in focus stays, the rest is blurred by up to lens.w pixels, into a picture of its own
+    let src = colT, srcAo = aoF;
+    if (dofOn) {
+      const dT = sp.getTextureNode('depth'), cn = U.cn, cf = U.cf, L = U.lens;
+      const dist = q => { const z = dT.sample(q).x; return select(z.greaterThanEqual(1), float(0), cn.mul(cf).div(cf.sub(z.mul(cf.sub(cn))))); };
+      const coc = z => select(z.lessThanEqual(0), float(0), clamp(abs(z.sub(L.x)).sub(L.y).div(max(L.x.mul(L.z), 1e-3)), 0, 1));
+      const dof = Fn(() => {
+        const q = uv(), base = colT.sample(q).rgb, z = dist(q), c = coc(z), out = vec3(base).toVar();
+        If(c.mul(L.w).greaterThanEqual(.5), () => {
+          const sum = vec3(base).toVar(), ws = float(1).toVar();
+          for (let i = 1; i < 16; i++) {
+            const r = Math.sqrt(i / 15), a = i * 2.39996, o = vec2(Math.cos(a) * r, Math.sin(a) * r).mul(c.mul(L.w)).mul(U.px);
+            const zs = dist(q.add(o)), w = select(zs.greaterThan(0).and(zs.lessThan(z)), coc(zs), float(1));   // a sharp thing in front doesn't smear over a soft background
+            sum.addAssign(colT.sample(q.add(o)).rgb.mul(w)); ws.addAssign(w);
+          }
+          out.assign(sum.div(ws));
+        });
+        return vec4(out.mul(aoF), 1);
+      })();
+      this.dofT = rtt(dof, 1, 1, { depthBuffer: false, type: HalfFloatType }); src = this.dofT; srcAo = float(1);
+    }
+    // sun shafts (v.shafts): the bright sky near the sun at quarter size, smeared towards the sun, added on top
+    let shafts = vec3(0);
+    if (shaftsOn) {
+      this.shM = rtt(Fn(() => {
+        const q = uv(), c = src.sample(q).rgb.mul(srcAo), l = dot(c, LUM), k = q.sub(U.sunUV).mul(vec2(U.aspect, 1));
+        return vec4(c.mul(smoothstep(1.1, 1.1 * 2.2, l)).mul(exp(dot(k, k).mul(-3))), 1);
+      })(), 1, 1, { depthBuffer: false, type: HalfFloatType });
+      const shM = this.shM;
+      this.shB = rtt(Fn(() => {
+        const q = uv(), dd = q.sub(U.sunUV).mul(.9 / 24); let sum = vec3(0), w = 1;
+        for (let i = 1; i <= 24; i++) { sum = sum.add(shM.sample(q.sub(dd.mul(i))).rgb.mul(w)); w *= .955; }
+        return vec4(sum.div(24).mul(2.2), 1);
+      })(), 1, 1, { depthBuffer: false, type: HalfFloatType });
+      shafts = this.shB.sample(screenUV).rgb.mul(U.shaftTint).mul(U.shaft);
+    }
+    if (src !== colT || shaftsOn) lit = src.sample(screenUV).rgb.mul(srcAo).add(shafts);
+    this.bloomN = bloomChain(src, srcAo); this.bloomK = uniform(.56);
+    const uv0 = screenUV, d = uv0.sub(.5), r2 = dot(d, d);
     const graded = Fn(() => {
+      const uv = uv0;
       // smooth: with FXAA on (below) no fringe; otherwise a touch of lens fringing at the edges
-      let col = smooth ? lit : vec3(colT.sample(uv.add(d.mul(r2).mul(.012))).r.mul(aoF), lit.g, colT.sample(uv.sub(d.mul(r2).mul(.012))).b.mul(aoF));
+      let col = smooth ? lit : vec3(src.sample(uv.add(d.mul(r2).mul(.012))).r.mul(srcAo).add(shafts.r), lit.g, src.sample(uv.sub(d.mul(r2).mul(.012))).b.mul(srcAo).add(shafts.b));
       // bloom
       col = col.add(this.bloomN.out.mul(this.bloomK));
       // grade (v.grade): saturation, contrast round mid grey, shadow and highlight tints
@@ -346,7 +618,7 @@ export class GpuChain {
   render(o) {
     // o.s2: SGSR 2's frame numbers (sgsr2.js SgsrFrame): the scene and effects at o.w x o.h, upscaled to o.fw x o.fh
     const f = !this.clear && o.s2 ? o.s2 : null;
-    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f);
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn);
     // the passes size themselves from the canvas: under SGSR 2 the canvas is the screen's size, so scale them down
     const k = f ? (o.w + .5) / o.fw : 1;
     if (this.sp.getResolutionScale() !== k) this.sp.setResolutionScale(k);
@@ -358,9 +630,12 @@ export class GpuChain {
       const g = o.grade; U.gradeOn.value = g ? 1 : 0;
       if (g) { U.sat.value = g.sat; U.con.value = g.con; U.lo.value.copy(g.lo); U.hi.value.copy(g.hi); }
       U.glare.value = o.glare; U.sunUV.value.set(o.sunUV.x, 1 - o.sunUV.y); U.sunCol.value.copy(o.sunCol); U.aspect.value = o.aspect;
+      U.px.value.set(1 / o.w, 1 / o.h);
+      if (this.dofT) { this.dofT.setSize(o.w, o.h); const L = o.lens; U.lens.value.set(L ? L[0] : 0, L ? L[1] : 0, L ? L[2] : 0, L ? L[3] : 0); U.cn.value = o.near; U.cf.value = o.far; }
+      if (this.shM) { const bw = Math.max(8, Math.round(o.w / 4)), bh = Math.max(8, Math.round(o.h / 4)); this.shM.setSize(bw, bh); this.shB.setSize(bw, bh); U.shaft.value = o.shaft || 0; if (o.shaftCol) U.shaftTint.value.copy(o.shaftCol); }
     }
     if (this.s2) { this.s2.size(o.w, o.h, o.fw, o.fh); this.s2.set(f); this.s2.render(this.r); }
     else this.pp.render();
   }
-  dispose() { this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose?.(); this.s2?.dispose(); this.pp.dispose?.(); }
+  dispose() { this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose?.(); this.s2?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose(); this.pp.dispose?.(); }
 }

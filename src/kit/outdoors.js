@@ -22,7 +22,7 @@
 //
 // Sizes are metres; y is up. Keep segments modest on phones (64-128 a side).
 
-import { BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, DoubleSide, Float32BufferAttribute, IcosahedronGeometry, LinearMipmapLinearFilter, Mesh, MeshBasicMaterial, MeshStandardMaterial, OrthographicCamera, PlaneGeometry, SRGBColorSpace, Scene, SphereGeometry, Vector2, Vector3, WebGLRenderTarget } from 'three';
+import { BufferAttribute, BufferGeometry, Color, DataTexture, LinearFilter, RGBAFormat, ConeGeometry, CylinderGeometry, DodecahedronGeometry, DoubleSide, Float32BufferAttribute, IcosahedronGeometry, LinearMipmapLinearFilter, Mesh, MeshBasicMaterial, MeshStandardMaterial, OrthographicCamera, PlaneGeometry, SRGBColorSpace, Scene, SphereGeometry, Vector2, Vector3, Vector4, WebGLRenderTarget } from 'three';
 import { fbm } from './math.js';
 import { bakeRenderer as renderer } from './hd3d.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -226,7 +226,7 @@ export class Wind {
  * rounded normals, so a crown lights like one shape), so they match the near trees in any light.
  * geometry + material: the near one (a map with alphaTest is cut out the same way). Options: cards
  * (2..4), size (texels per card picture), round (0 flat .. 1 round normals), material (options for
- * the cards' MeshStandardMaterial). Returns { geometry, material, texture, target, dispose() }, or null when
+ * the cards' MeshStandardMaterial). Returns { geometry, material, texture, dispose() } (texture: a plain texture read back once, so it shows on WebGL and WebGPU), or null when
  * there is no 3D (tests without WebGL). Use it as the last level: props.kind(..., { lod: [[90, mid],
  * [240, imp.geometry, imp.material]] }).
  */
@@ -235,13 +235,12 @@ export function impostor(geometry, material, { cards = 3, size = 256, round = .7
   geometry.computeBoundingBox(); const bb = geometry.boundingBox;
   const rad = Math.max(-bb.min.x, bb.max.x, -bb.min.z, bb.max.z) * 1.02, y0 = bb.min.y, y1 = bb.max.y + .02, h = y1 - y0, cy = y0 + h * .55;
   const rt = new WebGLRenderTarget(size * cards, size, { samples: 0, generateMipmaps: true, minFilter: LinearMipmapLinearFilter, colorSpace: SRGBColorSpace });
-  rt.texture.anisotropy = 4;
   const src = Array.isArray(material) ? material[0] : material;
   const flat = new MeshBasicMaterial({ map: src?.map || null, color: src?.color || '#ffffff', vertexColors: !!src?.vertexColors, alphaTest: src?.alphaTest || (src?.map ? .5 : 0), side: DoubleSide });
   const scene = new Scene(), mesh = new Mesh(geometry, flat); scene.add(mesh);
   const cam = new OrthographicCamera(-rad, rad, y1, y0, .1, rad * 4 + 10);
   // the clear colour is the tree's own (with no alpha), so cut-out edges don't go dark in the mips
-  const c = new Color(src?.color || '#ffffff'), was = { rt: r.getRenderTarget(), auto: r.autoClear, alpha: r.getClearAlpha(), col: r.getClearColor(new Color()), sc: r.getScissorTest() };
+  const c = new Color(src?.color || '#ffffff'), was = { rt: r.getRenderTarget(), auto: r.autoClear, alpha: r.getClearAlpha(), col: r.getClearColor(new Color()), sc: r.getScissorTest(), vp: r.getViewport(new Vector4()), sb: r.getScissor(new Vector4()) };
   if (geometry.attributes.color) { const a = geometry.attributes.color, m = new Color(0, 0, 0); for (let i = 0; i < a.count; i++) { m.r += a.getX(i); m.g += a.getY(i); m.b += a.getZ(i); } c.multiply(m.multiplyScalar(1 / a.count)); }
   try {
     r.setRenderTarget(rt); r.setClearColor(c.multiplyScalar(.35), 0); r.autoClear = false; r.clear(); r.setScissorTest(true);
@@ -250,7 +249,13 @@ export function impostor(geometry, material, { cards = 3, size = 256, round = .7
       cam.position.set(nx * (rad * 2 + 5), 0, nz * (rad * 2 + 5)); cam.up.set(0, 1, 0); cam.lookAt(0, 0, 0); cam.updateMatrixWorld();
       r.setViewport(k * size, 0, size, size); r.setScissor(k * size, 0, size, size); r.render(scene, cam);
     }
-  } finally { r.setScissorTest(was.sc); r.setRenderTarget(was.rt); r.autoClear = was.auto; r.setClearColor(was.col, was.alpha); flat.dispose(); }
+  } finally { r.setScissorTest(was.sc); r.setRenderTarget(was.rt); r.setViewport(was.vp); r.setScissor(was.sb); r.autoClear = was.auto; r.setClearColor(was.col, was.alpha); flat.dispose(); }
+  // read back once into a plain texture, so the cards draw on WebGL and WebGPU alike (a render
+  // target's picture lives on the one GPU API that drew it)
+  const px = new Uint8Array(size * cards * size * 4);
+  r.readRenderTargetPixels(rt, 0, 0, size * cards, size, px); rt.dispose();
+  const pic = new DataTexture(px, size * cards, size, RGBAFormat);
+  Object.assign(pic, { colorSpace: SRGBColorSpace, generateMipmaps: true, minFilter: LinearMipmapLinearFilter, magFilter: LinearFilter, anisotropy: 4, needsUpdate: true });
   // the cards: one per picture, crossed through the middle
   const P = [], N = [], U = [], I = [], up = new Vector3(0, 1, 0), q = new Vector3(), n = new Vector3();
   for (let k = 0; k < cards; k++) {
@@ -263,8 +268,8 @@ export function impostor(geometry, material, { cards = 3, size = 256, round = .7
     I.push(b, b + 3, b + 1, b + 1, b + 3, b + 2);
   }
   const g = new BufferGeometry(); g.setAttribute('position', new Float32BufferAttribute(P, 3)); g.setAttribute('normal', new Float32BufferAttribute(N, 3)); g.setAttribute('uv', new Float32BufferAttribute(U, 2)); g.setIndex(I); g.computeBoundingSphere();
-  const m = new MeshStandardMaterial({ map: rt.texture, alphaTest: .5, side: DoubleSide, roughness: .85, ...mo });
-  return { geometry: g, material: m, texture: rt.texture, target: rt, dispose() { g.dispose(); m.dispose(); rt.dispose(); } };
+  const m = new MeshStandardMaterial({ map: pic, alphaTest: .5, side: DoubleSide, roughness: .85, ...mo });
+  return { geometry: g, material: m, texture: pic, dispose() { g.dispose(); m.dispose(); pic.dispose(); } };
 }
 
 const tint = (geo, colour) => { const c = new Color(colour), n = geo.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; } geo.setAttribute('color', new BufferAttribute(a, 3)); return geo; };

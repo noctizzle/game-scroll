@@ -37,8 +37,8 @@ The rules for new 3D code until then:
 - `src/kit/hd3d.js`: `gpuFits(view)` says what (if anything) keeps a view on WebGL; `HD.info.backend`
   and `HD.info.webgl` (the reason) show it in tests.
 - Checks: `node scripts/look-compare.cjs save base` then `check base --webgpu` compares fixed scenes
-  (Next Gen at every tier, a dark room with lamps, a headlight and contact shadows) between the two;
-  they are within 1.5/255. `npm run build:bundled && node scripts/gpu-games.cjs [--tier n] [--shots dir]`
+  (Next Gen at every tier, a dark room with lamps, a headlight and contact shadows, an outdoor valley)
+  between the two; they are within 2.5/255. `npm run build:bundled && node scripts/gpu-games.cjs [--tier n] [--shots dir]`
   plays every Next Gen and AR game on both and reports which draw on WebGPU, any errors, and how
   different the first seconds of play look (a guide: each game's own randomness moves things too). Both
   use SwiftShader's Vulkan driver, so they run without a GPU.
@@ -47,26 +47,51 @@ The rules for new 3D code until then:
 
 | Part | Where | What it needs for WebGPU |
 | --- | --- | --- |
-| Cloud shadows and rain on the air | `hd3d.js` `airPatch` (the `'air'` look's light and roughness edits) | TSL nodes on the lit materials' light and roughness |
-| Sun shafts | `hd3d.js` `ShaftsPass` | A TSL radial blur (three has `radialBlur`, `godrays`) |
 | Reflections | three's `SSRPass` | Three's TSL `ssr()` node |
 | Upscaling | `src/kit/sgsr.js` (SGSR 1, GLSL) | A TSL port of SGSR 1 (only AR, `v.upscaler = 'sgsr1'` and SSR frames use it; on WebGPU they stretch). SGSR 2 is done: `sgsr2Gpu` in `hd3d-gpu.js` |
 | Light probe baking | `hd3d.js` `bakeLight` (`WebGLCubeRenderTarget` + `CubeCamera`) | A cube target on the WebGPU renderer |
-| Sky dome and sky reflections | `src/kit/sky.js` (ShaderMaterial), `HDView.envFrom` (WebGL PMREM) | A TSL sky and WebGPU's PMREM |
 | Game screen effects | `gs.fx3d` (EffectComposer passes) | TSL versions (three has outline, pixelate, DOF...) |
 | Classic Console | `src/kit/toon3d.js` ink pass; toon shading is already stock `MeshToonMaterial` | A TSL edge-detect pass, then Console views on WebGPU |
 | 3D text | troika-three-text (patches shaders) | Three's own text geometry or an SDF text node |
 | 3D particles | three.quarks 0.17 (needs three ≥ 0.182, works on 0.186) | Check its WebGPU support; else our own node particles |
-| Outdoor looks: ground, hills, rock, leaves | `src/kit/looks.js` `looks.*` (effects 'ground', 'hills', 'rock', 'leaves' through `lookPatch`; a view using them stays on WebGL) | One TSL node per effect, same `lk...` uniforms |
-| Shadow cascades | `hd3d.js` the air look's light edit (`gsCasc`: a second sun light, weights in `lights_fragment_begin`) | Three's `CSMShadowNode` |
-| Depth of field | `hd3d.js` `DofPass` (reads the AO pass's depth) | Three's TSL `dof()` node on the scene pass's depth |
-| Physical sky | `src/kit/sky.js` dome shader, Preetham branch on `pSun.z` | Three's `SkyMesh` (TSL), or the same sums as a TSL node |
-| Wind in leaves | `src/kit/looks.js` `looks.leaves` (`lkWindDir` lean) | Part of the leaves TSL node |
-| Tree impostors | `gs.outdoors` `impostor()` bakes with the WebGL renderer into a render target | The same bake on the WebGPU renderer (stock materials, so only the bake moves) |
-| Games with their own shaders | `long-shadow.js` (sky). Deep Pressure's sonar is now the kit's `gs.hd.pulse` look, which has a WebGPU version | Port to kit materials or TSL |
+| Sized points | `gs.sky` stars and snow (`PointsMaterial` with `size`) | WebGPU draws points 1 pixel wide whatever the size: sprites (instanced quads) instead. They don't keep a view on WebGL; they are just thin |
 
-Status from `gpu-games.cjs` (2026-11-09): 18 of 20 Next Gen and AR games draw on WebGPU with no errors;
-Long Shadow (sky reflections) and Deep Pressure (its own shader) stay on WebGL.
+Status from `gpu-games.cjs` (2026-11-09): all 20 Next Gen and AR games draw on WebGPU with no errors.
+
+## Done for Long Shadow and Deep Pressure
+
+- **Outdoor looks as TSL**: `gpuLooks` in `hd3d-gpu.js` has `ground` (fields, roads, wear), `hills`,
+  `rock` (three-way texture), `leaves` (wind sway, see-through edges, light through the leaves) and `air`
+  (haze and mist as fog, cloud shade on the sun, wet ground with `gpuWet`), plus Deep Pressure's `pulse`.
+  The WebGL looks still come from `looks.js`; `PORTED_LOOKS` in `hd3d.js` lists the ones with a twin.
+- **Sun shafts and depth of field** are passes in `GpuChain` (a quarter-size bright mask plus a radial
+  blur; a 16-tap blur by depth), each built only once a view uses it.
+- **Shadow cascades**: the near and far sun lights' `colorNode` carries the same fade weights as the
+  WebGL light edit (`gpuSunLight`, `setCascade`).
+- **Sky**: the dome is a TSL twin (`gpuMaterials.skyDome`, Preetham and the painted gradient, clouds),
+  swapped in by `material.userData.gsGpu`. Sky reflections bake again on whichever renderer draws
+  (`HDView.envFor`), through `envFrom`'s `wrap` so the baked sun is softened the same way on both.
+- **Tree impostors** read their bake back into a plain texture, so they draw on either renderer. The bake
+  also left the WebGL viewport small (the next frame drew into a corner); it now puts it back.
+- **Props** (`@three.ez/instanced-mesh`, no WebGPU support) get plain `InstancedMesh` twins per level of
+  detail (`gpuProps`), culled and sorted into levels on the CPU each frame from the library's own arrays.
+- **AO only where WebGL has it**: the normal target's alpha marks pixels that take AO, so see-through
+  and `noAO` things (leaves, the first-person rifle) aren't darkened.
+- `look-compare` has an outdoor scene at tier 1, tier 3 and with the physical sky; WebGPU is within
+  2.4/255 of WebGL on all three. `Q=feat=-shafts,-props...` turns pieces off on both runs to find a gap.
+
+three.js 0.186 gotchas found on the way (worked around in the kit):
+
+- WebGPU `PMREMGenerator` sets its cube camera's near and far on the first bake only, so a later bake
+  with a bigger far still clips. Every bake uses one far (`ENV_FAR`, 5000).
+- The renderer switches a camera to WebGPU's 0..1 depth only when the camera's setting differs; SGSR 2's
+  jitter put back a matrix saved before the switch, so on WebGPU the near clip sat at twice its distance.
+  `HDView.render` now sets the camera's coordinate system before anything saves its matrix.
+- `copyTextureToTexture` into a render target that is never drawn into keeps its old size after
+  `setSize` (the fold-out freeze, fixed in #79 by drawing into two targets in turn).
+- A node set on a WebGL material (`colorNode`, `positionNode`...) carries over to its node twin; vertex
+  colours multiply after `colorNode`; WGSL can't sample a texture with automatic mip levels inside a
+  branch that differs per pixel, so the clouds are worked out everywhere and masked.
 
 ## Done in the prep PR (#68)
 
