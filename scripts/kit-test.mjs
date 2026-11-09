@@ -1441,5 +1441,35 @@ console.log('physics ok');
   console.log('frame generation: exact camera turns, battery and heat ok');
 }
 
+// gs.props on WebGPU: each copy keeps its slot in the drawn list while it stays in view (three's motion,
+// for frame generation and SGSR 2, compares each slot with what it held last frame)
+{
+  const { gpuProps } = await import('../src/kit/hd3d-gpu.js');
+  const { PerspectiveCamera, Matrix4, BoxGeometry, MeshBasicMaterial } = await import('three');
+  // a stand-in for an InstancedMesh2: 12 boxes in a row along x, 10 m in front of the camera
+  const n = 12, D = new Float32Array(n * 16), M4 = new Matrix4();
+  for (let i = 0; i < n; i++) M4.makeTranslation(i * 4 - 22, 0, -10).toArray(D, i * 16);
+  const geo = new BoxGeometry(1, 1, 1); geo.computeBoundingSphere();
+  const im = { name: 'props:box', geometry: geo, material: new MeshBasicMaterial(), castShadow: false, receiveShadow: false, matrixWorld: new Matrix4(),
+    _capacity: n, _instancesArrayCount: n, matricesTexture: { _data: D }, colorsTexture: null, getActiveAndVisibilityAt: i => i < n };
+  const tw = gpuProps(im), mesh = tw.group.children[0], cam = new PerspectiveCamera(50, 1, .1, 100);
+  const at = s => mesh.instanceMatrix.array[s * 16 + 12];   // x of the copy in slot s
+  const slots = () => { const o = {}; for (let s = 0; s < mesh.count; s++) if (mesh.instanceMatrix.array[s * 16]) o[at(s)] = s; return o; };
+  cam.position.set(0, 0, 0); cam.lookAt(0, 0, -10); tw.sync(cam);
+  const first = slots();
+  assert.ok(Object.keys(first).length > 2 && Object.keys(first).length < n, 'only the copies in view (and the margin) are drawn');
+  // turn right: some copies leave on the left, new ones come in on the right
+  cam.lookAt(6, 0, -10); tw.sync(cam);
+  const second = slots();
+  let kept = 0;
+  for (const x in second) if (x in first) { assert.equal(second[x], first[x], `the copy at x = ${x} kept its slot`); kept++; }
+  assert.ok(kept > 0 && Object.keys(second).some(x => !(x in first)), 'some stayed, some came in');
+  // turn back: the ones that left come straight back to their old slots (they lingered)
+  cam.lookAt(0, 0, -10); tw.sync(cam);
+  const third = slots();
+  for (const x in first) assert.equal(third[x], first[x], `the copy at x = ${x} came back to its slot`);
+  console.log('frame generation: props keep their places on WebGPU ok');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);
