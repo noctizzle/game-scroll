@@ -113,6 +113,7 @@ export class Sky {
             vec3 r = (pBR * (.0596831 * (1. + pow(ct * .5 + .5, 2.))) + pBM * (.0795775 * (1. - g2) / pow(1. - 2. * pSun.y * ct + g2, 1.5))) / (pBR + pBM);
             vec3 lin = pow(pSun.x * r * (1. - fex), vec3(1.5)); lin *= mix(vec3(1.), sqrt(pSun.x * r * fex), pSun.w);
             c = ((lin + .1 * fex) * .04 + vec3(0., .0003, .00075)) * pSun.z; c = mix(c, c * .55, clamp(-h * 3., 0., 1.));
+            float l = max(c.r, max(c.g, c.b)); if (l > 1.) c *= (1. + (l - 1.) / (1. + (l - 1.) / 1.5)) / l;   // soft knee: the glow round a low sun is bright, but no brighter than a painted sky's (2.5 at most)
             } else {
             c = mix(horizon, top, pow(max(h, 0.), .55)); c = mix(c, horizon * .55, clamp(-h * 3., 0., 1.));
             c += sunCol * (pow(s, 24.) * .35 + pow(s, 90.) * .4);
@@ -202,7 +203,12 @@ export class Sky {
       const m = Math.max(this.horizon.r, this.horizon.g, this.horizon.b, this.top.r, this.top.g, this.top.b); if (m > 1) { this.horizon.multiplyScalar(1 / m); this.top.multiplyScalar(1 / m); }
       if (this.night > 0) { this.top.lerp(C(a.top).lerp(C(b.top), k), this.night); this.horizon.lerp(C(a.horizon).lerp(C(b.horizon), k), this.night); }
       physSun(q, this.sunDir, this.sunCol); if (this.night > .5) this.sunCol.set(a.sun).lerp(C(b.sun), k);
-    } else if (this.mat.uniforms?.pSun) this.mat.uniforms.pSun.value.z = 0;
+      // how bright the sky is 4 degrees from the sun (about the size of a painted sky's bright sun): sun shafts start from sky brighter than this
+      const sd = this.sunDir, side = d.set(-sd.z, 0, sd.x); if (side.lengthSq() < 1e-6) side.set(1, 0, 0); side.normalize();
+      const o = physAt(q, side.multiplyScalar(.0698).addScaledVector(sd, .9976).normalize(), sd, tmp);
+      const ol = Math.max(o.r, o.g, o.b), kn = ol > 1 ? (1 + (ol - 1) / (1 + (ol - 1) / 1.5)) / ol : 1;   // the dome's soft knee
+      this.view.shaftsAt = this.night > .5 ? null : (.2126 * o.r + .7152 * o.g + .0722 * o.b) * kn;
+    } else if (this.mat.uniforms?.pSun) { this.mat.uniforms.pSun.value.z = 0; this.view.shaftsAt = null; }
     if (this.stars) this.stars.material.opacity = this.night * .9;
     if (this.light && this.sunLight) {
       this.sunLight.color.copy(this.sunCol); this.sunLight.intensity = this.base.sun * sunI;
@@ -227,7 +233,7 @@ export class Sky {
     if (s.background?.isColor) s.background.copy(this.horizon);
     return this;
   }
-  dispose() { if (this.envMaker && this.view.envMaker === this.envMaker) this.view.envMaker = null; this.dome.removeFromParent(); this.dome.geometry?.dispose(); this.mat.dispose(); this.stars?.removeFromParent(); this.stars?.geometry.dispose(); }
+  dispose() { if (this.phys) this.view.shaftsAt = null; if (this.envMaker && this.view.envMaker === this.envMaker) this.view.envMaker = null; this.dome.removeFromParent(); this.dome.geometry?.dispose(); this.mat.dispose(); this.stars?.removeFromParent(); this.stars?.geometry.dispose(); }
 }
 
 /**
