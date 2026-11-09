@@ -11,7 +11,7 @@ let package = Package(
             targets: ["CapApp-SPM"])
     ],
     dependencies: [
-        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.5.3"),
+        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.6.0"),
         .package(name: "CapacitorCommunityTextToSpeech", path: "../../../node_modules/@capacitor-community/text-to-speech"),
         .package(name: "CapacitorApp", path: "../../../node_modules/@capacitor/app"),
         .package(name: "CapacitorDevice", path: "../../../node_modules/@capacitor/device"),
@@ -20,6 +20,7 @@ let package = Package(
         .package(name: "CapacitorShare", path: "../../../node_modules/@capacitor/share"),
         .package(name: "GameServices", path: "../../../plugins/game-services"),
         .package(name: "NativeAr", path: "../../../plugins/native-ar"),
+        .package(name: "Npu", path: "../../../plugins/npu"),
         .package(name: "PhoneAi", path: "../../../plugins/phone-ai"),
         .package(name: "RichHaptics", path: "../../../plugins/rich-haptics")
     ],
@@ -37,6 +38,7 @@ let package = Package(
                 .product(name: "CapacitorShare", package: "CapacitorShare"),
                 .product(name: "GameServices", package: "GameServices"),
                 .product(name: "NativeAr", package: "NativeAr"),
+                .product(name: "Npu", package: "Npu"),
                 .product(name: "PhoneAi", package: "PhoneAi"),
                 .product(name: "RichHaptics", package: "RichHaptics")
             ]

@@ -311,10 +311,11 @@ export interface GfxPart {
 /** Rapier 2D (lazy: make it in make() or reset()). */
 export interface PhysicsPart { Physics: new (o?: { gravity?: number; walls?: number[]; [k: string]: Loose }) => Loose; Body: Loose; World: Loose; loadPhysics(): Promise<Loose>; physicsReady(): boolean }
 
-/** Face and hand tracking (lazy). Positions are 0..1, mirrored like a selfie. */
+/** Face and hand tracking (lazy). Positions are 0..1, mirrored like a selfie. In the phone apps it runs on the phone's AI chip
+ *  (backend 'npu'), where the camera picture never reaches the game: pass `preview: true` if the game draws `picture`. */
 export interface VisionPart {
-  Face: new () => { start(): void; stop(): void; update(): void; ready: boolean; found: boolean; x: number; y: number; size: number; yaw: number; pitch: number; roll: number; mouth: number; smile: number; blink: boolean; winkLeft: boolean; winkRight: boolean; brows: number; [k: string]: Loose };
-  Hands: new (o?: { max?: number }) => { start(): void; stop(): void; update(): void; ready: boolean; found: boolean; list: Loose[]; first: Loose | null };
+  Face: new (o?: { preview?: boolean }) => { start(): void; stop(): void; update(): boolean; ready: boolean; found: boolean; backend?: string; picture: HTMLVideoElement | null; x: number; y: number; size: number; yaw: number; pitch: number; roll: number; mouth: number; smile: number; blink: boolean; winkLeft: boolean; winkRight: boolean; brows: number; [k: string]: Loose };
+  Hands: new (o?: { max?: number; preview?: boolean }) => { start(): void; stop(): void; update(): boolean; ready: boolean; found: boolean; backend?: string; picture: HTMLVideoElement | null; list: Loose[]; first: Loose | null };
   loadVision(): Promise<Loose>;
 }
 
@@ -576,7 +577,28 @@ export interface CharactersPart {
   Steps: new (o?: { feet?: [number, number][]; stride?: number; lift?: number; time?: number; lead?: number; ground?: ((x: number, z: number) => number) | null }) => { feet: { pos: Loose; lifting: number; landed: boolean }[]; update(dt: number, body: Loose): Loose };
   Wobble: new (o?: { stiffness?: number; damping?: number }) => { value: number; hit(amount?: number): Loose; update(dt: number): Loose };
 }
-export interface AiPart { Crowd: new (...a: Loose[]) => Loose; NavGrid: new (...a: Loose[]) => Loose; Brain: new (...a: Loose[]) => Loose; YUKA: Loose }
+/** Thousands of flockers: on the graphics chip (WebGPU compute) where the phone can, else the CPU. */
+export declare class Swarm {
+  constructor(o?: { count?: number; w?: number; h?: number; speed?: number; sight?: number; separate?: number; align?: number; cohere?: number; wander?: number; edges?: 'wrap' | 'bounce'; seed?: number; gpu?: boolean | 'auto' });
+  readonly count: number; living: number; gpu: boolean;
+  x: Float32Array; y: Float32Array; vx: Float32Array; vy: Float32Array; alive: Uint8Array;
+  speed: number; sight: number; separate: number; align: number; cohere: number; wander: number; edges: 'wrap' | 'bounce';
+  /** Resolves true once it's moving on the GPU (false if it stays on the CPU). */
+  ready: Promise<boolean>;
+  /** Towards (x, y) this frame; strength < 0 pushes away. Up to 8 a frame. */
+  pull(x: number, y: number, o?: { strength?: number; radius?: number }): this;
+  obstacle(x: number, y: number, r: number): this; clearObstacles(): this;
+  kill(i: number): this; revive(i: number, x: number, y: number): this; place(i: number, x: number, y: number): this;
+  angle(i: number): number;
+  /** Living ones within r of (x, y), as indices. */
+  near(x: number, y: number, r: number): number[];
+  /** 0 (all over) to 1 (all heading one way). */
+  order(): number;
+  update(dt: number): this; sync(): Promise<void>; dispose(): void;
+  /** About how many this phone moves smoothly (8192 with the GPU, 2000 without). */
+  static max(): number;
+}
+export interface AiPart { Crowd: new (...a: Loose[]) => Loose; NavGrid: new (...a: Loose[]) => Loose; Brain: new (...a: Loose[]) => Loose; YUKA: Loose; Swarm: typeof Swarm }
 
 /** Tiny Brains: a small neural network (tanh hidden layers, softmax out). */
 export declare class TinyNet {
@@ -1066,7 +1088,7 @@ export interface OutdoorsPart {
   /** One wind for a world: grass (land.wind), leaves, rain, particles, cloud shadows; at(x, z) for bullets and flags. */
   Wind: new (o?: { x?: number; z?: number; gust?: number; gustSize?: number; sway?: number; grass?: number }) => WindPart;
   /** Far stand-in for a tree: crossed cards with baked pictures of it (null without 3D). Use as a props lod level: [dist, imp.geometry, imp.material]. */
-  impostor(geometry: Loose, material: Loose, o?: { cards?: number; size?: number; round?: number; material?: Loose }): { geometry: Loose; material: Loose; texture: Loose; target: Loose; dispose(): void } | null;
+  impostor(geometry: Loose, material: Loose, o?: { cards?: number; size?: number; round?: number; material?: Loose }): { geometry: Loose; material: Loose; texture: Loose; dispose(): void } | null;
   /** Tiling detail, normal and ripple textures for ground and rock, made in code (shared: clone() before changing repeat). */
   groundDetail(o?: { seed?: number }): { detail: Loose; normal: Loose; ripple: Loose };
   /** A ring of far hills round a Land, with the hills look. */

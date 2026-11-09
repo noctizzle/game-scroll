@@ -5,6 +5,7 @@
 // spdx: the SPDX id the check compares with each package's own licence field.
 // vendored: for code copied into the repo instead of installed (the file it lives in).
 // notice: a copyright line to show with it, for licences that ask for one in the app (BSD).
+// native: for a phone-side library a plugin pulls in (the Gradle or Swift Package file that names it).
 
 export const OPEN_SOURCE = [
   { name: 'three.js', for: '3D graphics', licence: 'MIT', spdx: 'MIT', packages: ['three'] },
@@ -15,6 +16,8 @@ export const OPEN_SOURCE = [
     packages: ['@dimforge/rapier2d-compat', '@dimforge/rapier3d-compat', '@dimforge/rapier2d-simd-compat', '@dimforge/rapier3d-simd-compat'] },
   { name: 'MediaPipe', for: 'face and hand tracking, sound recognition, and their models', licence: 'Apache 2.0', spdx: 'Apache-2.0',
     packages: ['@mediapipe/tasks-vision', '@mediapipe/tasks-audio'] },
+  { name: 'ONNX Runtime', for: "running the face, hand and sound models on the phone's AI chip, by Microsoft", licence: 'MIT', spdx: 'MIT', native: 'plugins/npu/android/build.gradle', notice: '© Microsoft Corporation' },
+  { name: 'CameraX', for: 'the front camera for face and hand tracking on Android, by Google', licence: 'Apache 2.0', spdx: 'Apache-2.0', native: 'plugins/npu/android/build.gradle' },
   { name: 'YAMNet', for: 'recognising everyday sounds, by Google (model downloaded on first use)', licence: 'Apache 2.0', spdx: 'Apache-2.0', vendored: 'src/kit/vision-files.js' },
   { name: 'Quick, Draw! dataset', for: 'the drawings the doodle recogniser learned from, by Google', licence: 'CC BY 4.0', spdx: 'CC-BY-4.0', vendored: 'src/kit/doodle-model.js', notice: 'Quick, Draw! drawings © Google, CC BY 4.0, quickdraw.withgoogle.com/data' },
   { name: 'Yuka', for: 'game AI', licence: 'MIT', spdx: 'MIT', packages: ['yuka'] },
@@ -44,4 +47,10 @@ export const OPEN_SOURCE = [
   { name: '@2toad/profanity', for: 'keeping rude words out of word games', licence: 'MIT', spdx: 'MIT', packages: ['@2toad/profanity'] },
   { name: 'Press Start 2P font', for: 'pixel text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/press-start-2p'] },
   { name: 'Rubik font', for: 'app text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/rubik'] },
+];
+
+// Parts that ship inside the app but aren't open source, shown under the list above.
+export const OTHER_PARTS = [
+  { name: 'Qualcomm AI Engine runtime (QNN)', for: "running models on the NPU of Snapdragon phones (Android)", licence: "Qualcomm's AI Stack License", native: 'plugins/npu/android/build.gradle',
+    notice: '© Qualcomm Technologies, Inc. Qualcomm and Snapdragon are trademarks of Qualcomm Incorporated.' },
 ];

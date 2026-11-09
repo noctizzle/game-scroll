@@ -42,6 +42,18 @@ android {
     }
 }
 
+// The phone's AI chip (plugins/npu). Qualcomm's NPU loads its half of QNN from files on disk, so the
+// app's native libraries stay unpacked on the phone. Left out: the QNN parts we don't use (the older DSP
+// and the GPU backends) and the NPU generations before the Snapdragon 8 Gen 2's; those phones use the CPU.
+android {
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            excludes += ['**/libQnnDsp*.so', '**/libQnnGpu.so', '**/libQnnHtpV68*.so', '**/libQnnHtpV69*.so']
+        }
+    }
+}
+
 repositories {
     flatDir{
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'

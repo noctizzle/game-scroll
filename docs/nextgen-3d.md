@@ -223,8 +223,9 @@ s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
   `range`, stays sharp; things `depth` x `at` metres nearer or further are fully soft, up to `blur`
   pixels. Made for scopes and cutscene close-ups; `v.focus = null` turns it off. It reads the depth the
   ambient occlusion already draws, so it's on high and ultra only and costs one full-screen pass.
-- `v.envFrom(scene)` makes the reflections from any scene of your own (a painted room, a sunset dome);
-  `v.env = null` goes back to the studio.
+- `v.envFrom(scene)` makes the reflections from any scene of your own (a painted room, a sunset dome),
+  and makes them again on WebGPU when the view draws there; `v.env = null` goes back to the studio.
+  (A texture set straight on `v.env` keeps a view on WebGL.)
 - `gs.hd.noiseTex()` is a shared 256 x 256 tiling noise texture (four sizes of noise in r, g, b and a)
   for your own shaders: clouds, water, grass, dirt.
 
@@ -233,7 +234,8 @@ s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
 On top phones, Settings › Graphics (test) › "Use WebGPU for 3D games" draws Next Gen and AR views
 with three's WebGPU renderer instead of WebGL. Nothing changes in a game: a view that uses a part not
 ported yet (see `docs/webgpu-move.md`) stays on WebGL by itself. `node scripts/gpu-games.cjs <id>`
-plays a game on both and says which it drew on.
+plays a game on both and says which it drew on. Everything in Long Shadow (outdoor looks, sky, shafts,
+focus, cascades, Props trees) and Deep Pressure has a WebGPU version.
 
 ## Glowing rings
 

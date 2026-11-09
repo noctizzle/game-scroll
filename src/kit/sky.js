@@ -133,6 +133,8 @@ export class Sky {
             c += sunCol * sun * disc + cloud.w * vec3(.25, .27, .32) * (.4 + .6 * max(h, 0.));
             gl_FragColor = vec4(c, 1.); }`,
       }));
+      // (the kit swaps in its WebGPU version, hd3d-gpu.js gpuMaterials.skyDome, while the view draws on WebGPU: keep using this.mat)
+      this.mat = this.dome.material; this.mat.userData.gsGpu = 'skyDome';
       this.dome.scale.setScalar(R);
     }
     this.dome.frustumCulled = false; this.dome.renderOrder = -10; this.dome.name = 'sky';
@@ -170,9 +172,10 @@ export class Sky {
   get makesEnv() { return this.env && !!this.view.envFrom; }
   envKey() { return this.time.toFixed(2) + '|' + this.clouds.toFixed(2) + '|' + this.horizon.getHexString() + this.top.getHexString(); }
   makeEnv() {
-    if (!this.envScene) { this.envScene = new Scene(); this.envDome = new Mesh(this.dome.geometry, this.dome.material); this.envDome.scale.setScalar(1000); this.envScene.add(this.envDome); }
-    const u = this.dome.material.uniforms, d = u.disc.value; u.disc.value = Math.min(d, 6);   // a softer sun in reflections
-    try { this.view.envFrom(this.envScene); } finally { u.disc.value = d; }
+    if (!this.envScene) { this.envScene = new Scene(); this.envDome = new Mesh(this.dome.geometry, this.mat); this.envDome.scale.setScalar(1000); this.envScene.add(this.envDome); }
+    // a softer sun in reflections (wrap: also when the view makes them again on the other renderer)
+    const u = this.mat.uniforms, wrap = f => { const d = u.disc.value; u.disc.value = Math.min(d, 6); try { return f(); } finally { u.disc.value = d; } };
+    this.view.envFrom(this.envScene, { wrap });
     this.envAt = this.envKey(); this.envT = 3;
     return this;
   }
@@ -190,7 +193,7 @@ export class Sky {
     const lightDir = this.night > .5 ? this.sunDir.clone().negate() : this.sunDir;   // moonlight from the other side
     if (this.phys) {
       // the colours come from the scattering sums: overhead, round the horizon, and the sunlight itself
-      const q = physConsts(this.phys, this.sunDir, this.pq), u = this.dome.material.uniforms, d = new Vector3(), tmp = C('#000');
+      const q = physConsts(this.phys, this.sunDir, this.pq), u = this.mat.uniforms, d = new Vector3(), tmp = C('#000');
       u.pBR.value.fromArray(q.bR); u.pBM.value.fromArray(q.bM); u.pSun.value.set(q.sunE, q.g, q.k, Math.max(0, Math.min(1, (1 - this.sunDir.y) ** 5)));
       physAt(q, d.set(0, 1, 0), this.sunDir, this.top);
       this.horizon.setRGB(0, 0, 0);
@@ -205,7 +208,7 @@ export class Sky {
       const o = physAt(q, side.multiplyScalar(.0698).addScaledVector(sd, .9976).normalize(), sd, tmp);
       const ol = Math.max(o.r, o.g, o.b), kn = ol > 1 ? (1 + (ol - 1) / (1 + (ol - 1) / 1.5)) / ol : 1;   // the dome's soft knee
       this.view.shaftsAt = this.night > .5 ? null : (.2126 * o.r + .7152 * o.g + .0722 * o.b) * kn;
-    } else if (this.dome.material.uniforms?.pSun) { this.dome.material.uniforms.pSun.value.z = 0; this.view.shaftsAt = null; }
+    } else if (this.mat.uniforms?.pSun) { this.mat.uniforms.pSun.value.z = 0; this.view.shaftsAt = null; }
     if (this.stars) this.stars.material.opacity = this.night * .9;
     if (this.light && this.sunLight) {
       this.sunLight.color.copy(this.sunCol); this.sunLight.intensity = this.base.sun * sunI;
@@ -216,7 +219,7 @@ export class Sky {
     // clouds: lit by the sun's colour on top, the sky's own darker colour underneath
     if (this.cloudLight) this.cLit.copy(this.cloudLight); else this.cLit.copy(this.sunCol).lerp(C('#ffffff'), .55).multiplyScalar(.95 - this.night * .8);
     if (this.cloudDark) this.cDark.copy(this.cloudDark); else this.cDark.copy(this.horizon).lerp(this.top, .35).multiplyScalar(.62);
-    const cu = this.dome.material.uniforms?.cloud;
+    const cu = this.mat.uniforms?.cloud;
     if (cu) cu.value.set(this.clouds, this.gap, (this.view.t ?? this.t) * 6 / 620 * .2, this.flash);
     const air = this.view._air;
     if (air) {
@@ -230,7 +233,7 @@ export class Sky {
     if (s.background?.isColor) s.background.copy(this.horizon);
     return this;
   }
-  dispose() { if (this.phys) this.view.shaftsAt = null; if (this.envMaker && this.view.envMaker === this.envMaker) this.view.envMaker = null; this.dome.removeFromParent(); this.dome.geometry?.dispose(); this.dome.material.dispose(); this.stars?.removeFromParent(); this.stars?.geometry.dispose(); }
+  dispose() { if (this.phys) this.view.shaftsAt = null; if (this.envMaker && this.view.envMaker === this.envMaker) this.view.envMaker = null; this.dome.removeFromParent(); this.dome.geometry?.dispose(); this.mat.dispose(); this.stars?.removeFromParent(); this.stars?.geometry.dispose(); }
 }
 
 /**

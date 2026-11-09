@@ -12,20 +12,26 @@
 //   over() { face.stop(); }                    // the app also stops it when the round ends
 //
 // Positions are 0..1 across the screen, mirrored like a selfie (move your head right and x goes up).
-// Everything runs on the phone: no picture ever leaves it. The model files (about 4 MB for faces,
-// 8 MB for hands, plus a 14 MB engine) download from our games server the first time a face or
-// hands game is played, then stay cached.
+// Everything runs on the phone: no picture ever leaves it. In the phone apps it runs on the phone's AI
+// chip (npu.js: Qualcomm's NPU, Apple's Neural Engine, else the CPU) with the camera read natively;
+// on the web, or if that can't start, MediaPipe runs in the web view. The model files (about 4 MB for
+// faces, 8 MB for hands, plus a 14 MB engine on the web) download from our games server the first
+// time a face or hands game is played, then stay cached.
 
 import { lazy } from './lazy.js';
 import { register } from './cleanup.js';
 import { ML_VERSION } from './vision-files.js';
+import { npuInfo, loadModel, npuCamera, npuCameraDone, engine } from './npu.js';
+import { FacePipe, HandPipe } from './vision-npu.js';
 
 const BASE = String((import.meta.env && import.meta.env.VITE_GAMES_URL) || '').replace(/\/+$/, '');
 const ML = BASE ? `${BASE}/ml/${ML_VERSION}/` : `ml/${ML_VERSION}/`;   // no games server (dev, tests): served with the app (npm run ml)
-const lib = lazy('Face and hand tracking', async () => {
+const mediapipe = async () => {
   const [m, loader] = await Promise.all([import('@mediapipe/tasks-vision'), import('@mediapipe/tasks-vision/vision_wasm_internal.js?url')]);
   return { m, files: { wasmLoaderPath: loader.default, wasmBinaryPath: ML + 'vision_wasm_internal.wasm' } };
-});
+};
+// on a phone with the NPU plugin the web engine isn't needed (it loads later only if the plugin fails)
+const lib = lazy('Face and hand tracking', async () => (await npuInfo()).available ? { native: true } : mediapipe());
 export const loadVision = () => lib.load();
 
 /* one front camera stream, shared by Face and Hands */
@@ -53,7 +59,13 @@ class Tracker {
   /** Starts the camera and the tracker. Safe to call again. */
   async start() {
     if (this.running) return this;
-    this.running = true; live.add(this); users++;
+    this.running = true; live.add(this);
+    if (this.L.native && !this.noNative && !this.preview) {
+      try { await this.startNative(); return this; }
+      catch (e) { console.warn('NPU vision did not start, using the web one:', e); this.noNative = true; }
+      if (!this.running) return this;
+    }
+    users++; this.web = true;   // our share of the web camera
     try {
       const [c] = await Promise.all([frontCamera(), this.task ||= this.makeTask()]);
       // stopped while the camera was being asked for: stop() already gave up our share, so close the
@@ -62,12 +74,23 @@ class Tracker {
       this.video = c.video; this.ready = true;
     } catch (e) {
       this.failed = e;
-      if (this.running) { this.running = false; live.delete(this); releaseCamera(); }
+      if (this.running) { this.running = false; live.delete(this); this.web = false; releaseCamera(); }
       else if (!users && cam) { users = 1; releaseCamera(); }
     }
     return this;
   }
+  // the phone's AI chip: the plugin reads the camera, vision-npu.js finds and follows the face or hands
+  async startNative() {
+    const models = this.kind === 'face' ? ['face-detect', 'face-mesh', 'face-shapes'] : ['palm-detect', 'hand-mesh'];
+    await Promise.all(models.map(loadModel));
+    if (!this.running) return;
+    await npuCamera();
+    if (!this.running) { npuCameraDone(); return; }
+    this.native = { pipe: this.kind === 'face' ? new FacePipe(engine) : new HandPipe(engine, { max: this.max || 2 }), last: -1, busy: false, fresh: null };
+    this.backend = 'npu'; this.ready = true;
+  }
   async makeTask() {
+    if (this.L.native) this.L = await mediapipe();
     const { m, files } = this.L, Task = this.kind === 'face' ? m.FaceLandmarker : m.HandLandmarker;
     const opts = this.kind === 'face'
       ? { runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true }
@@ -77,17 +100,31 @@ class Tracker {
   }
   stop() {
     if (!this.running) return;
-    this.running = false; this.ready = false; live.delete(this); releaseCamera();
+    this.running = false; this.ready = false; live.delete(this);
+    if (this.native) { this.native = null; npuCameraDone(); }
+    if (this.web) { this.web = false; releaseCamera(); }
   }
   /** Looks at the newest camera frame (call every update). Returns true if there was a new frame. */
   update() {
+    const n = this.native;
+    if (n) {
+      // one look at a time, each on the newest picture; the result arrives on a later update
+      if (!n.busy) {
+        n.busy = true;
+        engine.frame(n.last).then(f => f && (n.last = f.id, n.pipe.track(f))).then(r => { if (r && this.native === n) n.fresh = r; })
+          .catch(() => {}).finally(() => { n.busy = false; });
+      }
+      if (!n.fresh) return false;
+      this.read(n.fresh); n.fresh = null; return true;
+    }
     if (!this.ready || !this.task || !this.video || this.video.readyState < 2) return false;
     const t = this.video.currentTime; if (t === this.lastT) return false;
     this.lastT = t;
     try { this.read(this.task.detectForVideo(this.video, performance.now())); } catch { return false; }
     return true;
   }
-  /** The camera picture, for drawing a mirrored preview: c.save(); c.scale(-1, 1); c.drawImage(face.video, -W, 0, W, H); c.restore(). */
+  /** The camera picture, for drawing a mirrored preview: c.save(); c.scale(-1, 1); c.drawImage(face.video, -W, 0, W, H); c.restore().
+   *  Made with { preview: true } only: on the AI chip the camera never enters the web view, so it is null. */
   get picture() { return this.video || null; }
 }
 
@@ -98,7 +135,8 @@ class Tracker {
  * {x, y, z}), shapes (all 52 expression scores by name).
  */
 export class Face extends Tracker {
-  constructor() { super('face'); this.found = false; this.x = .5; this.y = .5; this.size = 0; this.yaw = 0; this.pitch = 0; this.roll = 0; this.mouth = 0; this.smile = 0; this.blink = false; this.winkLeft = false; this.winkRight = false; this.brows = 0; this.points = []; this.shapes = {}; }
+  /** preview: true if the game draws the camera picture (face.picture): it runs in the web view then, as the AI chip never shows the picture. */
+  constructor({ preview = false } = {}) { super('face'); this.preview = preview; this.found = false; this.x = .5; this.y = .5; this.size = 0; this.yaw = 0; this.pitch = 0; this.roll = 0; this.mouth = 0; this.smile = 0; this.blink = false; this.winkLeft = false; this.winkRight = false; this.brows = 0; this.points = []; this.shapes = {}; }
   read(r) {
     const pts = r.faceLandmarks?.[0];
     this.found = !!pts; if (!pts) return;
@@ -127,7 +165,7 @@ export class Face extends Tracker {
  * index out), side ('left' | 'right'), points (21 landmarks) }]. hands.first is list[0] or null.
  */
 export class Hands extends Tracker {
-  constructor({ max = 2 } = {}) { super('hands'); this.max = max; this.list = []; }
+  constructor({ max = 2, preview = false } = {}) { super('hands'); this.max = max; this.preview = preview; this.list = []; }
   get first() { return this.list[0] || null; }
   get found() { return this.list.length > 0; }
   read(r) {

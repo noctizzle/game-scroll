@@ -295,8 +295,8 @@ try {
       const lm = new T.MeshStandardMaterial({ alphaTest: .5 }), lu = looks.leaves(lm, { wind: w }); ok(lu.uniforms.lkWindDir === w.uniforms.lkWindDir, 'leaves share the wind');
       const hv2 = new gs.hd.HDView({}), pt = new gs.hd.Particles(hv2, { wind: w, additive: false }); pt.emit({ x: 0, y: 1, z: 0, life: 2 }); for (let i = 0; i < 30; i++) pt.update(1 / 30); ok(pt.list[0].x > .5, 'smoke drifts downwind: ' + pt.list[0].x.toFixed(2));
       const tg = tree({ kind: 'round', height: 6 }), imp = impostor(tg, new T.MeshStandardMaterial({ vertexColors: true }), { cards: 3, size: 64 });
-      const px = new Uint8Array(4), mid = new Uint8Array(4), r3 = gs.hd.bakeRenderer(); r3.readRenderTargetPixels(imp.target, 0, 63, 1, 1, px); r3.readRenderTargetPixels(imp.target, 96, 32, 1, 1, mid);
-      ok(imp && imp.geometry.attributes.position.count === 12 && imp.target.width === 192 && mid[3] > 200 && px[3] === 0, `tree impostor: 3 cards on a 192 x 64 picture (tree ${mid[3]}, corner ${px[3]})`);
+      const im = imp?.texture.image, alpha = (x, y) => im.data[(y * im.width + x) * 4 + 3], mid = [0, 0, 0, alpha(96, 32)], px = [0, 0, 0, alpha(0, 63)];   // the bake is read back into a plain texture
+      ok(imp && imp.geometry.attributes.position.count === 12 && im.width === 192 && mid[3] > 200 && px[3] === 0, `tree impostor: 3 cards on a 192 x 64 picture (tree ${mid[3]}, corner ${px[3]})`);
       imp.dispose();
     }
     const w9 = new gs.physics3d.World3D(); land.solid(w9); const b9 = w9.ball(null, .5, { at: { x: 0, y: 8, z: 0 } }); for (let i = 0; i < 120; i++) w9.step(1 / 60);
@@ -341,6 +341,20 @@ try {
   ok(best.name === 'triangle', 'doodle names a triangle in ' + (performance.now() - t0).toFixed(1) + ' ms');
   ok(!('stopHearing' in gs.hear) && !('loadDoodle' in gs.doodle) && !('phoneAIStatus' in gs.phoneai), 'smarts helpers stay hidden');
   ok(await new gs.phoneai.PhoneAI().ask('hi', { fallback: 'ok' }) === 'ok', 'phone AI falls back with no model');
+}
+{
+  // Swarm: the WebGPU compute version matches the CPU one (where this browser has WebGPU)
+  const { Swarm } = gs.ai, mk = gpu => new Swarm({ count: 1200, w: 400, h: 400, speed: 60, seed: 9, gpu });
+  const c = mk(false), g = mk(true);
+  if (!(await g.ready)) ok(!g.gpu && g.count === 1200, 'swarm: no WebGPU here, so it runs on the CPU');
+  else {
+    for (const s of [c, g]) { s.obstacle(200, 200, 30).pull(100, 100, { strength: 1, radius: 150 }); s.update(1 / 60); }
+    await g.sync();
+    let d = 0; for (let i = 0; i < c.count; i++) { const dx = Math.abs(c.x[i] - g.x[i]), dy = Math.abs(c.y[i] - g.y[i]); d = Math.max(d, Math.min(dx, 400 - dx), Math.min(dy, 400 - dy)); }
+    ok(d < .05, 'swarm: the GPU and CPU agree within ' + d.toExponential(1) + ' units after a frame');
+    g.kill(3); g.update(1 / 60); await g.sync(); ok(g.near(g.x[3], g.y[3], .01).indexOf(3) < 0 && g.gpu, 'swarm: kill on the GPU');
+    g.dispose(); ok(!g.gpu, 'swarm: dispose');
+  }
 }
 window.result = out;
 </script>

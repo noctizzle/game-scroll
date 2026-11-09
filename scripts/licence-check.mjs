@@ -6,7 +6,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { OPEN_SOURCE } from '../src/licences.js';
+import { OPEN_SOURCE, OTHER_PARTS } from '../src/licences.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
@@ -26,8 +26,11 @@ for (const d of deps) {
 for (const p of listed.keys())
   if (!deps.includes(p)) bad.push(`${p} is in src/licences.js but isn't a dependency any more: remove it`);
 for (const e of OPEN_SOURCE)
-  if (!e.name || !e.licence || !e.spdx || !(e.packages?.length || e.vendored)) bad.push(`src/licences.js: "${e.name || '?'}" needs name, licence, spdx and packages (or vendored)`);
+  if (!e.name || !e.licence || !e.spdx || !(e.packages?.length || e.vendored || e.native)) bad.push(`src/licences.js: "${e.name || '?'}" needs name, licence, spdx and packages (or vendored, or native)`);
   else if (e.vendored && !existsSync(join(ROOT, e.vendored))) bad.push(`src/licences.js: "${e.name}" says it's copied into ${e.vendored}, but that file is gone: remove the entry`);
+// a phone-side library: the plugin file that pulls it in must still be there
+for (const e of [...OPEN_SOURCE, ...OTHER_PARTS])
+  if (e.native && !existsSync(join(ROOT, e.native))) bad.push(`src/licences.js: "${e.name}" comes in through ${e.native}, but that file is gone: remove the entry`);
 
 if (bad.length) { console.error('Open-source list is out of date:\n  ' + bad.join('\n  ')); process.exit(1); }
 console.log(`Open-source list OK: ${deps.length} packages in ${OPEN_SOURCE.length} entries.`);

@@ -49,7 +49,7 @@ There is a friendlier walkthrough at **https://game-scroll.com/make/**. This gui
 
 ## Quick start
 
-You need [Node.js](https://nodejs.org) 22 or newer.
+You need [Node.js](https://nodejs.org) 26 (the current LTS; `.nvmrc` pins it, so `nvm use` picks it up).
 
 ```bash
 # 1. Fork this repo on GitHub, then:

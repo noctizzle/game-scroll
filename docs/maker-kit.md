@@ -29,6 +29,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Enemies that chase, flee, flock, find a path | `gs.ai` (Yuka) | [AI](#ai) |
 | Seeded random, daily seed, smooth noise, timers | `gs.math` | [Maths](#maths) |
 | 3D text, 3D particles, outlines, glitch, trails | `gs.fx3d` | [3D extras](#3d-extras) |
+| Thousands of fish, bats or zombies that flock | `gs.ai.Swarm` (WebGPU compute, CPU fallback) | [Swarms](#swarms-thousands-of-flockers) |
 | Play with your face or your hands | `gs.vision` (MediaPipe) | [Face and hands](#face-and-hands) |
 | To see frame rate, hitboxes, slow motion | press `` ` `` in `npm run dev` | [Debug overlay](#debug-overlay) |
 | Opponents that learn as you play (Tiny Brains) | `gs.brains` | [Tiny Brains](#tiny-brains) |
@@ -415,6 +416,34 @@ update(dt) { crowd.update(dt); }                             // read bat.x, bat.
 - `Brain(start, { state: { enter, update(dt), exit } })`: `go(name)`, `is(name)`, `time` in the state.
 - All of Yuka is there as `gs.ai.YUKA` (fuzzy logic, goals, vision cones, nav meshes).
 
+
+### Swarms: thousands of flockers
+
+`gs.ai.Swarm` moves hundreds or thousands of simple creatures that flock: shoals, bats, bees,
+starlings, a zombie horde. On top-end phones with WebGPU the moving is done on the graphics chip
+(a compute shader); everywhere else it runs on the CPU with a spatial grid. Same rules either way,
+so the game never needs to know (`swarm.gpu` says which). If the chip turns out too slow, or goes
+away, it carries on on the CPU by itself.
+
+```js
+const { Swarm } = gs.ai;
+reset() { fish = new Swarm({ count: Math.min(3000, Swarm.max()), w: W, h: H, speed: 70 }); }
+update(dt) {
+  fish.pull(food.x, food.y);                                   // come here (up to 8 pulls a frame)
+  fish.pull(shark.x, shark.y, { strength: -4, radius: 90 });   // keep away from here
+  fish.update(dt);
+  for (const i of fish.near(shark.x, shark.y, 12)) { fish.kill(i); api.score(++score); }
+}
+draw(c) { for (let i = 0; i < fish.count; i++) if (fish.alive[i]) drawFish(c, fish.x[i], fish.y[i], fish.angle(i)); }
+```
+
+Options: `count` (up to 8192), `w`, `h`, `speed`, `sight` (how far each sees its neighbours, 24),
+the flocking urges `separate` (1.6), `align` (1) and `cohere` (.8), `wander` (.3), `edges` (`'wrap'`
+or `'bounce'`), `seed`. Also `obstacle(x, y, r)`, `place(i, x, y)`, `revive(i, x, y)`, `living`, and
+`order()` (0 when they head all over, 1 when they all head one way). `Swarm.max()` is about how many
+the phone moves smoothly: 8192 with the graphics chip, 2000 without. On the GPU the positions you
+read are a frame or two behind, which nobody sees; don't use a swarm for exact, frame-perfect rules.
+For a few clever agents (chase, patrol, paths) use `Crowd` instead.
 ## Maths
 
 `const { rng, daily, noise2, fbm, vec, overlap, Grid, Timers } = gs.math;`
@@ -655,7 +684,10 @@ turns the character floppy (each limb swings at its origin). `rag.push()`, `rag.
 ## Face and hands
 
 `const { Face, Hands } = gs.vision;` Face and hand tracking with the front camera, from Google's
-[MediaPipe](https://ai.google.dev/edge/mediapipe). It all runs on the phone: no picture leaves it.
+[MediaPipe](https://ai.google.dev/edge/mediapipe) models. It all runs on the phone: no picture leaves it.
+In the phone apps the models run on the phone's AI chip (Qualcomm's NPU on Snapdragon, the Neural
+Engine on iPhone, else the CPU) through [ONNX Runtime](https://onnxruntime.ai), with the camera read
+natively, so the game's frame time and the GPU stay free; on the web, MediaPipe runs in the page.
 
 ```js
 reset() { face = new Face(); }           // loads the library first
@@ -670,9 +702,14 @@ update(dt) {
   `smile`, `blink`, `winkLeft`, `winkRight`, `brows`, `points` (478), `shapes` (52 expressions by name).
 - `Hands`: `list` of `{ x, y, tipX, tipY, pinch, pinchX, pinchY, open, fist, point, side, points }`, `first`.
 - `ready` is true once the camera and model are running; `failed` holds the error if the player
-  said no to the camera. The app stops the camera when the round ends.
-- The models (4 MB face, 8 MB hands, plus a 14 MB engine) download from our games server the
-  first time; `npm run ml` fetches them for `npm run dev`.
+  said no to the camera. The app stops the camera when the round ends. `backend` says where it runs
+  (`'npu'` on the AI chip).
+- Drawing the camera picture (`face.picture`, a mirrored selfie view)? Make it with
+  `new Face({ preview: true })` (or `Hands({ preview: true })`): the AI chip never passes pictures to
+  the game, so with `preview` the tracker runs in the web view instead.
+- The models (4 MB face, 8 MB hands, plus a 14 MB engine on the web) download from our games server
+  the first time; `npm run ml` fetches the web ones for `npm run dev` (the AI chip's are in `ml-models/`).
+  `npm run kit-browser`-style checks of the AI chip steps against MediaPipe: `node scripts/npu-test.cjs`.
 
 ## Pause and resume
 
@@ -1272,8 +1309,9 @@ update(dt) { ears.update(dt); if (ears.heard('Dog')) scareCats(); }
 `heard(name)` is true once each time the sound starts, `hearing(name)` is how sure it is right now
 (0..1) and `top` is the surest sound. Options: `sure` (.3) and `every` (seconds between looks, .25).
 Some names: `'Speech'`, `'Singing'`, `'Whistling'`, `'Clapping'`, `'Finger snapping'`, `'Laughter'`,
-`'Dog'`, `'Cat'`, `'Bird'`, `'Knock'`, `'Bell'`, `'Cough'`, `'Snoring'`, `'Music'`. The engine and model
-(about 11 MB) download once from our games server; `npm run ml` fetches them for `npm run dev`.
+`'Dog'`, `'Cat'`, `'Bird'`, `'Knock'`, `'Bell'`, `'Cough'`, `'Snoring'`, `'Music'`. In the phone apps YAMNet
+runs on the phone's AI chip with the mic read natively (a 5 MB model); on the web the MediaPipe engine
+and model (about 11 MB) download once from our games server; `npm run ml` fetches them for `npm run dev`.
 
 **Spoken commands** (`gs.hear.Voice`): uses the phone's own on-device recogniser (iPhone, and
 Android 12 and later). Phones without one say `available` false, so keep touch controls:

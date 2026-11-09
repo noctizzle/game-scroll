@@ -81,22 +81,23 @@ function csp(env) {
   };
 }
 
-// Face and hand tracking files (gs.vision). The real app downloads them from the games host; dev
-// and test builds without one serve ml-cache/ (filled by npm run ml) at ml/.
+// Face and hand tracking and sound files (gs.vision, gs.hear). The real app downloads them from the
+// games host; dev and test builds without one serve ml-cache/ (filled by npm run ml) and ml-models/
+// (the AI chip's models, kept in the repo) at ml/.
 function mlFiles(streamed) {
-  const dir = resolve('ml-cache');
+  const dirs = [resolve('ml-cache'), resolve('ml-models')];
   return {
     name: 'ml-files',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const m = /\/ml\/([\w.-]+)\/([\w.-]+)$/.exec((req.url || '').split('?')[0]);
-        const f = m && resolve(dir, m[1], m[2]);
-        if (!f || !existsSync(f)) return next();
+        const f = m && dirs.map(d => resolve(d, m[1], m[2])).find(existsSync);
+        if (!f) return next();
         res.setHeader('Content-Type', f.endsWith('.wasm') ? 'application/wasm' : 'application/octet-stream');
         createReadStream(f).pipe(res);
       });
     },
-    closeBundle() { if (!streamed && existsSync(dir)) cpSync(dir, resolve('dist/ml'), { recursive: true }); },
+    closeBundle() { if (!streamed) for (const d of dirs) if (existsSync(d)) cpSync(d, resolve('dist/ml'), { recursive: true }); },
   };
 }
 

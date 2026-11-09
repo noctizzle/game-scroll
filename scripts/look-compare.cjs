@@ -5,6 +5,8 @@
 //   node scripts/look-compare.cjs check <dir>       draw and compare with <dir> (fails on a visible change)
 //   add --webgpu to draw on WebGPU (SwiftShader's Vulkan driver here): `save base` then
 //   `check base --webgpu` compares the WebGPU path with WebGL scene by scene.
+//   ONLY=<tier> draws one Next Gen tier; Q=feat=-shafts,-props (see index.html) turns outdoor pieces off
+//   on both runs, to find which one makes a difference.
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
 (async () => {
