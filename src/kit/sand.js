@@ -1,6 +1,6 @@
 // Falling sand and destructible ground: a grid where every cell is a material that behaves by itself
 // (sand piles up, water and oil flow and settle by weight, fire spreads through wood and oil and leaves
-// smoke, acid eats ground) and solid ground you can blast holes in, the loose bits falling as rubble.
+// smoke, acid eats ground, slow lava sets fire to things and turns to stone where water cools it) and solid ground you can blast holes in, the loose bits falling as rubble.
 // For sand toys, digging games, worm-style artillery and physics puzzles. The kit runs the grid and
 // paints it into a picture; your game draws that picture scaled up and keeps its own heroes, who ask
 // solid(x, y) to stand on it.
@@ -15,13 +15,13 @@
 // A CPU grid in flat arrays: about 120 x 200 cells runs well inside a phone's frame. Each step walks
 // from the bottom up and turns left/right every step so piles don't lean.
 
-/** Materials. EMPTY, WALL (never moves or breaks), DIRT (solid, blasts into sand), WOOD (solid, burns), SAND, WATER, OIL, FIRE, SMOKE, ACID, STEAM. */
-export const M = Object.freeze({ EMPTY: 0, WALL: 1, DIRT: 2, WOOD: 3, SAND: 4, WATER: 5, OIL: 6, FIRE: 7, SMOKE: 8, ACID: 9, STEAM: 10 });
+/** Materials. EMPTY, WALL (never moves or breaks), DIRT (solid, blasts into sand), WOOD (solid, burns), SAND, WATER, OIL, FIRE, SMOKE, ACID, STEAM, LAVA (slow, hot), STONE (solid: cooled lava). */
+export const M = Object.freeze({ EMPTY: 0, WALL: 1, DIRT: 2, WOOD: 3, SAND: 4, WATER: 5, OIL: 6, FIRE: 7, SMOKE: 8, ACID: 9, STEAM: 10, LAVA: 11, STONE: 12 });
 // colours as [r, g, b] with how much each cell's shade varies
-const COL = [[0, 0, 0, 0], [92, 92, 104, 6], [122, 88, 56, 14], [140, 98, 58, 10], [224, 196, 120, 18], [52, 120, 220, 8], [92, 70, 40, 6], [255, 140, 40, 40], [90, 90, 96, 12], [120, 230, 60, 12], [200, 210, 225, 10]];
-const SOLID = new Set([M.WALL, M.DIRT, M.WOOD]);
-const DENSITY = [0, 99, 99, 99, 10, 5, 4, 0, -1, 6, -2];   // heavier sinks through lighter (liquids and powders); negative rises
-const FLOW = { [M.WATER]: 4, [M.OIL]: 3, [M.ACID]: 3 };
+const COL = [[0, 0, 0, 0], [92, 92, 104, 6], [122, 88, 56, 14], [140, 98, 58, 10], [224, 196, 120, 18], [52, 120, 220, 8], [92, 70, 40, 6], [255, 140, 40, 40], [90, 90, 96, 12], [120, 230, 60, 12], [200, 210, 225, 10], [255, 96, 24, 34], [70, 66, 72, 10]];
+const SOLID = new Set([M.WALL, M.DIRT, M.WOOD, M.STONE]);
+const DENSITY = [0, 99, 99, 99, 10, 5, 4, 0, -1, 6, -2, 8, 99];   // heavier sinks through lighter (liquids and powders); negative rises
+const FLOW = { [M.WATER]: 4, [M.OIL]: 3, [M.ACID]: 3, [M.LAVA]: 1 };
 
 export class Sand {
   constructor(w = 120, h = 200, { seed = 1 } = {}) {
@@ -54,7 +54,7 @@ export class Sand {
       if (!this.inside(x, y)) continue; const d = Math.hypot(x - cx, y - cy), m = this.t[y * this.w + x];
       if (m === M.WALL) continue;
       if (d <= r) { if (m !== M.EMPTY) n++; this.set(x, y, fire && this.rnd() < .08 ? M.FIRE : M.EMPTY); }
-      else if (d <= r * 1.3 && (m === M.DIRT) && this.rnd() < .6) this.set(x, y, M.SAND);
+      else if (d <= r * 1.3 && (m === M.DIRT || m === M.STONE) && this.rnd() < .6) this.set(x, y, M.SAND);
     }
     return n;
   }
@@ -80,10 +80,19 @@ export class Sand {
     for (let y = h - 1; y >= 0; y--) {
       for (let k = 0; k < w; k++) {
         const x = flip ? k : w - 1 - k, i = y * w + x, m = t[i];
-        if (m <= M.WOOD || this.stepped[i] === mark) continue;
+        if (m <= M.WOOD || m === M.STONE || this.stepped[i] === mark) continue;
         const dir = this.rnd() < .5 ? -1 : 1;
         if (m === M.SAND) { this.tryMove(i, x, y + 1) || this.tryMove(i, x + dir, y + 1) || this.tryMove(i, x - dir, y + 1); continue; }
-        if (m === M.WATER || m === M.OIL || m === M.ACID) {
+        if (m === M.LAVA) {   // sets fire to wood and oil, water cools it to stone (the water boils off)
+          for (const [dx, dy] of [[0, -1], [1, 0], [-1, 0], [0, 1]]) {
+            const nx = x + dx, ny = y + dy, nm = this.get(nx, ny);
+            if (nm === M.WATER) { this.set(x, y, M.STONE); this.set(nx, ny, M.STEAM); break; }
+            if ((nm === M.WOOD && this.rnd() < .04) || (nm === M.OIL && this.rnd() < .2)) this.set(nx, ny, M.FIRE);
+            else if (nm === M.EMPTY && dy === -1 && this.rnd() < .002) this.set(nx, ny, M.SMOKE);
+          }
+          if (t[i] !== M.LAVA || this.rnd() < .55) continue;   // thick: moves about every other step
+        }
+        if (m === M.WATER || m === M.OIL || m === M.ACID || m === M.LAVA) {
           if (m === M.ACID) { for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0]]) { const nx = x + dx, ny = y + dy, nm = this.get(nx, ny); if ((nm === M.DIRT || nm === M.WOOD || nm === M.SAND) && this.rnd() < .05) { this.set(nx, ny, M.EMPTY); if (this.rnd() < .3) { this.set(x, y, M.SMOKE); break; } } } if (t[i] !== M.ACID) continue; }
           if (this.tryMove(i, x, y + 1) || this.tryMove(i, x + dir, y + 1) || this.tryMove(i, x - dir, y + 1)) continue;
           for (let s = 1, n = FLOW[m]; s <= n; s++) { const nx = x + dir * s; if (!this.inside(nx, y) || t[y * w + nx] !== M.EMPTY) { if (s > 1) this.swap(i, y * w + x + dir * (s - 1)); break; } if (s === n) this.swap(i, y * w + nx); }
@@ -120,7 +129,7 @@ export class Sand {
     for (let i = 0, n = t.length; i < n; i++) {
       const m = t[i], o = i * 4;
       if (m === M.EMPTY) { px[o] = bg[0]; px[o + 1] = bg[1]; px[o + 2] = bg[2]; px[o + 3] = bg[3]; continue; }
-      const c = COL[m], v = (shade[i] / 255 - .5) * c[3] * 2, f = m === M.FIRE ? this.life[i] / 70 : 1;
+      const c = COL[m], v = (shade[i] / 255 - .5) * c[3] * 2, f = m === M.FIRE ? this.life[i] / 70 : m === M.LAVA ? .75 + .25 * Math.sin(this.tick * .05 + shade[i] * .1) : 1;
       px[o] = c[0] + v; px[o + 1] = (c[1] + v) * f; px[o + 2] = (c[2] + v) * f; px[o + 3] = m === M.SMOKE || m === M.STEAM ? Math.min(255, 60 + this.life[i]) : 255;
     }
     this.cx.putImageData(this.img, 0, 0); this.dirty = false;

@@ -852,7 +852,11 @@ console.log('physics ok');
   for (let i = 0; i < 600; i++) { f.step(); if (i % 40 === 0) f.paint(15, 19, 1, M.FIRE); } assert.ok(f.count(M.WOOD) < wood, 'fire burns wood');
   const g = new Sand(40, 40); g.fill((x, y) => y > 20 ? M.DIRT : M.EMPTY); const gone = g.blast(20, 25, 5, { fire: false });
   assert.ok(gone > 60 && g.get(20, 25) === M.EMPTY, 'a blast makes a hole'); assert.ok(g.count(M.SAND) > 0, 'and loose rubble');
-  console.log('sand: falling, piles, oil on water, flowing, fire, blasts ok');
+  const l = new Sand(40, 40); l.fill((x, y) => y >= 35 || x === 0 || x === 39 ? M.WALL : y >= 30 && x < 20 ? M.WATER : y >= 30 && x >= 30 ? M.WOOD : M.EMPTY);
+  l.paint(20, 10, 4, M.LAVA); const wood2 = l.count(M.WOOD); for (let i = 0; i < 900; i++) l.step();
+  assert.ok(l.count(M.STONE) > 0, 'water cools lava to stone'); assert.ok(l.solid(...(() => { for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) if (l.get(x, y) === M.STONE) return [x, y]; })()), 'stone is solid');
+  assert.ok(l.count(M.WOOD) < wood2 || l.count(M.FIRE) > 0, 'lava sets wood alight');
+  console.log('sand: falling, piles, oil on water, flowing, fire, lava to stone, blasts ok');
 }
 {
   const { creature, face, item, building, sprite, name } = await import('../src/kit/art.js');

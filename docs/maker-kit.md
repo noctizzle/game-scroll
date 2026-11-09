@@ -1262,9 +1262,10 @@ volley built from `ring(n, speed)`, `spread(n, arc, speed, aim)`, `spiral(arms, 
 `burst(n, speed, aim)` and `custom(fn)` each time; `update(dt, x, y)` from where the boss is.
 
 **Falling sand and blastable ground** (`gs.sand`): `Sand(w, h)` is a grid of materials (`M.EMPTY`,
-`WALL`, `DIRT`, `WOOD`, `SAND`, `WATER`, `OIL`, `FIRE`, `SMOKE`, `ACID`, `STEAM`) that behave by
-themselves: sand piles, water and oil flow and settle by weight, fire burns wood and oil into smoke,
-water puts fire out as steam, acid eats ground. `fill(fn)`, `paint(x, y, r, m)`, `blast(x, y, r)` (a
+`WALL`, `DIRT`, `WOOD`, `SAND`, `WATER`, `OIL`, `FIRE`, `SMOKE`, `ACID`, `STEAM`, `LAVA`, `STONE`) that
+behave by themselves: sand piles, water and oil flow and settle by weight, fire burns wood and oil into
+smoke, water puts fire out as steam, acid eats ground, slow lava sets things alight and turns to stone
+where water touches it. `fill(fn)`, `paint(x, y, r, m)`, `blast(x, y, r)` (a
 hole whose edge falls as rubble), `solid(x, y)` for heroes to stand on, `count(m, box)` for goals,
 `update(dt)` (60 steps a second), `picture()` to draw scaled up with smoothing off, `colour(m, [r, g,
 b, variation])` for your own look. It runs on the CPU in flat arrays: about 120 x 200 cells is

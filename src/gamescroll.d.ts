@@ -968,7 +968,7 @@ export interface BulletsPart {
   Bullets: new (o?: { max?: number; w?: number; h?: number; margin?: number }) => Bullets;
   Emitter: new (bullets: Bullets, o?: { every?: number; rotate?: number; times?: number; delay?: number; o?: BulletOpts }) => Emitter;
 }
-export interface SandMaterials { readonly EMPTY: 0; readonly WALL: 1; readonly DIRT: 2; readonly WOOD: 3; readonly SAND: 4; readonly WATER: 5; readonly OIL: 6; readonly FIRE: 7; readonly SMOKE: 8; readonly ACID: 9; readonly STEAM: 10 }
+export interface SandMaterials { readonly EMPTY: 0; readonly WALL: 1; readonly DIRT: 2; readonly WOOD: 3; readonly SAND: 4; readonly WATER: 5; readonly OIL: 6; readonly FIRE: 7; readonly SMOKE: 8; readonly ACID: 9; readonly STEAM: 10; readonly LAVA: 11; readonly STONE: 12 }
 export interface Sand {
   w: number; h: number; rate: number; bg: [number, number, number, number]; t: Uint8Array;
   get(x: number, y: number): number; set(x: number, y: number, m: number): void; solid(x: number, y: number): boolean; inside(x: number, y: number): boolean;
