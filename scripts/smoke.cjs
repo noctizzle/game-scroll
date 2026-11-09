@@ -1,6 +1,6 @@
 // Plays every game (or the ids given as args) with random input on a phone-sized screen
 // and fails if any game throws. Usage: npm run build:bundled && node scripts/smoke.cjs [id ...] [--jobs n]
-// --jobs: browsers playing at once (default: one per CPU, up to 6; JOBS=n does the same).
+// --jobs: browsers playing at once (default: one per CPU, up to 6; JOBS=n does the same). With several at once the app can take longer to start, so it waits up to 60 s for it.
 const { chromium, devices } = require('playwright');
 const { jobs, pool } = require('./lib/pool.cjs');
 (async () => {
@@ -12,7 +12,7 @@ const { jobs, pool } = require('./lib/pool.cjs');
     const ctx = await b.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 1 });
     const p = await ctx.newPage(), w = { b, p, errs: [] };
     p.on('pageerror', e => w.errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) w.errs.push(m.text()); });   // the app's own API calls (scores, hearts) can fail offline: not the game's fault
-    await p.goto('http://localhost:4179/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(400);
+    await p.goto('http://localhost:4179/'); await p.waitForFunction(() => window.__gs, null, { timeout: 60000 }); await p.waitForTimeout(400);
     return w;
   };
   const first = await open();

@@ -37,7 +37,7 @@ const open = async () => {
   const w = { b, p, errs: [] };
   p.on('pageerror', e => w.errs.push(e.message));
   p.on('console', m => { if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) w.errs.push(m.text()); if (m.type() === 'warning' && /^\[games\]/.test(m.text())) w.errs.push(m.text()); });
-  await p.goto('http://127.0.0.1:4193/'); await p.waitForFunction(() => window.__gs && __gs.GAMES.length, null, { timeout: 30000 });
+  await p.goto('http://127.0.0.1:4193/'); await p.waitForFunction(() => window.__gs && __gs.GAMES.length, null, { timeout: 60000 });
   return w;
 };
 let spare = await open();

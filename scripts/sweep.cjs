@@ -16,7 +16,7 @@ const { jobs, pool } = require('./lib/pool.cjs');
     const b = await chromium.launch();
     const p = await (await b.newContext({ viewport: { width: 390, height: 844 } })).newPage();
     const w = { b, p, errs: [] }; p.on('pageerror', e => w.errs.push(e.message));
-    await p.goto('http://localhost:4185/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(400);
+    await p.goto('http://localhost:4185/'); await p.waitForFunction(() => window.__gs, null, { timeout: 60000 }); await p.waitForTimeout(400);
     return w;
   };
   let spare = await open();
