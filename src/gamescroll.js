@@ -135,7 +135,8 @@ export const HIDDEN = {
   gen: ['loadGen'],
   words: ['loadWords'],
   ui: ['loadUI'],
-  hd: ['FINAL_EFFECTS'],   // the Next Gen screen shader in pieces, for the WebGPU port (docs/webgpu-move.md)
+  hd: ['FINAL_EFFECTS', 'gpuFits'],
+  props: ['simplifyReady'],   // the Next Gen screen shader in pieces, for the WebGPU port (docs/webgpu-move.md)
 };
 
 // App state some kits keep on an exported object: games get a look, not a lever (one game pinning
@@ -173,7 +174,8 @@ function readOnly(o) {
 // if a part isn't in yet, reading it throws StillLoading and the app shows "Loading…".
 const GROUPS = {
   '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'level3d', 'sky', 'poses', 'destruction', 'props', 'outdoors', 'THREE'],
-    load: () => import('./gs-3d.js').then(m => ({ toon: pick('toon', m.toon), hd: pick('hd', m.hd), ar: pick('ar', m.ar), bricks: pick('bricks', m.bricks),
+    // (with WebGPU picked in Settings, its renderer gets ready alongside: src/kit/gpu.js)
+    load: () => Promise.all([import('./gs-3d.js').then(m => m.props.simplifyReady.then(() => m)), import('./kit/gpu.js').then(g => g.prepareGPU())]).then(([m]) => ({ toon: pick('toon', m.toon), hd: pick('hd', m.hd), ar: pick('ar', m.ar), bricks: pick('bricks', m.bricks),
       physics3d: pick('physics3d', m.physics3d), fx3d: pick('fx3d', m.fx3d), camera: pick('camera', m.camera), nav3d: pick('nav3d', m.nav3d),
       characters: pick('characters', m.characters), level3d: pick('level3d', m.level3d), sky: pick('sky', m.sky),
       poses: pick('poses', m.poses), destruction: pick('destruction', m.destruction), props: pick('props', m.props), outdoors: pick('outdoors', m.outdoors), THREE: m.THREE })) },

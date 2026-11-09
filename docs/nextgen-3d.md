@@ -212,6 +212,13 @@ s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
 - `gs.hd.noiseTex()` is a shared 256 x 256 tiling noise texture (four sizes of noise in r, g, b and a)
   for your own shaders: clouds, water, grass, dirt.
 
+## WebGPU (test)
+
+On top phones, Settings › Graphics (test) › "Use WebGPU for 3D games" draws Next Gen and AR views
+with three's WebGPU renderer instead of WebGL. Nothing changes in a game: a view that uses a part not
+ported yet (see `docs/webgpu-move.md`) stays on WebGL by itself. `node scripts/gpu-games.cjs <id>`
+plays a game on both and says which it drew on.
+
 ## Decals, light probes and sun shafts
 
 - `v.decal(mesh, hit.point, hit.normal, { size: .3, colour: '#1a1410' })` puts a mark on a surface that
