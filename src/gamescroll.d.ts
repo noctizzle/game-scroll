@@ -948,6 +948,26 @@ export interface FightPart {
   Fighter: new (moves: Record<string, FightMove>, o?: { x?: number; y?: number; facing?: number; hurt?: FBox[]; hp?: number }) => Fighter;
   clash(a: Fighter, b: Fighter): { move: FightMove; name: string; blocked: boolean; x: number; y: number } | null;
 }
+export interface BulletOpts { accel?: number; turn?: number; wave?: [number, number]; home?: number; kind?: number; life?: number }
+export interface Bullets {
+  max: number; w: number; h: number; margin: number; n: number; readonly count: number; target: { x: number; y: number } | null;
+  x: Float32Array; y: Float32Array; sp: Float32Array; an: Float32Array; kind: Uint8Array;
+  fire(x: number, y: number, speed: number, angle: number, o?: BulletOpts): number; kill(i: number): void; update(dt: number, target?: { x: number; y: number } | null): void;
+  each(fn: (x: number, y: number, kind: number, angle: number, i: number) => void): void;
+  hit(x: number, y: number, r?: number, graze?: number, size?: (kind: number) => number): { hit: number; grazed: number; x: number; y: number };
+  clear(fn?: ((x: number, y: number, kind: number) => void) | null, x?: number, y?: number, r?: number): number;
+}
+type Aim = number | { x: number; y: number } | (() => { x: number; y: number } | null);
+export interface Emitter {
+  every: number; rotate: number; times: number; fired: number; on: boolean; readonly done: boolean;
+  ring(n: number, speed: number, o?: BulletOpts): Emitter; spread(n: number, arc: number, speed: number, aim?: Aim, o?: BulletOpts): Emitter; spiral(arms: number, speed: number, step?: number, o?: BulletOpts): Emitter;
+  burst(n: number, speed: number, aim: Aim, slow?: number, o?: BulletOpts): Emitter; custom(fn: (b: Bullets, x: number, y: number, angle: number, volley: number) => void): Emitter;
+  update(dt: number, x: number, y: number): number; reset(): Emitter;
+}
+export interface BulletsPart {
+  Bullets: new (o?: { max?: number; w?: number; h?: number; margin?: number }) => Bullets;
+  Emitter: new (bullets: Bullets, o?: { every?: number; rotate?: number; times?: number; delay?: number; o?: BulletOpts }) => Emitter;
+}
 export interface DragPart { Drag: new (o?: { snap?: number; accept?: (piece: DragThing, slot: DragThing) => boolean; lift?: number; speed?: number; list?: { x: number; y: number; gap?: number; axis?: 'x' | 'y' } | null; swap?: boolean }) => Drag }
 
 export interface Earner {
@@ -1472,7 +1492,7 @@ export interface GS {
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
-  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; fight: FightPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
+  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; fight: FightPart; bullets: BulletsPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;

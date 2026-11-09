@@ -824,6 +824,21 @@ console.log('physics ok');
   console.log('fight: motions, dash, facing, buffer, specials, frames, boxes, one hit, hit stop, cancels, block, low ok');
 }
 {
+  const { Bullets, Emitter } = await import('../src/kit/bullets.js');
+  const b = new Bullets({ max: 100, w: 300, h: 300 }), ring = new Emitter(b, { every: .5, rotate: .1, times: 3 }).ring(8, 50);
+  ring.update(0, 150, 150); assert.equal(b.count, 8, 'a ring of eight'); ring.update(1.2, 150, 150); assert.equal(b.count, 24); assert.ok(ring.done); ring.update(5, 150, 150); assert.equal(b.count, 24, 'stops after times');
+  b.update(1); let far = 0; b.each((x, y) => { far = Math.max(far, Math.hypot(x - 150, y - 150)); }); assert.ok(Math.abs(far - 50) < 1, 'moved at their speed');
+  for (let i = 0; i < 40; i++) b.update(.25); assert.equal(b.count, 0, 'gone off screen');
+  const p = { x: 150, y: 290 }, aimed = new Emitter(b, { every: 1 }).spread(3, .4, 100, () => p); aimed.update(0, 150, 10);
+  let mid = null; b.each((x, y, k, a) => { if (Math.abs(a - Math.PI / 2) < 1e-6) mid = a; }); assert.ok(mid, 'aimed at the player');
+  b.clear(); const i = b.fire(100, 100, 0, 0); assert.equal(b.hit(130, 100, 3, 0).hit, -1); const g = b.hit(112, 100, 3, 10); assert.equal(g.grazed, 1, 'a graze'); assert.equal(b.hit(112, 100, 3, 10).grazed, 0, 'once');
+  assert.ok(b.hit(103, 100, 3, 10).hit >= 0); assert.equal(b.count, 0, 'the hit bullet goes'); void i;
+  b.fire(0, 150, 100, 0, { home: 3 }); for (let k = 0; k < 30; k++) b.update(1 / 30, { x: 150, y: 50 }); let hy = 0; b.each((x, y) => { hy = y; }); assert.ok(hy < 140, 'homing turns towards the target');
+  b.clear(); for (let k = 0; k < 150; k++) b.fire(150, 150, 1, 0); assert.equal(b.count, 100, 'never more than max');
+  let pts = 0; assert.equal(b.clear(() => pts++, 150, 150, 10), 100); assert.equal(pts, 100, 'clearing into points');
+  console.log('bullets: ring, rotate, times, speed, off screen, aimed spread, hit, graze, homing, max, clear ok');
+}
+{
   const { dungeon, cave, maze, islands, pattern, fov, loadGen, proven, reach } = await import('../src/kit/gen.js');
   await loadGen();
   const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });

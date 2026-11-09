@@ -48,6 +48,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Hex maps, isometric views | `gs.hex` | [Game kits](#game-kits) |
 | Strategy controls, tower defence | `gs.rts` | [Game kits](#game-kits) |
 | A fighting game | `gs.fight` | [Game kits](#game-kits) |
+| Bullet patterns (shoot-'em-ups) | `gs.bullets` | [Game kits](#game-kits) |
 | Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
 | Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
 | Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
@@ -1248,6 +1249,13 @@ motions in numpad notation (forward follows `facing`), `special(moves)` for the 
 feet (facing right), `stun`, `blockStun`, `stop`, `low`/`high`, `cancel: [names]` (once it has hit);
 `start(name)`, `update(dt)`, `phase`. `clash(a, b)` checks a's hit boxes against b's hurt boxes once per
 move, sets stun, block stun (b.blocking, b.blockLow) and hit stop, and returns `{ move, blocked, x, y }`.
+
+**Bullet patterns** (`gs.bullets`): `Bullets({ max, w, h })` keeps thousands of bullets in flat arrays:
+`fire(x, y, speed, angle, { accel, turn, wave, home, kind, life })`, `update(dt, target)`, `each(fn)` to
+draw, `hit(x, y, r, graze)` (`{ hit, grazed }`: near misses count once) and `clear(fn, x, y, r)` for
+bombs and turning bullets into points. `Emitter(bullets, { every, rotate, times, delay })` fires a
+volley built from `ring(n, speed)`, `spread(n, arc, speed, aim)`, `spiral(arms, speed, step)`,
+`burst(n, speed, aim)` and `custom(fn)` each time; `update(dt, x, y)` from where the boss is.
 
 **Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
 `Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran
