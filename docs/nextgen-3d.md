@@ -237,6 +237,20 @@ s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
   `range`, stays sharp; things `depth` x `at` metres nearer or further are fully soft, up to `blur`
   pixels. Made for scopes and cutscene close-ups; `v.focus = null` turns it off. It reads the depth the
   ambient occlusion already draws, so it's on high and ultra only and costs one full-screen pass.
+- **Volumetric light** (`v.beams = { light, density, far, glow, strength, steps }`): light seen in the
+  air, cut into beams by shadows: sun through a slatted wall or trees, a lamp's cone in a dusty barn.
+  `light` is a `sun()` or `spot()` (default `v.sun`); `density` is how dusty the air is per metre (0.02);
+  `far` is how many metres of air it looks through (60); `glow` (0..0.9, 0.5) brightens it toward the
+  light; `strength` scales the light's colour (1); `steps` (24, up to 48) trades cost for smoothness.
+  Shadows come from the light's own shadow map, so a light without shadows gives plain glowing air.
+  Drawn at half size on high and ultra. The same steps as three.js's GodraysNode, written out for WebGL
+  and WebGPU so both draw the same beams.
+- **Motion blur** (`v.motionBlur = { amount, max, sharp }`): the world smears as the camera turns and
+  moves fast. `amount` is how much of each frame's move (0.5, a half-frame shutter); `max` is the longest
+  smear as a part of the screen's width (0.04); things nearer than `sharp` metres stay sharp, such as the
+  car, bike or hands the camera carries. Camera motion only, the same on both renderers: a thing moving
+  by itself in front of a still camera doesn't blur. High and ultra; `v.cut()` after a camera jump stops
+  one big smear. Scale `amount` by `gs.prefs.motion` for players with Reduce motion on.
 - `v.envFrom(scene)` makes the reflections from any scene of your own (a painted room, a sunset dome),
   and makes them again on WebGPU when the view draws there; `v.env = null` goes back to the studio.
   (A texture set straight on `v.env` keeps a view on WebGL.)

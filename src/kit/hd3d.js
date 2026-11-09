@@ -393,6 +393,125 @@ class DofPass extends Pass {
   dispose() { this.mat.dispose(); this.quad.dispose(); }
 }
 
+// Volumetric light (v.beams = { light, density, far, glow, strength }): light seen in the air, with the
+// shadows cutting it into beams (sun through trees or a window, a lamp's cone in a dusty room). Each
+// pixel steps along its view ray (`steps`, 24 by default, jittered, to the surface or `far` metres), asks the
+// light's shadow map at each step whether the light reaches there, and adds up how much air is lit,
+// weighted toward looking at the light (a Henyey-Greenstein phase, glow 0..0.9). Drawn at half size, then
+// softened and added on top in the light's colour. The same steps as three.js's GodraysNode (from
+// three-good-godrays), written out for both renderers so WebGL and WebGPU draw the same beams and
+// keep working when the kit resizes a shadow map. Sun and spot lights; high and ultra (it reads the
+// depth the ambient occlusion draws), and only where the light has shadows (no shadows: plain glowing air).
+const VOL_MAX = 48;
+const VOL = `uniform sampler2D tDepth; uniform highp sampler2DShadow tShadow; uniform mat4 shadowM, invProj, camWorld; uniform vec3 camPos, lDir, lPos;
+  uniform vec4 lt; uniform float density, far, g, hasShadow, steps; varying vec2 vUv;
+  // lt: kind (0 sun, 1 spot), the cone's edge and full cosines, the spot's reach
+  float ign(vec2 p){ return fract(52.9829189 * fract(dot(p, vec2(.06711056, .00583715)))); }
+  void main(){
+    float d = texture2D(tDepth, vUv).x;
+    vec4 v = invProj * vec4(vUv * 2. - 1., d * 2. - 1., 1.); v /= v.w;
+    vec3 rd = (camWorld * vec4(v.xyz, 1.)).xyz - camPos; float L = length(rd); rd /= max(L, 1e-4);
+    L = d >= 1. ? far : min(L, far);
+    float dt = L / steps, t = dt * ign(gl_FragCoord.xy), sum = 0.;
+    for (int i = 0; i < ${VOL_MAX}; i++) { if (float(i) >= steps) break;
+      vec3 p = camPos + rd * t; vec4 s = shadowM * vec4(p, 1.); s.xyz /= s.w;
+      bool inside = s.w > 0. && all(greaterThanEqual(s.xyz, vec3(0.))) && all(lessThanEqual(s.xyz, vec3(1.)));
+      float lit = inside && hasShadow > .5 ? texture(tShadow, s.xyz) : 1.;
+      vec3 toL = -lDir;
+      if (lt.x > .5) { vec3 q = p - lPos; float dl = length(q); q /= max(dl, 1e-4); toL = -q; lit *= smoothstep(lt.y, lt.z, dot(q, lDir)) / (1. + dl * dl / (lt.w * lt.w)); }
+      float c = dot(rd, toL);
+      sum += lit * (1. - g * g) / pow(1. + g * g - 2. * g * c, 1.5) * .25; t += dt;
+    }
+    gl_FragColor = vec4(1. - exp(-density * L * sum / steps), 0., 0., 1.); }`;
+const VOL_ADD = `uniform sampler2D tDiffuse, tVol; uniform vec2 vpx; uniform vec3 tint; varying vec2 vUv;
+  void main(){ float a = texture2D(tVol, vUv + vpx * vec2(-1, -1)).r + texture2D(tVol, vUv + vpx * vec2(1, -1)).r
+    + texture2D(tVol, vUv + vpx * vec2(-1, 1)).r + texture2D(tVol, vUv + vpx * vec2(1, 1)).r;
+    gl_FragColor = vec4(texture2D(tDiffuse, vUv).rgb + tint * a * .25, 1.); }`;
+/** The numbers both renderers draw v.beams with this frame (into v._bm), or null when there's no light to use. */
+function beamsFrame(v) {
+  const b = v.beams, L = b?.light || v.sun; if (!b || !L || !(L.isDirectionalLight || L.isSpotLight)) return null;
+  const m = v._bm ||= { lDir: new Vector3(), lPos: new Vector3(), lt: new Vector4(), tint: new Color(), shadowM: null, map: null, density: 0, far: 0, g: 0, steps: 24 };
+  L.updateMatrixWorld(); L.target.updateMatrixWorld();
+  L.getWorldPosition(m.lPos); L.target.getWorldPosition(m.lDir); m.lDir.sub(m.lPos).normalize();
+  const spot = !!L.isSpotLight, a = spot ? L.angle : 0;
+  m.lt.set(spot ? 1 : 0, Math.cos(a), Math.cos(a * (1 - (L.penumbra || 0)) * .999), spot ? L.distance || 20 : 1);
+  m.map = L.castShadow && L.shadow?.map?.depthTexture || null; m.shadowM = L.shadow.matrix;   // (the light's own: the renderer updates it when it redraws the map this frame)
+  m.tint.copy(L.color).multiplyScalar(Math.max(0, b.strength ?? 1));
+  m.density = Math.max(0, b.density ?? .02); m.far = Math.max(1, b.far ?? 60); m.g = Math.min(.9, Math.max(0, b.glow ?? .5)); m.steps = Math.round(Math.min(VOL_MAX, Math.max(4, b.steps ?? 24)));
+  return m;
+}
+class BeamsPass extends Pass {
+  constructor() {
+    super(); this.needsSwap = true; this.a = null;
+    this.vol = qmat(VOL, { tDepth: { value: null }, tShadow: { value: null }, shadowM: { value: new Matrix4() }, invProj: { value: new Matrix4() }, camWorld: { value: new Matrix4() },
+      camPos: { value: new Vector3() }, lDir: { value: new Vector3() }, lPos: { value: new Vector3() }, lt: { value: new Vector4() }, density: { value: 0 }, far: { value: 60 }, g: { value: .5 }, hasShadow: { value: 0 }, steps: { value: 24 } });
+    this.add = qmat(VOL_ADD, { tDiffuse: { value: null }, tVol: { value: null }, vpx: { value: new Vector2() }, tint: { value: new Color() } });
+    this.quad = new FullScreenQuad(null);
+  }
+  setSize(w, h) {
+    const bw = Math.max(8, Math.round(w / 2)), bh = Math.max(8, Math.round(h / 2));
+    if (this.a?.width === bw && this.a?.height === bh) return;
+    this.a?.dispose(); this.a = new WebGLRenderTarget(bw, bh, { type: HalfFloatType, depthBuffer: false, minFilter: LinearFilter, magFilter: LinearFilter });
+  }
+  /** m: beamsFrame(); depth: the camera's depth picture; cam: the camera. */
+  aim(m, depth, cam) {
+    const u = this.vol.uniforms;
+    u.tDepth.value = depth; u.tShadow.value = m.map; u.hasShadow.value = m.map ? 1 : 0; u.shadowM.value = m.shadowM;
+    u.invProj.value.copy(cam.projectionMatrixInverse); u.camWorld.value.copy(cam.matrixWorld); cam.getWorldPosition(u.camPos.value);
+    u.lDir.value.copy(m.lDir); u.lPos.value.copy(m.lPos); u.lt.value.copy(m.lt); u.density.value = m.density; u.far.value = m.far; u.g.value = m.g; u.steps.value = m.steps;
+    this.add.uniforms.tint.value.copy(m.tint);
+  }
+  render(r, writeBuffer, readBuffer) {
+    this.quad.material = this.vol; r.setRenderTarget(this.a); this.quad.render(r);
+    const u = this.add.uniforms; u.tDiffuse.value = readBuffer.texture; u.tVol.value = this.a.texture; u.vpx.value.set(1 / this.a.width, 1 / this.a.height);
+    this.quad.material = this.add; r.setRenderTarget(this.renderToScreen ? null : writeBuffer); this.quad.render(r);
+  }
+  dispose() { this.a?.dispose(); this.vol.dispose(); this.add.dispose(); this.quad.dispose(); }
+}
+
+// Motion blur (v.motionBlur = { amount, max, sharp }): each pixel is smeared along how far it moved on
+// screen since the last frame as the camera turned and moved, found from its depth and the camera's
+// last frame (so the world blurs in a fast turn or at speed). amount: how much of that move (0.5 = a
+// half-frame shutter); max: the longest smear, as a part of the screen's width; sharp: things nearer
+// than this many metres stay sharp (the car or hands the camera carries move with it). Camera motion
+// only, the same on WebGL and WebGPU (things moving by themselves don't blur: that needs each object's
+// own motion, which WebGL doesn't draw). High and ultra (it reads the ambient occlusion's depth).
+const MB_N = 8;
+const MB = `uniform sampler2D tDiffuse, tDepth; uniform mat4 invProj, camWorld, prevVP; uniform vec4 mb; uniform vec2 px; varying vec2 vUv;
+  // mb: amount, max (screen widths), sharp (metres), aspect
+  void main(){ vec3 base = texture2D(tDiffuse, vUv).rgb; float d = texture2D(tDepth, vUv).x;
+    vec4 v = invProj * vec4(vUv * 2. - 1., d * 2. - 1., 1.); v /= v.w;
+    vec4 pc = prevVP * (camWorld * vec4(v.xyz, 1.)); vec2 pu = pc.xy / max(pc.w, 1e-4) * .5 + .5;
+    vec2 vel = (vUv - pu) * mb.x; vec2 vs = vel * vec2(mb.w, 1.); float l = length(vs), mx = mb.y * mb.w;
+    if (pc.w <= 0.) vel = vec2(0.); else if (l > mx) vel *= mx / l;
+    vel *= d >= 1. ? 1. : smoothstep(mb.z, mb.z * 1.5 + .01, -v.z);
+    if (length(vel / px) < .75) { gl_FragColor = vec4(base, 1.); return; }
+    vec3 sum = vec3(0.);
+    for (int i = 0; i < ${MB_N}; i++) sum += texture2D(tDiffuse, vUv + vel * (float(i) / ${MB_N - 1}. - .5)).rgb;
+    gl_FragColor = vec4(sum / ${MB_N}., 1.); }`;
+/** The numbers both renderers blur with this frame (into v._mbm): call once per frame before drawing. cut: the camera jumped. */
+function blurFrame(v, cut) {
+  const b = v.motionBlur, cam = v.cam, m = v._mbm ||= { prev: new Matrix4(), cur: new Matrix4(), prevVP: new Matrix4(), has: false, mb: new Vector4() };
+  cam.updateMatrixWorld(); m.cur.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+  m.prevVP.copy(m.has && !cut ? m.prev : m.cur); m.prev.copy(m.cur); m.has = true;
+  if (!b) return null;
+  m.mb.set(Math.max(0, b.amount ?? .5), Math.max(0, b.max ?? .04), Math.max(0, b.sharp ?? 0), v.W / v.H);
+  return m;
+}
+class BlurPass extends Pass {
+  constructor() {
+    super(); this.needsSwap = true;
+    this.mat = qmat(MB, { tDiffuse: { value: null }, tDepth: { value: null }, invProj: { value: new Matrix4() }, camWorld: { value: new Matrix4() }, prevVP: { value: new Matrix4() }, mb: { value: new Vector4() }, px: { value: new Vector2() } });
+    this.quad = new FullScreenQuad(this.mat);
+  }
+  aim(m, depth, cam) { const u = this.mat.uniforms; u.tDepth.value = depth; u.invProj.value.copy(cam.projectionMatrixInverse); u.camWorld.value.copy(cam.matrixWorld); u.prevVP.value.copy(m.prevVP); u.mb.value.copy(m.mb); }
+  render(r, writeBuffer, readBuffer) {
+    const u = this.mat.uniforms; u.tDiffuse.value = readBuffer.texture; u.px.value.set(1 / readBuffer.width, 1 / readBuffer.height);
+    r.setRenderTarget(this.renderToScreen ? null : writeBuffer); this.quad.render(r);
+  }
+  dispose() { this.mat.dispose(); this.quad.dispose(); }
+}
+
 // Ambient occlusion and reflections draw their own depth + normals picture of the scene with one
 // plain material, so anything see-through came out as a solid wall: Suit Ops' light shafts (and any
 // glow, blob shadow, rotor blur or contact-shadow plane) became dark bands fixed to the camera, and
@@ -849,7 +968,7 @@ export class HDView {
     this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
-    this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null;
+    this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null; this.beams = null; this.motionBlur = null;
     this.upscaler = undefined;   // 'sgsr1' keeps this view on Snapdragon GSR 1 (lots of fast movers: SGSR 2 can leave a short soft trail)
   }
   /**
@@ -1341,6 +1460,10 @@ export class HDView {
     this._dofUsed ||= !!this.focus; this._shaftsUsed ||= this.shafts > 0;
     o.dofOn = this._dofUsed && T.ao > 0; o.shaftsOn = this._shaftsUsed && T.shadow > 0;
     if (o.dofOn && this.focus) { const f = this.focus; o.lens = [f.at ?? 50, f.range ?? 2, f.depth ?? .5, (f.blur ?? 6) * ph / 640]; }
+    // volumetric light and motion blur: the same tiers as WebGL (high and ultra, and shadows for the light)
+    this._volUsed ||= !!this.beams; this._mbUsed ||= !!this.motionBlur;
+    o.volOn = this._volUsed && T.ao > 0 && T.shadow > 0; o.vol = o.volOn && this.beams ? beamsFrame(this) : null;
+    const mbm = blurFrame(this, lastView !== this || this._cut); o.mbOn = this._mbUsed && T.ao > 0; o.mb = o.mbOn ? mbm : null;
     if (this.glare > 0 || (o.shaftsOn && this.shafts > 0)) {
       const sd = this.sunDir(GV), cam = this.cam; GP.copy(cam.position).addScaledVector(sd, 1000).project(cam);
       cam.getWorldDirection(GW);
@@ -1519,7 +1642,12 @@ export class HDView {
     if (!this.clearBg) {
       const dof = this.focus && T.ao > 0 && P.ao.depthTexture ? (P.dof ||= new DofPass()) : null;
       if (dof) { const f = this.focus, u = dof.mat.uniforms; u.tDepth.value = P.ao.depthTexture; u.cn.value = this.cam.near; u.cf.value = this.cam.far; u.lens.value.set(f.at ?? 50, f.range ?? 2, f.depth ?? .5, (f.blur ?? 6) * ph / 640); }
-      const ex = dof ? [dof, ...(this.extras || [])] : this.extras || [];
+      // volumetric light (v.beams) and motion blur (v.motionBlur): before and after the depth of field
+      const bm = this.beams && T.ao > 0 && T.shadow > 0 && P.ao.depthTexture ? beamsFrame(this) : null;
+      const beams = bm ? (P.beams ||= new BeamsPass()) : null; if (beams) beams.aim(bm, P.ao.depthTexture, this.cam);
+      const mbm = blurFrame(this, lastView !== this || this._cut);
+      const mb = mbm && T.ao > 0 && P.ao.depthTexture ? (P.mb ||= new BlurPass()) : null; if (mb) mb.aim(mbm, P.ao.depthTexture, this.cam);
+      const ex = [beams, dof, mb, ...(this.extras || [])].filter(Boolean);
       const first = ssr ? P.ssr : P.render;
       const sh = P.shafts && P.shafts.amount > 0 ? [P.shafts] : [];
       if (sh.length && (P.shafts.cw !== pw || P.shafts.ch !== ph)) { P.shafts.setSize(pw, ph); P.shafts.cw = pw; P.shafts.ch = ph; }

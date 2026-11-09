@@ -9,14 +9,14 @@
 // scripts/look-compare.cjs --webgpu draws the same scenes both ways and compares them.
 // Kit use only.
 import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Vector4, Color, BackSide, Sprite, Group, InstancedMesh, BufferGeometry, Frustum, Sphere, InstancedBufferAttribute as IBA, SpriteNodeMaterial, InstancedBufferAttribute, AdditiveBlending, NormalBlending,
-  MeshBasicNodeMaterial, NodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, NoToneMapping, ACESFilmicToneMapping, SRGBColorSpace, LinearSRGBColorSpace } from 'three/webgpu';
+  MeshBasicNodeMaterial, NodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, DepthTexture, LessEqualCompare, NoToneMapping, ACESFilmicToneMapping, SRGBColorSpace, LinearSRGBColorSpace } from 'three/webgpu';
 import {
   pass, mrt, output, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
   positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min, materialEmissive, distance,
   attribute, vertexColor, normalWorld, normalViewGeometry, positionLocal, positionGeometry, modelWorldMatrix, modelWorldMatrixInverse,
   materialColor, materialOpacity, materialRoughness, cos, floor, step, fwidth, dFdx, dFdy, normalize, uniformArray, Loop, int, If, sqrt,
-  modelViewProjection, acos, getParallaxCorrectNormal,
+  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break,
 } from 'three/tsl';
 import { LightProbeGrid } from 'three/examples/jsm/lighting/LightProbeGrid.js';
 export { LightProbeGrid };
@@ -604,6 +604,9 @@ function sgsr2Gpu(fin, depthT) {
   };
 }
 
+// volumetric light's stand-in shadow map while the light has none (its numbers say so: never read)
+const NO_SHADOW = new DepthTexture(1, 1); NO_SHADOW.compareFunction = LessEqualCompare;
+const VOL_MAX = 48, MB_N = 8;   // (hd3d.js VOL_MAX and MB_N)
 export class GpuChain {
   constructor(r, scene, cam, clear) {
     Object.assign(this, { r, scene, cam, clear, key: '' });
@@ -621,16 +624,23 @@ export class GpuChain {
       // frame generation's last touches: the grain's own clock and size (touches())
       gt: uniform(0), gk: uniform(1),
     };
+    // volumetric light and motion blur (hd3d.js VOL and MB: the same numbers, from beamsFrame and blurFrame)
+    this.V = {
+      shM: uniform(new Matrix4()), invProj: uniform(new Matrix4()), camWorld: uniform(new Matrix4()), camPos: uniform(new Vector3()),
+      lDir: uniform(new Vector3(0, -1, 0)), lPos: uniform(new Vector3()), lt: uniform(new Vector4()), k: uniform(new Vector4()), steps: uniform(24), tint: uniform(new Color(0, 0, 0)),
+      prevVP: uniform(new Matrix4()), mb: uniform(new Vector4()),
+    };
     this.bloomN = null; this.aoN = null;
     // frame generation (framegen.js): the generator, what the next refresh between real frames does, and how often that refresh didn't come
     this.fg = null; this.pend = null; this.fgMode = null; this.fgWin = { real: 0, missed: 0 };
   }
-  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, fg = false, s1 = false) {
-    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${fg}|${s1}`;
+  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, fg = false, s1 = false, volOn = false, mbOn = false) {
+    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${fg}|${s1}|${volOn}|${mbOn}`;
     if (key === this.key) return;
     this.key = key; this.fg?.reset(); this.pend = null;
     this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose(); this.s2?.dispose(); this.s1?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose();
-    this.aoN = this.dnN = this.bloomN = this.s2 = this.s1 = this.dofT = this.shM = this.shB = null;
+    for (const t of [this.volT, this.baseT, this.mbT]) t?.renderTarget?.dispose();
+    this.aoN = this.dnN = this.bloomN = this.s2 = this.s1 = this.dofT = this.shM = this.shB = this.volT = this.baseT = this.mbT = null;
     const sp = this.sp = pass(this.scene, this.cam, { samples: msaa || 0 });
     // frame generation: the scene's pass also writes each pixel's motion and where see-through things are
     if (fg && this.clear) sp.setMRT(frameGenMRT());
@@ -655,27 +665,72 @@ export class GpuChain {
       this.dnN = denoise(this.aoN.getTextureNode(), sp.getTextureNode('depth'), sp.getTextureNode('normal'), this.cam);
       aoF = mix(float(1), this.dnN.r, sp.getTextureNode('normal').a.mul(.9)); lit = lit.mul(aoF);
     }
+    let src = colT, srcAo = aoF;
+    const V = this.V, dT = sp.getTextureNode('depth');
+    // volumetric light (v.beams; hd3d.js VOL): the lit air along each view ray at half size, softened and added on
+    if (volOn) {
+      const shT = this.volShadow = texture(NO_SHADOW);
+      this.volT = rtt(Fn(() => {
+        const q = uv(), d = dT.sample(q).r, vp = getViewPosition(q, d, V.invProj), wp = V.camWorld.mul(vec4(vp, 1)).xyz;
+        const rd0 = wp.sub(V.camPos), L0 = length(rd0), rd = rd0.div(max(L0, 1e-4)).toConst();
+        const L = select(d.greaterThanEqual(1), V.k.y, min(L0, V.k.y)).toConst(), dt = L.div(V.steps).toConst();
+        const t = dt.mul(interleavedGradientNoise(screenCoordinate)).toVar(), sum = float(0).toVar(), g = V.k.z, spot = V.lt.x.greaterThan(.5);
+        Loop({ start: 0, end: VOL_MAX }, ({ i }) => {
+          If(float(i).greaterThanEqual(V.steps), () => { Break(); });
+          const p = V.camPos.add(rd.mul(t)), s4 = V.shM.mul(vec4(p, 1)), sc = s4.xyz.div(s4.w);
+          const inside = s4.w.greaterThan(0).and(sc.x.greaterThanEqual(0)).and(sc.x.lessThanEqual(1)).and(sc.y.greaterThanEqual(0)).and(sc.y.lessThanEqual(1)).and(sc.z.greaterThanEqual(0)).and(sc.z.lessThanEqual(1));
+          const sh = shT.sample(vec2(sc.x, sc.y.oneMinus())).compare(sc.z).r;
+          const q0 = p.sub(V.lPos), dl = length(q0), qn = q0.div(max(dl, 1e-4));
+          const cone = smoothstep(V.lt.y, V.lt.z, dot(qn, V.lDir)).div(dl.mul(dl).div(V.lt.w.mul(V.lt.w)).add(1));
+          const lit = select(inside.and(V.k.w.greaterThan(.5)), sh, float(1)).mul(select(spot, cone, float(1)));
+          const c = dot(rd, select(spot, qn.negate(), V.lDir.negate()));
+          sum.addAssign(lit.mul(g.mul(g).oneMinus()).div(pow(g.mul(g).add(1).sub(g.mul(2).mul(c)), 1.5)).mul(.25)); t.addAssign(dt);
+        });
+        return vec4(exp(V.k.x.negate().mul(L).mul(sum).div(V.steps)).oneMinus(), 0, 0, 1);
+      })(), 1, 1, { depthBuffer: false, type: HalfFloatType });
+      const volT = this.volT, vpx = this.volPx = uniform(new Vector2(1, 1));
+      this.baseT = rtt(Fn(() => {
+        const q = uv(), a = volT.sample(q.add(vpx.mul(vec2(-1, -1)))).r.add(volT.sample(q.add(vpx.mul(vec2(1, -1)))).r)
+          .add(volT.sample(q.add(vpx.mul(vec2(-1, 1)))).r).add(volT.sample(q.add(vpx.mul(vec2(1, 1)))).r);
+        return vec4(colT.sample(q).rgb.mul(aoF).add(V.tint.mul(a.mul(.25))), 1);
+      })(), 1, 1, { depthBuffer: false, type: HalfFloatType });
+      src = this.baseT; srcAo = float(1);
+    }
     // depth of field (v.focus; the views turn it on once they use it, so focusing doesn't rebuild the
     // chain): what's in focus stays, the rest is blurred by up to lens.w pixels, into a picture of its own
-    let src = colT, srcAo = aoF;
     if (dofOn) {
-      const dT = sp.getTextureNode('depth'), cn = U.cn, cf = U.cf, L = U.lens;
+      const cn = U.cn, cf = U.cf, L = U.lens, S = src, SA = srcAo;
       const dist = q => { const z = dT.sample(q).x; return select(z.greaterThanEqual(1), float(0), cn.mul(cf).div(cf.sub(z.mul(cf.sub(cn))))); };
       const coc = z => select(z.lessThanEqual(0), float(0), clamp(abs(z.sub(L.x)).sub(L.y).div(max(L.x.mul(L.z), 1e-3)), 0, 1));
       const dof = Fn(() => {
-        const q = uv(), base = colT.sample(q).rgb, z = dist(q), c = coc(z), out = vec3(base).toVar();
+        const q = uv(), base = S.sample(q).rgb, z = dist(q), c = coc(z), out = vec3(base).toVar();
         If(c.mul(L.w).greaterThanEqual(.5), () => {
           const sum = vec3(base).toVar(), ws = float(1).toVar();
           for (let i = 1; i < 16; i++) {
             const r = Math.sqrt(i / 15), a = i * 2.39996, o = vec2(Math.cos(a) * r, Math.sin(a) * r).mul(c.mul(L.w)).mul(U.px);
             const zs = dist(q.add(o)), w = select(zs.greaterThan(0).and(zs.lessThan(z)), coc(zs), float(1));   // a sharp thing in front doesn't smear over a soft background
-            sum.addAssign(colT.sample(q.add(o)).rgb.mul(w)); ws.addAssign(w);
+            sum.addAssign(S.sample(q.add(o)).rgb.mul(w)); ws.addAssign(w);
           }
           out.assign(sum.div(ws));
         });
-        return vec4(out.mul(aoF), 1);
+        return vec4(out.mul(SA), 1);
       })();
       this.dofT = rtt(dof, 1, 1, { depthBuffer: false, type: HalfFloatType }); src = this.dofT; srcAo = float(1);
+    }
+    // motion blur (v.motionBlur; hd3d.js MB): each pixel smeared along its move on screen as the camera moved
+    if (mbOn) {
+      const S = src, SA = srcAo, mb = V.mb;
+      this.mbT = rtt(Fn(() => {
+        const q = uv(), base = S.sample(q).rgb.mul(SA), d = dT.sample(q).r, vp = getViewPosition(q, d, V.invProj);
+        const pc = V.prevVP.mul(V.camWorld.mul(vec4(vp, 1))), pn = pc.xy.div(max(pc.w, 1e-4)), pu = vec2(pn.x.mul(.5).add(.5), pn.y.mul(-.5).add(.5));
+        const v0 = q.sub(pu).mul(mb.x), l = length(v0.mul(vec2(mb.w, 1))), mx = mb.y.mul(mb.w);
+        const v1 = select(l.greaterThan(mx), v0.mul(mx.div(max(l, 1e-6))), v0).mul(select(d.greaterThanEqual(1), float(1), smoothstep(mb.z, mb.z.mul(1.5).add(.01), vp.z.negate())));
+        const vel = select(pc.w.lessThanEqual(0), vec2(0), v1);
+        let sum = vec3(0);
+        for (let i = 0; i < MB_N; i++) sum = sum.add(S.sample(q.add(vel.mul(i / (MB_N - 1) - .5))).rgb);
+        return vec4(select(length(vel.div(U.px)).lessThan(.75), base, sum.mul(SA).div(MB_N)), 1);
+      })(), 1, 1, { depthBuffer: false, type: HalfFloatType });
+      src = this.mbT; srcAo = float(1);
     }
     // sun shafts (v.shafts): the bright sky near the sun at quarter size, smeared towards the sun, added on top
     let shafts = vec3(0);
@@ -733,7 +788,7 @@ export class GpuChain {
     // o.s2: SGSR 2's frame numbers (sgsr2.js SgsrFrame): the scene and effects at o.w x o.h, upscaled to o.fw x o.fh;
     // o.s1: the same sizes, upscaled by SGSR 1
     const f = !this.clear && o.s2 ? o.s2 : null, s1 = !f && !!o.s1, fg = o.fg || null;
-    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, !!fg, s1);
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, !!fg, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn);
     if (!fg) { this.pend = null; this.fgMode = null; }
     if (this.s1) this.s1.size(o.w, o.h);
     // the passes size themselves from the canvas: upscaled, the canvas is the screen's size, so scale them down
@@ -749,6 +804,17 @@ export class GpuChain {
       U.glare.value = o.glare; U.sunUV.value.set(o.sunUV.x, 1 - o.sunUV.y); U.sunCol.value.copy(o.sunCol); U.aspect.value = o.aspect;
       U.px.value.set(1 / o.w, 1 / o.h);
       if (this.dofT) { this.dofT.setSize(o.w, o.h); const L = o.lens; U.lens.value.set(L ? L[0] : 0, L ? L[1] : 0, L ? L[2] : 0, L ? L[3] : 0); U.cn.value = o.near; U.cf.value = o.far; }
+      const V = this.V, cam = this.cam;
+      if (this.volT || this.mbT) { V.invProj.value.copy(cam.projectionMatrixInverse); V.camWorld.value.copy(cam.matrixWorld); }
+      if (this.volT) {
+        const m = o.vol; this.volT.setSize(Math.max(8, Math.round(o.w / 2)), Math.max(8, Math.round(o.h / 2))); this.baseT.setSize(o.w, o.h);
+        this.volPx.value.set(1 / this.volT.renderTarget.width, 1 / this.volT.renderTarget.height);
+        if (m) {
+          this.volShadow.value = m.map || NO_SHADOW; if (m.shadowM) V.shM.value = m.shadowM; cam.getWorldPosition(V.camPos.value);
+          V.lDir.value.copy(m.lDir); V.lPos.value.copy(m.lPos); V.lt.value.copy(m.lt); V.k.value.set(m.density, m.far, m.g, m.map ? 1 : 0); V.steps.value = m.steps; V.tint.value.copy(m.tint);
+        } else { V.tint.value.setRGB(0, 0, 0); V.steps.value = 1; }
+      }
+      if (this.mbT) { this.mbT.setSize(o.w, o.h); const m = o.mb; if (m) { V.prevVP.value.copy(m.prevVP); V.mb.value.copy(m.mb); } else V.mb.value.set(0, 0, 0, 1); }
       if (this.shM) { const bw = Math.max(8, Math.round(o.w / 4)), bh = Math.max(8, Math.round(o.h / 4)); this.shM.setSize(bw, bh); this.shB.setSize(bw, bh); U.shaft.value = o.shaft || 0; if (o.shaftCol) U.shaftTint.value.copy(o.shaftCol);
         const t = Math.max(1.1, o.shaftAt ?? 1.1), lit = t > 1.1; U.shThr.value = t; U.shHi.value = lit ? t * 1.2 : t * 2.2; U.shCap.value = lit ? t * 1.2 : 1e9; U.shGain.value = 1.1 / t; }
     }
@@ -813,7 +879,7 @@ export class GpuChain {
     try { r.setRenderTarget(null); this.showQ.render(r); } finally { r.toneMapping = tm; r.outputColorSpace = cs; }
   }
   dispose() {
-    this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose?.(); this.s2?.dispose(); this.s1?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose(); this.pp.dispose?.();
+    this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose?.(); this.s2?.dispose(); this.s1?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose(); for (const t of [this.volT, this.baseT, this.mbT]) t?.renderTarget?.dispose(); this.pp.dispose?.();
     this.fg?.dispose(); this.fgRT?.dispose(); this.showQ?.material.dispose(); this.fg = this.fgRT = this.showQ = null; this.pend = null;
   }
 }
