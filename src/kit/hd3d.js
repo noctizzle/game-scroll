@@ -88,6 +88,8 @@ const START = { top: 3, mid: 2, low: 1 };
 // fps a struggling game first gives up a little resolution, then drops to 60 fps at full resolution
 // (keeping the picture); at the lowest tier and resolution it can drop to 30.
 const LEVELS = [1, .85, .7, .55];
+// Most pixels in the final picture once a game has stepped down (about a phone screen's worth; see draw()).
+const OUT_PX = 2.4e6;
 // A climb that turns out too slow again soon after doubles how long the step it fell back to holds
 // (30 s, 1, 2, 4 min), so a game that's on the edge doesn't keep stuttering every half a minute.
 const HOLD = 30000, HOLD_MAX = 240000;
@@ -595,7 +597,7 @@ export function pbr(col = '#ffffff', { rough = .6, metal = 0, glow = 0, glowCol,
  */
 export function surface(size, paint, { strength = 2.5 } = {}) {
   const mk = () => { const c = document.createElement('canvas'); c.width = c.height = size; return c; };
-  const C = mk(), Hc = mk(), Rc = mk(), g = { col: C.getContext('2d'), h: Hc.getContext('2d'), r: Rc.getContext('2d'), size };
+  const C = mk(), Hc = mk(), Rc = mk(), g = { col: C.getContext('2d'), h: Hc.getContext('2d', { willReadFrequently: true }), r: Rc.getContext('2d'), size };
   g.h.fillStyle = '#808080'; g.h.fillRect(0, 0, size, size); g.r.fillStyle = '#999'; g.r.fillRect(0, 0, size, size);
   paint(g);
   // height -> tangent-space normal map (wrapping Sobel)
@@ -1573,7 +1575,13 @@ export class HDView {
     }
     const T = tier();
     if (this.tierSeen !== HD.tier) { this.tierSeen = HD.tier; this.tierFn?.(T); }
-    const fw = c.canvas.width, fh = c.canvas.height; let pw = fw, ph = fh; const px = baking === 'small' ? Math.min(T.px, PIC_PX) : T.px, q = HD.scale ?? Math.min(1, Math.sqrt(px / (pw * ph))) * HD.res;
+    // The final picture (upscaler, last effects, the copy onto the card) is the screen's own size. On a big
+    // screen (a foldable opened up) that's twice a phone's pixels and the resolution steps can't lighten it,
+    // so once the game has had to step down (Q.lvl >= 1), it's also drawn at no more than OUT_PX and the
+    // screen stretches it. A game keeping up is never touched.
+    let fw = c.canvas.width, fh = c.canvas.height;
+    if (!baking && !off && HD.scale == null && Q.force == null && Q.lvl >= 1 && fw * fh > OUT_PX) { const k = Math.sqrt(OUT_PX / (fw * fh)); fw = Math.round(fw * k); fh = Math.round(fh * k); }
+    let pw = fw, ph = fh; const px = baking === 'small' ? Math.min(T.px, PIC_PX) : T.px, q = HD.scale ?? Math.min(1, Math.sqrt(px / (pw * ph))) * HD.res;
     pw = Math.max(16, Math.round(pw * q)); ph = Math.max(16, Math.round(ph * q));
     // The 3D is drawn at pw x ph (fewer pixels on big screens and when the phone struggles). Below the
     // screen's size, Snapdragon GSR 2 (sgsr2.js, temporal: jitters the camera and builds on the frames

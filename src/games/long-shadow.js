@@ -165,7 +165,7 @@ const CELLS = { clump: [0, 0], bough: [1, 0], oak: [2, 0], poplar: [3, 0], fir: 
 const cellUV = (k, x0 = 0, y0 = 0, x1 = 1, y1 = 1) => { const [cx, cy] = CELLS[k]; return [(cx + x0) / 4, (cy + y0) / 2, (cx + x1) / 4, (cy + y1) / 2]; };
 function treeAtlas() {
   const W2 = 1024, H2 = 512, cv = document.createElement('canvas'); cv.width = W2; cv.height = H2;
-  const g = cv.getContext('2d'), R = rng(77);
+  const g = cv.getContext('2d', { willReadFrequently: true }), R = rng(77);
   const hsl = (h, s, l) => `hsl(${h},${s}%,${l}%)`;
   const leaf = (x, y, s, a, col) => { g.save(); g.translate(x, y); g.rotate(a); g.fillStyle = col; g.beginPath(); g.ellipse(0, 0, s, s * .5, 0, 0, TAU); g.fill(); g.restore(); };
   // leaves in an oval, lit from the top left, darker underneath and deep inside
