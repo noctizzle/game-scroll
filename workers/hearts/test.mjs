@@ -190,8 +190,8 @@ async function fakeAssertion(leafKeys, challenge, counter, app = appId) {
     assert.equal(init.headers.Authorization, 'Bearer at');
     return new Response(JSON.stringify({ tokenPayloadExternal: payload }));
   };
-  const base = ch => ({ requestDetails: { requestPackageName: 'com.gamescroll.app', nonce: ch, timestampMillis: String(Date.now()) },
-    appIntegrity: { appRecognitionVerdict: 'PLAY_RECOGNIZED', packageName: 'com.gamescroll.app' },
+  const base = ch => ({ requestDetails: { requestPackageName: 'com.game_scroll.app', nonce: ch, timestampMillis: String(Date.now()) },
+    appIntegrity: { appRecognitionVerdict: 'PLAY_RECOGNIZED', packageName: 'com.game_scroll.app' },
     deviceIntegrity: { deviceRecognitionVerdict: ['MEETS_DEVICE_INTEGRITY'] } });
   _reset();
   payload = base('n1');

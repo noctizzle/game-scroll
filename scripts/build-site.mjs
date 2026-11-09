@@ -8,7 +8,7 @@
 //
 // Store links: fill these in once the app is live; while empty the buttons say "Coming soon".
 const APP_STORE_URL = '';   // e.g. https://apps.apple.com/app/id0000000000
-const PLAY_STORE_URL = '';  // e.g. https://play.google.com/store/apps/details?id=com.gamescroll.app
+const PLAY_STORE_URL = '';  // e.g. https://play.google.com/store/apps/details?id=com.game_scroll.app
 
 import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
