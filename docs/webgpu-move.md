@@ -5,8 +5,8 @@ Game Scroll's 3D (Classic Console, Next Gen, AR) draws with three.js's WebGL ren
 and TSL node shaders) for top phones that support it, checked against WebGL game by game, then the
 default where it's supported, with WebGL kept for older phones.
 
-**Where it is now (stage 1):** Settings › Graphics (test) has a "Use WebGPU for 3D games" switch, shown
-on top-end phones that offer WebGPU (off by default). With it on, Next Gen and AR views draw on WebGPU
+**Where it is now (stage 3, 2026-11-09):** there is no setting. On any device that offers WebGPU, Next
+Gen and AR views draw on WebGPU
 whenever everything in the view has a WebGPU version, and quietly stay on WebGL otherwise (checked every
 frame, so a game that adds an unported effect mid-round moves back before it draws). Classic Console
 stays on WebGL for now.

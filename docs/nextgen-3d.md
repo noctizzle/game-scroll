@@ -229,10 +229,10 @@ s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
 - `gs.hd.noiseTex()` is a shared 256 x 256 tiling noise texture (four sizes of noise in r, g, b and a)
   for your own shaders: clouds, water, grass, dirt.
 
-## WebGPU (test)
+## WebGPU
 
-On top phones, Settings › Graphics (test) › "Use WebGPU for 3D games" draws Next Gen and AR views
-with three's WebGPU renderer instead of WebGL. Nothing changes in a game: a view that uses a part not
+On any device that offers WebGPU, Next Gen and AR views draw with three's WebGPU renderer; everywhere
+else they use WebGL. There is no setting. Nothing changes in a game: a view that uses a part not
 ported yet (see `docs/webgpu-move.md`) stays on WebGL by itself. `node scripts/gpu-games.cjs <id>`
 plays a game on both and says which it drew on. Everything in Long Shadow (outdoor looks, sky, shafts,
 focus, cascades, Props trees) and Deep Pressure has a WebGPU version.
@@ -248,7 +248,7 @@ the background round them. The method follows AMD FSR 3's frame interpolation (M
 SGSR 2's camera jitter back out of the motion, and costs a few milliseconds of compute instead of a
 whole extra frame.
 
-- **When:** Settings › Graphics (test). Auto (the default) makes frames only for a game that can't
+- **When:** Settings › Frame generation (on devices with WebGPU). Auto (the default) makes frames only for a game that can't
   reach the screen's rate (the 3D kit stepped it down to 60); Always draws half the frames of every 3D
   game and makes the rest (cooler, more detail per real frame); Off. A pinned frame rate turns it off.
   If the refreshes in between keep not arriving (the phone is too busy), it switches itself off for

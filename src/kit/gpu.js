@@ -1,12 +1,11 @@
-// One place that talks to the graphics chip: its name, whether it has WebGPU, the player's WebGPU
-// pick, and frame copies and pixel reads that work on both. Classic Console (toon3d.js), Next Gen and
-// AR (hd3d.js), the speed check (speed.js) and Settings all come here, so the move to WebGPU
-// (docs/webgpu-move.md) changes this file instead of every kit. With WebGPU switched on (Settings ›
-// Graphics, top phones that have it), prepareGPU() makes the one WebGPURenderer that Next Gen views
-// draw with when everything in them has a WebGPU version (hd3d.js); renderer.js makes the WebGL ones.
+// One place that talks to the graphics chip: its name, whether it has WebGPU, the shared WebGPU
+// renderer, and frame copies and pixel reads that work on both. Classic Console (toon3d.js), Next Gen and
+// AR (hd3d.js) and the speed check (speed.js) all come here, so the move to WebGPU (docs/webgpu-move.md)
+// changes this file instead of every kit. On any device that offers WebGPU, prepareGPU() makes the one
+// WebGPURenderer that Next Gen and AR views draw with when everything in them has a WebGPU version
+// (hd3d.js); renderer.js makes the WebGL ones, used everywhere else.
 // No three.js here (the app loads it only with the first 3D game): three's WebGPU build is a dynamic import.
 // Not for games: they get 3D through gs.toon, gs.hd and gs.ar.
-import { store } from '../util.js';
 
 /** 'webgl' or 'webgpu' for a renderer from makeRenderer or webgpu(). */
 export const backend = r => r?.gsBackend || 'webgl';
@@ -54,17 +53,19 @@ export function readPixels(r, target, x, y, w, h, buf = new Uint8Array(w * h * 4
   return Promise.resolve(buf);
 }
 
-/* ---------- WebGPU (the player's choice, off by default) ---------- */
-const PICK_KEY = 'gs.gpu';
-let pick = store.get(PICK_KEY, 'webgl') === 'webgpu' ? 'webgpu' : 'webgl';
-/** The player's pick: 'webgl' (default) or 'webgpu'. */
+/* ---------- WebGPU: always, where the device has it ---------- */
+// Rob (2026-11-09): no setting; 3D games use WebGPU whenever the device supports it and WebGL otherwise.
+// setGpuPick stays for tests and the look-compare / gpu-games scripts (they draw each backend in turn);
+// it isn't saved.
+let pick = 'webgpu';
+/** 'webgpu' (the default: used where the device has it) or 'webgl' (tests only). */
 export const gpuPick = () => pick;
-/** Sets the pick; turning WebGPU on gets it ready in the background (3D views switch over once it is). */
-export function setGpuPick(v) { pick = v === 'webgpu' ? 'webgpu' : 'webgl'; store.set(PICK_KEY, pick); if (pick === 'webgpu') prepareGPU(); }
+/** Tests only: draw with WebGL ('webgl') or WebGPU where there is one ('webgpu'). */
+export function setGpuPick(v) { pick = v === 'webgl' ? 'webgl' : 'webgpu'; if (pick === 'webgpu') prepareGPU(); }
 
 let gpu = null, gpuLoad = null;
 /**
- * Gets WebGPU ready if the player picked it and the device has it: loads three's WebGPU build and the
+ * Gets WebGPU ready if the device has it: loads three's WebGPU build and the
  * Next Gen WebGPU effects (hd3d-gpu.js), and makes the shared WebGPURenderer. Never rejects; resolves
  * to the same thing webgpu() returns. The app calls it while loading the 3D parts.
  */
@@ -84,7 +85,7 @@ export function prepareGPU() {
     } catch (e) { console.warn('WebGPU did not start:', e); gpuLoad = null; return null; }
   })();
 }
-/** The ready WebGPU setup { r (WebGPURenderer), W (three/webgpu), fx (hd3d-gpu.js) }, or null (not picked, not supported, not ready). */
+/** The ready WebGPU setup { r (WebGPURenderer), W (three/webgpu), fx (hd3d-gpu.js) }, or null (not supported, not ready, or WebGL forced for a test). */
 export const webgpu = () => pick === 'webgpu' ? gpu : null;
 
 /* ---------- compute only (no drawing): gs.ai Swarm and other number crunching ---------- */
