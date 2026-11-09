@@ -42,6 +42,8 @@
 //   gs.battle    turn-based battles: fighters, moves, types, status effects, items (Bag), XP and loot
 //   gs.gen       levels made by code: dungeons, caves, mazes, islands, heightmaps, tile patterns, field of view
 //   gs.drag      drag, drop and snap pieces into slots; reorderable lists
+//   gs.history   undo and redo: each step of the round, back and forward, undos counted
+//   gs.items     inventories (slots, stacks, equip slots, sort) and crafting (recipes, what's missing, timed making)
 //   gs.idle      idle maths: rising prices, affordable counts, short big numbers, Earner (and api.away())
 //   gs.party     pass-and-play turns with a hand-over screen, and split-screen halves for two to four
 //   gs.rhythm    a beat clock in step with the music, note charts, Perfect/Good/Miss, tap-lag calibration
@@ -119,6 +121,8 @@ import * as battle from './kit/battle.js';
 import * as gen from './kit/gen.js';
 import * as drag from './kit/drag.js';
 import * as idle from './kit/idle.js';
+import * as history from './kit/history.js';
+import * as items from './kit/items.js';
 import * as party from './kit/party.js';
 import * as rhythm from './kit/rhythm.js';
 import * as strokes from './kit/strokes.js';
@@ -256,6 +260,8 @@ const core = {
   gen: pick('gen', gen),
   drag: pick('drag', drag),
   idle: pick('idle', idle),
+  history: pick('history', history),
+  items: pick('items', items),
   party: pick('party', party),
   rhythm: pick('rhythm', rhythm),
   strokes: pick('strokes', strokes),

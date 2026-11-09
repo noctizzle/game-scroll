@@ -42,6 +42,8 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Turn-based fights, items, XP and loot | `gs.battle` | [Game kits](#game-kits) |
 | Dungeons, caves, mazes, islands, tile patterns | `gs.gen` (rot.js, WaveFunctionCollapse) | [Game kits](#game-kits) |
 | Drag pieces into slots, reorder a list | `gs.drag` | [Game kits](#game-kits) |
+| Undo and redo moves | `gs.history` | [Game kits](#game-kits) |
+| An inventory, crafting recipes | `gs.items` | [Game kits](#game-kits) |
 | Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
 | Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
 | Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
@@ -1189,6 +1191,26 @@ const { level } = proven(s => cave(40, 30, { seed: s }), l => { const n = reach(
 **Drag and drop** (`gs.drag.Drag({ snap, accept })`): add pieces and slots, pass down/move/up through,
 and pieces lift, snap into slots you `accept`, or slide home. With `list: { x, y, axis }` the pieces
 form a row you reorder by dragging.
+
+**Undo and redo** (`gs.history.History(start, { max })`): `push(state, label)` after each change keeps a
+copy; `undo()` and `redo()` hand back a fresh copy of that step (null when there's none). `canUndo`,
+`canRedo`, `undoLabel` for the buttons, `undos` to count them (fewer undos, more stars). Pushes with the
+same `merge` key in a row are one step (a dragged slider); `group(state, label, fn)` makes several one.
+A change after an undo drops the steps ahead. `pack()` / `unpack()` for `api.save`.
+
+```js
+reset() { board = newBoard(); hist = new History(board); }
+tap(x, y) { flip(board, x, y); hist.push(board, 'flip'); }
+undo() { board = hist.undo() ?? board; }
+```
+
+**Inventories and crafting** (`gs.items`): `Inventory(defs, { slots, extra, stack, weight })` is a grid
+of slots holding stacks (`defs[id].stack` most per slot, `kind`, `weight`). `add(id, n)` returns what
+didn't fit; `take`, `count`, `has`; `move(from, to, n)` merges or swaps, and equip slots in `extra`
+(`{ hand: 'tool' }`) only take their kind; `split`, `sort`, `save` / `load`. `Recipes(defs)`:
+`add(id, needs, { makes, keep, at, time })`, then `can(inv)` (what can be made now), `missing(id, inv)`,
+`times`, `uses(item)`, `make(id, inv, station)`. Recipes with `time` are made over seconds by
+`book.timer` (`update(dt)`, `progress(job)`, `on('done')`). gs.battle's `Bag` works as `inv` too.
 
 **Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
 `Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran

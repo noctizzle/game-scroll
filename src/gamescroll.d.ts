@@ -855,6 +855,37 @@ export interface Drag {
   down(x: number, y: number, id?: number): DragThing | null; move(x: number, y: number, id?: number): void; up(x: number, y: number, id?: number): void;
   place(p: DragThing, s: DragThing | null): Drag; update(dt: number): Drag;
 }
+export interface History<S = Loose> {
+  max: number; at: number; undos: number; redos: number; readonly steps: { state: S; label: string }[];
+  readonly canUndo: boolean; readonly canRedo: boolean; readonly undoLabel: string | null; readonly redoLabel: string | null; readonly back: number; readonly ahead: number;
+  on(ev: 'change' | 'undo' | 'redo', fn: (h: History<S>) => void): History<S>;
+  push(state: S, label?: string, o?: { merge?: string | number | null }): History<S>; group(state: S, label: string, fn: () => void): History<S>;
+  undo(n?: number): S | null; redo(n?: number): S | null; now(i?: number): S; restart(): S; clear(state: S): History<S>;
+  pack(keep?: number): Loose; unpack(d: Loose): History<S>;
+}
+export interface HistoryPart { History: new <S = Loose>(start: S, o?: { max?: number }) => History<S> }
+export interface ItemDef { stack?: number; kind?: string; weight?: number; [k: string]: Loose }
+export interface ItemStack { id: string; n: number }
+export interface Inventory {
+  defs: Record<string, ItemDef>; slots: (ItemStack | null)[]; equip: Record<string, ItemStack | null>; extra: Record<string, string>; readonly weight: number; readonly free: number;
+  on(ev: 'add' | 'take' | 'full' | 'move' | 'sort', fn: (...a: Loose[]) => void): Inventory;
+  count(id: string): number; has(id: string, n?: number): boolean; all(): ItemStack[]; add(id: string, n?: number): number; take(id: string, n?: number): boolean;
+  at(where: number | string): ItemStack | null; fits(s: ItemStack | null, where: number | string): boolean; move(from: number | string, to: number | string, n?: number): boolean;
+  split(from: number | string): number; sort(by?: ((a: string, b: string) => number) | null): Inventory; save(): Loose; load(d: Loose): Inventory;
+}
+export interface Recipe { id: string; needs: Record<string, number>; makes: number; keep: string[]; at: string | null; time: number; name: string }
+export interface CraftJob { recipe: Recipe; left: number; inv: Loose }
+export interface Recipes {
+  list: Recipe[];
+  add(id: string, needs: Record<string, number>, o?: { makes?: number; keep?: string[]; at?: string | null; time?: number; name?: string }): Recipes;
+  recipe(id: string, inv?: Loose, at?: string | null): Recipe | null; missing(id: string, inv: Loose, at?: string | null): Record<string, number> | null;
+  can(inv: Loose, at?: string | null): Recipe[]; times(id: string, inv: Loose, at?: string | null): number; uses(item: string): Recipe[]; make(id: string, inv: Loose, at?: string | null): Recipe | null;
+  timer: { jobs: CraftJob[]; on(ev: 'done', fn: (r: Recipe, over: number) => void): Loose; progress(job: CraftJob): number; update(dt: number): void; clear(): void };
+}
+export interface ItemsPart {
+  Inventory: new (defs?: Record<string, ItemDef>, o?: { slots?: number; extra?: Record<string, string>; stack?: number; weight?: number }) => Inventory;
+  Recipes: new (defs?: Record<string, ItemDef>) => Recipes;
+}
 export interface DragPart { Drag: new (o?: { snap?: number; accept?: (piece: DragThing, slot: DragThing) => boolean; lift?: number; speed?: number; list?: { x: number; y: number; gap?: number; axis?: 'x' | 'y' } | null; swap?: boolean }) => Drag }
 
 export interface Earner {
@@ -1379,7 +1410,7 @@ export interface GS {
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
-  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
+  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;

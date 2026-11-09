@@ -705,6 +705,42 @@ console.log('physics ok');
   console.log('drag: reject and home, drop and snap ok');
 }
 {
+  const { History } = await import('../src/kit/history.js');
+  let b = { cells: [0, 0, 0] }; const h = new History(b, { max: 3 });
+  b.cells[0] = 1; h.push(b, 'a'); b.cells[1] = 1; h.push(b, 'b');
+  assert.equal(h.undoLabel, 'b'); b = h.undo(); assert.deepEqual(b.cells, [1, 0, 0], 'undo gives the step before'); b.cells[2] = 9;
+  assert.deepEqual(h.now().cells, [1, 0, 0], 'the copy it gives back is the game\'s own'); b = h.redo(); assert.deepEqual(b.cells, [1, 1, 0], 'redo');
+  h.undo(); b = h.now(); b.cells[2] = 2; h.push(b, 'c'); assert.equal(h.canRedo, false, 'a new change drops what was ahead');
+  for (let i = 0; i < 5; i++) { b.cells[0] = i; h.push(b, 'x' + i); } assert.equal(h.back, 3, 'keeps at most max steps');
+  for (let i = 0; i < 4; i++) { b.cells[1] = i; h.push(b, 'drag', { merge: 'slider' }); } h.undo(); assert.notEqual(h.now().cells[1], 2, 'merged pushes are one step');
+  const g = new History({ n: 0 }); const st = { n: 0 }; g.group(st, 'two', () => { st.n = 1; g.push(st); st.n = 2; g.push(st); }); assert.equal(g.back, 1); assert.equal(g.now().n, 2, 'group is one step');
+  assert.equal(g.undo().n, 0); assert.equal(g.undos, 1);
+  const pk = JSON.parse(JSON.stringify(g.redo() && g.pack())); assert.equal(new History({}).unpack(pk).now().n, 2, 'pack and unpack');
+  console.log('history: undo, redo, drop ahead, max, merge, group, pack ok');
+}
+{
+  const { Inventory, Recipes } = await import('../src/kit/items.js');
+  const D = { wood: { stack: 10 }, stone: { stack: 10 }, axe: { stack: 1, kind: 'tool' }, hat: { stack: 1, kind: 'head', weight: 2 } };
+  const inv = new Inventory(D, { slots: 3, extra: { hand: 'tool' } });
+  assert.equal(inv.add('wood', 14), 0); assert.deepEqual(inv.slots.map(s => s?.n ?? 0), [10, 4, 0], 'stacks fill, then a new slot');
+  assert.equal(inv.add('stone', 25), 15, 'what does not fit comes back'); assert.equal(inv.take('wood', 20), false); assert.ok(inv.take('wood', 5)); assert.equal(inv.count('wood'), 9);
+  const inv2 = new Inventory(D, { slots: 4, extra: { hand: 'tool', head: 'head' } }); inv2.add('wood', 3); inv2.add('axe');
+  assert.equal(inv2.move(0, 'hand'), false, 'equip slots take only their kind'); assert.ok(inv2.move(1, 'hand')); assert.equal(inv2.equip.hand.id, 'axe');
+  inv2.add('wood', 4); assert.equal(inv2.count('wood'), 7); assert.equal(inv2.split(0), 1); assert.ok(inv2.move(1, 0), 'merge back'); assert.equal(inv2.slots[0].n, 7);
+  inv2.add('stone', 2); inv2.sort(); assert.deepEqual(inv2.slots.filter(Boolean).map(s => s.id), ['stone', 'wood']);
+  assert.deepEqual(new Inventory(D, { slots: 4, extra: { hand: 'tool', head: 'head' } }).load(JSON.parse(JSON.stringify(inv2.save()))).save(), inv2.save(), 'save and load');
+  const heavy = new Inventory(D, { slots: 9, weight: 5 }); assert.equal(heavy.add('hat', 4), 2, 'weight limit');
+  const book = new Recipes(D).add('plank', { wood: 1 }, { makes: 4 }).add('axe', { wood: 3, stone: 2 }, { keep: ['bench'] }).add('lamp', { stone: 1 }, { at: 'forge', time: 2 });
+  const bag = new Inventory(D, { slots: 6 }); bag.add('wood', 3); bag.add('stone', 1);
+  assert.deepEqual(book.missing('axe', bag), { bench: 1, stone: 1 }, 'missing lists tools and parts');
+  assert.deepEqual(book.can(bag).map(r => r.id), ['plank']); assert.equal(book.times('plank', bag), 3);
+  assert.ok(book.make('plank', bag)); assert.equal(bag.count('plank'), 4); assert.equal(book.make('axe', bag), null);
+  assert.equal(book.make('lamp', bag), null, 'a station recipe needs the station'); assert.ok(book.make('lamp', bag, 'forge')); assert.equal(bag.count('stone'), 0);
+  let done = 0; book.timer.on('done', () => done++); book.timer.update(1); assert.equal(bag.count('lamp'), 0); book.timer.update(1.1); assert.equal(bag.count('lamp'), 1); assert.equal(done, 1, 'timed making');
+  assert.deepEqual(book.uses('stone').map(r => r.id), ['axe', 'lamp']);
+  console.log('items: stacks, take, equip kinds, split, merge, sort, save, weight, recipes, missing, stations, timed ok');
+}
+{
   const { dungeon, cave, maze, islands, pattern, fov, loadGen, proven, reach } = await import('../src/kit/gen.js');
   await loadGen();
   const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });
