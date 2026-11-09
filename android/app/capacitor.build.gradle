@@ -21,6 +21,7 @@ dependencies {
     implementation project(':phone-ai')
     implementation project(':power-state')
     implementation project(':rich-haptics')
+    implementation project(':screen-rate')
 
 }
 

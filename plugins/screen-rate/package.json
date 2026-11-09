@@ -1,0 +1,13 @@
+{
+  "name": "screen-rate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Game Scroll's screen refresh rate: on Android the rates the screen offers and a wish for one per game (src/kit/screenrate.js); on iPhone, lifts the web view's 60 Hz cap on ProMotion screens.",
+  "main": "index.js",
+  "files": ["index.js", "Package.swift", "ios/Sources", "android/src/main", "android/build.gradle"],
+  "capacitor": {
+    "ios": { "src": "ios" },
+    "android": { "src": "android" }
+  },
+  "peerDependencies": { "@capacitor/core": "^8.0.0" }
+}
