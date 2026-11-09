@@ -234,3 +234,37 @@ plays a game on both and says which it drew on.
 - `v.shafts = 1` (0..2) adds sun shafts: the bright sky round the sun is smeared towards it at quarter
   size, so whatever blocks it (trees, window frames, a hill) leaves streaks of light. Set `v.sun` so
   it knows where the sun is. It's off on the lowest tier.
+
+## Outdoor looks: ground, hills, rock, leaves
+
+`gs.outdoors` paints a Next Gen landscape that holds up through a scope. Each look is a named patch
+on a three.js standard material, so light, shadows and the air still apply.
+
+```js
+const { Land, looks, groundDetail, horizon } = gs.outdoors, { THREE } = gs.hd;
+const tex = groundDetail();                                   // tiling detail + bump textures, made in code
+const normal = tex.normal.clone(); normal.repeat.set(170, 170);   // shared textures: clone before changing
+const mat = new THREE.MeshStandardMaterial({ normalMap: normal });
+const ground = looks.ground(mat, { detail: tex.detail, roads: [[x0, z0, x1, z1]], fields: { angle: .33 } });
+land = new Land({ kind: (x, z) => myHeight(x, z), size: 640, segments: 128, material: mat });
+land.masks((x, z, y, slope) => [fields, forest, rock, trodden]);  // 0..1 each, where each ground goes
+v.scene.add(horizon(land, { inner: 300, outer: 1300 }));         // far hills all round
+looks.rock(rockMaterial, { detail: tex.detail });              // cracks and grit three ways, moss on top
+const leafLook = looks.leaves(leafMaterial, { wind: .6 });      // sway, sun glow, outlines kept far away
+// each frame: leafLook.uniforms.lkTime.value = t; ground.wet = rain.amount;
+```
+
+- **`looks.ground(material, o)`**: meadow with dry patches, patchwork fields in strips with hedges
+  (`fields: { angle, size: [w, d], furrows, hedge }` or `false`), forest floor, rock on steep ground,
+  trodden earth, mud below `bank.low`..`bank.high` metres, lanes with ruts along `roads` (segments
+  `[x0, z0, x1, z1]`) and puddles as it gets `wet`. `colours` swaps any of `grassA`, `grassB`, `dry`,
+  `dirt`, `mud`, `rock`, `forest`, `cropA`, `cropB`, `plough`, `hedge`. `land.masks(fn)` says where each
+  ground goes.
+- **`horizon(land, o)`**: a ring of far ridges from `inner` to `outer` metres that meets the land's
+  edge. `lower(x, z)` (0..1) keeps a side low for a view out; `colours: { meadow, forest, rock }`.
+  `looks.hills(material)` is its look: woods, clearings and scree from noise.
+- **`looks.rock(material, o)`** and **`looks.leaves(material, o)`**: `rock({ scale, moss, mossy })`;
+  `leaves({ time, wind, sun, sway, above, glow, atlas })`. Pass numbers, or shared uniforms
+  (`{ value }`) when several materials should move together.
+- Every look is a named effect (`material.userData.gsLooks` lists them), so the WebGPU version can
+  swap each one for a node later (see `docs/webgpu-move.md`). Road segments: up to 32.
