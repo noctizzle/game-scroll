@@ -169,7 +169,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   `gs.stealth` (`lightAt`, `Takedown`, `Bodies`, `Floors`, `Disguise`), `gs.gadgets` (`Grapple`, `Zipline`, `Wires`, `Lock`,
   `Code`), `gs.arena` (`Arena`, `BallCar`, `chaseBall`), `gs.campaign.Campaign`, `gs.sound.Ears` (3D sound) and
   `music({ layers }).intensity()`, `gs.props` (`Props` instancing + LOD, `Areas`, `Chunks`, `simplify`).
-- Worlds, craft, soft things, cards and menus: `gs.outdoors` (`Land` terrain + `grass`/`scatter`, `Water`, `tree`, `rock`),
+- Worlds, craft, soft things, cards and menus: `gs.outdoors` (`Land` terrain + `grass`/`scatter`, `Water`, `tree`, `rock`, `Wind`, `impostor`),
   `gs.craft` (`Plane`, `Boat`, `Hover`, `Floater`), `gs.soft` (`Soft` cloth/rope/jelly with `grab`/`cut`, `Liquid`),
   `gs.cards` (`Deck`, `total`, `groups`, `poker`, `winners`, `stacks`), `gs.dice` (`roll('4d6kh3')`, `odds`, `Dice`, `Dice3D`),
   `gs.words` (lazy: `Words` dictionary, `compare`, `Bag`, `score`), `gs.ui` (lazy: `UI` flexbox layout and input with no look; you draw it).
