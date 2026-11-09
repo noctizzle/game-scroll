@@ -93,6 +93,8 @@ export default {
 (2 KB JSON; changing its shape? add `save: { version, migrate(data, from) }` to the definition), `location()` / `watchLocation(cb)` (needs `location: 'coarse'` or `'precise'` in the
 definition). Optional game methods: `snapshot()` / `restore(data)` (keep a round across hot reload), `fx(dt)` (effects behind the game-over screen), `resize(w, h)`
 (fluid games with `maxW`, `maxH`), `debug(c)`, `pause()`, `resume()`.
+Next Gen and AR: frame generation makes the in-between frames on 120 Hz screens by itself; `frameGen: 'ahead'`
+(no added delay) or `frameGen: false` in the definition, and `view.cut()` after a camera jump.
 
 The app draws the start and game-over screens and the score. The game only draws play.
 
@@ -170,6 +172,8 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   `gs.stealth` (`lightAt`, `Takedown`, `Bodies`, `Floors`, `Disguise`), `gs.gadgets` (`Grapple`, `Zipline`, `Wires`, `Lock`,
   `Code`), `gs.arena` (`Arena`, `BallCar`, `chaseBall`), `gs.campaign.Campaign`, `gs.sound.Ears` (3D sound) and
   `music({ layers }).intensity()` + `follow(song)` (living music), `gs.props` (`Props` instancing + LOD, `Areas`, `Chunks`, `simplify`).
+- Cities: `gs.city.City(view, { seed, blocks, style: 'downtown'|'oldtown'|'harbour'|'suburb', traffic, people, sky })` (made-up streets, lit buildings,
+  traffic at the lights, people; `update(dt, player)`, `avoid`, `collide`, `ray`, `route`, `spot('door'|'rooftop'...)`, `cars.hit`, `people.scare`, `plan`, `drawMap`); guide `docs/city.md`.
 - Worlds, craft, soft things, cards and menus: `gs.outdoors` (`Land` terrain + `grass`/`scatter`, `Water`, `tree`, `rock`, `Wind`, `impostor`),
   `gs.craft` (`Plane`, `Boat`, `Hover`, `Floater`), `gs.soft` (`Soft` cloth/rope/jelly with `grab`/`cut`, `Liquid`),
   `gs.cards` (`Deck`, `total`, `groups`, `poker`, `winners`, `stacks`), `gs.dice` (`roll('4d6kh3')`, `odds`, `Dice`, `Dice3D`),
@@ -191,7 +195,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 
 **Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `story.Story`, `look2d.Screen`, `look2d.Batch`, `words.Words`, `ui.UI`, `juice.Timeline`, `hear.Sounds`, `doodle.Doodle`): create them in `make()` or `reset()`, never
 later. The app shows "Loading…" and remakes the game once the library is in.
-The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `THREE`)
+The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `city`, `THREE`)
 and `ai`, plus the action kits (`combat`, `tactics`, `climb`, `missions`, `cutscene`, `prompts`, `stealth`, `gadgets`, `campaign`, `arena`) and play kits (`craft`, `soft`, `cards`, `dice`, `words`, `ui`) and smarts (`hear`, `doodle`, `phoneai`), also load on first use, so the app opens fast. The app loads the ones a game uses before it
 runs, so read them as usual (`const { HDView } = gs.hd` at the top of the file is fine).
 

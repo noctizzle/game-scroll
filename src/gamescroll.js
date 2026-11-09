@@ -22,9 +22,9 @@
 //   gs.physics   2D physics (Rapier): spinning shapes, hinges, ropes, springs. Also the simple World/Body.
 //   gs.physics3d 3D physics (Rapier): bodies, level collisions, ray casts, a character mover
 //   gs.ai        steering, flocking, path finding, state machines (Yuka)
-//   gs.toon      Classic Console 3D (cel-shaded)       gs.hd   Next Gen 3D (PBR, bloom, shadows)
+//   gs.toon      Classic Console 3D (cel-shaded)       gs.hd   Next Gen 3D (PBR, bloom, shadows; upscaling and frame generation built in)
 //   gs.ar        AR 3D (camera + gyro)                 gs.fx3d 3D text, 3D particles, outline/glitch/trails
-//   gs.vision    face and hand tracking (MediaPipe)    gs.geo  distances and bearings for location games
+//   gs.vision    face and hand tracking (on the phone's AI chip in the apps, else MediaPipe)   gs.geo  distances and bearings for location games
 //   gs.things    game objects: tags, "what did this hit", nearest, reuse; Node: parent and child places
 //   gs.rounds    scenes (intro, play, clear...) with timed changes, and level lists
 //   gs.pacing    spawners, waves with breathers, a difficulty director
@@ -65,6 +65,7 @@
 //   gs.arena     ball games with cars: arena, goals, boost, flips, ball prediction, replays
 //   gs.props     thousands of props with culling and detail levels (InstancedMesh2), rooms, chunked worlds
 //   gs.outdoors  3D outdoor worlds: terrain (THREE.Terrain), grass, trees, rocks, wavy water you can float on
+//   gs.city      made-up 3D cities from a seed: streets, buildings with lit windows, traffic at the lights, people, routes
 //   gs.craft     planes, boats and hover craft that feel right, and floating bodies in physics3d
 //   gs.soft      cloth, ropes, jelly and squishy blobs you can grab, cut and tear; a simple liquid
 //   gs.cards     decks, deals, hands, blackjack totals, rummy sets and runs, poker hands (pokersolver)
@@ -180,12 +181,12 @@ function readOnly(o) {
 // code). The app loads the parts a streamed game needs before running it, so games don't notice;
 // if a part isn't in yet, reading it throws StillLoading and the app shows "Loading…".
 const GROUPS = {
-  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'level3d', 'sky', 'poses', 'destruction', 'props', 'outdoors', 'THREE'],
+  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'level3d', 'sky', 'poses', 'destruction', 'props', 'outdoors', 'city', 'THREE'],
     // (with WebGPU picked in Settings, its renderer gets ready alongside: src/kit/gpu.js)
     load: () => Promise.all([import('./gs-3d.js').then(m => m.props.simplifyReady.then(() => m)), import('./kit/gpu.js').then(g => g.prepareGPU())]).then(([m]) => ({ toon: pick('toon', m.toon), hd: pick('hd', m.hd), ar: pick('ar', m.ar), bricks: pick('bricks', m.bricks),
       physics3d: pick('physics3d', m.physics3d), fx3d: pick('fx3d', m.fx3d), camera: pick('camera', m.camera), nav3d: pick('nav3d', m.nav3d),
       characters: pick('characters', m.characters), level3d: pick('level3d', m.level3d), sky: pick('sky', m.sky),
-      poses: pick('poses', m.poses), destruction: pick('destruction', m.destruction), props: pick('props', m.props), outdoors: pick('outdoors', m.outdoors), THREE: m.THREE })) },
+      poses: pick('poses', m.poses), destruction: pick('destruction', m.destruction), props: pick('props', m.props), outdoors: pick('outdoors', m.outdoors), city: pick('city', m.city), THREE: m.THREE })) },
   ai: { parts: ['ai'], load: () => import('./kit/ai.js').then(m => ({ ai: pick('ai', m) })) },
   action: { parts: ['combat', 'tactics', 'climb', 'missions', 'cutscene', 'prompts', 'stealth', 'gadgets', 'campaign', 'arena'],
     load: () => import('./gs-action.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },

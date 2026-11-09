@@ -11,10 +11,17 @@
 // The 3D kit can step a game down from there (120 -> 60 -> 30) when the phone can't keep up even
 // after lowering its resolution, and it remembers per game where it settled, so the next round
 // starts there. Players can pin a rate in Settings (Auto / 120 / 60 / 30 battery saver).
+//
+// Frame generation (src/kit/framegen.js, Next Gen and AR on WebGPU): where a 3D game runs at half
+// the screen's rate (60 fps on a 120 Hz screen), the 3D kit makes a frame for each refresh in
+// between, so it moves at the screen's rate. Settings › Graphics: Auto (only when a game can't reach
+// the screen's rate), Always (3D games draw half the frames and make the rest: cooler, more detail)
+// or Off; and how: blend (between the last two frames, the fewest flaws, shown half a frame later)
+// or ahead (half a frame past the newest, no delay). A game can say frameGen: false or 'ahead'.
 import { store } from '../util.js';
 import { gpuName } from './gpu.js';
 
-const PICK_KEY = 'gs_fps', SETTLE_KEY = 'gs_speed';
+const PICK_KEY = 'gs_fps', SETTLE_KEY = 'gs_speed', FG_KEY = 'gs_fg', FG_HOW_KEY = 'gs_fg_how';
 const touchy = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
 let model = '', klass = null;
@@ -76,16 +83,50 @@ export function autoFps(def) {
   if (is3D(def)) return k === 'top' ? 120 : k === 'mid' ? 60 : 30;
   return k === 'low' ? 60 : 120;
 }
-/** The frame rate a game runs at now. Never above the screen's rate. */
-export function fpsFor(def) {
+// the rate a game draws real frames at without frame generation
+function realFps(def) {
   let f = pick === 'auto' ? Math.min(autoFps(def), settled[def?.id]?.fps || 999) : pick;
   if (def?.fps) f = Math.min(f, def.fps);
   return Math.max(30, Math.min(f, hz));
 }
+/** The frame rate a game runs its update and draw at now. Never above the screen's rate; half of it while frame generation fills the rest. */
+export function fpsFor(def) {
+  return frameGenFor(def) ? hz / 2 : realFps(def);
+}
+
+/* ---------- frame generation ---------- */
+let fgPick = store.get(FG_KEY, 'auto'), fgHow = store.get(FG_HOW_KEY, 'game');
+const fgFailed = new Set();
+/** Settings › Graphics: 'auto' | 'always' | 'off'. */
+export const frameGenPick = () => fgPick;
+export function setFrameGenPick(v) { fgPick = ['auto', 'always', 'off'].includes(v) ? v : 'auto'; store.set(FG_KEY, fgPick); }
+/** How frames are made: 'game' (the game's choice, else blend) | 'blend' | 'ahead'. */
+export const frameGenHow = () => fgHow;
+export function setFrameGenHow(v) { fgHow = ['game', 'blend', 'ahead'].includes(v) ? v : 'game'; store.set(FG_HOW_KEY, fgHow); }
+/**
+ * Whether the 3D kit makes frames between this game's real ones now: 'blend' | 'ahead' | false.
+ * Needs the game's view on WebGPU (speed.gpu, set by the 3D kit), a screen of 100 Hz or more and the
+ * game running at about half of it (Auto), or able to (Always). speed.forceFrameGen (tests) skips the checks.
+ */
+export function frameGenFor(def) {
+  if (!is3D(def) || def.frameGen === false) return false;
+  const how = fgHow !== 'game' ? fgHow : def.frameGen === 'ahead' ? 'ahead' : 'blend';
+  if (speed.forceFrameGen) return speed.forceFrameGen === true ? how : speed.forceFrameGen;
+  if (fgPick === 'off' || !speed.gpu || hz < 100 || fgFailed.has(def.id) || pick !== 'auto') return false;   // a pinned rate is what the screen shows
+  const half = hz / 2, f = realFps(def);
+  // Auto: only a game that can't reach the screen's rate (it settled at 60); Always: any that can do half
+  const on = fgPick === 'always' ? f >= half * .8 : f >= half * .8 && f < hz * .9;
+  return on ? how : false;
+}
+/** The 3D kit found the refreshes between real frames didn't come (the phone is too busy): no frame generation for this game until the app restarts. */
+export function frameGenFailed(id) { if (id) fgFailed.add(id); }
 
 /** The game on screen (set by the feed), so the 3D kit can remember things per game. */
 // offscreen: true while the feed draws a card that isn't the one on screen (one being added below).
-export const speed = { game: null, offscreen: false };
+// gpu: the 3D kit draws the game on screen with WebGPU (frame generation needs it). between: set by
+// the 3D kit after a real frame when it has a made frame to show; the feed calls it on the next
+// refresh it skips (src/main.js).
+export const speed = { game: null, offscreen: false, gpu: false, between: null, forceFrameGen: null };
 
 /** The 3D kit settled on a tier and frame rate for this game: start there next time. */
 export function settle(id, o) {

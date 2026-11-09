@@ -93,7 +93,7 @@ so its next round starts there instead of stuttering down again.
 Shaders are compiled up front: the first `render()` calls `v.warm()`, which compiles every material
 in the scene, including hidden ones, with shadows on and off. If you build new geometry or
 materials later (a new floor), set `v.warmed = false` so the next frame warms again before play.
-`__hd.info` reports `{ calls, tris, cpu, shadows, upscaled }` for the last frame. The 3D frame is rendered at the tier's pixel count (and lower while the phone struggles), then upscaled to the card's full resolution with **Snapdragon Game Super Resolution 2** (Qualcomm's temporal upscaler, `src/kit/sgsr2.js`): the camera is nudged by a fraction of a pixel each frame and each new small frame is blended into the full-size picture of the frames before, moved by the camera's own move. That gives a sharper, steadier picture than one frame can, and it also runs at full size as anti-aliasing (grass, leaves, wires and thin poles stop shimmering; FXAA is off then). Things that move fast across a still camera can leave a short soft trail (there are no per-object motion vectors), so a view can set `v.upscaler = 'sgsr1'` to use **SGSR 1** (`src/kit/sgsr.js`, one frame, edge-aware sharpening). AR views and frames with screen-space reflections use SGSR 1 too, and `HD.upscaler = 'sgsr1'` switches every view. `HD.upscale = false` shows the plain stretched picture for comparison, and `node scripts/upscale-compare.cjs` scores plain, SGSR 1 and SGSR 2 against a supersampled picture (`--webgpu` for the WebGPU path, which has its own TSL version of SGSR 2). The 2D HUD is always drawn at
+`__hd.info` reports `{ calls, tris, cpu, shadows, upscaled, backend, framegen }` for the last frame. The 3D frame is rendered at the tier's pixel count (and lower while the phone struggles), then upscaled to the card's full resolution with **Snapdragon Game Super Resolution 2** (Qualcomm's temporal upscaler, `src/kit/sgsr2.js`): the camera is nudged by a fraction of a pixel each frame and each new small frame is blended into the full-size picture of the frames before, moved by the camera's own move. That gives a sharper, steadier picture than one frame can, and it also runs at full size as anti-aliasing (grass, leaves, wires and thin poles stop shimmering; FXAA is off then). Things that move fast across a still camera can leave a short soft trail (there are no per-object motion vectors), so a view can set `v.upscaler = 'sgsr1'` to use **SGSR 1** (`src/kit/sgsr.js`, one frame, edge-aware sharpening). AR views and frames with screen-space reflections use SGSR 1 too, and `HD.upscaler = 'sgsr1'` switches every view. `HD.upscale = false` shows the plain stretched picture for comparison, and `node scripts/upscale-compare.cjs` scores plain, SGSR 1 and SGSR 2 against a supersampled picture (`--webgpu` for the WebGPU path, which has its own TSL versions of both). The 2D HUD is always drawn at
 full resolution on top. `v.onTier(T => ...)` lets a game react (for example `spotLight.setTier(T)`).
 
 Rules of thumb:
@@ -236,6 +236,43 @@ else they use WebGL. There is no setting. Nothing changes in a game: a view that
 ported yet (see `docs/webgpu-move.md`) stays on WebGL by itself. `node scripts/gpu-games.cjs <id>`
 plays a game on both and says which it drew on. Everything in Long Shadow (outdoor looks, sky, shafts,
 focus, cascades, Props trees) and Deep Pressure has a WebGPU version.
+
+### Frame generation
+
+On WebGPU, a Next Gen or AR game that draws 60 frames a second on a 120 Hz screen gets a made frame
+on each refresh in between, so it moves at 120 (`src/kit/framegen.js`). It's not a neural network:
+every pixel moves along its own motion (three's per-pixel velocity, so moving things move, not just
+the camera), depth decides what's in front, and gaps that open behind moving things are filled from
+the background round them. The method follows AMD FSR 3's frame interpolation (MIT) and Mob-FGSR
+(SIGGRAPH 2024), written fresh as WebGPU compute. It runs after SGSR 2 at the screen's size, takes
+SGSR 2's camera jitter back out of the motion, and costs a few milliseconds of compute instead of a
+whole extra frame.
+
+- **When:** Settings › Graphics (test). Auto (the default) makes frames only for a game that can't
+  reach the screen's rate (the 3D kit stepped it down to 60); Always draws half the frames of every 3D
+  game and makes the rest (cooler, more detail per real frame); Off. A pinned frame rate turns it off.
+  If the refreshes in between keep not arriving (the phone is too busy), it switches itself off for
+  that game until the app restarts.
+- **How:** blend (the default) makes the frame halfway between the last two real frames and shows it
+  before the newest, so each real frame shows half a frame (about 8 ms) later, with the fewest flaws.
+  Ahead guesses half a frame past the newest, so nothing is delayed; edges round fast things are a
+  little softer. A reflex or rhythm game can ask for it with `frameGen: 'ahead'` in its definition, and
+  `frameGen: false` turns it off for a game (a look that flickers on purpose, a picture that changes
+  in ways motion can't follow).
+- **See-through and glowing things** (transparent or added-light materials: glass, water, smoke,
+  sparks) have no single motion, so the background's motion is kept under them and the made frame
+  shows them from the newest real frame, unmoved: they never smear or show twice.
+- **The HUD** is drawn on the card's own canvas over the 3D, so it is never warped. Vignette, grain
+  and the hurt flash go on as each refresh is shown, so they stay put and the grain stays even.
+- **Cuts:** after a cut nothing is made until two new real frames. Another view drawing, a pause and
+  big camera jumps (turning more than 20 degrees, moving 8 metres or zooming by a quarter in one frame) are found by themselves;
+  call `v.cut()` when the camera switches somewhere new in a smaller step (it also restarts SGSR 2).
+
+`__hd.info.framegen` says which way it ran last frame ('blend', 'ahead' or false) and `fgMs` the
+CPU time to queue it. `node scripts/framegen-test.cjs [--mode ahead] [--hard]` scores made frames
+against the truth on test scenes (moving things, a turning camera, glass, sparks, SGSR 2's jitter), and
+`npm run build:bundled && node scripts/framegen-games.cjs [id ...] [--shots dir]` plays the Next Gen and
+AR games with it on and checks every made frame sits between the real frames round it.
 
 ## Lots of particles
 

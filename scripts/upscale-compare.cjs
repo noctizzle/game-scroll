@@ -3,7 +3,7 @@
 // out of 255, lower is closer; flicker: change between frames, lower is steadier; ms: time per frame
 // in this software-rendered browser, a rough guide to cost only). Also SGSR 2 at full size as
 // anti-aliasing (aa) against the plain full-size picture (native).
-//   node scripts/upscale-compare.cjs [--scale 1.5] [--shots dir] [--webgpu]   (WebGPU: SGSR 1 isn't there, it stretches)
+//   node scripts/upscale-compare.cjs [--scale 1.5] [--shots dir] [--webgpu]   (WebGPU: the TSL versions in hd3d-gpu.js)
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
 (async () => {
@@ -27,6 +27,6 @@ const fs = require('fs'), path = require('path');
   }
   if (shots) { fs.mkdirSync(shots, { recursive: true }); for (const [k, u] of Object.entries(res.shots)) fs.writeFileSync(path.join(shots, k + '.png'), Buffer.from(u.split(',')[1], 'base64')); console.log('shots in', shots); }
   // SGSR 2 must not be further from the reference than a plain stretch (or than no AA at full size)
-  let bad = 0; for (const r of Object.values(res.scenes)) { if (r.sgsr2 && r.sgsr2.error > r.plain.error * 1.05) bad++; if (r.sgsr2 && r.sgsr2.used !== 'sgsr2') bad++; if (r.aa && r.aa.error > r.native.error * 1.05) bad++; }
+  let bad = 0; for (const r of Object.values(res.scenes)) { if (r.sgsr2 && r.sgsr2.error > r.plain.error * 1.05) bad++; if (r.sgsr2 && r.sgsr2.used !== 'sgsr2') bad++; if (r.sgsr1 && r.sgsr1.used !== 'sgsr1') bad++; if (r.aa && r.aa.error > r.native.error * 1.05) bad++; }
   await b.close(); await server.close(); process.exit(bad ? 1 : 0);
 })();

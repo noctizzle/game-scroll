@@ -61,6 +61,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Sounds placed in 3D, music that builds up | `gs.sound.Ears`, `music({ layers })` | [Action and adventure kits](#action-and-adventure-kits) |
 | Thousands of trees and rocks, rooms, big worlds | `gs.props` (InstancedMesh2) | [Action and adventure kits](#action-and-adventure-kits) |
 | Hills, islands, grass and trees, water to float on | `gs.outdoors` (THREE.Terrain) | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
+| A whole city: streets, buildings, traffic at the lights, people, routes | `gs.city` | [Cities](city.md) |
 | Planes, boats, hover craft, floating crates | `gs.craft` | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
 | Cloth, ropes, jelly to cut and squish; a simple liquid | `gs.soft` | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
 | Decks, hands, poker and blackjack maths; dice | `gs.cards` (pokersolver), `gs.dice` | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
@@ -1001,6 +1002,12 @@ Shared CI machines vary, so the same code can land either side of the line. A ga
 little over (up to 1.5 times the budget) is played twice more and judged on the middle run; the
 report shows all three times and their spread, so you can tell a real slowdown from a noisy machine.
 
+**Next Gen and AR on 120 Hz screens.** With WebGPU on, a 3D game the phone can only draw at 60 frames
+a second gets a made frame between each pair (frame generation), so it still moves at 120. Nothing to
+do in the game. `frameGen: 'ahead'` in the definition guesses ahead instead of blending (no added delay,
+for reflex and rhythm games), `frameGen: false` turns it off, and `v.cut()` after a camera jump starts it
+(and the upscaler) fresh. Details: [docs/nextgen-3d.md](nextgen-3d.md#frame-generation).
+
 ## 2D cameras, tile levels and movement
 
 `const { Camera2D } = gs.camera2d, { TileMap } = gs.tiles, { Platformer, TopDown } = gs.movers;`
@@ -1250,6 +1257,14 @@ grass shows a gust before it reaches you): use it for bullets, flags and sails. 
 frame; change `wind.x`, `wind.z` any time. `impostor(geometry, material)` bakes a far-away stand-in for
 a tree: a few crossed cards with pictures of the real tree, lit live. Use it as the last `gs.props`
 level: `lod: [[90, mid], [240, imp.geometry, imp.material]]` (a level can have a material of its own).
+
+**Cities** (`gs.city`, 3D): `new City(view, { seed, blocks: 6, style: 'downtown' | 'oldtown' | 'harbour' | 'suburb' })`
+makes a made-up city from a seed: streets and junctions with traffic lights, buildings with lit windows,
+shops, roof tanks and fire escapes, parks, trees and lamps, cars that keep to their lanes and stop at
+red, and people who cross at the corners. `city.update(dt, player)` each frame; `city.avoid(player)`
+makes cars brake for you. It answers `collide`, `ray`, `route(a, b)` (a `gs.paths` Path along the
+roads), `spot('door' | 'rooftop' | ...)`, `cars.hit`, `people.scare`, and gives the plan as plain
+numbers for your own map. The full guide is [docs/city.md](city.md).
 
 **Planes, boats and hover craft** (`gs.craft`): `Plane({ at, speed, ground })` flies like arcade games
 feel: it banks into turns, holds its height when level, stalls when slow, lands, touches down and

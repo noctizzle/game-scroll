@@ -4,8 +4,9 @@ import { fmt } from './util.js';
 import { playstats } from './playstats.js';
 import { HEARTS_URL } from './hearts.js';
 import { nativeARSupported } from './kit/native-ar.js';
-import { fpsPick, setFpsPick, autoFps, phoneClass, screenHz } from './kit/speed.js';
+import { fpsPick, setFpsPick, autoFps, phoneClass, screenHz, frameGenPick, setFrameGenPick, frameGenHow, setFrameGenHow } from './kit/speed.js';
 import { geoSettings } from './geo.js';
+import { hasWebGPU } from './kit/gpu.js';
 import { OPEN_SOURCE, OTHER_PARTS } from './licences.js';
 import { feedBrain, resetRecommendations } from './feedsignals.js';
 
@@ -15,6 +16,9 @@ const size = b => b < 1024 * 1024 ? `${Math.ceil(b / 1024)} KB` : `${(b / 1024 /
  *  Sound & haptics live in their own sheet (the 🔊 button, src/feel.js), not here. */
 export function openSettings({ stream, cached, clear, arTest }) {
   const el = document.createElement('dialog'); el.className = 'qa-panel settings';
+  // Frame generation shows on devices that have WebGPU (3D games always use it there; asked once, so it can appear a moment later)
+  let webgpuHere = null;
+  hasWebGPU().then(v => { webgpuHere = v; if (el.open) render(); });
   document.body.appendChild(el);
   const render = note => {
     const c = cached();
@@ -33,6 +37,13 @@ export function openSettings({ stream, cached, clear, arTest }) {
         <p class="qa-help">Auto picks by phone: on this one ${Math.min(autoFps({ era: 'nextgen' }), screenHz())} fps for 3D games and ${Math.min(autoFps({}), screenHz())} fps for the rest (${{ top: 'a top-end', mid: 'a mid-range', low: 'an entry-level' }[phoneClass()]} phone with a ${screenHz()} Hz screen), and 3D games step down if the phone can't keep up. A lower rate saves battery and keeps the phone cooler.</p>
         <div class="qa-actions set-fps">${['auto', 120, 60, 30].map(v => `<button data-fps="${v}"${fpsPick() === v ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}${v !== 'auto' && v > screenHz() ? ' disabled' : ''}>${v === 'auto' ? 'Auto' : v === 30 ? '30 · battery saver' : v}</button>`).join('')}</div>
       </section>
+      ${webgpuHere ? `<section class="set-row">
+        <h3>Frame generation</h3>
+        <p class="qa-help">When a 3D game draws 60 frames a second on a fast screen, make a frame between each pair so it moves at the screen's rate. Auto does it for games that can't reach the screen's rate; Always draws half the frames of every 3D game and makes the rest (cooler, more detail). Needs Frame rate on Auto.${screenHz() < 100 ? ` This screen runs at ${screenHz()} Hz, so there are no refreshes in between to fill.` : ''}</p>
+        <div class="qa-actions set-fg">${[['auto', 'Auto'], ['always', 'Always'], ['off', 'Off']].map(([v, n]) => `<button data-fg="${v}"${frameGenPick() === v ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}>${n}</button>`).join('')}</div>
+        <p class="qa-help">Blend makes the frame halfway between the last two (the fewest flaws; each real frame shows a moment later). Ahead guesses half a frame past the newest (no delay; edges a little softer when things move fast). Game's choice is blend unless a game asks for ahead.</p>
+        <div class="qa-actions set-fg-how">${[['game', 'Game’s choice'], ['blend', 'Blend'], ['ahead', 'Ahead']].map(([v, n]) => `<button data-how="${v}"${frameGenHow() === v ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}>${n}</button>`).join('')}</div>
+      </section>` : ''}
       ${arTest ? `<section class="set-row">
         <h3>AR test</h3>
         <p class="qa-help">A cube on your floor for checking how well AR games track the room: walk around it and it should stay put.${nativeARSupported() === false ? ' This phone or version plays AR games in look-around mode.' : ''}</p>
@@ -69,6 +80,8 @@ export function openSettings({ stream, cached, clear, arTest }) {
     el.querySelector('.qa-x').onclick = () => el.close();
     el.querySelector('.set-ar')?.addEventListener('click', () => { el.close(); arTest(); });
     el.querySelectorAll('.set-fps button').forEach(b => b.addEventListener('click', () => { setFpsPick(b.dataset.fps); render(); }));
+    el.querySelectorAll('.set-fg button').forEach(b => b.addEventListener('click', () => { setFrameGenPick(b.dataset.fg); render(); }));
+    el.querySelectorAll('.set-fg-how button').forEach(b => b.addEventListener('click', () => { setFrameGenHow(b.dataset.how); render(); }));
     el.querySelector('.set-loc').addEventListener('change', e => { geoSettings.enabled = e.target.checked; });
     el.querySelector('.set-stats')?.addEventListener('change', e => { playstats.enabled = e.target.checked; });
     el.querySelector('.set-forget')?.addEventListener('click', () => { resetRecommendations(); render(); });
