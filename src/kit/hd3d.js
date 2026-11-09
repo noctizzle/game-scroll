@@ -48,6 +48,7 @@ import { SGSR2, SgsrFrame } from './sgsr2.js';
 import { lookPatch, looksOf, lookSpec } from './looks.js';
 import { copyFrame, webgpu, setGpuPick, prepareGPU } from './gpu.js';
 import { makeRenderer } from './renderer.js';
+import { Occlusion } from './occlusion.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -998,8 +999,42 @@ export class HDView {
     (this.rooms ||= []).push(room);
     return room;
   }
+  /**
+   * Occlusion culling: skip what's fully hidden behind big solid boxes before the frame is drawn (city
+   * blocks behind a row of buildings, rooms behind walls). list: boxes { x0, x1, y0, y1, z0, z1 } in
+   * world metres (city.occluders() gives them), Box3s, or solid box-like meshes; null turns it off.
+   * Only what you list hides things, so give the big, solid, still things (not glass, not fences).
+   * Every mesh (by its bounding box), and each instance of gs.props (InstancedMesh2), is tested; mark a
+   * mesh userData.noOcclude to always draw it. Hidden things still cast their shadows. Same on WebGL and
+   * WebGPU (it runs on the CPU, see occlusion.js). o: { max: boxes drawn per frame (nearest first, 300),
+   * w: depth picture width (128) }. v.occlusion.stats: { boxes, tested, hidden, ms } for the last frame.
+   */
+  occluders(list, o = {}) {
+    if (!list) { this.showHidden(); this.occlusion = null; return this; }
+    (this.occlusion ||= new Occlusion(o)).set(list); Object.assign(this.occlusion, o);
+    return this;
+  }
+  // hides (from the view's camera only: shadows and reflections still see them) what the occluders cover
+  cullHidden() {
+    const oc = this.occlusion, hid = this.occHid ||= new Map(); this.showHidden();
+    oc.frame(this.cam, this.W / this.H);
+    const view = this;
+    this.scene.traverseVisible(o => {
+      if (o.isLight) { if (o.shadow) o.shadow.camera.layers.enable(OCC_LAYER); return; }
+      if (o.isInstancedMesh2) {
+        if (!o.occWrapped) { const own = o.onFrustumEnter; o.occWrapped = true; o.onFrustumEnter = (i, cam, ...a) => (cam !== view.cam || !view.occlusion?.ready || !view.occlusion.hiddenInstance(o, i)) && (!own || own(i, cam, ...a)); }
+        return;
+      }
+      if (!o.isMesh || !o.frustumCulled || o.userData.noOcclude || !(o.layers.mask & 1)) return;
+      if (oc.hiddenObject(o)) { hid.set(o, o.layers.mask); o.layers.mask = (o.layers.mask & ~1) | (1 << OCC_LAYER); }
+    });
+  }
+  showHidden() { const hid = this.occHid; if (!hid?.size) return; for (const [o, m] of hid) o.layers.mask = m; hid.clear(); }
   // bounce light and room reflections, baked by the renderer drawing this frame (G: WebGPU) when they need it
   bakeExtras(G, r) {
+    const k = G ? 'gpu' : 'gl', gi = this.gi;
+    if (!(gi && (gi.dirty[k] || !gi.grids[k]?.parent)) && !this.rooms?.some(rm => rm.dirty[k])) return;   // nothing to bake this frame
+    this.showHidden();   // (the bakes look from elsewhere, so everything is drawn)
     // light, not a picture (no tone mapping), with the sun's shadows in it as the frame will have them
     const tm = r.toneMapping, sh = r.shadowMap.enabled; r.toneMapping = 0; r.shadowMap.enabled = tier().shadow > 0;
     if (!G) r.shadowMap.needsUpdate = true;
@@ -1247,7 +1282,7 @@ export class HDView {
     if (!baking && !off) this.t += 1 / 60;
     gpuSwap(this, G);
     if (this.gi || this.rooms?.length) this.bakeExtras(G, r);
-    this.scene.traverse(o => { if (o.isInstancedMesh2 && o.userData.gpuHid) o.userData.gpuTwin.sync(this.cam); });
+    this.scene.traverse(o => { if (o.isInstancedMesh2 && o.userData.gpuHid) o.userData.gpuTwin.sync(this.cam, this.occlusion?.ready && HD.occlude !== false ? this.occlusion : null); });
     for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
     // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
     const pw = up ? up.pw : r.domElement.width, ph = up ? Math.max(1, Math.floor(up.fh * (pw + .5) / up.fw)) : r.domElement.height;
@@ -1383,6 +1418,7 @@ export class HDView {
     const ow = up || s2on ? fw : pw, oh = up || s2on ? fh : ph;
     const cv = r.domElement; if (cv.width !== ow || cv.height !== oh) r.setSize(ow, oh, false);
     if (!baking && !off) speed.gpu = !!G;   // (frame generation needs the game on screen drawn with WebGPU)
+    if (this.occlusion && HD.occlude !== false) { this.cullHidden(); HD.info.occluded = this.occlusion.stats.hidden; } else if (this.occHid?.size) this.showHidden();
     if (G) this.drawGPU(G, r, T, baking, off, now, (s2on || up) && { pw, fw, fh, s1: !s2on }, direct);
     else {
     if (!baking && !off) { speed.between = null; HD.info.framegen = false; }   // (frame generation is WebGPU only)
@@ -1514,6 +1550,14 @@ function swapTwins(scene, G) {
 }
 function gpuSwap(v, G) {
   swapTwins(v.scene, G);
+  // shadow maps: each renderer keeps its own. WebGL drew into WebGPU's map when it found one on the light
+  // (and the other way round), which made WebGPU remake it in the middle of a frame that still used it:
+  // that frame was lost, and every frame after it while the old one stayed bound
+  v.scene.traverse(o => {
+    const sh = o.isLight && o.shadow; if (!sh?.map) return;
+    if (G) { if (sh.map.isWebGLRenderTarget) { sh.map.dispose(); sh.map = sh.gpuMap || null; } }
+    else if (!sh.map.isWebGLRenderTarget) { sh.gpuMap = sh.map; sh.map = null; }
+  });
   // materials with a named look that has a WebGPU version (PORTED_LOOKS): set its nodes before
   // three first turns the material into a node material (it copies them over); with the air on, lit
   // standard materials also get wet in the rain (AIR_WET)
@@ -1528,8 +1572,9 @@ function gpuSwap(v, G) {
     }
   });
   // gs.props (InstancedMesh2): plain instanced twins on WebGPU (hd3d-gpu.js gpuProps)
-  v.scene.traverse(o => {
-    if (!o.isInstancedMesh2 || o._parentLOD) return;
+  // (listed first: adding and removing the twins while walking the scene skipped things and threw)
+  const props = []; v.scene.traverse(o => { if (o.isInstancedMesh2 && !o._parentLOD) props.push(o); });
+  for (const o of props) {
     const ud = o.userData;
     if (G) {
       if (ud.gpuTwin?.r !== G.r) { ud.gpuTwin?.group.removeFromParent(); ud.gpuTwin = { r: G.r, ...G.fx.gpuProps(o) }; }
@@ -1537,7 +1582,7 @@ function gpuSwap(v, G) {
       if (!ud.gpuHid) { ud.gpuHid = true; ud.gpuWasVisible = o.visible; }
       o.visible = false; ud.gpuTwin.group.visible = ud.gpuWasVisible;
     } else if (ud.gpuHid) { o.visible = ud.gpuWasVisible; ud.gpuHid = false; ud.gpuTwin?.group.removeFromParent(); }
-  });
+  }
   for (const p of v.parts) {
     if (G) {
       const tw = p.gpuTwin?.r === G.r ? p.gpuTwin : (p.gpuTwin = { r: G.r, ...(p.makeTwin ? p.makeTwin(G) : G.fx.gpuParticles(p)) });
@@ -1612,6 +1657,8 @@ function shadowSize(sh, n) {
   sh.mapSize.set(n, n);
   if (sh.map?.isWebGLRenderTarget) { sh.map.dispose(); sh.map = null; } else sh.map?.setSize(n, n, sh.map.depth);
 }
+// the layer things hidden by occlusion culling move to: the view's camera doesn't draw it, shadow cameras do
+const OCC_LAYER = 30;
 export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
   const s = new DirectionalLight(col, i), c = s.shadow.camera, d = new Vector3(...dir).normalize();
   s.castShadow = true; c.left = c.bottom = -size; c.right = c.top = size; c.near = 1; c.far = 120;

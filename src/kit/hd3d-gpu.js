@@ -332,7 +332,7 @@ export function gpuProps(im) {
   make();
   return {
     group,
-    sync(cam) {
+    sync(cam, occ = null) {   // occ: hd3d.js occlusion culling (only for props without shadows: one list feeds both here)
       if ((im._capacity || 0) > cap) make();
       const n = im._instancesArrayCount || 0, D = im.matricesTexture?._data, C = im.colorsTexture?._data, wm = im.matrixWorld;
       for (const t of tw) t.count = 0;
@@ -344,6 +344,7 @@ export function gpuProps(im) {
         const o = i * 16, sx = Math.hypot(D[o], D[o + 1], D[o + 2]), sy = Math.hypot(D[o + 4], D[o + 5], D[o + 6]), sz = Math.hypot(D[o + 8], D[o + 9], D[o + 10]);
         PS.center.set(D[o + 12], D[o + 13], D[o + 14]).applyMatrix4(wm); PS.radius = R0 * Math.max(sx, sy, sz) + 8;   // (+8 m: things just out of view still cast their shadows in)
         if (!PF.intersectsSphere(PS)) continue;
+        if (occ && !im.castShadow && occ.hidden(PS.center, PS.radius - 8)) continue;
         const d = (PS.center.x - cx) ** 2 + (PS.center.y - cy) ** 2 + (PS.center.z - cz) ** 2;   // squared, like the levels
         let L = 0; while (L + 1 < levels.length && d >= levels[L + 1].dist) L++;
         const t = tw[L], k = t.count++;

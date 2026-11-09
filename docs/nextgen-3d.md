@@ -331,6 +331,15 @@ works on instanced meshes and on WebGL and WebGPU alike.
   shows the walls, windows and red sofa in the right places instead of a far-off sky. Every lit
   standard material on a mesh inside the box gets it (or only `meshes`); call it once the room is
   built, before the first draw. `.bake()` again after the room changes, `.remove()` to drop it.
+- `v.occluders(list)` turns on occlusion culling: whatever is fully hidden behind big solid boxes
+  isn't drawn (the blocks behind a row of buildings, the rooms behind a wall). `list` is boxes
+  `{ x0, x1, y0, y1, z0, z1 }` in world metres, `Box3`s, or solid box-like meshes; `null` turns it off.
+  List only big, solid things that stay put (walls, buildings, cliffs), not glass or fences. Every mesh,
+  and each `gs.props` instance, is tested by its bounds each frame; `userData.noOcclude = true`
+  always draws a mesh. Hidden things still cast their shadows and show in reflections. It runs on the
+  CPU (a small depth picture of the nearest boxes, `{ max: 300 }` of them), so it's the same on WebGL
+  and WebGPU, and it only skips what is surely hidden. `gs.city` turns it on for its buildings by
+  itself (`occlude: false` to stop it). `v.occlusion.stats` says what the last frame skipped.
 - `v.shafts = 1` (0..2) adds sun shafts: the bright sky round the sun is smeared towards it at quarter
   size, so whatever blocks it (trees, window frames, a hill) leaves streaks of light. Set `v.sun` so
   it knows where the sun is. It's off on the lowest tier. A physical sky is far brighter round the sun;
