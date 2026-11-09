@@ -141,7 +141,7 @@ export interface SoundPart {
     reset(): Loose;
   };
   /** Speaks a line with the phone's own voice (text to speech). Resolves when it's said (false if it couldn't). Show the words too. */
-  say(text: string, o?: { pitch?: number; rate?: number; volume?: number; lang?: string }): Promise<boolean>;
+  say(text: string, o?: { pitch?: number; rate?: number; volume?: number; lang?: string; onWord?: (at: number) => void }): Promise<boolean>;
   stopTalking(): void;
   talking(): boolean;
 }
@@ -592,6 +592,19 @@ export interface CharactersPart {
   reach(upper: Loose, lower: Loose, target: Loose, o?: { pole?: Loose; length?: number; end?: Loose }): boolean;
   Steps: new (o?: { feet?: [number, number][]; stride?: number; lift?: number; time?: number; lead?: number; ground?: ((x: number, z: number) => number) | null }) => { feet: { pos: Loose; lifting: number; landed: boolean }[]; update(dt: number, body: Loose): Loose };
   Wobble: new (o?: { stiffness?: number; damping?: number }) => { value: number; hit(amount?: number): Loose; update(dt: number): Loose };
+  /** Blend shapes on a mesh eased together, blinking by itself, lip sync to gs.sound.say. */
+  Face: new (mesh: Loose, o?: { blinkEvery?: number; speed?: number }) => FaceT;
+  /** Adds blend shapes to a geometry: fn sets out to how far each rest point p moves. */
+  shapes(geo: Loose, fns: Record<string, (p: Loose, out: Loose) => void>): Loose;
+  /** Mouth shapes over time for a line of speech. */
+  visemes(text: string, o?: { rate?: number }): { t: number; ch: string; open: number; wide: number; round: number }[] & { end: number };
+  FACE_SHAPES: string[];
+}
+export interface FaceT {
+  blinkEvery: number; readonly talking: boolean;
+  set(name: string, amount?: number): FaceT;
+  say(text: string, o?: { pitch?: number; rate?: number; volume?: number; lang?: string }): Promise<boolean>;
+  hush(): FaceT; mouth(level: number | null): FaceT; blink(): FaceT; update(dt: number): FaceT;
 }
 /** Thousands of flockers: on the graphics chip (WebGPU compute) where the phone can, else the CPU. */
 export declare class Swarm {
@@ -1061,9 +1074,23 @@ export interface ArenaPart {
   BallCar: new (world: Loose, mesh: Loose, o?: { team?: number; at?: P3; wheels?: Loose[]; power?: number; steer?: number; top?: number; boostTop?: number; maxBoost?: number; boostUse?: number; boostPush?: number; jump?: number; dodge?: number; air?: number; start?: number; w?: number; h?: number; l?: number }) => BallCar;
   chaseBall(car: BallCar, arena: Loose, o?: { skill?: number }): { throttle: number; steer: number; boost: boolean; jump: boolean };
 }
+export interface RigT {
+  state: string;
+  play(name: string, o?: { fade?: number }): RigT; upper(name: string | null): RigT; add(name: string, fn: Loose, rate?: number): RigT;
+  /** 1D blend space: { pose: value }, mixed at v with every cycle in step. */
+  blend(space: Record<string, number>, v: number): RigT;
+  /** 2D blend space: { pose: [x, y] }, mixed at (x, y). */
+  blend2(space: Record<string, [number, number]>, x: number, y: number): RigT;
+  /** Foot IK after update(): feet on the floor at ground(x, z); body is the character. */
+  plant(ground: (x: number, z: number) => number, body: Loose, o?: { most?: number }): RigT;
+  update(dt: number, o?: { speed?: number; aim?: number; turn?: number }): RigT;
+}
 export interface PosesPart {
   POSES: Record<string, Loose>;
-  Rig: new (parts: Loose, o?: { fade?: number; height?: number; poses?: Record<string, Loose> }) => { state: string; play(name: string, o?: { fade?: number }): Loose; upper(name: string | null): Loose; add(name: string, fn: Loose, rate?: number): Loose; update(dt: number, o?: { speed?: number; aim?: number; turn?: number }): Loose };
+  Rig: new (parts: Loose, o?: { fade?: number; height?: number; poses?: Record<string, Loose> }) => RigT;
+  /** A skinned person: one smooth mesh over the figure's bones, with a Rig and a Face. */
+  person(o?: { body?: string; skin?: string; legs?: string; shoes?: string; hair?: string | null; eyes?: string; lips?: string; sleeves?: 'long' | 'short'; girth?: number; mat?: (colour: string) => Loose; scale?: number; shadows?: boolean }): Loose & { rig: RigT; face: FaceT; mesh: Loose; bones: Record<string, Loose> };
+  Face: CharactersPart['Face']; shapes: CharactersPart['shapes']; visemes: CharactersPart['visemes']; FACE_SHAPES: string[];
   figure(o?: { body?: string; skin?: string; legs?: string; shoes?: string; hair?: string; mat?: (colour: string) => Loose; scale?: number; shadows?: boolean }): Loose;
 }
 export interface DestructionPart {
