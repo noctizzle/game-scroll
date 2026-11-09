@@ -47,7 +47,7 @@ export const LOCATION_LEVELS = ['coarse', 'precise'];
 // say so before Play and ask for motion access on the Play tap. Games don't declare it themselves.
 const SENSORS = {
   camera: ['device.startCamera', 'vision.Face', 'vision.Hands', 'vision', 'ar.ARView', 'ar'],
-  mic: ['device.startMic'],
+  mic: ['device.startMic', 'hear.Sounds', 'hear.Voice', 'hear'],
   motion: ['device.tilt', 'device.calibrateTilt', 'device.onMotion', 'device.onShake', 'device.heading', 'device.orientation', 'device.faceDown', 'moves.Moves', 'moves', 'ar.ARView', 'ar'],
 };
 /** ['camera', 'mic', 'motion'] (the ones a game uses), from a gsNeeds list. */

@@ -13,3 +13,4 @@ catalogue-signing-key.pem
 # Website build (scripts/build-site.mjs)
 dist-site
 ml-cache/
+qd-data/

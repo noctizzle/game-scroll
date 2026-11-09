@@ -65,6 +65,9 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Decks, hands, poker and blackjack maths; dice | `gs.cards` (pokersolver), `gs.dice` | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
 | A dictionary for word games | `gs.words` (SCOWL) | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
 | Menus, shops and HUD layout in your own look | `gs.ui` (Yoga) | [Worlds, craft, soft things, cards and menus](#worlds-craft-soft-things-cards-and-menus) |
+| Hear a dog bark, a whistle, clapping; spoken commands | `gs.hear` (YAMNet, the phone's own speech) | [Hearing, doodles and the phone's AI](#hearing-doodles-and-the-phones-ai) |
+| Know what the player drew (sword, bridge, umbrella...) | `gs.doodle` | [Hearing, doodles and the phone's AI](#hearing-doodles-and-the-phones-ai) |
+| Lines that change every time (a shopkeeper, a riddle) | `gs.phoneai` (the phone's built-in AI) | [Hearing, doodles and the phone's AI](#hearing-doodles-and-the-phones-ai) |
 
 ## What `gs` has, and what it doesn't
 
@@ -1241,6 +1244,73 @@ momentum, and moving focus with arrows or a controller (`key()`), and sends `tap
 and `back` events. `ui.each((node, box) => ...)` hands you every visible box with its state
 (`pressed`, `focused`, `press` for a bounce, your own `data`) and you paint it however your game
 looks. `wrap(c, text, width)` splits text into lines.
+
+## Hearing, doodles and the phone's AI
+
+All three run on the phone itself: nothing the mic hears, nothing drawn and nothing said leaves it.
+They load the first time a game uses them, so make them in `make()` or `reset()`.
+
+**Everyday sounds** (`gs.hear.Sounds`): Google's YAMNet knows 521 sounds. Name the ones you want,
+start from a tap, and read them each frame:
+
+```js
+const { Sounds, Voice } = gs.hear;
+reset() { ears = new Sounds({ want: ['Dog', 'Whistling', 'Clapping', 'Laughter'] }); }
+down() { if (!ears.running) ears.start(); /* ...and the touch way to play */ }
+update(dt) { ears.update(dt); if (ears.heard('Dog')) scareCats(); }
+```
+
+`heard(name)` is true once each time the sound starts, `hearing(name)` is how sure it is right now
+(0..1) and `top` is the surest sound. Options: `sure` (.3) and `every` (seconds between looks, .25).
+Some names: `'Speech'`, `'Singing'`, `'Whistling'`, `'Clapping'`, `'Finger snapping'`, `'Laughter'`,
+`'Dog'`, `'Cat'`, `'Bird'`, `'Knock'`, `'Bell'`, `'Cough'`, `'Snoring'`, `'Music'`. The engine and model
+(about 11 MB) download once from our games server; `npm run ml` fetches them for `npm run dev`.
+
+**Spoken commands** (`gs.hear.Voice`): uses the phone's own on-device recogniser (iPhone, and
+Android 12 and later). Phones without one say `available` false, so keep touch controls:
+
+```js
+voice = new Voice({ words: ['jump', 'fire'], also: { fire: ['shoot', 'bang'] } });
+down() { voice.start(); }               // false if this phone can't listen on the phone itself
+update(dt) { if (voice.said('jump')) jump(); }
+```
+
+`said(word)` is true once each time it's said, a near miss of one letter still counts ("jumb"), and
+`heard` lists the words caught lately, for showing on screen.
+
+**Doodles** (`gs.doodle.Doodle`): a tiny model (about 100 KB, trained on Google's Quick, Draw!
+drawings) names what the player drew, in a few milliseconds:
+
+```js
+const { Doodle } = gs.doodle;
+reset() { doodle = new Doodle(); strokes = []; }
+down(x, y) { strokes.push([{ x, y }]); }
+move(x, y, pressed) { if (pressed) strokes.at(-1).push({ x, y }); }
+up() { const best = doodle.guess(strokes, { among: ['sword', 'umbrella', 'bridge'] })[0]; if (best.sure > .5) use(best.name); }
+```
+
+It knows 46 things (`Doodle.things`): sword, star, circle, triangle, square, house, tree, cat, fish,
+bird, sun, moon, cloud, lightning, umbrella, key, ladder, bridge, car, sailboat, airplane, flower,
+apple, snowman, mountain, hat, crown, envelope, eye, smiley face, fork, hammer, axe, door, candle,
+clock, cup, diamond, banana, bicycle, spider, snake, rainbow, octopus, light bulb, hot air balloon.
+About 9 in 10 drawings are named right among all of them, and nearly all when `among` lists a few,
+so ask for the few your game cares about. For plain shapes, `gs.strokes` `Shapes` needs no model.
+
+**The phone's own AI** (`gs.phoneai.PhoneAI`): newer phones have a language model built in (Apple
+Intelligence on iPhone, Gemini Nano on Android, the browser's own on the web). Use it for flavour:
+a greeting, a taunt, a riddle that changes each time. Most phones don't have one, so every `ask` has
+a written `fallback`, and the game must play the same without it.
+
+```js
+const { PhoneAI } = gs.phoneai;
+const keeper = new PhoneAI({ persona: 'a grumpy old lighthouse keeper', words: 20 });
+reset() { line = 'Mind the rocks.'; keeper.ask('Greet the player, who just arrived by boat.', { fallback: 'Mind the rocks.' }).then(t => line = t); }
+```
+
+Guard rails, always on: the model is told it's a character in a family game; answers are cut to
+`words`, and any answer with a link, an email, a long number or a blocked word is dropped for the
+fallback. One ask at a time, at most one every 2 seconds, each giving up after `timeout` seconds (4).
+The same prompt gives the same answer for the round (`forget()` for new ones, `fresh: true` for one).
 
 ## Feel, sound, touch and 2D animation (round 9)
 

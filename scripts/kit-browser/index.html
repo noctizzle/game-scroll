@@ -287,5 +287,24 @@ try {
   mixer.room('hall').muffle(.6).volume('music', .4).duck('music', .2, .1); tone(440, { len: .05 }); tone(660, { len: .05, bus: 'alarm' });
   mixer.reset(); ok(typeof say === 'function' && talking() === false, 'mixer channels, room, muffle and duck run in a real browser');
 }
+{
+  // the smarts: sound recognition loads and hears the fake mic; a doodle is named in a real browser
+  let gx; try { gs.hear; } catch (x) { gx = x; } ok(gx?.kitLoading, 'gs.hear StillLoading'); await gx.kitLoading;
+  let e2; try { new gs.hear.Sounds(); } catch (x) { e2 = x; } ok(e2?.kitLoading, 'Sounds StillLoading'); await e2.kitLoading;
+  const ears = new gs.hear.Sounds({ every: 0 }); await ears.start();
+  ok(ears.ready && !ears.failed, 'sound model loads and the mic starts' + (ears.failed ? ': ' + ears.failed : ''));
+  if (ears.ready) {
+    const n = 15600 * 2, buf = new Float32Array(n); for (let i = 0; i < n; i++) buf[i] = .5 * Math.sin(i / 16000 * 2 * Math.PI * 1800);
+    const res = ears.task.classify(buf, 16000), cats = res?.[0]?.classifications?.[0]?.categories || [];
+    ok(cats.length > 0, 'YAMNet hears a whistle-like tone as: ' + cats.slice(0, 3).map(c => c.categoryName).join(', '));
+    ears.update(1); ok(true, 'update runs on the live mic'); ears.stop(); ok(!ears.running, 'stops');
+  }
+  let e3; try { new gs.doodle.Doodle(); } catch (x) { e3 = x; } if (e3) await e3.kitLoading;
+  const d = new gs.doodle.Doodle(), t0 = performance.now();
+  const best = d.guess([[{ x: 0, y: 100 }, { x: 50, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }]], { among: ['triangle', 'circle', 'square'] })[0];
+  ok(best.name === 'triangle', 'doodle names a triangle in ' + (performance.now() - t0).toFixed(1) + ' ms');
+  ok(!('stopHearing' in gs.hear) && !('loadDoodle' in gs.doodle) && !('phoneAIStatus' in gs.phoneai), 'smarts helpers stay hidden');
+  ok(await new gs.phoneai.PhoneAI().ask('hi', { fallback: 'ok' }) === 'ok', 'phone AI falls back with no model');
+}
 window.result = out;
 </script>

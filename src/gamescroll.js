@@ -71,9 +71,12 @@
 //   gs.dice      dice notation ('4d6kh3'), odds, tumbling 2D dice, real 3D dice read by the top face
 //   gs.words     an English dictionary (SCOWL): check, pick, find words in letters or grids, compare guesses
 //   gs.ui        layout with no look (Yoga flexbox): boxes, taps, holds, drags, scrolling lists, focus for pads
+//   gs.hear      hearing everyday sounds (YAMNet: dog, whistle, clapping...) and spoken words, on the phone itself
+//   gs.doodle    knows what the player drew (46 things: sword, umbrella, bridge...), a tiny model on the phone
+//   gs.phoneai   the phone's own built-in AI for flavour lines, with a written fallback and guard rails
 //   gs.THREE     three.js itself
 //
-// The 3D styles, AI, the action kits and the play kits (craft ... ui) load when a game that uses them is on its way (the app does this; games don't
+// The 3D styles, AI, the action kits, the play kits (craft ... ui) and the smarts (hear, doodle, phoneai) load when a game that uses them is on its way (the app does this; games don't
 // need to), so the app opens fast. Big libraries (physics, 3D path finding, 3D effects, face
 // tracking, Tone.js) load the first time a game uses them:
 // make those things in make() or reset() and the app shows "Loading…" until they're in.
@@ -135,6 +138,9 @@ export const HIDDEN = {
   gen: ['loadGen'],
   words: ['loadWords'],
   ui: ['loadUI'],
+  hear: ['loadHear', 'stopHearing'],
+  doodle: ['loadDoodle'],
+  phoneai: ['phoneAIStatus'],
   brains: ['liveBrains', 'brainStats'],   // the debug overlay's list of live brains
   hd: ['FINAL_EFFECTS', 'gpuFits'],
   props: ['simplifyReady'],   // the Next Gen screen shader in pieces, for the WebGPU port (docs/webgpu-move.md)
@@ -185,6 +191,8 @@ const GROUPS = {
     load: () => import('./gs-action.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
   play: { parts: ['craft', 'soft', 'cards', 'dice', 'words', 'ui'],
     load: () => import('./gs-play.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
+  smart: { parts: ['hear', 'doodle', 'phoneai'],
+    load: () => import('./gs-smart.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
 };
 const groupOf = {}; for (const [g, d] of Object.entries(GROUPS)) for (const p of d.parts) groupOf[p] = g;
 const loaded = {}, loading = {};

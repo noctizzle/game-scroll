@@ -981,3 +981,47 @@ console.log('physics ok');
   assert.ok(mcalls.i.length && mcalls.s.length, 'drives the tune');
   console.log('device + sound: haptic patterns, mixer, speech calls and living music ok without audio');
 }
+
+// the smarts: doodle recognition, voice command matching, the phone AI's guard rails
+{
+  const { Doodle, loadDoodle, picture } = await import('../src/kit/doodle.js');
+  let threw = null; try { new Doodle(); } catch (e) { threw = e; }
+  assert.ok(threw?.kitLoading, 'Doodle before load throws StillLoading');
+  await loadDoodle();
+  const d = new Doodle();
+  assert.equal(Doodle.things.length, 46); assert.deepEqual(d.things, Doodle.things);
+  assert.equal(picture([]).reduce((a, b) => a + b, 0), 0, 'nothing drawn, empty picture');
+  const ring = [Array.from({ length: 33 }, (_, i) => ({ x: 100 + 80 * Math.cos(i / 32 * Math.PI * 2), y: 100 + 80 * Math.sin(i / 32 * Math.PI * 2) }))];
+  const g = d.guess(ring);
+  assert.equal(g.length, 46); assert.ok(Math.abs(g.reduce((a, b) => a + b.sure, 0) - 1) < 1e-5, 'sures add up to 1');
+  assert.ok(['circle', 'clock', 'smiley face', 'sun', 'moon'].includes(g[0].name), 'a ring looks round: ' + g[0].name);
+  const tri = [[{ x: 0, y: 100 }, { x: 50, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }]];
+  assert.equal(d.guess(tri, { among: ['triangle', 'circle', 'square'] })[0].name, 'triangle', 'a triangle among three');
+  const ladder = [[{ x: 0, y: 0 }, { x: 0, y: 200 }], [{ x: 60, y: 0 }, { x: 60, y: 200 }], ...[30, 80, 130, 180].map(y => [{ x: 0, y }, { x: 60, y }])];
+  assert.equal(d.guess(ladder, { among: ['ladder', 'sword', 'door'] })[0].name, 'ladder', 'a ladder among three');
+  assert.deepEqual(d.guess(ring, { among: ['dragon'] }), [], 'unknown names are left out');
+  console.log('doodle: picture, guesses, among ok (top for a ring: ' + g[0].name + ')');
+
+  const { Voice } = await import('../src/kit/hear.js');
+  const v = new Voice({ words: ['jump', 'fire', 'turn left'], also: { fire: ['shoot'] } });
+  v.hear('jump', false); v.hear('jump jump', false); v.hear('jump jump', true);
+  assert.ok(v.said('jump') && v.said('jump') && !v.said('jump'), 'partials count each jump once');
+  v.hear('please shoot now', true); assert.ok(v.said('fire') && !v.said('shoot'), 'also: shoot means fire');
+  v.hear('turn left', true); assert.ok(v.said('turn left'), 'phrases');
+  v.hear('jumb', true); assert.ok(v.said('jump'), 'one letter off still counts');
+  v.hear('jumped fir', true); assert.ok(!v.said('jump') && !v.said('fire'), 'but not other words');
+  assert.ok(v.heard.length <= 8 && v.heard.at(-1) === 'jump', 'heard keeps the newest');
+  console.log('voice: command matching ok');
+
+  const { tidy, PhoneAI } = await import('../src/kit/phoneai.js');
+  assert.equal(tidy('  "Ahoy there, traveller!"  '), 'Ahoy there, traveller!');
+  assert.equal(tidy('**Mind** the `rocks`.'), 'Mind the rocks.');
+  assert.equal(tidy('Visit www.example.com for more'), null, 'links dropped');
+  assert.equal(tidy('Call 07700900123 now'), null, 'number strings dropped');
+  assert.equal(tidy('You stupid sailor'), null, 'blocked words dropped');
+  assert.equal(tidy(null), null);
+  assert.ok(tidy('One two three four five six. Seven eight nine ten eleven twelve.', 8) === 'One two three four five six.', 'cut at a sentence end');
+  const ai = new PhoneAI({ persona: 'a crab' });
+  assert.equal(await ai.ask('Say hi', { fallback: 'Snip snap.' }), 'Snip snap.', 'no model here: the fallback');
+  console.log('phone AI: tidy and fallback ok');
+}

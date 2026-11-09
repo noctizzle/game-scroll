@@ -184,11 +184,14 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.fx3d` (lazy): `text3d()`, `Particles3D` (`fire`, `smoke`, `sparks`, `boom`, `magic`, `snow`),
   `outline`, `glitch`, `trails`, `focus`, `pixelate`.
 - `gs.vision` (lazy): `Face` (`x`, `y`, `yaw`, `mouth`, `smile`, `blink`...), `Hands` (`pinch`, `open`, `point`...).
+- `gs.hear` (lazy): `Sounds({ want: ['Dog', 'Whistling'] })` (`start()` from a tap, `update(dt)`, `heard`, `hearing`, `top`),
+  `Voice({ words, also })` (`start()`, `said(word)`, `available`). `gs.doodle` (lazy): `Doodle` (`guess(strokes, { among })` of 46 things).
+  `gs.phoneai`: `PhoneAI({ persona, words })` `ask(prompt, { fallback })` for flavour lines only; play must never depend on it.
 
-**Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `story.Story`, `look2d.Screen`, `look2d.Batch`, `words.Words`, `ui.UI`, `juice.Timeline`): create them in `make()` or `reset()`, never
+**Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `story.Story`, `look2d.Screen`, `look2d.Batch`, `words.Words`, `ui.UI`, `juice.Timeline`, `hear.Sounds`, `doodle.Doodle`): create them in `make()` or `reset()`, never
 later. The app shows "Loading…" and remakes the game once the library is in.
 The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `THREE`)
-and `ai`, plus the action kits (`combat`, `tactics`, `climb`, `missions`, `cutscene`, `prompts`, `stealth`, `gadgets`, `campaign`, `arena`) and play kits (`craft`, `soft`, `cards`, `dice`, `words`, `ui`), also load on first use, so the app opens fast. The app loads the ones a game uses before it
+and `ai`, plus the action kits (`combat`, `tactics`, `climb`, `missions`, `cutscene`, `prompts`, `stealth`, `gadgets`, `campaign`, `arena`) and play kits (`craft`, `soft`, `cards`, `dice`, `words`, `ui`) and smarts (`hear`, `doodle`, `phoneai`), also load on first use, so the app opens fast. The app loads the ones a game uses before it
 runs, so read them as usual (`const { HDView } = gs.hd` at the top of the file is fine).
 
 **Sensors are worked out for you.** The build reads which camera, mic and motion parts a game uses and
@@ -205,6 +208,6 @@ Add `/** @type {import('../gamescroll.js').GameDef} */` above `export default` t
 - Using `Date.now()` or `setTimeout` for game timing: use `dt` and `gs.math.Timers` (they pause with the game).
 - Starting music in `reset()` (it also runs while the card waits in the feed): start it in `update()`.
 - Drawing in screen pixels: always draw in `w` × `h` game units; input is already converted.
-- Forgetting a touch fallback for tilt, mic, camera, face or motion.
+- Forgetting a touch fallback for tilt, mic, voice, camera, face or motion.
 - Pocket games with more than 4 shades, or smooth (non-integer) positions in pixel styles.
 - A `goal` nobody can reach, or a game that scores with no input.
