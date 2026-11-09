@@ -35,6 +35,7 @@
     "kit-test": "node scripts/kit-test.mjs",
     "brains": "node scripts/brain-check.mjs",
     "licences": "node scripts/licence-check.mjs",
+    "qnn-pin": "node scripts/qnn-pin.mjs",
     "types-check": "node scripts/types-check.mjs",
     "kit-browser": "node scripts/kit-browser.cjs",
     "ai-prompt": "node scripts/ai-prompt.mjs",

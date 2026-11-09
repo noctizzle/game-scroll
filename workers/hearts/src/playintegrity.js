@@ -8,7 +8,7 @@
 // linked to the app in Play Console (App integrity), with the Play Integrity API enabled.
 import { b64u, enc, unb64 } from './util.js';
 
-export const PACKAGE = 'com.gamescroll.app';
+export const PACKAGE = 'com.game_scroll.app';
 const fail = msg => { const e = new Error(msg); e.attest = true; throw e; };
 
 let cachedToken = null;

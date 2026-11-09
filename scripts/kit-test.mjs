@@ -1105,3 +1105,41 @@ console.log('physics ok');
   s.near = .55; s.tired = .6; s.food = .9; const a = want.pick(); assert.equal(a, 'fight', 'stickiness keeps the current pick near a tie (' + JSON.stringify(want.scores) + ')');
   console.log('behaviour trees: selector, guards, game-time waits; wants: curves, weights, stickiness ok');
 }
+// skinned person: one mesh over the figure's bones, face shapes, lip sync timing, blend spaces, foot IK
+{
+  const { person, Rig } = await import('../src/kit/poses.js');
+  const { Face, shapes, visemes } = await import('../src/kit/characters.js');
+  const { BoxGeometry, Mesh, Vector3 } = await import('three');
+  const p = person({ hair: null });
+  assert.ok(p.mesh.isSkinnedMesh && p.mesh.skeleton.bones.length === 13, 'one skinned mesh, 13 bones');
+  const sw = p.mesh.geometry.attributes.skinWeight; let bad = 0;
+  for (let i = 0; i < sw.count; i++) if (Math.abs(sw.getX(i) + sw.getY(i) + sw.getZ(i) + sw.getW(i) - 1) > 1e-4) bad++;
+  assert.equal(bad, 0, 'every vertex weights add up to 1');
+  assert.deepEqual(Object.keys(p.mesh.morphTargetDictionary).sort(), ['blink', 'frown', 'open', 'round', 'smile', 'surprise', 'wide'], 'face shapes');
+  // walking to running by speed keeps one phase; the hips drop with the run's lean
+  p.rig.blend({ idle: 0, walk: 1.4, run: 4 }, 2.7); for (let i = 0; i < 40; i++) p.rig.update(1 / 30, { speed: 2.7 });
+  assert.ok(Math.abs(p.rig.bw.walk - .5) < .01 && Math.abs(p.rig.bw.run - .5) < .01, 'half walk, half run ' + JSON.stringify(p.rig.bw));
+  assert.equal(p.rig.blendK, 1, 'blended in');
+  p.rig.blend2({ idle: [0, 0], walk: [0, 1], back: [0, -1], strafeL: [-1, 0], strafeR: [1, 0] }, 1, 0);
+  assert.equal(p.rig.bw.strafeR, 1, 'strafe right on the 2D space');
+  p.rig.play('idle'); for (let i = 0; i < 30; i++) p.rig.update(1 / 30); assert.equal(p.rig.blendK, 0, 'play() fades the blend out');
+  // foot IK: the left foot on a 20 cm step, the right on the floor; the left knee bends to put it there
+  for (let i = 0; i < 30; i++) { p.rig.update(1 / 30); p.rig.plant(x => x > 0 ? .2 : 0, p); }
+  p.updateMatrixWorld(true);
+  const fl = p.bones.footL.getWorldPosition(new Vector3()), fr = p.bones.footR.getWorldPosition(new Vector3());
+  assert.ok(Math.abs(fl.y - fr.y - .2) < .02, 'left ankle 20 cm above the right: ' + (fl.y - fr.y).toFixed(3));
+  assert.ok(Math.abs(fr.y - .09) < .02, 'right ankle stays on the floor ' + fr.y.toFixed(3));
+  // lip sync: vowels open the mouth, m/b/p close it; a line takes about a second for 14 letters
+  const v = visemes('Mama'); assert.ok(v[0].open === 0 && v[1].open > .8, 'm closed, a open');
+  assert.ok(Math.abs(visemes('abcdefghijklmn').end - 1) < .2, 'about 14 letters a second');
+  const f = new Face(p.mesh, { blinkEvery: 0 }); f.line = { v: visemes('ooo'), t: 0, i: 0 }; for (let i = 0; i < 4; i++) f.update(1 / 60);
+  const inf = p.mesh.morphTargetInfluences, d = p.mesh.morphTargetDictionary;
+  assert.ok(inf[d.round] > .4 && inf[d.wide] < .1, 'o rounds the mouth ' + inf[d.round].toFixed(2));
+  f.set('smile', 1); for (let i = 0; i < 60; i++) f.update(1 / 60); assert.ok(inf[d.smile] > .9, 'smile eases in');
+  f.blink(); f.update(.08); assert.ok(inf[d.blink] > .9, 'blink');
+  // shapes on any geometry
+  const g = shapes(new BoxGeometry(1, 1, 1), { tall: (q, o) => o.set(0, q.y, 0) }), m = new Mesh(g);
+  assert.equal(m.morphTargetDictionary.tall, 0, 'your own shape');
+  const ff = new Face(m, { blinkEvery: 0 }); ff.set('tall', 1); for (let i = 0; i < 60; i++) ff.update(1 / 60); assert.ok(m.morphTargetInfluences[0] > .9, 'eased');
+  console.log('skinned person, face shapes, lip sync, blend spaces, foot IK ok');
+}

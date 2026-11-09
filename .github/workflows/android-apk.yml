@@ -41,6 +41,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Qualcomm NPU files pinned for this ONNX Runtime
+        run: node scripts/qnn-pin.mjs --check
+
       - name: Build the web app
         run: npm run build
 

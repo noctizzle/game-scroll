@@ -52,7 +52,7 @@ import java.util.concurrent.Executors;
  * never go through the web view: JavaScript asks for a crop of the newest picture to be run through a
  * model and gets the model's numbers back (base64 little-endian float32s).
  *
- *   available() -> { available, backend ('qnn' | 'cpu'), chip }
+ *   available() -> { available, backend ('qnn' | 'cpu'), chip, qnn }   (qnn: where Qualcomm's NPU libraries stand, see QnnRuntime.state())
  *   loadModel({ name, version, url, sha256 }) -> { loaded, backend, reason? }   (downloads once, from our games host only)
  *   cameraStart({ width, height }) -> { started, w, h, reason? }; cameraStop()
  *   frame({ after }) -> { id, w, h }   holds the newest upright picture (id -1 if none yet)
@@ -77,23 +77,16 @@ public class NPUPlugin extends Plugin {
 
     // ------------------------------------------------------------------ models
 
-    // A Snapdragon phone, and an app built with Qualcomm's QNN libraries (unpacked next to ours)
-    private Boolean qnn;
-    private boolean qualcomm() {
-        if (qnn == null) {
-            String soc = Build.VERSION.SDK_INT >= 31 ? Build.SOC_MANUFACTURER : "";
-            boolean snapdragon = "QTI".equalsIgnoreCase(soc) || "Qualcomm".equalsIgnoreCase(soc) || Build.HARDWARE.toLowerCase().startsWith("qcom");
-            qnn = snapdragon && new File(getContext().getApplicationInfo().nativeLibraryDir, "libQnnHtp.so").exists();
-        }
-        return qnn;
-    }
+    // Qualcomm's QNN libraries: in the app (store builds), or downloaded on a supported Snapdragon (our own APKs)
+    private QnnRuntime qnn;
 
     @PluginMethod
     public void available(PluginCall call) {
         JSObject r = new JSObject();
         r.put("available", true);
-        r.put("backend", qualcomm() ? "qnn" : "cpu");
+        r.put("backend", qnn.dir() != null ? "qnn" : "cpu");
         r.put("chip", Build.VERSION.SDK_INT >= 31 ? Build.SOC_MODEL : Build.HARDWARE);
+        r.put("qnn", qnn.state());
         call.resolve(r);
     }
 
@@ -101,6 +94,7 @@ public class NPUPlugin extends Plugin {
     public void loadModel(PluginCall call) {
         String name = call.getString("name", ""), version = call.getString("version", ""), url = call.getString("url", ""), sha = call.getString("sha256", "");
         if (!name.matches("[a-z0-9-]+") || !version.matches("[a-z0-9.-]+") || !sha.matches("[0-9a-f]{64}")) { call.reject("bad name"); return; }
+        qnn.fetchSoon(0);   // a game wants the AI chip: fetch Qualcomm's libraries now if they're missing (the next game gets the NPU)
         work.execute(() -> {
             JSObject r = new JSObject();
             try {
@@ -157,16 +151,19 @@ public class NPUPlugin extends Plugin {
     }
 
     // The NPU's half of QNN (the "skel" libraries) runs on the Hexagon DSP, which loads it from files on
-    // disk: our own native library folder (the app keeps its libraries unpacked, see android/app/build.gradle)
-    // and the phone's DSP folders. QNN reads this path once, the first time it loads, so it is set when
-    // the plugin starts, before any model.
+    // disk: the downloaded QNN folder, our own native library folder (the app keeps its libraries
+    // unpacked, see android/app/build.gradle) and the phone's DSP folders. QNN reads this path once, the
+    // first time it loads, so it is set when the plugin starts, before any model. Our own APKs then
+    // fetch QNN in the background a little after start (on a supported Snapdragon, on Wi-Fi), so it
+    // doesn't compete with the feed's first downloads.
     @Override
     public void load() {
-        if (!qualcomm()) return;
+        qnn = new QnnRuntime(getContext());
+        if (!QnnRuntime.snapdragon()) return;
         try {
-            String own = getContext().getApplicationInfo().nativeLibraryDir;
-            android.system.Os.setenv("ADSP_LIBRARY_PATH", own + ";/vendor/lib/rfsa/adsp;/vendor/lib64/rfs/dsp/snap;/vendor/dsp/cdsp;/vendor/dsp;/system/lib/rfsa/adsp;/system/vendor/lib/rfsa/adsp;/dsp", true);
+            android.system.Os.setenv("ADSP_LIBRARY_PATH", qnn.adspPath(), true);
         } catch (Exception e) { Logger.warn("NPU", "ADSP_LIBRARY_PATH: " + e.getMessage()); }
+        qnn.fetchSoon(20000);
     }
 
     // On Snapdragon: the HTP (NPU) backend, float16 maths and burst speed. The first start compiles the
@@ -174,12 +171,13 @@ public class NPUPlugin extends Plugin {
     // load that instead and skip compiling. If any of it fails (or another chip): the CPU.
     private void open(String name, File f) throws Exception {
         if (env == null) env = OrtEnvironment.getEnvironment();
-        if (qualcomm()) {
+        File lib = qnn.dir();
+        if (lib != null) {
             File ctx = new File(f.getParentFile(), name + ".qnn-" + installed() + ".onnx");   // compiled again after each app update
             for (int attempt = 0; attempt < 2; attempt++) {
                 boolean cached = ctx.exists() && ctx.length() > 0;
                 try {
-                    OrtSession.SessionOptions o = qnnOptions();
+                    OrtSession.SessionOptions o = qnnOptions(lib);
                     if (!cached) {   // compile, and write the compiled model (ONNX Runtime refuses to overwrite one)
                         o.addConfigEntry("ep.context_enable", "1");
                         o.addConfigEntry("ep.context_embed_mode", "1");
@@ -204,10 +202,10 @@ public class NPUPlugin extends Plugin {
     private long installed() {
         try { return getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0).lastUpdateTime; } catch (Exception e) { return 0; }
     }
-    private static OrtSession.SessionOptions qnnOptions() throws Exception {
+    private static OrtSession.SessionOptions qnnOptions(File lib) throws Exception {
         OrtSession.SessionOptions o = new OrtSession.SessionOptions();
         Map<String, String> q = new HashMap<>();
-        q.put("backend_type", "htp");
+        q.put("backend_path", new File(lib, "libQnnHtp.so").getAbsolutePath());   // the HTP (NPU) backend; libQnnSystem.so is read from beside it
         q.put("htp_performance_mode", "burst");
         q.put("enable_htp_fp16_precision", "1");
         o.addQnn(q);
@@ -455,5 +453,6 @@ public class NPUPlugin extends Plugin {
         for (OrtSession s : sessions.values()) { try { s.close(); } catch (Exception ignored) { } }
         sessions.clear();
         work.shutdown(); camWork.shutdown();
+        if (qnn != null) qnn.close();
     }
 }

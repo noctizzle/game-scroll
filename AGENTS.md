@@ -147,7 +147,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.senses`: `Senses` (sight cones, hearing, memory; moods calm/suspicious/alert/searching), `Noises`.
 - `gs.camera.CameraRig` (3D): `chase`, `shoulder`, `first`, `top`, `side`, `orbit`, `rail`, `fixed`; walls, blends, `shake`, `kick`.
 - `gs.nav3d.NavMesh3D` (lazy): 3D paths made from your level meshes, `crowd()` agents.
-- `gs.characters`: `lookAt`, `reach` (two-bone IK), `Steps` (feet that plant), `Wobble`; ragdolls are `World3D.ragdoll()`.
+- `gs.characters`: `lookAt`, `reach` (two-bone IK), `Steps` (feet that plant), `Wobble`, `Face` (blend shapes, blinking, lip sync with `say(text)`), `shapes(geo, {...})`; ragdolls are `World3D.ragdoll()`.
 - `gs.camera2d.Camera2D`: follow with a dead zone, look-ahead, zoom, level bounds, `layer()` parallax, `toWorld()`.
 - `gs.tiles.TileMap.fromText(level)`: `#` walls, `-` one-way, `/` `\` slopes, letters as marks (`find('P')`);
   `move(box, dx, dy)`, `ray`, `sees`, `walkable()`, `draw(c, fn, cam)`, `edges(tx, ty)` (auto-tiling: `mask`, `blob`).
@@ -168,7 +168,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   `gs.vehicles` (`Car`, `Kart`, `Laps`; `World3D.vehicle()` for suspension), `gs.level3d.Level3D(text)`, `gs.sky`
   (`Sky` time of day, `Weather` rain/snow/storm).
 - Action and adventure: `gs.combat` (`Gun`, `Shots`, `arc`/`lob`, `Health`, `Markers`, `Explosives`), `gs.tactics`
-  (`CoverMap`, `Squad`, `Route`), `gs.climb` (`Ledges`, `Climber`, `Rope`), `gs.poses` (`figure`, `Rig`), `gs.missions`
+  (`CoverMap`, `Squad`, `Route`), `gs.climb` (`Ledges`, `Climber`, `Rope`), `gs.poses` (`figure`, `person` skinned with a face, `Rig` with `blend`/`blend2` blend spaces and `plant` foot IK), `gs.missions`
   (`Mission` scripts, `zone`), `gs.cutscene`, `gs.prompts` (quick-time), `gs.destruction` (`shatter`, `slice`, `Rubble`),
   `gs.stealth` (`lightAt`, `Takedown`, `Bodies`, `Floors`, `Disguise`), `gs.gadgets` (`Grapple`, `Zipline`, `Wires`, `Lock`,
   `Code`), `gs.arena` (`Arena`, `BallCar`, `chaseBall`), `gs.campaign.Campaign`, `gs.sound.Ears` (3D sound) and
@@ -185,7 +185,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.math`: `rng(seed)`, `daily(salt)`, `noise2`, `noise3`, `fbm`, `vec`, `overlap`, `Grid`, `Timers`, `angleDiff`, `wrap`.
 - `gs.util`: `clamp`, `rnd`, `pix`, `disc`, `hash`, `fmt`, `flickTracker`. `gs.palettes`: `PAL`, `SHELL`, `C16`.
 - `gs.gfx` (shaded 2D shapes, glow, backdrops), `gs.bricks` (toy bricks), `gs.geo` (location maths).
-- `gs.toon` (Console 3D: `View`, `G`, `part`, `grp`, `blob`, `toon`), `gs.hd` (Next Gen: `HDView` with `decal`, `bakeLight`, `shafts`,
+- `gs.toon` (Console 3D: `View`, `G`, `part`, `grp`, `blob`, `toon`), `gs.hd` (Next Gen: `HDView` with `decal`, `bounce` (bounce light), `room` (room reflections), `bakeLight`, `shafts`,
   `pbr`, `rbox`, `surface`, `speckle`, `Particles`, `sun`, `spot`), `gs.ar` (`ARView`, `FLOOR`, `arNote`), `gs.THREE`.
 - `gs.fx3d` (lazy): `text3d()`, `Particles3D` (`fire`, `smoke`, `sparks`, `boom`, `magic`, `snow`),
   `outline`, `glitch`, `trails`, `focus`, `pixelate`.

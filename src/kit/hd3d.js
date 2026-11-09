@@ -30,10 +30,11 @@ import {
   CanvasTexture, RepeatWrapping, SRGBColorSpace, NoColorSpace, PCFShadowMap, ACESFilmicToneMapping, HalfFloatType,
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
   OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4, DataTexture, RGBAFormat, ShaderChunk,
-  LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion, DepthTexture, WebGLCoordinateSystem,
+  LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion, DepthTexture, WebGLCoordinateSystem, Box3,
 } from 'three';
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
+import { LightProbeGridWebGL } from 'three/examples/jsm/lighting/LightProbeGridWebGL.js';
 import { SSRPass } from 'three/examples/jsm/postprocessing/SSRPass.js';
 import { HorizontalBlurShader } from 'three/examples/jsm/shaders/HorizontalBlurShader.js';
 import { VerticalBlurShader } from 'three/examples/jsm/shaders/VerticalBlurShader.js';
@@ -143,6 +144,8 @@ export const HD = {
   set frameGen(v) { speed.forceFrameGen = v || null; }, get frameGen() { return speed.forceFrameGen; },
   /** Tests: fgTap(kind, canvas, when) runs after each frame frame generation puts on the screen ('real' | 'made'; when: 'frame' | 'between'), while the canvas still holds it. */
   fgTap: null,
+  /** A gap between real frames longer than this (ms) counts as a pause: frame generation starts afresh. Tests on slow software GPUs raise it. */
+  fgGap: 250,
   /** Tests: run the refresh between now (where the test browser is too slow to have one), as the feed does on a refresh it skips. */
   between() { const b = speed.between; speed.between = null; b?.(); },
   /** Show the 3D canvas directly on the card (false: copy each frame into the card's canvas, as tests and screenshots need). */
@@ -521,6 +524,17 @@ function tileNoise(size, base, oct, seed) {
   return out;
 }
 /** The kit's shared tiling noise texture (r, g, b, a: four kinds of smooth noise, 0..1). */
+// v.room(): a direction from the probe, moved to where it meets the room's walls from this point (box-projected)
+const ROOM_GLSL = `varying vec3 gsRW; uniform vec3 gsRoomAt, gsRoomSize;
+vec3 gsBox(vec3 d) { vec3 n = normalize(d), pos = step(0., n), safe = mix(min(n, vec3(-1e-5)), max(n, vec3(1e-5)), pos), e = gsRoomSize * .5;
+  vec3 t = (mix(-e, e, pos) + gsRoomAt - gsRW) / safe; return gsRW + n * min(min(t.x, t.y), t.z) - gsRoomAt; }
+`;
+// a box from a Box3, { min, max } or an Object3D
+function boxOf(b) {
+  if (b?.isBox3) return b.clone();
+  if (b?.isObject3D) { b.updateWorldMatrix(true, true); return new Box3().setFromObject(b); }
+  return new Box3(new Vector3(...b.min), new Vector3(...b.max));
+}
 /**
  * A glowing ring that sweeps out from a point over a lit material: sonar, a shockwave, a scanner.
  * pulse(material, { at, radius, strength, color, width, fill }): at is a { value: Vector3 }, radius and
@@ -832,7 +846,7 @@ export class HDView {
     this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
-    this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.focus = null; this.cascade = null;
+    this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null;
     this.upscaler = undefined;   // 'sgsr1' keeps this view on Snapdragon GSR 1 (lots of fast movers: SGSR 2 can leave a short soft trail)
   }
   /**
@@ -929,6 +943,93 @@ export class HDView {
       this.blendProbes();
       return p;
     }, () => { rt.dispose(); return null; });
+  }
+  /**
+   * Bounce light (baked global illumination): light that has hit the floor, the walls and the props
+   * and lights everything else, from a 3D grid of probes over box (a Box3, { min: [x, y, z], max }, or
+   * an Object3D to cover). A red wall tints the floor beside it, a sunlit patch lifts a dark room, a
+   * cave is lit from its mouth. spacing: metres between probes (more probes for a bigger box are capped,
+   * so they spread out); bounces: extra passes of light bounced around (0 = only once); size: each
+   * probe's picture. Baked by whichever renderer draws the view, the first frame after this (and after
+   * a move between WebGL and WebGPU); v.bounce(...).bake() again after the level changes. Lower the
+   * view's amb when using it. Works on WebGL and WebGPU (three.js LightProbeGrid).
+   */
+  bounce(box, { spacing = 1.5, bounces = 1, size = 8, far } = {}) {
+    this.clearBounce();
+    const b = boxOf(box), dims = b.getSize(new Vector3()), centre = b.getCenter(new Vector3());
+    let sp = Math.max(.25, spacing); const count = d => Math.max(1, Math.round(d / sp));
+    while (count(dims.x) * count(dims.y) * count(dims.z) > 512) sp *= 1.15;
+    const gi = this.gi = { centre, dims, res: [count(dims.x), count(dims.y), count(dims.z)], bounces, size: Math.max(4, Math.round(size / 4) * 4), far: far ?? Math.max(20, dims.length() * 2), grids: {}, dirty: { gl: true, gpu: true } };
+    gi.bake = () => { gi.dirty.gl = gi.dirty.gpu = true; return gi; };
+    gi.remove = () => this.clearBounce();
+    return gi;
+  }
+  /** Removes the bounce light. */
+  clearBounce() { const gi = this.gi; if (!gi) return; for (const g of Object.values(gi.grids)) { g.removeFromParent(); g.dispose(); } this.gi = null; }
+  /**
+   * Reflections that fit a room: shiny things inside box (a Box3, { min, max } or an Object3D) reflect
+   * the room itself from its middle, moved to where each reflection meets the walls (box-projected), so
+   * a polished floor shows the walls and windows in the right places instead of a far-off sky. Every lit
+   * standard material on a mesh inside the box gets it (or only meshes: [...]); a material shared with
+   * things outside gets it too. size: the picture's size; strength: how strong. Baked the first frame
+   * after this; room.bake() again after the room changes. Works on WebGL and WebGPU.
+   */
+  room(box, { size = 128, strength = 1, meshes = null, far } = {}) {
+    const b = boxOf(box), dims = b.getSize(new Vector3()), centre = b.getCenter(new Vector3());
+    const spec = {
+      size, far: far ?? Math.max(10, dims.length() * 2),
+      uniforms: { gsRoomAt: { value: centre }, gsRoomSize: { value: dims } },
+      vertexHead: 'varying vec3 gsRW;\n',
+      vertex: [['#include <project_vertex>', 'after', '\n  gsRW = (modelMatrix * vec4(transformed, 1.)).xyz;\n#ifdef USE_INSTANCING\n  gsRW = (modelMatrix * instanceMatrix * vec4(transformed, 1.)).xyz;\n#endif\n']],
+      fragmentHead: ROOM_GLSL,
+      fragment: [['#include <envmap_physical_pars_fragment>', 'replace', () => ShaderChunk.envmap_physical_pars_fragment
+        .replace('reflectVec = transformDirectionByInverseViewMatrix( reflectVec, viewMatrix );', 'reflectVec = gsBox( transformDirectionByInverseViewMatrix( reflectVec, viewMatrix ) );')
+        .replace('vec3 worldNormal = transformNormalByInverseViewMatrix( normal, viewMatrix );', 'vec3 worldNormal = gsBox( transformNormalByInverseViewMatrix( normal, viewMatrix ) );')]],
+    };
+    const rt = new WebGLCubeRenderTarget(size, { type: HalfFloatType });
+    const room = { spec, rt, box: b, mats: new Set(), dirty: { gl: true, gpu: true } };
+    const list = meshes || []; if (!meshes) this.scene.traverse(o => { if (o.isMesh && o.geometry) { o.geometry.boundingBox || o.geometry.computeBoundingBox(); o.updateWorldMatrix(true, false); if (b.containsPoint(o.geometry.boundingBox.getCenter(GV).applyMatrix4(o.matrixWorld))) list.push(o); } });
+    for (const o of list) for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (!m?.isMeshStandardMaterial || room.mats.has(m)) continue;
+      room.mats.add(m); m.envMap = rt.texture; m.envMapIntensity = strength; lookPatch(m, 'room', spec); m.needsUpdate = true;
+    }
+    room.bake = () => { room.dirty.gl = room.dirty.gpu = true; return room; };
+    room.remove = () => { const i = this.rooms.indexOf(room); if (i >= 0) this.rooms.splice(i, 1); for (const m of room.mats) if (m.envMap === rt.texture) { m.envMap = null; m.needsUpdate = true; } rt.dispose(); };
+    (this.rooms ||= []).push(room);
+    return room;
+  }
+  // bounce light and room reflections, baked by the renderer drawing this frame (G: WebGPU) when they need it
+  bakeExtras(G, r) {
+    // light, not a picture (no tone mapping), with the sun's shadows in it as the frame will have them
+    const tm = r.toneMapping, sh = r.shadowMap.enabled; r.toneMapping = 0; r.shadowMap.enabled = tier().shadow > 0;
+    if (!G) r.shadowMap.needsUpdate = true;
+    this.scene.updateMatrixWorld();
+    try { this.bakeExtras2(G, r); } finally { r.toneMapping = tm; r.shadowMap.enabled = sh; if (!G) { this.shKey = null; r.shadowMap.needsUpdate = true; } }
+  }
+  bakeExtras2(G, r) {
+    const gi = this.gi, k = G ? 'gpu' : 'gl';
+    if (gi) {
+      gi.grids[G ? 'gl' : 'gpu']?.removeFromParent();
+      let g = gi.grids[k];
+      if (!g) { g = gi.grids[k] = G ? new G.fx.LightProbeGrid(gi.dims.x, gi.dims.y, gi.dims.z, ...gi.res) : new LightProbeGridWebGL(gi.dims.x, gi.dims.y, gi.dims.z, ...gi.res); g.position.copy(gi.centre); }
+      if (!g.parent) this.scene.add(g);
+      if (gi.dirty[k]) {
+        gi.dirty[k] = false; g.updateMatrixWorld(true);
+        try { g.bake(r, this.scene, { cubemapSize: gi.size, near: .05, far: gi.far, bounces: gi.bounces }); } catch (e) { console.warn('bounce light did not bake', e); }
+      }
+    }
+    for (const rm of this.rooms || []) {
+      if (!rm.dirty[k]) continue;
+      rm.dirty[k] = false;
+      try {
+        if (G) G.fx.bakeRoom(r, this.scene, rm.spec);
+        else {
+          const cc = rm.cam ||= new CubeCamera(.05, rm.spec.far, rm.rt); cc.position.copy(rm.spec.uniforms.gsRoomAt.value); this.scene.add(cc); cc.updateMatrixWorld(true);
+          try { cc.update(r, this.scene); } finally { cc.removeFromParent(); r.setRenderTarget(null); }
+          rm.rt.texture.needsPMREMUpdate = true;
+        }
+      } catch (e) { console.warn('room reflections did not bake', e); }
+    }
   }
   clearProbes() { this.probeGen = (this.probeGen || 1) + 1; this.probes = []; if (this.probe) { this.probe.removeFromParent(); this.probe = null; } }
   blendProbes() {
@@ -1145,6 +1246,7 @@ export class HDView {
     if (this.decals.length && !baking && !off) this.tickDecals(Math.min(.1, (now - (this.decalT || now)) / 1000)); this.decalT = now;
     if (!baking && !off) this.t += 1 / 60;
     gpuSwap(this, G);
+    if (this.gi || this.rooms?.length) this.bakeExtras(G, r);
     this.scene.traverse(o => { if (o.isInstancedMesh2 && o.userData.gpuHid) o.userData.gpuTwin.sync(this.cam); });
     for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
     // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
@@ -1185,7 +1287,7 @@ export class HDView {
     if (how) {
       this.scene.updateMatrixWorld(); this.cam.updateMatrixWorld();
       const m = cameraMove(this.cam, this._fgCam); this._fgCam = m.last;
-      fg = { mode: how, reset: cut || m.jumped || now - (this._fgT || 0) > 250, jd: [0, 0] }; this._fgT = now;
+      fg = { mode: how, reset: cut || m.jumped || now - (this._fgT || 0) > HD.fgGap, jd: [0, 0] }; this._fgT = now;
     } else this._fgCam = null;
     if (s2) { o.s2 = GS2 ||= new SgsrFrame(); this.scene.updateMatrixWorld(); o.s2.begin(this.cam, pw, ph, o.fw, o.fh, this, now, cut, true); }   // WebGPU pictures count rows from the top
     // SGSR 2 moves the camera by a fraction of a pixel each frame (its jitter) and three's motion picture
@@ -1290,6 +1392,7 @@ export class HDView {
     if (this.clearBg) cp.passes = up ? [P.arRender, P.arOut, P.sgsr] : [P.arRender, P.arOut];
     this.scene.environment = this.envFor(null); this.scene.environmentIntensity = this.envI;
     this.patchAir(); this.airUniforms();
+    if (this.gi || this.rooms?.length) this.bakeExtras(null, r);
     r.toneMappingExposure = this.exposure;
     if (this.clearBg) { P.arRender.scene = this.scene; P.arRender.camera = this.cam; } else { P.render.scene = P.ao.scene = this.scene; P.render.camera = P.ao.camera = this.cam; }
     // reflections (ultra, and only if the game marked shiny surfaces): SSR draws the scene itself
@@ -1369,7 +1472,7 @@ export class HDView {
 // contact shadows, reflections, sun shafts, light probes, a sky's own reflections, cloud shadows and
 // rain on the air, and any material with its own shader (ShaderMaterial or a shader patch that isn't
 // one of the kit's ported look effects). docs/webgpu-move.md lists what's left to port.
-const PORTED_LOOKS = new Set(['air', 'pulse', 'ground', 'hills', 'rock', 'leaves']);
+const PORTED_LOOKS = new Set(['air', 'pulse', 'ground', 'hills', 'rock', 'leaves', 'room']);
 // kit ShaderMaterials with a node material twin (hd3d-gpu.js gpuMaterials; material.userData.gsGpu)
 const GPU_TWINS = new Set(['skyDome']);
 function materialFits(m) {
@@ -1501,11 +1604,19 @@ function mount(cv, c, view) {
  * Cascades: s.fit(view, { far: 300, near: 40 }) adds a second, much sharper shadow over the first 40 m
  * (high and ultra tiers, with v.air() on), so the grass at your feet and the far hills both get theirs.
  */
+// A new shadow map size, set between frames. WebGL makes a new map when the old one is gone. On WebGPU three's
+// shadow node keeps its map and resizes it itself, but in the middle of drawing the frame, which throws away
+// a texture that frame has already used ("Destroyed texture used in a submit", the frame is lost). So the
+// map is resized here, before the frame, and three then finds it the right size.
+function shadowSize(sh, n) {
+  sh.mapSize.set(n, n);
+  if (sh.map?.isWebGLRenderTarget) { sh.map.dispose(); sh.map = null; } else sh.map?.setSize(n, n, sh.map.depth);
+}
 export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
   const s = new DirectionalLight(col, i), c = s.shadow.camera, d = new Vector3(...dir).normalize();
   s.castShadow = true; c.left = c.bottom = -size; c.right = c.top = size; c.near = 1; c.far = 120;
   s.shadow.bias = -.0004; s.shadow.normalBias = .04; s.shadow.radius = 2;
-  s.setTier = T => { s.tierShadow = T.shadow; s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow * 2) { s.shadow.mapSize.set(T.shadow * 2, T.shadow * 2); s.shadow.map?.dispose(); s.shadow.map = null; } };
+  s.setTier = T => { s.tierShadow = T.shadow; s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow * 2) shadowSize(s.shadow, T.shadow * 2); };
   s.dir = d;
   s.aim = (x, y, z) => { if (x?.isVector3) d.copy(x); else d.set(x, y, z); d.normalize(); return s; };
   s.follow = (x, y, z) => {
@@ -1521,7 +1632,7 @@ export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
       if (!n) { n = s.nearLight = new DirectionalLight(); n.name = 'sun-near'; n.dir = d; n.shadow.radius = s.shadow.radius; }
       if (n.parent !== s.parent) s.parent.add(n, n.target);
       n.visible = true; n.castShadow = true; n.color.copy(s.color); n.intensity = s.intensity;
-      const ms = s.shadow.mapSize.x; if (n.shadow.mapSize.x !== ms) { n.shadow.mapSize.set(ms, ms); n.shadow.map?.dispose(); n.shadow.map = null; }
+      const ms = s.shadow.mapSize.x; if (n.shadow.mapSize.x !== ms) shadowSize(n.shadow, ms);
       fitShadow(n, view, { ...o, far: nf, around: 0, max: nf * 2 });
       view.cascade = { near: n, far: s, fade: o.fade ?? .06 };
     } else if (s.nearLight?.visible) { s.nearLight.visible = false; view.cascade = null; }
@@ -1589,7 +1700,7 @@ function fitShadow(s, view, { far = 250, ground = null, low = -5, high = 30, tal
 export function spot(col = '#fff2e0', i = 30, dist = 16, angle = .5) {
   const s = new SpotLight(col, i, dist, angle, .55, 1.6);
   s.castShadow = true; s.shadow.bias = -.0004; s.shadow.normalBias = .02; s.shadow.camera.near = .2; s.shadow.radius = 3;
-  s.setTier = T => { s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow) { s.shadow.mapSize.set(T.shadow, T.shadow); s.shadow.map?.dispose(); s.shadow.map = null; } };
+  s.setTier = T => { s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow) shadowSize(s.shadow, T.shadow); };
   return s;
 }
 

@@ -38,7 +38,8 @@ const fs = require('fs'), path = require('path'), os = require('os');
     const ok = await p.evaluate(async () => { while (!window.__gpu) await new Promise(r => setTimeout(r, 50)); window.__gpu.pick('webgpu'); return !!(await window.__gpu.ready()); });
     if (!ok) { console.log('FAIL WebGPU did not start in this browser'); process.exit(1); }
     // the lowest tier at a small size, so SwiftShader keeps up with the refreshes in between
-    await p.evaluate(() => { __hd.force = 0; __hd.scale = .45; __hd.direct = true; });
+    // (and real frames come seconds apart in the heaviest games here: not a pause, as it would be on a phone)
+    await p.evaluate(() => { __hd.force = 0; __hd.scale = .45; __hd.direct = true; __hd.fgGap = 3000; });
     return w;
   };
   const first = await open();
@@ -74,7 +75,8 @@ const fs = require('fs'), path = require('path'), os = require('os');
     }, !feedLoop);
     const r = await p.evaluate(() => { const c = __gs.active.canvas.getBoundingClientRect(); return { x: c.x, y: c.y, w: c.width, h: c.height }; });
     const t0 = Date.now();
-    while (Date.now() - t0 < play) {
+    // heavy games draw a few real frames a second on SwiftShader: they play on (up to 3x) until a few frames were made
+    while (Date.now() - t0 < play || (Date.now() - t0 < play * 3 && await p.evaluate(() => window.__fg.n.made < 3))) {
       if (await p.evaluate(() => __gs.active.state) !== 'playing') await p.evaluate(() => __gs.start());
       await p.mouse.move(r.x + Math.random() * r.w, r.y + Math.random() * r.h); await p.mouse.down();
       await p.mouse.move(r.x + Math.random() * r.w, r.y + Math.random() * r.h, { steps: 4 });
