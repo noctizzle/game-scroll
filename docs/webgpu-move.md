@@ -10,6 +10,8 @@ The rules for new 3D code until then:
 - Use three.js's stock materials and lights (`MeshStandardMaterial`, `MeshPhysicalMaterial`,
   `MeshToonMaterial`, `LightProbe`...). The WebGPU renderer turns them into node materials itself.
 - No new `onBeforeCompile` patches, and no raw `ShaderMaterial` in games (game-lint warns).
+  A look the kits need goes through `lookPatch()` in `src/kit/looks.js`, so it is named and can be
+  swapped for a node in one place.
 - Each screen effect is its own small pass with its own settings, so it can be rewritten in TSL on
   its own and compared side by side.
 - Only the kits make renderers, and pixel reads go through one place that can wait (WebGPU reads
@@ -31,7 +33,8 @@ The rules for new 3D code until then:
 | 3D particles | three.quarks 0.17 (needs three ≥ 0.182, works on 0.186) | Check its WebGPU support; else our own node particles |
 | GPU points particles | `hd3d.js` `Particles` (ShaderMaterial) | A TSL points material |
 | Card pictures and test reads | `src/kit/gpu.js` `copyFrame` and `readPixels` (already async) | Nothing more: `readPixels` uses `readRenderTargetPixelsAsync` |
-| Games with their own shaders | `deep-pressure.js`, `long-shadow.js` | Port to kit materials or TSL |
+| Outdoor looks: ground, hills, rock, leaves | `src/kit/looks.js` `looks.*` (effects 'ground', 'hills', 'rock', 'leaves' through `lookPatch`) | One TSL node per effect, same `lk...` uniforms |
+| Games with their own shaders | `deep-pressure.js` | Port to kit materials or TSL |
 
 ## Already done (prep PR)
 
