@@ -886,6 +886,22 @@ export interface ItemsPart {
   Inventory: new (defs?: Record<string, ItemDef>, o?: { slots?: number; extra?: Record<string, string>; stack?: number; weight?: number }) => Inventory;
   Recipes: new (defs?: Record<string, ItemDef>) => Recipes;
 }
+export interface AdvSpot { id: string; room: string; x?: number; y?: number; w?: number; h?: number; r?: number; poly?: [number, number][]; z?: number; look?: string | ((s: AdvSpot) => string); take?: boolean | string; took?: string; exit?: string; locked?: string | boolean; talk?: string | ((s: AdvSpot) => string); cant?: string | ((item: string) => string); when?: () => boolean; walk?: [number, number]; [k: string]: Loose }
+export interface AdvRoom { id: string; name: string; spots: AdvSpot[]; map?: [number, number]; spot(id: string, s: Partial<AdvSpot>): AdvRoom; [k: string]: Loose }
+export interface AdvResult { spot: AdvSpot | null; did: 'take' | 'exit' | 'use' | 'look' | 'talk' | 'locked' | 'cant' | 'nothing'; text: string | null }
+export interface Adventure {
+  rooms: Map<string, AdvRoom>; here: string; seen: Set<string>; flags: Record<string, Loose>; bag: Loose; lines: { nothing: string; cant: string };
+  on(ev: 'say' | 'enter' | 'take' | 'exit' | 'use' | 'look' | 'talk' | 'locked' | 'cant' | 'nothing' | 'flag' | 'combine', fn: (...a: Loose[]) => void): Adventure;
+  room(id: string, o?: { map?: [number, number]; name?: string; [k: string]: Loose }): AdvRoom; spot(id: string, room?: string): AdvSpot | null; spots(room?: string): AdvSpot[]; at(x: number, y: number, room?: string): AdvSpot | null;
+  rule(item: string, target: string, fn: (spot: AdvSpot | null, item: string, other?: string) => string | void, o?: { keep?: boolean }): Adventure;
+  flag(k: string): Loose; flag(k: string, v: Loose): Adventure; unlock(room: string, spot: string): Adventure; isLocked(s: AdvSpot): boolean; go(room: string): Adventure; say(text: string, spot?: AdvSpot): string;
+  tap(x: number, y: number, item?: string | null): AdvResult; act(s: AdvSpot, item?: string | null, verb?: 'look' | null): AdvResult; combine(a: string, b: string): string | null;
+  walkTo(s: AdvSpot, floorY?: number | null): { x: number; y: number };
+  map(): { id: string; name: string; col: number; row: number; here: boolean; links: string[] }[];
+  drawMap(c: CanvasRenderingContext2D, x: number, y: number, o?: { w?: number; h?: number; gap?: number; room?: string; here?: string; line?: string; text?: string; font?: string }): void;
+  save(): Loose; load(d: Loose): Adventure;
+}
+export interface AdventurePart { Adventure: new (o?: { start?: string | null; bag?: Loose }) => Adventure }
 export interface DragPart { Drag: new (o?: { snap?: number; accept?: (piece: DragThing, slot: DragThing) => boolean; lift?: number; speed?: number; list?: { x: number; y: number; gap?: number; axis?: 'x' | 'y' } | null; swap?: boolean }) => Drag }
 
 export interface Earner {
@@ -1410,7 +1426,7 @@ export interface GS {
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
-  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
+  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;

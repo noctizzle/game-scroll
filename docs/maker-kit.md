@@ -44,6 +44,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Drag pieces into slots, reorder a list | `gs.drag` | [Game kits](#game-kits) |
 | Undo and redo moves | `gs.history` | [Game kits](#game-kits) |
 | An inventory, crafting recipes | `gs.items` | [Game kits](#game-kits) |
+| A point-and-click adventure | `gs.adventure` | [Game kits](#game-kits) |
 | Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
 | Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
 | Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
@@ -1211,6 +1212,15 @@ didn't fit; `take`, `count`, `has`; `move(from, to, n)` merges or swaps, and equ
 `add(id, needs, { makes, keep, at, time })`, then `can(inv)` (what can be made now), `missing(id, inv)`,
 `times`, `uses(item)`, `make(id, inv, station)`. Recipes with `time` are made over seconds by
 `book.timer` (`update(dt)`, `progress(job)`, `on('done')`). gs.battle's `Bag` works as `inv` too.
+
+**Point-and-click adventures** (`gs.adventure.Adventure({ start, bag })`): `room(id, { map: [col, row] })`
+then `.spot(id, { x, y, w, h } | { x, y, r } | { poly }, look, take, exit, locked, talk, when, walk })`.
+`tap(x, y, item)` finds the topmost spot and does it: a use rule when an item is held
+(`rule(item, spot, fn)`; fn returns the line to say), else take, exit (unless locked), talk or look; it
+returns `{ spot, did, text }` and fires `say`, `enter` and the rest. `act(spot, item, 'look')` after the
+hero has walked to `walkTo(spot)`. `combine(a, b)` for items in the bag, `flag(k, v)`, `unlock`,
+`map()` / `drawMap(c, x, y)` for the rooms seen, `save` / `load`. Use an `Inventory` as the bag for
+slots and limits, and `gs.story` for conversations.
 
 **Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
 `Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran

@@ -741,6 +741,28 @@ console.log('physics ok');
   console.log('items: stacks, take, equip kinds, split, merge, sort, save, weight, recipes, missing, stations, timed ok');
 }
 {
+  const { Adventure } = await import('../src/kit/adventure.js');
+  const adv = new Adventure({ start: 'hall' }), said = []; adv.on('say', t => said.push(t));
+  adv.room('hall', { map: [0, 0] }).spot('door', { x: 300, y: 200, w: 60, h: 160, look: 'Oak.', exit: 'lib', locked: 'Locked.' })
+    .spot('key', { x: 80, y: 500, r: 20, take: true, took: 'Got it.' }).spot('rug', { poly: [[100, 600], [260, 600], [240, 640], [120, 640]], look: 'Lumpy.', when: () => !adv.flag('moved') })
+    .spot('chest', { x: 300, y: 500, w: 80, h: 60, z: 1, look: 'A chest.' });
+  adv.room('lib', { map: [1, 0] }).spot('back', { x: 10, y: 300, w: 20, h: 600, exit: 'hall' });
+  adv.rule('key', 'door', () => { adv.unlock('hall', 'door'); return 'Click!'; });
+  adv.rule('rope', 'hook', () => { adv.bag.add('grapple'); return 'A grapple.'; });
+  assert.equal(adv.tap(300, 200).did, 'locked'); assert.equal(adv.tap(0, 0).did, 'nothing'); assert.equal(adv.tap(180, 620).text, 'Lumpy.', 'polygon spots');
+  assert.equal(adv.tap(80, 505).did, 'take'); assert.ok(adv.bag.has('key')); assert.equal(adv.at(80, 505), null, 'taken things are gone');
+  assert.equal(adv.tap(300, 500, 'key').did, 'cant'); assert.ok(adv.bag.has('key'), 'a wrong use keeps the item');
+  assert.equal(adv.tap(300, 200, 'key').text, 'Click!'); assert.ok(!adv.bag.has('key'), 'used up');
+  assert.equal(adv.tap(300, 200).did, 'exit'); assert.equal(adv.here, 'lib');
+  adv.flag('moved', true); assert.equal(adv.spots('hall').some(s => s.id === 'rug'), false, 'when() hides a spot');
+  const m = adv.map(); assert.equal(m.length, 2); assert.deepEqual(m.find(r => r.id === 'hall').links, ['lib']); assert.ok(m.find(r => r.id === 'lib').here);
+  adv.bag.add('rope'); adv.bag.add('hook'); assert.equal(adv.combine('hook', 'rope'), 'A grapple.'); assert.ok(adv.bag.has('grapple') && !adv.bag.has('rope'), 'combine either way round');
+  const back = new Adventure({ start: 'hall' }); back.room('hall'); back.room('lib'); back.load(JSON.parse(JSON.stringify(adv.save())));
+  assert.equal(back.here, 'lib'); assert.ok(back.flag('moved') && back.bag.has('grapple') && back.unlocked.has('hall:door'), 'save and load');
+  assert.deepEqual(said.slice(0, 2), ['Locked.', 'Lumpy.'], 'tapping nothing says nothing');
+  console.log('adventure: hotspots (rect, circle, polygon, z), take, use, locks, exits, when, map, combine, save ok');
+}
+{
   const { dungeon, cave, maze, islands, pattern, fov, loadGen, proven, reach } = await import('../src/kit/gen.js');
   await loadGen();
   const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });
