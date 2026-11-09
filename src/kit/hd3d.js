@@ -43,7 +43,7 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { SGSR } from './sgsr.js';
-import { SGSR2 } from './sgsr2.js';
+import { SGSR2, SgsrFrame } from './sgsr2.js';
 import { lookPatch, looksOf } from './looks.js';
 import { copyFrame, webgpu, setGpuPick, prepareGPU } from './gpu.js';
 import { makeRenderer } from './renderer.js';
@@ -847,7 +847,7 @@ export class HDView {
   /** Redraw the shadow maps next frame even if nothing seems to have moved (e.g. after changing a geometry in place). */
   shadowsDirty() { this.shKey = null; return this; }
   // The WebGPU frame (render() decided this view fits): the same numbers as the WebGL chain, drawn by hd3d-gpu.js.
-  drawGPU(G, r, T, baking, off, now) {
+  drawGPU(G, r, T, baking, off, now, s2) {
     const ch = this._gpuChain?.r === r ? this._gpuChain : (this._gpuChain = new G.fx.GpuChain(r, this.scene, this.cam, !!this.clearBg));
     this.scene.environment = gpuEnv(G); this.scene.environmentIntensity = this.envI;
     if (this._air) { this.airUniforms(); const a = gpuAir(G); a.sync(); this.scene.fogNode = a.node(); } else this.scene.fogNode = null;
@@ -856,7 +856,9 @@ export class HDView {
     if (!baking && !off) this.t += 1 / 60;
     gpuSwap(this, G);
     for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
-    const o = { w: r.domElement.width, h: r.domElement.height, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H };
+    // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
+    const pw = s2 ? s2.pw : r.domElement.width, ph = s2 ? Math.max(1, Math.floor(s2.fh * (pw + .5) / s2.fw)) : r.domElement.height;
+    const o = { w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H };
     const g = this.grade;
     if (g) o.grade = { sat: g.saturation ?? 1, con: g.contrast ?? 1, lo: toRGB(g.shadows, GL), hi: toRGB(g.highlights, GH) };
     if (this.glare > 0) {
@@ -875,8 +877,10 @@ export class HDView {
     const empty = []; this.scene.traverseVisible(o => { if (o.isInstancedMesh && (!o.count || !o.instanceMatrix.count)) empty.push(o); });
     for (const e of empty) e.visible = false;
     r.info.autoReset = false; r.info.reset();
-    try { ch.render(o); } finally { for (const e of empty) e.visible = true; }
-    if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = T.shadow > 0; HD.info.upscaled = false; HD.info.backend = 'webgpu'; }
+    const cut = lastView !== this; lastView = this;
+    if (s2) { o.s2 = GS2 ||= new SgsrFrame(); this.scene.updateMatrixWorld(); o.s2.begin(this.cam, pw, ph, o.fw, o.fh, this, now, cut, true); }   // WebGPU pictures count rows from the top
+    try { ch.render(o); } finally { for (const e of empty) e.visible = true; if (s2) o.s2.end(this.cam); }
+    if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = T.shadow > 0; HD.info.upscaled = s2 ? 'sgsr2' : false; HD.info.backend = 'webgpu'; }
   }
   /**
    * The 3D canvas belongs to another card now: draw this view's last frame under the HUD already on
@@ -931,14 +935,15 @@ export class HDView {
     // screen's size, Snapdragon GSR 2 (sgsr2.js, temporal: jitters the camera and builds on the frames
     // before) or GSR 1 (sgsr.js, AR and SSR) upscales it to the full screen as the last pass;
     // HD.upscale = false shows the plain stretched picture instead (tests, comparisons).
-    const up = !G && HD.upscale && !baking && pw < fw * .95;   // (WebGPU: plain stretch for now)
+    const up = !G && HD.upscale && !baking && pw < fw * .95;   // (WebGPU without SGSR 2: plain stretch)
     // SGSR 2 also runs at full size, as anti-aliasing (grass and leaves stop shimmering); not for AR,
-    // SSR (it draws the scene itself), card pictures or WebGPU
+    // SSR (it draws the scene itself) or card pictures. On WebGPU it's hd3d-gpu.js's TSL version.
     const ssr = !G && !this.clearBg && T.ssr && this.reflectors.length > 0;
-    const s2 = !G && HD.upscale && !baking && !this.clearBg && !ssr && (this.upscaler ?? HD.upscaler) === 'sgsr2' ? (P.sgsr2 ||= new SGSR2()) : null;
-    const ow = up || s2 ? fw : pw, oh = up || s2 ? fh : ph;
+    const s2on = HD.upscale && !baking && !this.clearBg && !ssr && (this.upscaler ?? HD.upscaler) === 'sgsr2';
+    const s2 = s2on && !G ? (P.sgsr2 ||= new SGSR2()) : null;
+    const ow = up || s2on ? fw : pw, oh = up || s2on ? fh : ph;
     const cv = r.domElement; if (cv.width !== ow || cv.height !== oh) r.setSize(ow, oh, false);
-    if (G) this.drawGPU(G, r, T, baking, off, now);
+    if (G) this.drawGPU(G, r, T, baking, off, now, s2on && { pw, fw, fh });
     else {
     gpuSwap(this, null);
     const cp = this.clearBg ? seeThrough(r, pw, ph) : chain(r, pw, ph); if (cp.cw !== pw || cp.ch !== ph) { cp.setSize(pw, ph); cp.cw = pw; cp.ch = ph; }
@@ -1068,7 +1073,7 @@ const gpuAir = G => { let a = gpuAirs.get(G); if (!a) { a = G.fx.airNodes(AIR); 
 // The 3D canvas (and, for AR, the camera video under it) sits inside the card's screen, right before
 // the card's own canvas, filling the same box (CSS .hd-layer). The card's canvas stays on top for the
 // HUD and takes all the touches.
-let host = null, lastView = null;
+let host = null, lastView = null, GS2 = null;   // GS2: SGSR 2's frame numbers on WebGPU
 // Pictures of cards that finished getting ready (prepare) wait here and are drawn into their cards
 // just before the playing card's next frame, which then redraws the shared 3D canvas.
 const bakes = [];

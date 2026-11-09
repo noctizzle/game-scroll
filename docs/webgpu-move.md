@@ -50,7 +50,7 @@ The rules for new 3D code until then:
 | Cloud shadows and rain on the air | `hd3d.js` `airPatch` (the `'air'` look's light and roughness edits) | TSL nodes on the lit materials' light and roughness |
 | Sun shafts | `hd3d.js` `ShaftsPass` | A TSL radial blur (three has `radialBlur`, `godrays`) |
 | Reflections | three's `SSRPass` | Three's TSL `ssr()` node |
-| Upscaling | `src/kit/sgsr.js` (SGSR 1) and `src/kit/sgsr2.js` (SGSR 2, temporal: jitter, depth, history), GLSL | TSL ports of both (WebGPU stretches for now) |
+| Upscaling | `src/kit/sgsr.js` (SGSR 1, GLSL) | A TSL port of SGSR 1 (only AR, `v.upscaler = 'sgsr1'` and SSR frames use it; on WebGPU they stretch). SGSR 2 is done: `sgsr2Gpu` in `hd3d-gpu.js` |
 | Light probe baking | `hd3d.js` `bakeLight` (`WebGLCubeRenderTarget` + `CubeCamera`) | A cube target on the WebGPU renderer |
 | Sky dome and sky reflections | `src/kit/sky.js` (ShaderMaterial), `HDView.envFrom` (WebGL PMREM) | A TSL sky and WebGPU's PMREM |
 | Game screen effects | `gs.fx3d` (EffectComposer passes) | TSL versions (three has outline, pixelate, DOF...) |
