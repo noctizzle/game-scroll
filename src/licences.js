@@ -22,6 +22,7 @@ export const OPEN_SOURCE = [
   { name: 'ink (inkjs)', for: 'story dialogue, by inkle', licence: 'MIT', spdx: 'MIT', packages: ['inkjs'] },
   { name: 'lil-gui', for: 'live tweak sliders for game makers (dev builds only)', licence: 'MIT', spdx: 'MIT', packages: ['lil-gui'] },
   { name: 'Snapdragon Game Super Resolution 1', for: 'sharp Next Gen and AR 3D when it is drawn smaller, by Qualcomm', licence: 'BSD 3-Clause', spdx: 'BSD-3-Clause', vendored: 'src/kit/sgsr.js', notice: '© 2023-2025 Qualcomm Innovation Center, Inc.' },
+  { name: 'Snapdragon Game Super Resolution 2', for: 'sharp, steady Next Gen 3D: temporal upscaling and anti-aliasing, by Qualcomm', licence: 'BSD 3-Clause', spdx: 'BSD-3-Clause', vendored: 'src/kit/sgsr2.js', notice: '© 2024 Qualcomm Innovation Center, Inc.' },
   { name: 'rot.js', for: 'dungeons, caves, mazes and field of view for made levels, by Ondřej Žára', licence: 'BSD 3-Clause', spdx: 'BSD-3-Clause', packages: ['rot-js'], notice: '© 2012-now Ondřej Žára' },
   { name: 'WaveFunctionCollapse (JS)', for: 'tile patterns for made levels, by Kevin Chapelier', licence: 'MIT', spdx: 'MIT', packages: ['wavefunctioncollapse'] },
   { name: 'Tone.js', for: 'music', licence: 'MIT', spdx: 'MIT', packages: ['tone'] },
