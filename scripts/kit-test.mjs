@@ -1050,3 +1050,29 @@ console.log('physics ok');
   const t = performance.now(), big = new Swarm({ count: 2000, w: 600, h: 600, gpu: false }); for (let f = 0; f < 30; f++) big.update(1 / 60);
   console.log(`swarm: flocks, pulls, pushes, obstacles, edges, kill and revive ok (2000 on the CPU: ${((performance.now() - t) / 30).toFixed(1)} ms a frame here)`);
 }
+
+// gs.city layout: the same seed gives the same city; buildings stay inside their blocks and never overlap; the roads join up
+{
+  const { layout, STYLES } = await import('../src/kit/city.js');
+  for (const style of Object.keys(STYLES)) {
+    const p = layout({ seed: 42, blocks: [5, 4], style });
+    assert.equal(JSON.stringify(p.buildings), JSON.stringify(layout({ seed: 42, blocks: [5, 4], style }).buildings), style + ': same seed, same city');
+    assert.equal(p.blocks.length, 20); assert.equal(p.nodes.length, 30); assert.ok(p.buildings.length > 40, style + ': buildings ' + p.buildings.length);
+    for (const b of p.buildings) {
+      const k = p.blocks[b.block];
+      assert.ok(b.x0 >= k.x0 + k.sw - .01 && b.x1 <= k.x1 - k.sw + .01 && b.z0 >= k.z0 + k.sw - .01 && b.z1 <= k.z1 - k.sw + .01, style + ': building inside its block, off the pavement');
+      assert.ok(b.h > 2 && b.parts.every(q => q.y1 > q.y0), style + ': building heights');
+    }
+    for (let i = 0; i < p.buildings.length; i++) for (let j = i + 1; j < p.buildings.length; j++) {
+      const A = p.buildings[i], B = p.buildings[j];
+      assert.ok(!(A.x0 < B.x1 - .01 && A.x1 > B.x0 + .01 && A.z0 < B.z1 - .01 && A.z1 > B.z0 + .01), style + ': buildings overlap');
+    }
+    // every junction can reach every other one
+    const seen = new Set([0]), todo = [0];
+    while (todo.length) for (const id of p.nodes[todo.pop()].out) { const n = p.edges[id].b; if (!seen.has(n)) { seen.add(n); todo.push(n); } }
+    assert.equal(seen.size, p.nodes.length, style + ': roads join up');
+    assert.ok(p.spots.door.length === p.buildings.length && p.spots.corner.length === 80, style + ': spots');
+  }
+  assert.notEqual(JSON.stringify(layout({ seed: 1 }).buildings), JSON.stringify(layout({ seed: 2 }).buildings), 'another seed, another city');
+  console.log('city: layouts for all styles are repeatable, tidy and joined up');
+}

@@ -1094,6 +1094,77 @@ export interface OutdoorsPart {
   /** A ring of far hills round a Land, with the hills look. */
   horizon(land: LandPart, o?: { inner?: number; outer?: number; height?: number; seed?: number; lower?: ((x: number, z: number) => number) | null; colours?: { meadow?: string; forest?: string; rock?: string }; segments?: number; rings?: number; look?: false | Loose }): Loose;
 }
+export interface CityPlan {
+  seed: number; side: 'right' | 'left'; nx: number; nz: number; style: Record<string, Loose>;
+  /** Road centre lines (x for the roads running north-south, z for east-west) and their widths. */
+  xs: number[]; zs: number[]; wx: number[]; wz: number[];
+  bounds: { x0: number; x1: number; z0: number; z1: number };
+  blocks: { id: number; i: number; j: number; x0: number; x1: number; z0: number; z1: number; sw: number; kind: 'build' | 'park' | 'plaza' }[];
+  buildings: CityBuilding[];
+  nodes: { id: number; i: number; j: number; x: number; z: number; hx: number; hz: number; out: number[]; signal: boolean; phase: number }[];
+  edges: { id: number; a: number; b: number; len: number; dx: number; dz: number; axis: 'x' | 'z'; lanes: number; width: number; speed: number }[];
+  trees: { x: number; z: number; s: number; kind: string }[]; lamps: { x: number; z: number; face: number }[]; benches: { x: number; z: number; rot: number }[];
+  spots: { door: CitySpot[]; rooftop: CitySpot[]; corner: CitySpot[]; park: CitySpot[] };
+  water?: { z: number };
+}
+export interface CityBuilding {
+  id: number; block: number; facade: string; floors: number; shops: boolean; face: 0 | 1 | 2 | 3; x0: number; x1: number; z0: number; z1: number; h: number;
+  /** Its boxes, bottom up (towers step back as they rise). */
+  parts: { x0: number; x1: number; z0: number; z1: number; y0: number; y1: number }[];
+  roof: 'flat' | 'gable'; colour: string | null; door: CitySpot; fire?: boolean; bits: { kind: string; x: number; y: number; z: number; s: number }[];
+}
+export interface CitySpot { x: number; y: number; z: number; nx?: number; nz?: number; building?: number; block?: number; heading?: number; lane?: number; edge?: Loose }
+export interface CityCar { id: number; kind: 'car' | 'van'; taxi: boolean; colour: string; x: number; z: number; heading: number; v: number; vmax: number; braking: boolean; stun: number; edge: Loose; lane: number }
+export interface CityPerson { id: number; x: number; z: number; heading: number; speed: number; panic: number; down: number; shirt: string; block: Loose }
+export interface CityPart {
+  /**
+   * A made-up city from a seed, in a gs.hd HDView (or any view with .scene and .cam). Call reset() from
+   * your reset() and update(dt, player) each frame. Cars brake for what you pass to avoid().
+   */
+  City: new (view: Loose, o?: { seed?: number; blocks?: number | [number, number]; style?: 'downtown' | 'oldtown' | 'harbour' | 'suburb' | Record<string, Loose>; side?: 'right' | 'left';
+    traffic?: number; people?: number; night?: number; sky?: Loose; lamps?: boolean; sound?: boolean; at?: { x: number; z: number } | null; detail?: number; [style: string]: Loose }) => CityWorld;
+  /** The plan alone, as plain numbers (no 3D): for a map, a route or your own drawing. */
+  layout(o?: { seed?: number; blocks?: number | [number, number]; style?: string | Record<string, Loose>; side?: 'right' | 'left'; [style: string]: Loose }): CityPlan;
+  /** City styles (copy one and change it: { ...STYLES.oldtown, floors: [2, 4] }). */
+  STYLES: Record<'downtown' | 'oldtown' | 'harbour' | 'suburb', Record<string, Loose>>;
+  /** Facade looks: kind, wall, trim, glass, win (window width m), floor (storey m), lit, warm. */
+  FACADES: Record<string, Record<string, Loose>>;
+}
+export interface CityWorld {
+  plan: CityPlan; group: Loose; seed: number; start: CitySpot; t: number;
+  /** 0 day .. 1 night: windows, shop signs, street lamps and car lights. Follows sky.night when made with { sky }. */
+  night: number;
+  cars: { list: CityCar[]; near(p: { x: number; z?: number; y?: number }, r: number): CityCar[]; hit(p: { x: number; z?: number; y?: number }, r?: number): CityCar | null; bump(car: CityCar, seconds?: number): CityCar };
+  people: { list: CityPerson[]; near(p: { x: number; z?: number; y?: number }, r: number): CityPerson[]; hit(p: { x: number; z?: number; y?: number }, r?: number): CityPerson | null;
+    scare(p: { x: number; z?: number; y?: number }, r?: number, t?: number): unknown; knock(person: CityPerson, dx?: number, dz?: number, seconds?: number): CityPerson };
+  props: PropsPart['Props'] extends new (...a: Loose[]) => infer P ? P : Loose;
+  reset(focus?: { x: number; z: number }): CityWorld;
+  update(dt: number, focus?: { x: number; z?: number; y?: number }): CityWorld;
+  /** Cars brake for this point (radius r) this frame. */
+  avoid(p: { x: number; z?: number; y?: number }, r?: number): CityWorld;
+  /** Builds every chunk now (otherwise they're built a few a frame, nearest first). */
+  warm(): CityWorld;
+  /** Traffic light state for traffic along axis at a junction: 'g' | 'a' | 'r'. */
+  signal(node: CityPlan['nodes'][number], axis: 'x' | 'z', t?: number): 'g' | 'a' | 'r';
+  signalLeft(node: CityPlan['nodes'][number], axis: 'x' | 'z', t?: number): number;
+  buildingAt(x: number, z: number): CityBuilding | null;
+  ground(x: number, z: number): number;
+  /** Pushes a circle out of the buildings (changes p); the building touched, or null. */
+  collide(p: { x: number; z?: number; y?: number }, r?: number, y?: number): CityBuilding | null;
+  ray(from: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number }, far?: number): { point: { x: number; y: number; z: number }; normal: { x: number; y: number; z: number }; dist: number; building: CityBuilding } | null;
+  /** The nearest point in a lane. */
+  road(x: number, z: number): { x: number; z: number; heading: number; edge: Loose; lane: number; s: number; d: number };
+  route(a: { x: number; z?: number; y?: number }, b: { x: number; z?: number; y?: number }): { points: [number, number][]; path: Loose; length: number; nodes: CityPlan['nodes'] };
+  spot(kind?: 'door' | 'rooftop' | 'corner' | 'street' | 'pavement' | 'park', o?: { near?: { x: number; z?: number; y?: number } | null; min?: number; max?: number; rnd?: () => number }): CitySpot | null;
+  /** Building boxes for occlusion culling (optionally only those within r of near). */
+  occluders(near?: { x: number; z?: number; y?: number } | null, r?: number): { x0: number; x1: number; z0: number; z1: number; y0: number; y1: number }[];
+  walls(): Loose[];
+  /** Buildings and kerbs solid in a gs.physics3d World3D. */
+  solid(world: Loose): CityWorld;
+  drawMap(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, o?: { at?: { x: number; z?: number; y?: number }; range?: number; turn?: number; colours?: Partial<Record<'road' | 'block' | 'park' | 'building' | 'water', string>> }): void;
+  mapPoint(p: { x: number; z?: number; y?: number }): [number, number];
+  dispose(): void;
+}
 export interface CraftPart {
   /** Arcade-true flight. Events this frame in events[]: 'stall', 'land', 'touch', 'crash', 'takeoff'. */
   Plane: new (o?: { at?: P3; heading?: number; speed?: number; power?: number; lift?: number; drag?: number; stall?: number; top?: number; turn?: [number, number, number]; assist?: number; grip?: number; gravity?: number; ground?: ((x: number, z: number) => number) | null; gear?: number; crashSpeed?: number }) => {
@@ -1254,7 +1325,7 @@ export interface GS {
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
-  outdoors: OutdoorsPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; ui: UIPart;
+  outdoors: OutdoorsPart; city: CityPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; ui: UIPart;
   hear: HearPart; doodle: DoodlePart; phoneai: PhoneaiPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;
