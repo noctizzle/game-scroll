@@ -50,6 +50,9 @@ jobs:
       - name: Tiny Brains cruelty test (weak players still win, guard rails hold)
         run: npm run brains
 
+      - name: For you ranking and feed brain (made-up players)
+        run: npm run recommend
+
       - name: Find changed games
         id: changed
         env:

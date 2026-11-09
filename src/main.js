@@ -10,7 +10,7 @@ import { openFeel, feelIcon } from './feel.js';
 import { PAL, SHELL } from './palettes.js';
 import { isHidden, setRating, rating, logRound, toast as qaToast, openPanel } from './qa.js';
 import { rankQueue as rank, explain } from './recommend.js';
-import { live } from './feedsignals.js';
+import { live, feedBrain } from './feedsignals.js';
 const rankQueue=(pool,all)=>rank(pool,all,live);
 import { openMyGames } from './mygames.js';
 import { post as consolePost } from './kit/gfx.js';
@@ -633,4 +633,4 @@ if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refres
 
 // Test hook used by scripts/smoke.cjs and the other browser tests: dev and test builds, and any build
 // driven by a test browser. Never in the store apps, where a game could use it to reach the wallet.
-if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',only(id){filter='id:'+id;rebuild()}};
+if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),feed:()=>feedBrain.stats(),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',only(id){filter='id:'+id;rebuild()}};

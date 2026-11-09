@@ -9,6 +9,9 @@
 //   4. Freshness: games you've never seen get a turn, games you just saw wait, and a game you keep
 //      scrolling straight past shows up less and less (unless you hearted it).
 //   5. Discovery: games few people have seen yet get a small lift so new games find players.
+//   6. The feed brain (feedbrain.js, when S.brain is given): what it learned about this player, such
+//      as how much they follow each factor above and which games they play at this time of day.
+//      Starts at 1x and stays between 0.5x and 2x.
 // Then a weighted shuffle (higher weight tends to come first, nothing is excluded, every game still
 // comes round once per cycle) and a pass that avoids the same genre twice in a row.
 //
@@ -105,7 +108,12 @@ export function freshness(g, S) {
 /** Every factor for one game, for the QA panel ("why is this here?"). */
 export function explain(g, allGames, S, aff = affinity(allGames, S), md = mood(allGames, S), B = baseline(allGames, S)) {
   const parts = { taste: weight(g, aff, md), everyone: popularity(g.id, B, S), fresh: freshness(g, S), discover: discovery(g.id, S) };
-  return { ...parts, total: parts.taste * parts.everyone * parts.fresh * parts.discover };
+  let total = parts.taste * parts.everyone * parts.fresh * parts.discover;
+  if (S.brain) {
+    const f = S.brain.features(traits(g), parts, { hour: new Date(S.now()).getHours(), depth: S.session().length });
+    S.brain.saw(g.id, f); parts.brain = S.brain.boost(f); total *= parts.brain;
+  }
+  return { ...parts, total };
 }
 
 /** Avoid the same genre back to back: look a few places ahead for something different. */

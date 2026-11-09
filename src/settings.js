@@ -8,6 +8,7 @@ import { fpsPick, setFpsPick, autoFps, phoneClass, screenHz } from './kit/speed.
 import { geoSettings } from './geo.js';
 import { gpuPick, setGpuPick, hasWebGPU } from './kit/gpu.js';
 import { OPEN_SOURCE } from './licences.js';
+import { feedBrain, resetRecommendations } from './feedsignals.js';
 
 const size = b => b < 1024 * 1024 ? `${Math.ceil(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
 
@@ -52,6 +53,12 @@ export function openSettings({ stream, cached, clear, arTest }) {
         <p class="qa-help">A few games build their level from your area, and ask the first time you play one. They only get a rounded position (about 1 km, or about 10 m for walk-around games), only while you play, and it never leaves your phone. Turn this off and they use a made-up spot instead.</p>
         <label class="set-toggle"><input type="checkbox" class="set-loc"${geoSettings.enabled ? ' checked' : ''}> Let games use my location</label>
       </section>
+      <section class="set-row">
+        <h3>For you</h3>
+        <p class="qa-help">Your feed learns which games you enjoy from what you play and what you scroll past, on this phone only: nothing about it is sent anywhere. It can bring games forward or hold them back, but never hides one.</p>
+        <div class="set-stat">${feedBrain.n ? `Learned from <b>${fmt(feedBrain.n)}</b> games you played or skipped` : 'Nothing learned yet'}</div>
+        <div class="qa-actions"><button class="set-forget"${feedBrain.n ? '' : ' disabled'}>Reset recommendations</button></div>
+      </section>
       ${HEARTS_URL ? `<section class="set-row">
         <h3>Play stats and crash reports</h3>
         <p class="qa-help">Counts how often each game is played or skipped, and reports crashes, errors and stutters along with your phone model (like “SM-F966B”), added up across everyone. It helps pick which games to improve, fix and show more. Nothing identifies you.</p>
@@ -72,6 +79,7 @@ export function openSettings({ stream, cached, clear, arTest }) {
     el.querySelector('.set-gpu')?.addEventListener('change', e => setGpuPick(e.target.checked ? 'webgpu' : 'webgl'));
     el.querySelector('.set-loc').addEventListener('change', e => { geoSettings.enabled = e.target.checked; });
     el.querySelector('.set-stats')?.addEventListener('change', e => { playstats.enabled = e.target.checked; });
+    el.querySelector('.set-forget')?.addEventListener('click', () => { resetRecommendations(); render(); });
     el.querySelector('.set-clear')?.addEventListener('click', async e => {
       e.target.disabled = true; await clear(); render('Cache cleared. Games will download again as you play them.');
     });

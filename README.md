@@ -100,7 +100,7 @@ The app supports folding and unfolding mid-game (tested at Galaxy Z Fold 8 and i
 - **Bench a game for everyone** without deleting it: add its id to `BENCHED` in `src/qa.js`.
 - **Bot play test**: `npm run qa` plays every game with an idle bot and a random-tap bot and writes `docs/qa/auto-report.md` (errors, how fast rounds end, games that score with no input).
 - **Scored review**: `docs/qa/review.md` scores every game on fun, clarity, controls, length and uniqueness, weakest first.
-- **More like this**: hearts, Meh and time played shape the feed on the device (`src/recommend.js`). Each game's traits come from its tag and hint (genre, controls, sensor, pocket/casual); a game can add its own with `traits: ['theme:space']`. Every game still shows once per cycle.
+- **More like this**: hearts, Meh and time played shape the feed on the device (`src/recommend.js`). Each game's traits come from its tag and hint (genre, controls, sensor, pocket/casual); a game can add its own with `traits: ['theme:space']`. On top of that, the feed brain (`src/feedbrain.js`) learns from what you play and skip, on the phone only: how much you follow each factor and which games you like at what time of day, nudging each game between 0.5x and 2x (Settings › For you resets it). Every game still shows once per cycle.
 - **Sync with no server**: `ratingsSnapshot()` / `mergeRatings()` in `src/qa.js` are meant to ride inside the Game Center / Play Games cloud save.
 - **Removing a game**: delete its file in `src/games/` and untick it in `docs/game-ideas.md`.
 
