@@ -14,12 +14,19 @@
 //     hero.rig.upper(aiming ? 'aim' : null);                    // arms and chest only, over the legs
 //     hero.rig.update(dt, { speed, aim: pitch });              // speed: metres a second (drives the steps)
 //   }
+//   Blend spaces (blend trees): rig.blend({ idle: 0, walk: 1.4, run: 4, sprint: 7 }, speed) mixes the two
+//   poses either side of the value, every cycle in step; rig.blend2({ idle: [0, 0], walk: [0, 1], back: [0, -1],
+//   strafeL: [-1, 0], strafeR: [1, 0] }, x, y) mixes by a 2D value (strafing). play() goes back to one pose.
+//   Feet on uneven ground (foot IK): rig.plant((x, z) => groundHeight, character) after rig.update().
+//   A smooth skinned person with a face and lip sync: person() (src/kit/skin.js), the same Rig.
 //   Your own model: new Rig({ hips, spine, head, armL, foreL, armR, foreR, legL, shinL, legR, shinR }) with
 //   each part a Group whose origin is its joint (shoulder, elbow, hip, knee...), arms and legs hanging down.
 //
 // The figure faces +z (the way Object3D.lookAt turns things). Angles are radians.
 
-import { BoxGeometry, CapsuleGeometry, Group, Mesh, MeshStandardMaterial, SphereGeometry } from 'three';
+import { BoxGeometry, CapsuleGeometry, Group, Mesh, MeshStandardMaterial, SphereGeometry, Vector3 } from 'three';
+import { reach } from './characters.js';
+export { person, Face, shapes, visemes, FACE_SHAPES } from './skin.js';
 
 const JOINTS = ['hips', 'spine', 'head', 'armL', 'foreL', 'armR', 'foreR', 'legL', 'shinL', 'legR', 'shinR'];
 const UPPER = new Set(['spine', 'head', 'armL', 'foreL', 'armR', 'foreR']);
@@ -34,6 +41,9 @@ export const POSES = {
   walk: cyc(p => { const s = S(p * TAU); return P({ spine: [.05, 0, 0], legL: [-.45 * s, 0, 0], legR: [.45 * s, 0, 0], shinL: [Math.max(0, .7 * S(p * TAU + 1.2)), 0, 0], shinR: [Math.max(0, -.7 * S(p * TAU + 1.2)), 0, 0], armL: [.4 * s, 0, -.06], armR: [-.4 * s, 0, .06], foreL: [-.3, 0, 0], foreR: [-.3, 0, 0] }, .015 * Math.abs(S(p * TAU * 2))); }, .55),
   run: cyc(p => { const s = S(p * TAU); return P({ spine: [.22, 0, 0], head: [-.12, 0, 0], legL: [-.9 * s - .1, 0, 0], legR: [.9 * s - .1, 0, 0], shinL: [.3 + Math.max(0, 1.3 * S(p * TAU + 1.4)), 0, 0], shinR: [.3 + Math.max(0, -1.3 * S(p * TAU + 1.4)), 0, 0], armL: [.8 * s, 0, -.1], armR: [-.8 * s, 0, .1], foreL: [-1.3, 0, 0], foreR: [-1.3, 0, 0] }, .04 + .03 * S(p * TAU * 2)); }, .32),
   sprint: cyc(p => { const s = S(p * TAU); return P({ spine: [.38, 0, 0], head: [-.25, 0, 0], legL: [-1.1 * s - .2, 0, 0], legR: [1.1 * s - .2, 0, 0], shinL: [.4 + Math.max(0, 1.6 * S(p * TAU + 1.4)), 0, 0], shinR: [.4 + Math.max(0, -1.6 * S(p * TAU + 1.4)), 0, 0], armL: [1 * s, 0, -.1], armR: [-1 * s, 0, .1], foreL: [-1.5, 0, 0], foreR: [-1.5, 0, 0] }, .06); }, .26),
+  back: cyc(p => POSES.walk.cycle(1 - p), .55),   // walking backwards: the walk run in reverse
+  strafeL: cyc(p => { const s = S(p * TAU); return P({ spine: [.05, 0, .04], legL: [-.1, 0, -.12 - .3 * Math.max(0, s)], legR: [-.1, 0, -.12 + .3 * Math.max(0, -s)], shinL: [.2 + .5 * Math.max(0, s), 0, 0], shinR: [.2 + .5 * Math.max(0, -s), 0, 0], armL: [0, 0, -.12], armR: [0, 0, .12], foreL: [-.3, 0, 0], foreR: [-.3, 0, 0] }, .02); }, .7),
+  strafeR: cyc(p => { const s = S(p * TAU); return P({ spine: [.05, 0, -.04], legL: [-.1, 0, .12 - .3 * Math.max(0, -s)], legR: [-.1, 0, .12 + .3 * Math.max(0, s)], shinL: [.2 + .5 * Math.max(0, -s), 0, 0], shinR: [.2 + .5 * Math.max(0, s), 0, 0], armL: [0, 0, -.12], armR: [0, 0, .12], foreL: [-.3, 0, 0], foreR: [-.3, 0, 0] }, .02); }, .7),
   crouch: cyc(p => P({ spine: [.35, 0, 0], head: [-.3, 0, 0], legL: [-1.2, 0, -.1], legR: [-1.0, 0, .1], shinL: [1.9, 0, 0], shinR: [1.7, 0, 0], armL: [-.4, 0, -.1], armR: [-.4, 0, .1], foreL: [-.9, 0, 0], foreR: [-.9, 0, 0] }, .3 + S(p * TAU) * .005), 0),
   sneak: cyc(p => { const s = S(p * TAU); return P({ spine: [.4, 0, 0], head: [-.35, 0, 0], legL: [-1.0 - .35 * s, 0, 0], legR: [-1.0 + .35 * s, 0, 0], shinL: [1.6 + .3 * Math.max(0, S(p * TAU + 1.2)), 0, 0], shinR: [1.6 + .3 * Math.max(0, -S(p * TAU + 1.2)), 0, 0], armL: [-.3 + .2 * s, 0, -.1], armR: [-.3 - .2 * s, 0, .1], foreL: [-1, 0, 0], foreR: [-1, 0, 0] }, .26); }, .7),
   aim: cyc(() => P({ spine: [.05, .25, 0], head: [0, -.2, 0], armR: [-1.45, -.15, .1], foreR: [-.15, 0, 0], armL: [-1.35, .55, -.1], foreL: [-.55, 0, 0] }), 0),
@@ -67,6 +77,7 @@ export class Rig {
   }
   /** Blends to a pose by name (or an object { joint: [x, y, z] } / a cycle). */
   play(name, { fade = this.fade } = {}) {
+    this.blendOn = false;
     if (name === this.state) return this;
     this.state = name; this.fadeT = fade; this.layers.push({ name, w: 0, phase: this.phase });
     return this;
@@ -75,9 +86,61 @@ export class Rig {
   upper(name) { if (name) this.top = name; this.topOn = !!name; return this; }
   /** Adds your own pose: rig.add('dance', p => ({ j: { armL: [...] }, drop: 0 }), metresPerCycle). */
   add(name, fn, rate = 0) { this.poses[name] = cyc(typeof fn === 'function' ? fn : () => fn, rate); return this; }
+  /** A 1D blend space: { pose: value }; mixes the two poses either side of v (speed, say), in step. Call each frame. */
+  blend(space, v) {
+    const e = Object.entries(space).sort((a, b) => a[1] - b[1]), w = this.bw = {};
+    if (!e.length) return this;
+    if (v <= e[0][1]) w[e[0][0]] = 1; else if (v >= e[e.length - 1][1]) w[e[e.length - 1][0]] = 1;
+    else for (let i = 0; i < e.length - 1; i++) if (v >= e[i][1] && v <= e[i + 1][1]) { const t = (v - e[i][1]) / Math.max(1e-6, e[i + 1][1] - e[i][1]); w[e[i][0]] = 1 - t; w[e[i + 1][0]] = (w[e[i + 1][0]] || 0) + t; break; }
+    return this.startBlend();
+  }
+  /** A 2D blend space: { pose: [x, y] }; mixes the poses nearest (x, y) (move direction: strafe, back...). */
+  blend2(space, x, y) {
+    const w = this.bw = {}; let sum = 0;
+    for (const [n, [px, py]] of Object.entries(space)) {
+      const d2 = (x - px) ** 2 + (y - py) ** 2; if (d2 < 1e-6) { for (const k in w) delete w[k]; w[n] = 1; sum = 1; break; }
+      sum += w[n] = 1 / (d2 * d2);
+    }
+    for (const k in w) w[k] /= sum;
+    return this.startBlend();
+  }
+  startBlend() {
+    if (!this.blendOn) { this.blendOn = true; this.blendPhase ??= this.phase; }
+    this.state = 'blend'; return this;
+  }
+  /**
+   * Feet on the ground (foot IK), after update(): ground(x, z) is the floor height there; body the
+   * character (its y is where flat ground is). The hips drop for the lower foot and the other knee bends.
+   */
+  plant(ground, body, { most = .45 } = {}) {
+    const P = this.parts; if (!P.hips || !P.legL || !P.shinL || !P.legR || !P.shinR) return this;
+    body.updateMatrixWorld(true);
+    const legs = [[P.legL, P.shinL, this.feet?.[0]], [P.legR, P.shinR, this.feet?.[1]]];
+    const tip = (shin, end) => end ? end.getWorldPosition(new Vector3()) : shin.localToWorld(new Vector3(0, -(shin.userData.ikLength ?? .43), 0));
+    const base = body.getWorldPosition(new Vector3()).y, sc = body.getWorldScale(new Vector3()).y;
+    const off = legs.map(([, s, e]) => { const t = tip(s, e); return Math.max(-most * sc, Math.min(most * sc, (ground(t.x, t.z) ?? base) - base)); });
+    const drop = Math.max(0, -Math.min(off[0], off[1]));
+    this.plantDrop = (this.plantDrop ?? drop) + (drop - (this.plantDrop ?? drop)) * Math.min(1, (this.lastDt || .016) * 14);
+    const ps = P.hips.parent.getWorldScale(new Vector3()).y || 1;
+    P.hips.position.y -= this.plantDrop / ps; P.hips.updateMatrixWorld(true);
+    const fwd = new Vector3(0, 0, 1).transformDirection(body.matrixWorld);
+    legs.forEach(([l, s, e], i) => {
+      const t = tip(s, e).add(new Vector3(0, off[i] + this.plantDrop, 0)), knee = s.getWorldPosition(new Vector3()).addScaledVector(fwd, 1);
+      reach(l, s, t, { pole: knee, end: e, length: e ? undefined : s.userData.ikLength ?? .43 });
+    });
+    return this;
+  }
   sample(name, phase) { const def = this.poses[name]; if (!def) return { j: {}, drop: 0 }; return def.cycle(phase); }
   /** speed: metres a second (the walk and run cycles follow it); aim: up/down aim (radians) for the upper layer. */
   update(dt, { speed = 0, aim = 0, turn = 0 } = {}) {
+    this.lastDt = dt;
+    // a blend space: every pose in it shares one phase, moving at the mix of their rates
+    this.blendK = Math.max(0, Math.min(1, (this.blendK || 0) + (this.blendOn ? 1 : -1) * dt / Math.max(.01, this.fade)));
+    if (this.blendK > 0 && this.bw) {
+      let rate = 0, timed = 0;
+      for (const [n, w] of Object.entries(this.bw)) { const def = this.poses[n]; if (!def) continue; if (def.rate) rate += def.rate * w; else timed += (TIMED[n] ?? .2) * w; }
+      this.blendPhase = ((this.blendPhase ?? 0) + speed * rate * dt + timed * dt) % 1;
+    } else if (!this.blendOn) this.blendPhase = null;
     // advance phases: cycles by distance, still poses by time
     for (const l of this.layers) {
       const def = this.poses[l.name]; if (!def) continue;
@@ -93,6 +156,16 @@ export class Rig {
     for (const l of this.layers) {
       const s = this.sample(l.name, l.phase); drop += s.drop * l.w;
       for (const [j, a] of Object.entries(s.j)) { const o = out[j] ||= [0, 0, 0]; o[0] += a[0] * l.w; o[1] += a[1] * l.w; o[2] += a[2] * l.w; }
+    }
+    if (this.blendK > 0 && this.bw) {   // over the layers, the blend space by how far it has faded in
+      const k2 = this.blendK, mixd = {}; let bd = 0;
+      for (const [n, w] of Object.entries(this.bw)) {
+        const s = this.sample(n, this.blendPhase ?? 0); bd += s.drop * w;
+        for (const [j, a] of Object.entries(s.j)) { const o = mixd[j] ||= [0, 0, 0]; o[0] += a[0] * w; o[1] += a[1] * w; o[2] += a[2] * w; }
+      }
+      for (const j of new Set([...Object.keys(out), ...Object.keys(mixd)])) { const o = out[j] ||= [0, 0, 0], a = mixd[j] || [0, 0, 0]; for (let i = 0; i < 3; i++) o[i] += (a[i] - o[i]) * k2; }
+      drop += (bd - drop) * k2;
+      if (this.blendOn && k2 >= 1) { this.layers = [{ name: Object.entries(this.bw).sort((a, b) => b[1] - a[1])[0]?.[0] || 'idle', w: 1, phase: this.blendPhase ?? 0 }]; }
     }
     if (this.top && this.topW > .001) {
       const s = this.sample(this.top, this.phase);

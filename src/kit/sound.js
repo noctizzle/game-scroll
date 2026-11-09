@@ -505,6 +505,7 @@ register('mixer', { stop: () => mixer.reset() });
 // speech, through @capacitor-community/text-to-speech; the browser's speechSynthesis on the web).
 //   say('Watch out!', { pitch: 1.4, rate: 1.1 })      // returns a promise that ends when it's said
 //   say('Bonjour', { lang: 'fr-FR' });  stopTalking();  talking() -> true while speaking
+//   say(line, { onWord: at => ... })   at: where in the text each word starts, as it's spoken (where the phone says; lip sync)
 // pitch .5..2, rate .5..2 (1 normal), volume 0..1 (the player's volume applies on top). Lines are
 // cut at 300 characters. A new line stops the one before. Music dips while it talks. Speech
 // follows the player's mute; it stops when the round ends. Always show the words on screen too
@@ -512,7 +513,7 @@ register('mixer', { stop: () => mixer.reset() });
 const TTS = Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('TextToSpeech') ? registerPlugin('TextToSpeech') : null;
 let talkingNow = 0, talkGen = 0;
 const clampN = (v, lo, hi, d) => Math.max(lo, Math.min(hi, Number.isFinite(+v) ? +v : d));
-export function say(text, { pitch = 1, rate = 1, volume = 1, lang = 'en-GB' } = {}) {
+export function say(text, { pitch = 1, rate = 1, volume = 1, lang = 'en-GB', onWord = null } = {}) {
   text = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
   stopTalking();
   if (!text || sound.muted || !sound.volume) return Promise.resolve(false);
@@ -531,6 +532,7 @@ export function say(text, { pitch = 1, rate = 1, volume = 1, lang = 'en-GB' } = 
       const v = S.getVoices?.().find(x => x.lang === o.lang) || S.getVoices?.().find(x => x.lang?.startsWith(o.lang.slice(0, 2)));
       if (v) u.voice = v;
       u.onend = () => res(done(true)); u.onerror = () => res(done(false));
+      if (typeof onWord === 'function') u.onboundary = e => { if (gen === talkGen && (!e.name || e.name === 'word')) try { onWord(e.charIndex); } catch { /* the game's */ } };
       S.speak(u);
     } catch { res(done(false)); }
   });

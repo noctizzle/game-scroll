@@ -19,7 +19,11 @@
 // build an arm so its origin is the shoulder and it points down its local -y, the forearm's origin is
 // the elbow, and so on. reach() then bends them like a real joint.
 
+// Faces: blend shapes eased together, blinking and lip sync to gs.sound.say (Face, shapes, visemes: src/kit/skin.js).
+//   face = new Face(mesh); face.say('Hello!'); face.set('smile', 1); face.update(dt);
+
 import { Vector3, Quaternion, Euler } from 'three';
+export { Face, shapes, visemes, FACE_SHAPES } from './skin.js';
 
 const _v = new Vector3(), _w = new Vector3(), _q = new Quaternion(), _q2 = new Quaternion(), _e = new Euler(0, 0, 0, 'YXZ');
 

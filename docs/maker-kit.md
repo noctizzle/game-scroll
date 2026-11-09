@@ -30,6 +30,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Seeded random, daily seed, smooth noise, timers | `gs.math` | [Maths](#maths) |
 | 3D text, 3D particles, outlines, glitch, trails | `gs.fx3d` | [3D extras](#3d-extras) |
 | Enemies that plan: behaviour trees, "what do I want most" | `gs.ai.Tree` (mistreevous), `gs.ai.Choose` | [Behaviour trees and wants](#behaviour-trees-and-wants) |
+| 3D people that bend smoothly, walk-to-run blends, feet on slopes, faces that talk | `gs.poses.person`, `rig.blend`, `rig.plant`, `gs.characters.Face` | [Skinned people, faces and lip sync](#skinned-people-faces-and-lip-sync) |
 | Thousands of fish, bats or zombies that flock | `gs.ai.Swarm` (WebGPU compute, CPU fallback) | [Swarms](#swarms-thousands-of-flockers) |
 | Play with your face or your hands | `gs.vision` (MediaPipe) | [Face and hands](#face-and-hands) |
 | To see frame rate, hitboxes, slow motion | press `` ` `` in `npm run dev` | [Debug overlay](#debug-overlay) |
@@ -716,6 +717,41 @@ wobble.hit(1); wobble.update(dt); body.rotation.x = wobble.value * .4;   // spri
 
 Ragdolls are part of 3D physics: `rag = phys.ragdoll(guard, { limbs: [head, armL, armR, legL, legR], push: [0, 2, -5] })`
 turns the character floppy (each limb swings at its origin). `rag.push()`, `rag.hit(part, ...)`, `rag.remove()`.
+
+### Skinned people, faces and lip sync
+
+`person()` is one smooth mesh over a skeleton (a three.js `SkinnedMesh`): elbows, knees, the waist and
+the neck bend like skin, and the whole person is one draw call. It has the same joints as `figure()`,
+so the same `Rig` poses drive it. Every 3D style can use it, on WebGL and WebGPU.
+
+```js
+const { person } = gs.poses;
+hero = person({ body: '#c0392b', skin: '#e0ac69', hair: '#2b1a10', sleeves: 'short', girth: 1, mat: c => pbr(c) });
+view.add(hero);                                   // hero.rig, hero.face, hero.mesh, hero.bones
+
+// blend spaces (blend trees): the poses either side of the value, every cycle in step so feet don't slide
+hero.rig.blend({ idle: 0, walk: 1.4, run: 4, sprint: 7 }, speed);
+hero.rig.blend2({ idle: [0, 0], walk: [0, 1], back: [0, -1], strafeL: [-1, 0], strafeR: [1, 0] }, sideways, forwards);
+hero.rig.upper(aiming ? 'aim' : null);            // still layers on top
+hero.rig.update(dt, { speed });
+hero.rig.plant((x, z) => land.height(x, z), hero); // foot IK: feet on steps and slopes (also works on figure())
+hero.rig.play('jump');                            // back to one pose, faded
+```
+
+Faces are blend shapes (morph targets): `open`, `wide`, `round` (the mouth), `smile`, `frown`,
+`surprise`, `blink`. `Face` eases them, blinks by itself and moves the mouth to speech:
+
+```js
+hero.face.say('Over here!', { pitch: 1.2 });     // speaks with gs.sound.say; the mouth follows the words
+hero.face.set('smile', 1);                        // eases in; set('smile', 0) lets go
+hero.face.mouth(mic.level());                     // or a mouth driven by anything (null stops)
+hero.face.update(dt);                             // every frame
+```
+
+The mouth moves even when the phone is muted, so always show the words on screen too. Your own meshes
+can have shapes: `shapes(geometry, { puff: (p, out) => out.set(0, p.y * .2, 0) })`, then
+`new Face(mesh).set('puff', 1)` (`const { Face, shapes, visemes } = gs.characters`). `visemes(text)`
+gives the mouth shapes over time for a line, for mouths you draw yourself.
 
 ## 3D extras
 
