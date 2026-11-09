@@ -47,6 +47,9 @@ jobs:
       - name: Kit tests (physics, AI, maths)
         run: npm run kit-test
 
+      - name: Tiny Brains cruelty test (weak players still win, guard rails hold)
+        run: npm run brains
+
       - name: Find changed games
         id: changed
         env:
@@ -83,6 +86,12 @@ jobs:
         env:
           IDS: ${{ steps.changed.outputs.ids }}
         run: node scripts/fold.cjs $IDS
+
+      - name: Tiny Brains in changed games don't get harder for a losing player
+        if: steps.changed.outputs.ids != ''
+        env:
+          IDS: ${{ steps.changed.outputs.ids }}
+        run: node scripts/brain-check.mjs --games $IDS
 
       - name: Speed budget (frame time and memory on a slowed CPU)
         if: steps.changed.outputs.ids != ''

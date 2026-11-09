@@ -551,6 +551,70 @@ console.log('physics ok');
   console.log('brains: copy, trust, drift, win rate, rules, limits, waves, plans, fixed plans, unsure, even steps, odds, predict ok');
 }
 
+// Tiny Brains round 2: player profile, fun lean, styles, tells, start, watch, Nemesis, Shadow, tune
+{
+  const { Brain, Wave, Player, Nemesis, Shadow, tune, liveBrains } = await import('../src/kit/brains.js');
+  // a profile shared by every game's brains: a fresh brain starts at the player's level
+  const prof = {}, papi = id => ({ brains: { load: () => null, save: () => true, player: { read: () => JSON.parse(JSON.stringify(prof)), write: (k, v, n) => { prof[k] = { v, n }; return true; } } } });
+  const me = new Player(papi('a'));
+  assert.equal(me.skill, .5, 'skill before any notes');
+  for (let i = 0; i < 40; i++) me.note('skill', .3);
+  assert.ok(Math.abs(me.skill - .3) < .01, 'notes move it: ' + me.skill);
+  me.note('reaction', .25); assert.equal(me.reaction, .25, 'first note is the value');
+  const fresh = new Brain(papi('b'), { name: 'new', inputs: 1, actions: 2, share: false });
+  assert.ok(Math.abs(fresh.skill - .3) < .01, 'a brand new brain starts at the player\'s level: ' + fresh.skill);
+  for (let i = 0; i < 6; i++) fresh.result(true);
+  assert.ok(prof.skill.n > 40, 'brains add to the profile after a few rounds');
+  // fun: rounds tenser than usual that the player enjoyed lean towards more pressure
+  let fn = null;
+  const fapi = { brains: { load: () => null, save: () => true, onFun: (n, f) => { fn = f; return () => {}; } } };
+  const fb = new Brain(fapi, { name: 'fun', inputs: 1, actions: 2, share: false, profile: false });
+  assert.ok(fn, 'brains listen for fun signals');
+  for (let r = 0; r < 30; r++) { const tense = r % 2; for (let i = 0; i < 10; i++) fb.feel(tense ? 1 : 0); fb.result(true); fn(tense ? 1 : -.5); }
+  assert.ok(fb.lean > .05, 'leans to what the player enjoys: ' + fb.lean.toFixed(3));
+  assert.ok(fb.lean <= .3, 'and no further than .3');
+  // styles: the teacher and rules hear the personality, and it's an input
+  const seen = [];
+  const sb = new Brain({ name: 'styled', inputs: 2, actions: ['a', 'b'], styles: ['calm', 'bold'], teacher: (see, st) => { seen.push(st); return st === 'bold' ? 'b' : 'a'; }, limits: { react: 0, perSecond: 1e3, minNoise: 0 }, share: false, profile: false });
+  assert.equal(sb.net.sizes[0], 4, 'one input per personality');
+  for (let i = 0; i < 3000; i++) { sb.style = i % 2 ? 'bold' : 'calm'; sb.act([0, 0], 1 / 60); }
+  assert.ok(seen.includes('bold') && seen.includes('calm'), 'the teacher hears the style');
+  sb.style = 'bold'; const pb = sb.net.run(sb.input([0, 0]))[1]; sb.style = 'calm'; const pc = sb.net.run(sb.input([0, 0]))[1];
+  assert.ok(pb > .7 && pc < .3, `each personality learns its own way (bold ${pb.toFixed(2)}, calm ${pc.toFixed(2)})`);
+  sb.style = { bold: .7, calm: .3 }; assert.equal(sb.style, 'bold', 'mixes take the strongest name');
+  const sw = new Wave(sb), m1 = sw.mind({ style: 'calm' }), m2 = sw.mind({ style: 'bold' });
+  assert.ok(m1.style === 'calm' && m2.style === 'bold' && sb.style === 'bold', 'each wave mind has its own personality');
+  // tells: a wind-up before a change, then the change
+  const tb = new Brain({ name: 'tells', inputs: 1, actions: ['a', 'b'], teacher: s => (s[0] > 0 ? 'b' : 'a'), tells: { windup: .3 }, limits: { react: 0, perSecond: 1e3, minNoise: 0 }, share: false, profile: false });
+  for (let i = 0; i < 400; i++) tb.act([i % 2 ? 1 : -1], 1 / 60);
+  while (tb.telling) tb.act([-1], 1 / 60);
+  for (let i = 0; i < 5 && tb.action !== 'a'; i++) tb.act([-1], 1 / 60);
+  tb.act([1], 1 / 60);
+  if (tb.action === 'a') { assert.ok(tb.telling && tb.telling.action === 'b', 'shows the tell first'); let n = 0; while (tb.telling) { tb.act([1], 1 / 60); n++; } assert.ok(n >= 5, 'the tell lasts: ' + n + ' frames'); assert.equal(tb.action, 'b', 'then does it'); }
+  // start + watch: a starting brain from the maker's play
+  const sh = new Shadow({ name: 'maker', inputs: 1, actions: ['l', 'r'], hidden: [6] });
+  for (let i = 0; i < 3000; i++) { const x = Math.sin(i * 1.7); sh.watch([x], x < 0 ? 'l' : 'r'); }
+  const st = new Brain({ name: 'started', inputs: 1, actions: ['l', 'r'], hidden: [6], start: sh.pack(), limits: { react: 0, minNoise: 0 }, share: false, profile: false });
+  assert.ok(st.anchor && st.net.run([-.8])[0] > .8 && st.net.run([.8])[1] > .8, 'start: plays like the maker from the first frame');
+  st.watch([-.5], 'l'); assert.ok(st.net.w.every(Number.isFinite), 'watch learns');
+  assert.ok(liveBrains().includes(st), 'live brains are listed for the debug overlay');
+  // Nemesis remembers between sessions
+  const ns = new Map(), napi = { brains: { load: k => ns.get(k) ?? null, save: (k, v) => ns.set(k, v) } };
+  const lines = { first: ['Hi {name}'], back: ['Back?'], long: ['{days} days!'], won: ['Lucky'], lost: ['Good try'], streak: ['{streak} wins!'] };
+  const n1 = new Nemesis(napi, { name: 'grub', moves: ['l', 'r'], lines });
+  assert.equal(n1.met(1e12), 'Hi grub', 'first meeting');
+  n1.result(true); n1.result(true); assert.equal(n1.result(true), '3 wins!', 'streak line');
+  const n2 = new Nemesis(napi, { name: 'grub', moves: ['l', 'r'], lines });
+  assert.equal(n2.record.wins, 3, 'remembers the record');
+  assert.equal(n2.met(1e12 + 5 * 864e5), '5 days!', 'notices time away');
+  assert.ok(n2.grudge > 0, 'wants a rematch after losing');
+  // tune: finds numbers that hit a target
+  const t = tune({ params: { jump: [100, 900], g: [500, 2500] }, trial: p => (p.jump * p.jump) / (2 * p.g), want: 100, tries: 120, repeats: 1 });
+  assert.ok(Math.abs(t.result - 100) < 5, 'tune hits the target: ' + t.result.toFixed(1));
+  assert.equal(t.log.length, 120, 'logs each try');
+  console.log('brains 2: profile, fun lean, styles, tells, start + watch, Nemesis, Shadow, tune ok');
+}
+
 // ---- round 6 game kits
 {
   const { Board } = await import('../src/kit/board.js');
@@ -641,14 +705,25 @@ console.log('physics ok');
   console.log('drag: reject and home, drop and snap ok');
 }
 {
-  const { dungeon, cave, maze, islands, pattern, fov, loadGen } = await import('../src/kit/gen.js');
+  const { dungeon, cave, maze, islands, pattern, fov, loadGen, proven, reach } = await import('../src/kit/gen.js');
   await loadGen();
   const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });
   assert.equal(a.text, b2.text, 'same seed, same dungeon'); assert.ok(a.text.includes('S') && a.text.includes('E') && a.rooms.length > 1);
   assert.ok(cave(40, 30, { seed: 1 }).text.includes('.')); assert.ok(maze(21, 21, { seed: 1 }).grid.length === 21); assert.ok(/[~.^]/.test(islands(32, 32, { seed: 3 }).text));
   const pt = pattern('..#..\n.###.\n..#..\n.....', 16, 16, { seed: 2 }); assert.ok(pt && pt.grid.length === 16);
   const seen = fov('#####\n#...#\n#...#\n#####', 2, 1, 5); assert.ok(seen.has('3,2') && seen.has('0,0'));
-  console.log('gen: dungeon (seeded), cave, maze, islands, pattern, fov ok');
+  // proven levels: keeps making until one passes; reach() measures the walk
+  assert.equal(reach('S..#\n.#.E\n....', 'S', 'E'), 4, 'reach counts steps round walls');
+  assert.equal(reach('S#E', 'S', 'E'), -1, "reach: can't get through");
+  let made = 0;
+  const pv = proven(sd => { made++; return cave(30, 20, { seed: sd }); }, l => { const n = reach(l.text, 'S', 'E'); return n > 0 && n; }, { seed: 4, tries: 6 });
+  assert.ok(pv.level && pv.score > 0 && made === 6, 'proven keeps the best of its tries');
+  const pv2 = proven(sd => cave(30, 20, { seed: sd }), l => { const n = reach(l.text, 'S', 'E'); return n > 0 && n; }, { seed: 4, tries: 6 });
+  assert.equal(pv2.level.text, pv.level.text, 'proven is seeded');
+  const early = proven(sd => sd, () => true, { seed: 1, good: 1 });
+  assert.equal(early.tried, 1, 'stops at the first good one');
+  assert.equal(proven(sd => sd, () => false, { tries: 3 }).level, null, 'null when nothing passes');
+  console.log('gen: dungeon (seeded), cave, maze, islands, pattern, fov, proven, reach ok');
 }
 {
   const { Gun, Health, lob, arc, Explosives, hitFrom } = await import('../src/kit/combat.js');
@@ -891,5 +966,18 @@ console.log('physics ok');
   const snd = await import('../src/kit/sound.js');
   snd.mixer.volume('music', .5).duck('music').room('cave').muffle(.5).reset();
   assert.equal(await snd.say(''), false, 'nothing to say'); assert.equal(snd.talking(), false);
-  console.log('device + sound: haptic patterns, mixer and speech calls ok without audio');
+  // living music: tension builds with close calls and settles, the tempo leans to the player's pace
+  const mcalls = { i: [], s: [] }, fake = { intensity: x => mcalls.i.push(x), speed: x => mcalls.s.push(x) };
+  const live = snd.follow(fake, { pace: 2 });
+  live.update(.1); const calm = live.tension;
+  live.feel(1).feel(1); live.update(.1); assert.ok(live.tension > calm + .5, 'close calls build tension');
+  for (let i = 0; i < 100; i++) live.update(.1);
+  assert.ok(Math.abs(live.tension - calm) < .01, 'and it settles');
+  for (let i = 0; i < 60; i++) { live.tap(); live.update(.8); }
+  assert.ok(live.speed < 1, 'slow taps slow the tempo a little: ' + live.speed.toFixed(3));
+  for (let i = 0; i < 300; i++) { live.tap(); live.update(.1); }
+  assert.ok(live.speed > 1 && live.speed <= 1.12, 'quick taps speed it up, within the range: ' + live.speed.toFixed(3));
+  live.feel(1); live.lost(); assert.ok(live.tension < calm, 'a loss settles it at once');
+  assert.ok(mcalls.i.length && mcalls.s.length, 'drives the tune');
+  console.log('device + sound: haptic patterns, mixer, speech calls and living music ok without audio');
 }
