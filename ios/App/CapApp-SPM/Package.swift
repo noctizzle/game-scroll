@@ -24,7 +24,8 @@ let package = Package(
         .package(name: "Npu", path: "../../../plugins/npu"),
         .package(name: "PhoneAi", path: "../../../plugins/phone-ai"),
         .package(name: "PowerState", path: "../../../plugins/power-state"),
-        .package(name: "RichHaptics", path: "../../../plugins/rich-haptics")
+        .package(name: "RichHaptics", path: "../../../plugins/rich-haptics"),
+        .package(name: "ScreenRate", path: "../../../plugins/screen-rate")
     ],
     targets: [
         .target(
@@ -44,7 +45,8 @@ let package = Package(
                 .product(name: "Npu", package: "Npu"),
                 .product(name: "PhoneAi", package: "PhoneAi"),
                 .product(name: "PowerState", package: "PowerState"),
-                .product(name: "RichHaptics", package: "RichHaptics")
+                .product(name: "RichHaptics", package: "RichHaptics"),
+                .product(name: "ScreenRate", package: "ScreenRate")
             ]
         )
     ]

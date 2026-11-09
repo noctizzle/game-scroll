@@ -306,6 +306,16 @@ jitter back out of the motion, and costs a few milliseconds of compute instead o
   phone is warm, in battery saver, or under 20% battery and not charging (`src/kit/power.js` asks the
   phone every 15 seconds; it holds a minute after the reason goes); then the game draws half the
   frames, which keeps the phone cooler. Always does that all the time; Off. A pinned frame rate turns it off.
+- **Screen rate:** phone screens pick their own rate (LTPO screens like the Fold's step between 120,
+  60 and lower) and a web page can't ask for one, so the app asks through `plugins/screen-rate`
+  (`src/kit/screenrate.js`, Android) while a round is played: the fastest rate that's a whole number of
+  refreshes per real frame when frame generation fills in (60 fps on a 144 Hz screen asks for 120), so
+  the phone can't drop the card to 60 Hz and turn it off; the game's own rate otherwise (a game at 60 or
+  30 asks for 60, which saves battery). Between rounds the phone decides. It's a wish: Samsung's Motion
+  smoothness, battery saver and Game Booster can still overrule it. On iPhone the web view draws near
+  60 frames a second on 120 Hz ProMotion screens, which left no refreshes for frame generation; the
+  plugin turns that off with WebKit's own switch (private API, so `GSHighRefreshWebView` = NO in
+  `ios/App/App/Info.plist` puts the cap back if App Review objects).
 - **Stutter shield:** a game drawing every refresh whose frames start coming late (two late in a
   second) gets frame generation at once for two seconds, so the refreshes it would miss show made
   frames instead of the same frame twice. It can't help a hitch that holds the whole app up (nothing

@@ -1447,7 +1447,30 @@ console.log('physics ok');
   assert.equal(refreshesSince(S, 1000 + 16.9), 2, 'a refresh the phone skipped is counted');
   S.k = 2; assert.equal(refreshesSince(S, 1000 + 17.5), 3, 'never the same moment twice');
   assert.equal(refreshesSince({ at: 0, ms: 0, k: 4 }, 50), 5, 'no clock: the next');
-  console.log('frame generation: exact camera turns, battery and heat, pacing by the clock ok');
+
+  // the screen's rate (src/kit/screenrate.js): frame generation asks for whole refreshes per real frame,
+  // a game without it asks for its own rate (at least 60), unknown rates ask for nothing
+  const { pickRate, screen } = await import('../src/kit/screenrate.js');
+  assert.equal(pickRate([60, 120], 60, true), 120, 'frame generation: two refreshes a frame');
+  assert.equal(pickRate([60, 90, 120, 144], 60, true), 120, '60 fps on a 144 Hz screen: 120 (two a frame, not 2.4)');
+  assert.equal(pickRate([60, 90, 120, 144], 30, true), 120, '30 fps: four a frame');
+  assert.equal(pickRate([60, 90], 60, true), 90, 'no whole number: the fastest');
+  assert.equal(pickRate([60, 120], 60, false), 60, 'no frame generation: the game\'s own rate');
+  assert.equal(pickRate([1, 10, 24, 30, 60, 120], 30, false), 60, 'never below 60');
+  assert.equal(pickRate([60, 90, 120, 144], 120, false), 120, 'a 120 fps game on a 144 Hz screen: 120');
+  assert.equal(pickRate([], 60, true), 0, 'rates unknown: no wish');
+  const sp = await import('../src/kit/speed.js');
+  const ng = { id: 'kt-ng', era: 'nextgen', fps: 60 }, flat = { id: 'kt-2d', fps: 30 };
+  assert.equal(sp.screenWant(ng), 0, 'no rates known (the web): no wish');
+  screen.rates = [60, 120]; screen.top = 120; sp.speed.gpu = true;
+  assert.equal(sp.screenWant(ng), 120, 'a 60 fps 3D game with frame generation holds 120 Hz');
+  assert.equal(sp.screenWant(flat), 60, 'a 30 fps 2D game asks for 60');
+  assert.equal(sp.screenWant({ ...ng, frameGen: false }), 60, 'a game that turns frame generation off asks for its own rate');
+  sp.setFrameGenPick('off'); assert.equal(sp.screenWant(ng), 60, 'frame generation off in Settings: its own rate');
+  sp.setFrameGenPick('auto'); sp.speed.gpu = false;
+  assert.equal(sp.screenWant(ng), 60, 'on WebGL (no frame generation): its own rate');
+  screen.rates = []; screen.top = 0;
+  console.log('frame generation: exact camera turns, battery and heat, pacing by the clock, screen rate ok');
 }
 
 // gs.props on WebGPU: each copy keeps its slot in the drawn list while it stays in view (three's motion,
