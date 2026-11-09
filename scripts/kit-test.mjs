@@ -1025,3 +1025,28 @@ console.log('physics ok');
   assert.equal(await ai.ask('Say hi', { fallback: 'Snip snap.' }), 'Snip snap.', 'no model here: the fallback');
   console.log('phone AI: tidy and fallback ok');
 }
+
+// Swarm (the CPU version; the GPU one is checked against it in kit-browser)
+{
+  const { Swarm } = await import('../src/kit/swarm.js');
+  const s = new Swarm({ count: 600, w: 300, h: 300, speed: 60, seed: 2, gpu: false });
+  assert.equal(s.gpu, false); const o0 = s.order();
+  for (let f = 0; f < 600; f++) s.update(1 / 60);
+  assert.ok(s.order() > o0 + .1, `they flock: order ${o0.toFixed(2)} -> ${s.order().toFixed(2)}`);
+  assert.ok(s.x.every(v => v >= 0 && v < 300) && s.y.every(v => v >= 0 && v < 300), 'wrap keeps them in the area');
+  const spread = sw => { let d = 0; for (let i = 0; i < sw.count; i++) d += Math.hypot(sw.x[i] - 150, sw.y[i] - 150); return d / sw.count; };
+  const a = new Swarm({ count: 300, w: 300, h: 300, edges: 'bounce', seed: 4, gpu: false }), b = new Swarm({ count: 300, w: 300, h: 300, edges: 'bounce', seed: 4, gpu: false });
+  for (let f = 0; f < 300; f++) { a.pull(150, 150, { strength: 2 }).update(1 / 60); b.pull(150, 150, { strength: -2, radius: 200 }).update(1 / 60); }
+  assert.ok(spread(a) < 60 && spread(b) > spread(a) + 40, `pulls and pushes: ${spread(a).toFixed(0)} vs ${spread(b).toFixed(0)}`);
+  assert.ok(b.x.every(v => v >= 0 && v <= 300), 'bounce keeps them in');
+  const r = new Swarm({ count: 400, w: 300, h: 300, seed: 5, gpu: false }).obstacle(150, 150, 40);
+  for (let f = 0; f < 300; f++) r.update(1 / 60);
+  assert.ok(r.near(150, 150, 30).length <= 4, 'they keep out of an obstacle: ' + r.near(150, 150, 30).length);
+  const hit = r.near(r.x[0], r.y[0], 1); assert.ok(hit.includes(0)); r.kill(0); assert.ok(!r.near(r.x[0], r.y[0], 1).includes(0) && r.living === 399, 'killed ones are gone');
+  const kx = r.x[0]; r.update(1 / 60); assert.equal(r.x[0], kx, 'and stay still');
+  r.revive(0, 10, 10); assert.equal(r.living, 400); r.update(0); assert.equal(r.x[0], 10, 'dt 0 moves nothing');
+  assert.equal(new Swarm({ count: 1e6, gpu: false }).count, 8192, 'at most 8192');
+  assert.ok([2000, 8192].includes(Swarm.max()));
+  const t = performance.now(), big = new Swarm({ count: 2000, w: 600, h: 600, gpu: false }); for (let f = 0; f < 30; f++) big.update(1 / 60);
+  console.log(`swarm: flocks, pulls, pushes, obstacles, edges, kill and revive ok (2000 on the CPU: ${((performance.now() - t) / 30).toFixed(1)} ms a frame here)`);
+}

@@ -29,6 +29,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Enemies that chase, flee, flock, find a path | `gs.ai` (Yuka) | [AI](#ai) |
 | Seeded random, daily seed, smooth noise, timers | `gs.math` | [Maths](#maths) |
 | 3D text, 3D particles, outlines, glitch, trails | `gs.fx3d` | [3D extras](#3d-extras) |
+| Thousands of fish, bats or zombies that flock | `gs.ai.Swarm` (WebGPU compute, CPU fallback) | [Swarms](#swarms-thousands-of-flockers) |
 | Play with your face or your hands | `gs.vision` (MediaPipe) | [Face and hands](#face-and-hands) |
 | To see frame rate, hitboxes, slow motion | press `` ` `` in `npm run dev` | [Debug overlay](#debug-overlay) |
 | Opponents that learn as you play (Tiny Brains) | `gs.brains` | [Tiny Brains](#tiny-brains) |
@@ -415,6 +416,34 @@ update(dt) { crowd.update(dt); }                             // read bat.x, bat.
 - `Brain(start, { state: { enter, update(dt), exit } })`: `go(name)`, `is(name)`, `time` in the state.
 - All of Yuka is there as `gs.ai.YUKA` (fuzzy logic, goals, vision cones, nav meshes).
 
+
+### Swarms: thousands of flockers
+
+`gs.ai.Swarm` moves hundreds or thousands of simple creatures that flock: shoals, bats, bees,
+starlings, a zombie horde. On top-end phones with WebGPU the moving is done on the graphics chip
+(a compute shader); everywhere else it runs on the CPU with a spatial grid. Same rules either way,
+so the game never needs to know (`swarm.gpu` says which). If the chip turns out too slow, or goes
+away, it carries on on the CPU by itself.
+
+```js
+const { Swarm } = gs.ai;
+reset() { fish = new Swarm({ count: Math.min(3000, Swarm.max()), w: W, h: H, speed: 70 }); }
+update(dt) {
+  fish.pull(food.x, food.y);                                   // come here (up to 8 pulls a frame)
+  fish.pull(shark.x, shark.y, { strength: -4, radius: 90 });   // keep away from here
+  fish.update(dt);
+  for (const i of fish.near(shark.x, shark.y, 12)) { fish.kill(i); api.score(++score); }
+}
+draw(c) { for (let i = 0; i < fish.count; i++) if (fish.alive[i]) drawFish(c, fish.x[i], fish.y[i], fish.angle(i)); }
+```
+
+Options: `count` (up to 8192), `w`, `h`, `speed`, `sight` (how far each sees its neighbours, 24),
+the flocking urges `separate` (1.6), `align` (1) and `cohere` (.8), `wander` (.3), `edges` (`'wrap'`
+or `'bounce'`), `seed`. Also `obstacle(x, y, r)`, `place(i, x, y)`, `revive(i, x, y)`, `living`, and
+`order()` (0 when they head all over, 1 when they all head one way). `Swarm.max()` is about how many
+the phone moves smoothly: 8192 with the graphics chip, 2000 without. On the GPU the positions you
+read are a frame or two behind, which nobody sees; don't use a swarm for exact, frame-perfect rules.
+For a few clever agents (chase, patrol, paths) use `Crowd` instead.
 ## Maths
 
 `const { rng, daily, noise2, fbm, vec, overlap, Grid, Timers } = gs.math;`
