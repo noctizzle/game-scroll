@@ -81,9 +81,12 @@ try {
   const vc = bundle.versionCode;
   console.log(`Play took version code ${vc}`);
   if (mapping) {
-    await call('POST', `${UP}/edits/${edit.id}/apks/${vc}/deobfuscationFiles/mapping?uploadType=media`,
-      { body: readFileSync(mapping), type: 'application/octet-stream', token });
-    console.log('Uploaded the R8 mapping, so crash reports in Play Console show real names');
+    // Nice to have: a failure here only means unreadable crash traces, so it never stops the release.
+    try {
+      await call('POST', `${UP}/edits/${edit.id}/apks/${vc}/deobfuscationFiles/proguard?uploadType=media`,
+        { body: readFileSync(mapping), type: 'application/octet-stream', token });
+      console.log('Uploaded the R8 mapping, so crash reports in Play Console show real names');
+    } catch (e) { console.log(`::warning::Couldn't upload the R8 mapping (${e.message}); releasing anyway`); }
   }
   const putTrack = () => call('PUT', `${API}/edits/${edit.id}/tracks/${track}`, { token, body: {
     track, releases: [{ name: name || String(vc), versionCodes: [String(vc)], status }] } });
