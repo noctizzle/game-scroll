@@ -902,6 +902,23 @@ export interface Adventure {
   save(): Loose; load(d: Loose): Adventure;
 }
 export interface AdventurePart { Adventure: new (o?: { start?: string | null; bag?: Loose }) => Adventure }
+export interface HexCell { q: number; r: number; x: number; y: number; corners: [number, number][]; data: Record<string, Loose> }
+export interface HexMap {
+  size: number; pointy: boolean; cells: Map<string, HexCell>; readonly list: HexCell[];
+  add(q: number, r: number): HexCell; remove(c: HexCell): HexMap; cell(q: number, r: number): HexCell | null; at(x: number, y: number): HexCell | null; each(fn: (c: HexCell) => void): HexMap;
+  neighbours(c: HexCell): HexCell[]; distance(a: HexCell, b: HexCell): number; line(a: HexCell, b: HexCell): HexCell[]; range(c: HexCell, n: number): HexCell[]; ring(c: HexCell, n: number): HexCell[];
+  reach(from: HexCell, moves: number, cost?: (c: HexCell, from: HexCell) => number): Map<HexCell, number>; path(a: HexCell, b: HexCell, cost?: (c: HexCell, from: HexCell) => number): HexCell[] | null;
+  sees(a: HexCell, b: HexCell, blocks?: (c: HexCell) => boolean): boolean; save(): Loose; load(d: Loose): HexMap;
+}
+export interface Iso {
+  tw: number; th: number; x: number; y: number; zh: number;
+  toScreen(tx: number, ty: number, z?: number): { x: number; y: number }; toTile(x: number, y: number): { tx: number; ty: number }; corners(tx: number, ty: number, z?: number): [number, number][];
+  sort<T extends { tx: number; ty: number; z?: number }>(list: T[]): T[];
+}
+export interface HexPart {
+  HexMap: new (o?: { size?: number; pointy?: boolean; shape?: 'rect' | 'hex' | 'none'; w?: number; h?: number; radius?: number; x?: number; y?: number }) => HexMap;
+  Iso: new (o?: { tw?: number; th?: number; x?: number; y?: number; zh?: number | null }) => Iso;
+}
 export interface DragPart { Drag: new (o?: { snap?: number; accept?: (piece: DragThing, slot: DragThing) => boolean; lift?: number; speed?: number; list?: { x: number; y: number; gap?: number; axis?: 'x' | 'y' } | null; swap?: boolean }) => Drag }
 
 export interface Earner {
@@ -1426,7 +1443,7 @@ export interface GS {
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
-  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
+  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;

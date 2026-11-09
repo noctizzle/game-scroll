@@ -45,6 +45,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Undo and redo moves | `gs.history` | [Game kits](#game-kits) |
 | An inventory, crafting recipes | `gs.items` | [Game kits](#game-kits) |
 | A point-and-click adventure | `gs.adventure` | [Game kits](#game-kits) |
+| Hex maps, isometric views | `gs.hex` | [Game kits](#game-kits) |
 | Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
 | Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
 | Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
@@ -1221,6 +1222,13 @@ returns `{ spot, did, text }` and fires `say`, `enter` and the rest. `act(spot, 
 hero has walked to `walkTo(spot)`. `combine(a, b)` for items in the bag, `flag(k, v)`, `unlock`,
 `map()` / `drawMap(c, x, y)` for the rooms seen, `save` / `load`. Use an `Inventory` as the bag for
 slots and limits, and `gs.story` for conversations.
+
+**Hex maps and isometric views** (`gs.hex`, hex maths from honeycomb-grid): `HexMap({ size, pointy, shape:
+'rect' | 'hex', w, h, radius, x, y })` gives cells with `q, r`, centre `x, y`, `corners` to draw and your
+own `data`. `at(x, y)` is the hex under a tap; `neighbours`, `distance`, `line`, `range`, `ring`;
+`reach(from, moves, cost)` is everywhere a unit can move (a Map of cell to points spent, `cost(cell)`
+Infinity for blocked); `path(a, b, cost)` the cheapest route; `sees(a, b, blocks)` line of sight.
+`Iso({ tw, th, x, y })`: `toScreen(tx, ty, z)`, `toTile(x, y)` for taps, `corners`, `sort(things)` back to front.
 
 **Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
 `Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran

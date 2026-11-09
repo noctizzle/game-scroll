@@ -763,6 +763,27 @@ console.log('physics ok');
   console.log('adventure: hotspots (rect, circle, polygon, z), take, use, locks, exits, when, map, combine, save ok');
 }
 {
+  const { HexMap, Iso } = await import('../src/kit/hex.js');
+  for (const pointy of [true, false]) {
+    const m = new HexMap({ size: 10, pointy, w: 6, h: 5, x: 5, y: 7 }); assert.equal(m.list.length, 30);
+    for (const c of m.list) assert.equal(m.at(c.x + 2, c.y - 2), c, 'a tap finds its hex');
+    assert.equal(m.at(-50, -50), null); const mid = m.list.find(c => m.neighbours(c).length === 6); assert.ok(mid, 'inner cells have six neighbours');
+    for (const n of m.neighbours(mid)) assert.equal(m.distance(mid, n), 1);
+  }
+  const h = new HexMap({ size: 10, shape: 'hex', radius: 3 }); assert.equal(h.list.length, 37, 'a hex of radius 3 has 37 cells');
+  assert.ok(Math.abs(Math.min(...h.list.flatMap(c => c.corners.map(p => p[0])))) < 1e-6, 'its corner at x');
+  const centre = h.list.find(c => h.neighbours(c).length === 6 && h.ring(c, 3).length === 18); assert.ok(centre); assert.equal(h.range(centre, 1).length, 7);
+  const edge = h.ring(centre, 3)[0], far = h.list.find(c => h.distance(c, edge) === 6); assert.equal(h.line(edge, far).length, 7);
+  const wall = new Set(h.ring(centre, 1).slice(0, 5)); const cost = c => wall.has(c) ? Infinity : 1;
+  const p = h.path(edge, far, cost); assert.ok(p && p[0] === edge && p.at(-1) === far && !p.some(c => wall.has(c)), 'a path round the wall');
+  const r = h.reach(centre, 2, cost); assert.ok(!r.has(h.ring(centre, 1)[0]) && r.has(h.ring(centre, 1)[5]), 'reach stops at blocked hexes');
+  assert.equal(h.sees(edge, far, c => c === centre), !h.line(edge, far).slice(1, -1).includes(centre));
+  centre.data.town = 1; const h2 = new HexMap({ size: 10, shape: 'hex', radius: 3 }).load(JSON.parse(JSON.stringify(h.save()))); assert.equal(h2.cell(centre.q, centre.r).data.town, 1, 'save and load');
+  const iso = new Iso({ tw: 32, th: 16, x: 100, y: 20 }); const s = iso.toScreen(3, 2); const t = iso.toTile(s.x, s.y);
+  assert.ok(Math.abs(t.tx - 3) < 1e-9 && Math.abs(t.ty - 2) < 1e-9, 'iso screen and back'); assert.deepEqual(iso.sort([{ tx: 2, ty: 2 }, { tx: 0, ty: 1 }]).map(o => o.tx), [0, 2]);
+  console.log('hex: taps (pointy and flat), neighbours, hex shape, range, ring, line, path, reach, sight, save; iso ok');
+}
+{
   const { dungeon, cave, maze, islands, pattern, fov, loadGen, proven, reach } = await import('../src/kit/gen.js');
   await loadGen();
   const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });
