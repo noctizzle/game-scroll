@@ -141,3 +141,8 @@ up), so objects look like they're sitting on your real floor. Adjust them with
 live camera picture.
 
 Like Next Gen, the 3D layer is drawn at the tier's pixel count and upscaled to the screen with Snapdragon Game Super Resolution 1 (the camera picture underneath stays at full resolution).
+
+On WebGPU, frame generation works for AR views as it does for Next Gen (`docs/nextgen-3d.md`, Frame
+generation): on a 120 Hz screen, a game drawing 60 frames a second gets a made frame between each pair,
+see-through background included. The camera picture underneath plays at its own rate and isn't
+touched. `frameGen: false | 'ahead'` in the definition and `v.cut()` work the same way.

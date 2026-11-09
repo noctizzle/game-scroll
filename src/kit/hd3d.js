@@ -50,7 +50,7 @@ import { makeRenderer } from './renderer.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { speed, phoneClass, fpsFor, stepDown, stepUp, settle, settledFor } from './speed.js';
+import { speed, phoneClass, fpsFor, stepDown, stepUp, settle, settledFor, frameGenFor, frameGenFailed } from './speed.js';
 
 export * as THREE from 'three';
 
@@ -115,13 +115,19 @@ export const HD = {
   get tier() { return Q.force ?? Q.tier; }, get name() { return TIERS[this.tier].name; }, get res() { return Q.force != null ? 1 : LEVELS[Q.lvl]; },
   set force(t) { Q.force = t; }, get force() { return Q.force; },
   /** Last frame: draw calls, triangles, milliseconds spent in render() on the CPU, and whether the shadows were redrawn. */
-  info: { calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '' },
+  info: { calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0 },
   /** Upscale when the 3D is drawn below the screen's size (false: plain stretch). */
   upscale: true,
   /** Which upscaler: 'sgsr2' (Snapdragon GSR 2, temporal; Next Gen without reflections) or 'sgsr1' (one frame). AR and the rest use SGSR 1. */
   upscaler: 'sgsr2',
   /** Tests: draw the 3D at this fraction of the screen's size (null: the tier and frame rate decide). */
   scale: null,
+  /** Tests: frame generation on ('blend' | 'ahead') whatever the screen and settings, or null (speed.js decides). Needs WebGPU and direct. */
+  set frameGen(v) { speed.forceFrameGen = v || null; }, get frameGen() { return speed.forceFrameGen; },
+  /** Tests: fgTap(kind, canvas, when) runs after each frame frame generation puts on the screen ('real' | 'made'; when: 'frame' | 'between'), while the canvas still holds it. */
+  fgTap: null,
+  /** Tests: run the refresh between now (where the test browser is too slow to have one), as the feed does on a refresh it skips. */
+  between() { const b = speed.between; speed.between = null; b?.(); },
   /** Show the 3D canvas directly on the card (false: copy each frame into the card's canvas, as tests and screenshots need). */
   direct: typeof navigator === 'undefined' || !navigator.webdriver,
 };
@@ -651,6 +657,18 @@ export class Particles {
 
 /* ---------- view ---------- */
 const C_WARM = new Color('#ffe2b8'), GV = new Vector3(), GP = new Vector3(), GW = new Vector3(), GQ = new Vector2(), GL = new Vector3(), GH = new Vector3();
+// frame generation: the camera jumped (a teleport, a switch of camera, a snap turn, a scope's zoom)
+// if since the last real frame it moved 8 m, turned more than 20 degrees or zoomed by a quarter. The
+// frames either side don't belong together then, so none is made between them.
+const FG_P = new Vector3(), FG_D = new Vector3(), COS20 = Math.cos(20 * Math.PI / 180);
+function cameraMove(cam, last) {
+  cam.getWorldPosition(FG_P); cam.getWorldDirection(FG_D);
+  const zoom = cam.projectionMatrix.elements[5];
+  const jumped = !!last && (FG_P.distanceTo(last.pos) > 8 || FG_D.dot(last.dir) < COS20 || Math.abs(zoom / last.zoom - 1) > .25);
+  last ||= { pos: new Vector3(), dir: new Vector3(), zoom: 1 };
+  last.pos.copy(FG_P); last.dir.copy(FG_D); last.zoom = zoom || 1;
+  return { jumped, last };
+}
 // a grade tint: '#rrggbb', a Color or [r, g, b] (1 = no change)
 const toRGB = (c, out) => { if (c == null) out.set(1, 1, 1); else if (Array.isArray(c)) out.set(c[0], c[1], c[2]); else { const k = c.isColor ? c : new Color(c); out.set(k.r, k.g, k.b); } return out; };
 // decal pictures: drawn once per key and kept (a soft round mark by default)
@@ -963,7 +981,9 @@ export class HDView {
   /** Redraw the shadow maps next frame even if nothing seems to have moved (e.g. after changing a geometry in place). */
   shadowsDirty() { this.shKey = null; return this; }
   // The WebGPU frame (render() decided this view fits): the same numbers as the WebGL chain, drawn by hd3d-gpu.js.
-  drawGPU(G, r, T, baking, off, now, s2) {
+  // up: { pw, fw, fh, s1 } when the scene is drawn pw wide and upscaled to the canvas (fw x fh) by SGSR 2, or SGSR 1 if s1
+  drawGPU(G, r, T, baking, off, now, up, direct) {
+    const s2 = up && !up.s1 ? up : null;
     const ch = this._gpuChain?.r === r ? this._gpuChain : (this._gpuChain = new G.fx.GpuChain(r, this.scene, this.cam, !!this.clearBg));
     try { this.envMaker?.(); } catch (e) { /* the studio reflections stay */ }
     this.scene.environment = this.envFor(G); this.scene.environmentIntensity = this.envI;
@@ -983,8 +1003,8 @@ export class HDView {
     this.scene.traverse(o => { if (o.isInstancedMesh2 && o.userData.gpuHid) o.userData.gpuTwin.sync(this.cam); });
     for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
     // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
-    const pw = s2 ? s2.pw : r.domElement.width, ph = s2 ? Math.max(1, Math.floor(s2.fh * (pw + .5) / s2.fw)) : r.domElement.height;
-    const o = { w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
+    const pw = up ? up.pw : r.domElement.width, ph = up ? Math.max(1, Math.floor(up.fh * (pw + .5) / up.fw)) : r.domElement.height;
+    const o = { w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, s1: !!up?.s1, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
       dofOn: false, lens: null, near: this.cam.near, far: this.cam.far, shaftsOn: false, shaft: 0, shaftCol: null };
     const g = this.grade;
     if (g) o.grade = { sat: g.saturation ?? 1, con: g.contrast ?? 1, lo: toRGB(g.shadows, GL), hi: toRGB(g.highlights, GH) };
@@ -1011,11 +1031,42 @@ export class HDView {
     const empty = []; this.scene.traverseVisible(o => { if (o.isInstancedMesh && (!o.count || !o.instanceMatrix.count)) empty.push(o); });
     for (const e of empty) e.visible = false;
     r.info.autoReset = false; r.info.reset();
-    const cut = lastView !== this; lastView = this;
+    const cut = lastView !== this || this._cut; lastView = this; this._cut = false;
+    // frame generation (speed.js says when, framegen.js makes the frames, hd3d-gpu.js shows them): for
+    // the game being played, drawn straight onto its card. It starts again after a cut (another view
+    // drew, v.cut(), a pause, the camera jumping): the frames either side of one don't belong together.
+    const how = direct && !baking && !off ? frameGenFor(speed.game) : false;
+    let fg = null;
+    if (how) {
+      this.scene.updateMatrixWorld(); this.cam.updateMatrixWorld();
+      const m = cameraMove(this.cam, this._fgCam); this._fgCam = m.last;
+      fg = { mode: how, reset: cut || m.jumped || now - (this._fgT || 0) > 250, jd: [0, 0] }; this._fgT = now;
+    } else this._fgCam = null;
     if (s2) { o.s2 = GS2 ||= new SgsrFrame(); this.scene.updateMatrixWorld(); o.s2.begin(this.cam, pw, ph, o.fw, o.fh, this, now, cut, true); }   // WebGPU pictures count rows from the top
-    try { ch.render(o); } finally { for (const e of empty) e.visible = true; if (s2) o.s2.end(this.cam); }
-    if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = T.shadow > 0; HD.info.upscaled = s2 ? 'sgsr2' : false; HD.info.backend = 'webgpu'; }
+    // SGSR 2 moves the camera by a fraction of a pixel each frame (its jitter) and three's motion picture
+    // includes the change: frame generation takes it back out (in NDC: x right, y up, so rows down are minus)
+    if (fg && s2) { const j = o.s2.jitter, x = 2 * j.x / pw, y = -2 * j.y / ph, p = this._fgJ || [x, y]; fg.jd = [x - p[0], y - p[1]]; this._fgJ = [x, y]; }
+    else this._fgJ = null;
+    o.fg = fg;
+    let shown = false;
+    try { shown = ch.render(o) || false; } finally { for (const e of empty) e.visible = true; if (s2) o.s2.end(this.cam); }
+    const made = !!fg && !!shown;
+    if (made) HD.fgTap?.(shown, r.domElement, 'frame');
+    // the refresh after this one (the feed skips it at half the screen's rate) shows the frame planned for it
+    speed.between = made ? () => { const k = ch.between(); if (k) HD.fgTap?.(k, r.domElement, 'between'); } : null;
+    // the refreshes between kept not coming (the phone is too busy to draw them in time): stop for this game
+    if (made && ch.fgWin.real >= 90 && ch.missRate() > .3) { frameGenFailed(speed.game?.id); console.info('Frame generation off for this game: the phone is too busy for the frames between'); }
+    if (!baking && !off) {
+      HD.info.calls = r.info.render.drawCalls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = T.shadow > 0; HD.info.upscaled = s2 ? 'sgsr2' : up ? 'sgsr1' : false; HD.info.backend = 'webgpu';
+      HD.info.framegen = made ? how : false; HD.info.fgMs = made ? ch.fg.stats.ms : 0;
+    }
   }
+  /**
+   * The camera cut to somewhere new (a teleport, another camera, a replay): the next frame starts
+   * fresh instead of building on the last (SGSR 2's history, frame generation). Big jumps are found by
+   * themselves; call this for the rest. Returns the view.
+   */
+  cut() { this._cut = true; return this; }
   /**
    * The 3D canvas belongs to another card now: draw this view's last frame under the HUD already on
    * its canvas (and the camera picture under that, for AR), so the card keeps its picture.
@@ -1073,9 +1124,9 @@ export class HDView {
     pw = Math.max(16, Math.round(pw * q)); ph = Math.max(16, Math.round(ph * q));
     // The 3D is drawn at pw x ph (fewer pixels on big screens and when the phone struggles). Below the
     // screen's size, Snapdragon GSR 2 (sgsr2.js, temporal: jitters the camera and builds on the frames
-    // before) or GSR 1 (sgsr.js, AR and SSR) upscales it to the full screen as the last pass;
-    // HD.upscale = false shows the plain stretched picture instead (tests, comparisons).
-    const up = !G && HD.upscale && !baking && pw < fw * .95;   // (WebGPU without SGSR 2: plain stretch)
+    // before) or GSR 1 (sgsr.js, AR and SSR) upscales it to the full screen as the last pass (on WebGPU,
+    // hd3d-gpu.js's TSL versions of both); HD.upscale = false shows the plain stretched picture instead (tests, comparisons).
+    const up = HD.upscale && !baking && pw < fw * .95;
     // SGSR 2 also runs at full size, as anti-aliasing (grass and leaves stop shimmering); not for AR,
     // SSR (it draws the scene itself) or card pictures. On WebGPU it's hd3d-gpu.js's TSL version.
     const ssr = !G && !this.clearBg && T.ssr && this.reflectors.length > 0;
@@ -1083,8 +1134,10 @@ export class HDView {
     const s2 = s2on && !G ? (P.sgsr2 ||= new SGSR2()) : null;
     const ow = up || s2on ? fw : pw, oh = up || s2on ? fh : ph;
     const cv = r.domElement; if (cv.width !== ow || cv.height !== oh) r.setSize(ow, oh, false);
-    if (G) this.drawGPU(G, r, T, baking, off, now, s2on && { pw, fw, fh });
+    if (!baking && !off) speed.gpu = !!G;   // (frame generation needs the game on screen drawn with WebGPU)
+    if (G) this.drawGPU(G, r, T, baking, off, now, (s2on || up) && { pw, fw, fh, s1: !s2on }, direct);
     else {
+    if (!baking && !off) { speed.between = null; HD.info.framegen = false; }   // (frame generation is WebGPU only)
     gpuSwap(this, null);
     const cp = this.clearBg ? seeThrough(r, pw, ph) : chain(r, pw, ph); if (cp.cw !== pw || cp.ch !== ph) { cp.setSize(pw, ph); cp.cw = pw; cp.ch = ph; }
     if (up) { P.sgsr ||= new ShaderPass(SGSR); P.sgsr.uniforms.ViewportInfo.value = (P.sgsrV ||= new Vector4()).set(1 / pw, 1 / ph, pw, ph); }
@@ -1147,7 +1200,7 @@ export class HDView {
     // shadows: redraw the maps only when a shadow caster or a shadow light moved (or the tier, view or map changed)
     this.scene.updateMatrixWorld();
     r.shadowMap.enabled = T.shadow > 0;
-    let shadows = false; const cut = lastView !== this;
+    let shadows = false; const cut = lastView !== this || this._cut; this._cut = false;
     if (T.shadow > 0) { const k = this.shadowKey(); if (k !== this.shKey || lastView !== this) { this.shKey = k; r.shadowMap.needsUpdate = shadows = true; } }
     lastView = this;
     r.info.autoReset = false; r.info.reset();

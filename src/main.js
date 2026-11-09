@@ -527,8 +527,11 @@ function frame(now){
   // averages 60 (a gap check would wait 2 every time: 45 fps). Slack: a slightly early refresh counts.
   const fps=s?fpsFor(s.def):60,step=1000/fps;
   if(s){
-    if(now<nextAt-.4*1000/screenHz())return;
+    // a refresh between two real frames: a Next Gen or AR game making frames in between (frame generation,
+    // src/kit/framegen.js) shows the one it planned for it
+    if(now<nextAt-.4*1000/screenHz()){const b=speed.between;speed.between=null;if(b)try{b()}catch(e){console.warn('frame generation',e)}return}
     nextAt=now-nextAt>step?now+step:nextAt+step;   // fell behind (hidden, a long frame): restart the beat
+    speed.between=null;   // (the 3D kit sets it again while this frame draws)
   }
   let dt=Math.min(Math.max(.033,1.25/fps),(now-lastT)/1000);lastT=now;
   if(s){

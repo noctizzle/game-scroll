@@ -36,6 +36,13 @@ The rules for new 3D code until then:
   Shadows redraw every frame on WebGPU (no "only when something moved" yet).
 - `src/kit/hd3d.js`: `gpuFits(view)` says what (if anything) keeps a view on WebGL; `HD.info.backend`
   and `HD.info.webgl` (the reason) show it in tests.
+- Upscaling: both Snapdragon GSRs have TSL versions in `hd3d-gpu.js` (`sgsr2Gpu`, and `sgsr1Gpu` for AR
+  and `v.upscaler = 'sgsr1'` views), so no view stretches its picture on WebGPU any more.
+- Frame generation (WebGPU only, `src/kit/framegen.js`): the scene's pass also writes three's per-pixel
+  velocity and a see-through mask (`frameGenMRT()`), the finished frame (SGSR 2's output, or the chain's
+  drawn into a picture) goes to the generator, and `GpuChain.show()` puts a real or made frame on the
+  screen with the vignette, grain and hurt flash. `speed.js` decides when (`frameGenFor`), `main.js`
+  calls `speed.between` on the refreshes it skips. See docs/nextgen-3d.md, Frame generation.
 - Checks: `node scripts/look-compare.cjs save base` then `check base --webgpu` compares fixed scenes
   (Next Gen at every tier, a dark room with lamps, a headlight and contact shadows, an outdoor valley)
   between the two; they are within 2.5/255. `npm run build:bundled && node scripts/gpu-games.cjs [--tier n] [--shots dir]`
@@ -48,7 +55,6 @@ The rules for new 3D code until then:
 | Part | Where | What it needs for WebGPU |
 | --- | --- | --- |
 | Reflections | three's `SSRPass` | Three's TSL `ssr()` node |
-| Upscaling | `src/kit/sgsr.js` (SGSR 1, GLSL) | A TSL port of SGSR 1 (only AR, `v.upscaler = 'sgsr1'` and SSR frames use it; on WebGPU they stretch). SGSR 2 is done: `sgsr2Gpu` in `hd3d-gpu.js` |
 | Light probe baking | `hd3d.js` `bakeLight` (`WebGLCubeRenderTarget` + `CubeCamera`) | A cube target on the WebGPU renderer |
 | Game screen effects | `gs.fx3d` (EffectComposer passes) | TSL versions (three has outline, pixelate, DOF...) |
 | Classic Console | `src/kit/toon3d.js` ink pass; toon shading is already stock `MeshToonMaterial` | A TSL edge-detect pass, then Console views on WebGPU |
