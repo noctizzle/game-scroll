@@ -773,6 +773,8 @@ gives the mouth shapes over time for a line, for mouths you draw yourself.
 In the phone apps the models run on the phone's AI chip (Qualcomm's NPU on Snapdragon, the Neural
 Engine on iPhone, else the CPU) through [ONNX Runtime](https://onnxruntime.ai), with the camera read
 natively, so the game's frame time and the GPU stay free; on the web, MediaPipe runs in the page.
+(The test APKs from GitHub fetch Qualcomm's NPU libraries, about 40 MB, on Wi-Fi a little after the
+first start on a Snapdragon 8 Gen 2 or newer; until then the models run on the CPU.)
 
 ```js
 reset() { face = new Face(); }           // loads the library first

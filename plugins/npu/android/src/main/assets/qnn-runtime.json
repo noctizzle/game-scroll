@@ -1,0 +1,95 @@
+{
+  "_": "Written by scripts/qnn-pin.mjs: do not edit. Qualcomm's NPU libraries, which debug (sideloaded) builds download on the phones in socs.",
+  "ort": "1.29.0",
+  "qnn": "2.42.0",
+  "url": "https://repo1.maven.org/maven2/com/qualcomm/qti/qnn-runtime/2.42.0/qnn-runtime-2.42.0.aar",
+  "sha256": "ecb69bd6a7b1be4717ef10805199fb49ec6b60ca3f481d3068ed9605fba91d5b",
+  "files": {
+    "libQnnHtp.so": {
+      "at": 3905331,
+      "packed": 982010,
+      "size": 2642248,
+      "deflate": true,
+      "sha256": "429b74453f3dc95c6b94ca20894b4e5f08fbf8604bf339e37ef30fc17819e542"
+    },
+    "libQnnSystem.so": {
+      "at": 61951157,
+      "packed": 967800,
+      "size": 2689368,
+      "deflate": true,
+      "sha256": "dcdef54ab054072c5713974feada8af8c56558da184b7d9228e2e116aa3c7016"
+    },
+    "libQnnHtpPrepare.so": {
+      "at": 4887404,
+      "packed": 33969994,
+      "size": 83686128,
+      "deflate": true,
+      "sha256": "6db1ae82a43610030e3be326f36cf5f5323ed0f2adf4bb9222e5445e98b86e03"
+    },
+    "libQnnHtpV73Stub.so": {
+      "at": 49443655,
+      "packed": 230401,
+      "size": 638216,
+      "deflate": true,
+      "sha256": "e91d29f2d6d8077652ba2902c5670dc9045d3caee413662e2d41529dfa93317b"
+    },
+    "libQnnHtpV73Skel.so": {
+      "at": 45765882,
+      "packed": 3677710,
+      "size": 16316880,
+      "deflate": true,
+      "sha256": "5799de9978ccaefd6e560b0aab94cae3e6a93450694df8b21f4ec711e99755cc"
+    },
+    "libQnnHtpV75Stub.so": {
+      "at": 53371443,
+      "packed": 230409,
+      "size": 638216,
+      "deflate": true,
+      "sha256": "bec31085d942b9f56bb417ccb81e11b61403fcc452f7011694cf9df1ba1ea5f8"
+    },
+    "libQnnHtpV75Skel.so": {
+      "at": 49674119,
+      "packed": 3697261,
+      "size": 16320864,
+      "deflate": true,
+      "sha256": "443c090f7324b1199c172d0800d080c8c92d9541109a380b8cd34b1941db4e50"
+    },
+    "libQnnHtpV79Stub.so": {
+      "at": 57383217,
+      "packed": 230395,
+      "size": 638216,
+      "deflate": true,
+      "sha256": "9954e242900de0b40cc7a13c1d28696a3e867aa7584a00afaff8191a12f002eb"
+    },
+    "libQnnHtpV79Skel.so": {
+      "at": 53601915,
+      "packed": 3781239,
+      "size": 16141624,
+      "deflate": true,
+      "sha256": "b378e9dc83ab255058ff962b4ed334eaa791869c031e9db1c6ec2c780029ddd0"
+    },
+    "libQnnHtpV81Stub.so": {
+      "at": 61691763,
+      "packed": 259335,
+      "size": 714272,
+      "deflate": true,
+      "sha256": "2428bc53fe0c1108ab2a0aef784c294755d69caaccbf4f15a7ecedd585a3f62e"
+    },
+    "libQnnHtpV81Skel.so": {
+      "at": 57613675,
+      "packed": 4078025,
+      "size": 17148408,
+      "deflate": true,
+      "sha256": "62b289888051553ae9d8d9eb3e37c3db0dc020dffe13e447176d72ec24d134e7"
+    }
+  },
+  "socs": {
+    "SM8550": 73,
+    "SM8635": 73,
+    "SM7675": 73,
+    "SM6450": 73,
+    "SM8650": 75,
+    "SM8750": 79,
+    "SM8850": 81
+  }
+}

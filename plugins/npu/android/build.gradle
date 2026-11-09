@@ -17,6 +17,9 @@ buildscript {
 
 apply plugin: 'com.android.library'
 
+// -Pnpu.qnn=false: plain ONNX Runtime, no Qualcomm NPU at all (the CPU on every phone)
+def qnnOn = (rootProject.findProperty('npu.qnn') ?: 'true').toString() != 'false'
+
 android {
     namespace = "com.gamescroll.npu"
     compileSdk = project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 36
@@ -26,6 +29,14 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
+    }
+    // QNN_DOWNLOAD: our own APKs (debug builds) leave Qualcomm's QNN libraries out (android/app/build.gradle)
+    // and fetch them on phones with a supported Snapdragon NPU (QnnRuntime.java). Store (release) builds
+    // carry them and never download code: Google Play doesn't allow it.
+    buildFeatures { buildConfig = true }
+    buildTypes {
+        debug { buildConfigField 'boolean', 'QNN_DOWNLOAD', String.valueOf(qnnOn) }
+        release { buildConfigField 'boolean', 'QNN_DOWNLOAD', 'false' }
     }
 }
 
@@ -38,10 +49,12 @@ dependencies {
     implementation project(':capacitor-android')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     // ONNX Runtime (MIT) with the QNN execution provider; it brings Qualcomm's QNN runtime libraries
-    // (Qualcomm's AI Stack License, listed under Settings › Licence › Other parts). Build with
-    // -Pnpu.qnn=false for plain ONNX Runtime (the CPU on every phone, a much smaller app).
+    // (com.qualcomm.qti:qnn-runtime, Qualcomm's AI Stack License, listed under Settings › Licence › Other
+    // parts). Debug builds leave those out of the APK and download the same version on a supported
+    // Snapdragon (pinned in src/main/assets/qnn-runtime.json: run node scripts/qnn-pin.mjs after
+    // changing this version).
     def ort = '1.29.0'
-    if ((rootProject.findProperty('npu.qnn') ?: 'true').toString() != 'false') implementation "com.microsoft.onnxruntime:onnxruntime-android-qnn:$ort"
+    if (qnnOn) implementation "com.microsoft.onnxruntime:onnxruntime-android-qnn:$ort"
     else implementation "com.microsoft.onnxruntime:onnxruntime-android:$ort"
     def camerax = '1.4.2'
     implementation "androidx.camera:camera-core:$camerax"
