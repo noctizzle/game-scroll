@@ -186,7 +186,7 @@ const GROUND_COLOUR = `
     grass = mix(grass, lkDry, smoothstep(.55, .85, nz.g) * .65) * (.74 + .5 * dt.r * (.7 + .6 * dt2.a));
     vec3 c = grass; lkRough = .95;
     float farm = vLkMask.x * smoothstep(.3, .5, nz.b + .25);
-    if (farm > .01 && lkFields > .5) c = mix(c, lkFields(wp.xz, dt, dt2, grass).rgb, farm);
+    if (farm > .01 && lkFieldsOn > .5) c = mix(c, lkFields(wp.xz, dt, dt2, grass).rgb, farm);
     c = mix(c, lkForest * (.65 + .55 * dt.a) * (.85 + .3 * dt.g), vLkMask.y);
     float rk = smoothstep(.35, .7, vLkMask.z + (dt2.b - .5) * .5);
     c = mix(c, lkRock * (.6 + .65 * dt.b), rk); lkRough = mix(lkRough, .8, rk);
@@ -218,16 +218,16 @@ function ground(m, { detail = groundDetail().detail, colours = {}, fields = {}, 
     lkCropA: col(C.cropA), lkCropB: col(C.cropB), lkPlough: col(C.plough), lkHedge: uni(new Vector4(...col(C.hedge).value.toArray(), F ? F.hedge : 0)),
     lkFieldAngle: uni(F ? F.angle : 0), lkFieldSize: uni(new Vector2(...(F ? F.size : [56, 34]))), lkFurrows: uni(F ? F.furrows : 7),
     lkBank: uni(new Vector4(b.low, b.high, b.shiny, b.shinier)), lkRoad: uni(new Vector3(rd.width, rd.width + rd.edge, rd.ruts)),
-    lkRoads: uni(Array.from({ length: MAX_ROADS }, (_, i) => new Vector4(...(roads[i] || [0, 0, 0, 0])))), lkRoadN: uni(Math.min(nr, MAX_ROADS)), lkFields: uni(F ? 1 : 0),
+    lkRoads: uni(Array.from({ length: MAX_ROADS }, (_, i) => new Vector4(...(roads[i] || [0, 0, 0, 0])))), lkRoadN: uni(Math.min(nr, MAX_ROADS)), lkFieldsOn: uni(F ? 1 : 0),
   };
   if (nr > MAX_ROADS) console.warn(`looks.ground: ${nr} road segments, only the first ${MAX_ROADS} are drawn`);
   const decl = `#define LK_ROADS ${MAX_ROADS}
-uniform sampler2D lkDetail, lkNoise; uniform float lkWet, lkFieldAngle, lkFurrows, lkFields; uniform int lkRoadN; uniform vec3 lkScale, lkRoad; uniform vec2 lkFieldSize; uniform vec4 lkHedge, lkBank, lkRoads[LK_ROADS];
+uniform sampler2D lkDetail, lkNoise; uniform float lkWet, lkFieldAngle, lkFurrows, lkFieldsOn; uniform int lkRoadN; uniform vec3 lkScale, lkRoad; uniform vec2 lkFieldSize; uniform vec4 lkHedge, lkBank, lkRoads[LK_ROADS];
 uniform vec3 lkGrassA, lkGrassB, lkDry, lkDirt, lkMud, lkRock, lkForest, lkCropA, lkCropB, lkPlough; varying vec4 vLkMask;`;
   lookPatch(m, 'ground', spec('ground', {
     uniforms: U, world: true,
     vertex: { head: 'attribute vec4 gsMask; varying vec4 vLkMask;', after: { begin_vertex: '  vLkMask = gsMask;' } },
-    fragment: { head: decl + GROUND_FNS, replace: { color_fragment: F ? GROUND_COLOUR : GROUND_COLOUR.replace('if (farm > .01 && lkFields > .5)', 'if (false)'), roughnessmap_fragment: 'float roughnessFactor = lkRough;' } },
+    fragment: { head: decl + GROUND_FNS, replace: { color_fragment: F ? GROUND_COLOUR : GROUND_COLOUR.replace('if (farm > .01 && lkFieldsOn > .5)', 'if (false)'), roughnessmap_fragment: 'float roughnessFactor = lkRough;' } },
   }));
   return { uniforms: U, get wet() { return U.lkWet.value; }, set wet(v) { U.lkWet.value = v; } };
 }
