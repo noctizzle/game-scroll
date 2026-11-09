@@ -51,6 +51,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Bullet patterns (shoot-'em-ups) | `gs.bullets` | [Game kits](#game-kits) |
 | Falling sand, blastable ground | `gs.sand` | [Game kits](#game-kits) |
 | Monsters, faces, loot, towns from a seed | `gs.art` | [Game kits](#game-kits) |
+| Team sports AI | `gs.sports` | [Game kits](#game-kits) |
 | Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
 | Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
 | Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
@@ -1274,6 +1275,13 @@ comfortable on a phone.
 (with a `rarity` and `power`), `building(seed)` (draw with night 0..1 for lit windows), `sprite(seed, w,
 h, palette)` (a mirrored pixel sprite for the Pocket styles), `name(seed, 'person' | 'place' | 'thing')`.
 Each has `draw(c, x, y, size)`; `{ hue }` or `{ palette }` keeps a set in one colour family.
+
+**Team sports AI** (`gs.sports`): `Pitch({ w, h, goal })` (team 0 attacks the top) and `Team(pitch,
+side, { formation: '2-2' | 'k-3-2' | ..., skill })`. `team.think({ ball, foes }, dt)` returns a Map of
+each player (not marked `human`) to `{ do, x, y, kick }`: one chases the ball, the rest slide with the
+formation, find space when you have the ball or mark someone goal side when you don't; the one with
+the ball shoots at the most open corner, passes along the clearest lane, or runs on. Your game moves
+the players towards x, y and applies the kick. `home(p, ball)` is where a player belongs now.
 
 **Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
 `Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran

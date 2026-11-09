@@ -868,6 +868,24 @@ console.log('physics ok');
   console.log('art: seeded creatures, faces, items, buildings, rarity, mirrored sprites, names ok');
 }
 {
+  const { Pitch, Team } = await import('../src/kit/sports.js');
+  const P = new Pitch({ w: 300, h: 500 }), rnd = () => .5, home = new Team(P, 0, { formation: 'k-2-2', rnd }), away = new Team(P, 1, { formation: '2-2', rnd });
+  assert.equal(home.players.length, 5); assert.ok(home.players[0].y > 470, 'team 0 defends the bottom: its keeper starts there');
+  const ball = { x: 150, y: 250, vx: 0, vy: 0, owner: null };
+  let plan = home.think({ ball, foes: away.players }); const chasers = [...plan.values()].filter(a => a.do === 'chase'); assert.equal(chasers.length, 1, 'one goes for the ball');
+  assert.equal(plan.get(home.players[0]).do, 'keep', 'the keeper keeps');
+  const h1 = home.home(home.players[3], { x: 150, y: 100 }), h2 = home.home(home.players[3], { x: 150, y: 450 }); assert.ok(h1.y < h2.y, 'the formation slides up with the ball');
+  const striker = home.players[3]; striker.x = 150; striker.y = 80; ball.owner = striker; ball.x = 150; ball.y = 80;
+  for (const f of away.players) { f.x = 20; f.y = 480; } home.thinkT = 0; plan = home.think({ ball, foes: away.players }); assert.equal(plan.get(striker).do, 'shoot', 'clear in front of goal: shoot');
+  assert.ok(plan.get(striker).kick.y < 0, 'towards the top goal');
+  striker.y = 400; ball.y = 400; const mate = home.players[4]; mate.x = 220; mate.y = 200; away.players[0].x = 128; away.players[0].y = 405;
+  home.thinkT = 0; plan = home.think({ ball, foes: away.players }); assert.equal(plan.get(striker).do, 'pass', 'pressed far out: pass'); assert.equal(plan.get(striker).to, mate);
+  ball.owner = away.players[1]; away.players[1].x = 100; away.players[1].y = 300; home.thinkT = 0; plan = home.think({ ball, foes: away.players });
+  assert.ok([...plan.values()].some(a => a.do === 'mark'), 'without the ball: mark');
+  const human = home.players[2]; human.human = true; home.thinkT = 0; assert.ok(!home.think({ ball, foes: away.players }).has(human), 'the human is left alone');
+  console.log('sports: formation, keeper, chase, slide, shoot, pass under pressure, marking, human ok');
+}
+{
   const { dungeon, cave, maze, islands, pattern, fov, loadGen, proven, reach } = await import('../src/kit/gen.js');
   await loadGen();
   const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });

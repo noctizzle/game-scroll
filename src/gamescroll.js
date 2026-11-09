@@ -51,6 +51,7 @@
 //   gs.bullets   shoot-'em-up bullets: thousands in flat arrays, rings, spreads, spirals, homing, grazing
 //   gs.sand      falling sand and blastable ground: sand, water, oil, fire, smoke, acid; solid() for heroes
 //   gs.art       procedural art from a seed: creatures, faces, loot items, buildings, pixel sprites, names
+//   gs.sports    team sports AI from above: formations that slide, chase, mark, find space, shoot or pass
 //   gs.idle      idle maths: rising prices, affordable counts, short big numbers, Earner (and api.away())
 //   gs.party     pass-and-play turns with a hand-over screen, and split-screen halves for two to four
 //   gs.rhythm    a beat clock in step with the music, note charts, Perfect/Good/Miss, tap-lag calibration
@@ -137,6 +138,7 @@ import * as fight from './kit/fight.js';
 import * as bullets from './kit/bullets.js';
 import * as sand from './kit/sand.js';
 import * as art from './kit/art.js';
+import * as sports from './kit/sports.js';
 import * as party from './kit/party.js';
 import * as rhythm from './kit/rhythm.js';
 import * as strokes from './kit/strokes.js';
@@ -283,6 +285,7 @@ const core = {
   bullets: pick('bullets', bullets),
   sand: pick('sand', sand),
   art: pick('art', art),
+  sports: pick('sports', sports),
   party: pick('party', party),
   rhythm: pick('rhythm', rhythm),
   strokes: pick('strokes', strokes),
