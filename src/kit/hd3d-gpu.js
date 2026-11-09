@@ -64,6 +64,9 @@ export const gpuMaterials = {
         const lin = pow(r.mul(pS.x).mul(fex.oneMinus()), vec3(1.5)).mul(mix(vec3(1), sqrt(r.mul(pS.x).mul(fex)), pS.w));
         const c1 = lin.add(fex.mul(.1)).mul(.04).add(vec3(0, .0003, .00075)).mul(pS.z);
         c.assign(mix(c1, c1.mul(.55), clamp(h.negate().mul(3), 0, 1)));
+        // soft knee (as sky.js): the glow round a low sun is bright, but no brighter than a painted sky's
+        const l = max(c.r, max(c.g, c.b)), e = max(l.sub(1), 0);
+        c.mulAssign(select(l.greaterThan(1), float(1).add(e.div(float(1).add(e.div(1.5)))).div(max(l, 1e-4)), float(1)));
       }).Else(() => {
         const c1 = mix(L('horizon'), L('top'), pow(max(h, 0), .55));
         c.assign(mix(c1, L('horizon').mul(.55), clamp(h.negate().mul(3), 0, 1)).add(sunCol.mul(pow(s, 24).mul(.35).add(pow(s, 90).mul(.4)))));
@@ -571,6 +574,8 @@ export class GpuChain {
       lens: uniform(new Vector4()), cn: uniform(.1), cf: uniform(1000), px: uniform(new Vector2(1, 1)),
       // sun shafts (hd3d.js SHAFT_*): strength x how much the sun shows, and the light's colour
       shaft: uniform(0), shaftTint: uniform(new Color(1, .9, .75)),
+      // the mask's start, full and cap brightness and scale (hd3d.js ShaftsPass.bright, from v.shaftsAt)
+      shThr: uniform(1.1), shHi: uniform(1.1 * 2.2), shCap: uniform(1e9), shGain: uniform(1),
       // frame generation's last touches: the grain's own clock and size (touches())
       gt: uniform(0), gk: uniform(1),
     };
@@ -634,8 +639,9 @@ export class GpuChain {
     let shafts = vec3(0);
     if (shaftsOn) {
       this.shM = rtt(Fn(() => {
-        const q = uv(), c = src.sample(q).rgb.mul(srcAo), l = dot(c, LUM), k = q.sub(U.sunUV).mul(vec2(U.aspect, 1));
-        return vec4(c.mul(smoothstep(1.1, 1.1 * 2.2, l)).mul(exp(dot(k, k).mul(-3))), 1);
+        const q = uv(), c0 = src.sample(q).rgb.mul(srcAo), l0 = dot(c0, LUM), k = q.sub(U.sunUV).mul(vec2(U.aspect, 1));
+        const l = min(l0, U.shCap), c = c0.mul(l.div(max(l0, 1e-6))).mul(U.shGain);
+        return vec4(c.mul(smoothstep(U.shThr, U.shHi, l)).mul(exp(dot(k, k).mul(-3))), 1);
       })(), 1, 1, { depthBuffer: false, type: HalfFloatType });
       const shM = this.shM;
       this.shB = rtt(Fn(() => {
@@ -701,7 +707,8 @@ export class GpuChain {
       U.glare.value = o.glare; U.sunUV.value.set(o.sunUV.x, 1 - o.sunUV.y); U.sunCol.value.copy(o.sunCol); U.aspect.value = o.aspect;
       U.px.value.set(1 / o.w, 1 / o.h);
       if (this.dofT) { this.dofT.setSize(o.w, o.h); const L = o.lens; U.lens.value.set(L ? L[0] : 0, L ? L[1] : 0, L ? L[2] : 0, L ? L[3] : 0); U.cn.value = o.near; U.cf.value = o.far; }
-      if (this.shM) { const bw = Math.max(8, Math.round(o.w / 4)), bh = Math.max(8, Math.round(o.h / 4)); this.shM.setSize(bw, bh); this.shB.setSize(bw, bh); U.shaft.value = o.shaft || 0; if (o.shaftCol) U.shaftTint.value.copy(o.shaftCol); }
+      if (this.shM) { const bw = Math.max(8, Math.round(o.w / 4)), bh = Math.max(8, Math.round(o.h / 4)); this.shM.setSize(bw, bh); this.shB.setSize(bw, bh); U.shaft.value = o.shaft || 0; if (o.shaftCol) U.shaftTint.value.copy(o.shaftCol);
+        const t = Math.max(1.1, o.shaftAt ?? 1.1), lit = t > 1.1; U.shThr.value = t; U.shHi.value = lit ? t * 1.2 : t * 2.2; U.shCap.value = lit ? t * 1.2 : 1e9; U.shGain.value = 1.1 / t; }
     }
     if (fg) return this.realFrame(o, f);
     if (this.s2) { this.s2.size(o.w, o.h, o.fw, o.fh); this.s2.set(f); this.s2.render(this.r); }
