@@ -21,20 +21,36 @@ The rules for new 3D code until then:
 
 | Part | Where | What it needs for WebGPU |
 | --- | --- | --- |
-| Outdoor air (haze, mist, cloud shadows, wet) | `src/kit/hd3d.js` `airPatch` (onBeforeCompile) | A TSL node added to each material's colour/fog |
-| Final pass: bloom, ACES, grade, glare, vignette, grain, FXAA | `hd3d.js` `FinalPass` (GLSL) | Three's TSL `bloom()`, tone mapping and our grade as nodes |
+| Outdoor air (haze, mist, cloud shadows, wet) | `hd3d.js` `airPatch`, now the named look effect `'air'` via `src/kit/looks.js` `lookPatch` | A TSL node added to each material's colour/fog (`lookEffects()` lists every patch to port) |
+| Final pass: bloom, ACES, grade, glare, vignette, grain, FXAA | `hd3d.js` `FinalPass`, split into `FINAL_EFFECTS` (one named GLSL piece each) | One TSL node per piece; three's `bloom()` and tone mapping |
 | Sun shafts | `hd3d.js` `ShaftsPass` (GLSL, 3 small passes) | A TSL radial blur node |
 | Ambient occlusion, reflections | three's `GTAOPass`, `SSRPass` | Three's TSL `ao()` and `ssr()` nodes |
 | Upscaling | `src/kit/sgsr.js` (GLSL) | A TSL port of SGSR 1 |
 | Light probe baking | `hd3d.js` `bakeLight` (`WebGLCubeRenderTarget` + `CubeCamera`) | A cube target for WebGPU; the read back is already async |
 | Sky dome | `src/kit/sky.js` (ShaderMaterial) | A TSL sky (three has `SkyMesh` for WebGPU) |
-| Classic Console toon shading | `src/kit/toon3d.js` (ShaderMaterial) | `MeshToonMaterial` |
+| Classic Console ink lines | `src/kit/toon3d.js` ink pass (ShaderMaterial edge detect on normals + depth). The toon shading itself is already stock `MeshToonMaterial` | A TSL edge-detect pass |
 | 3D text | troika-three-text (patches shaders) | Three's own text geometry or an SDF text node |
-| 3D particles | three.quarks | Check its WebGPU support; else our own node particles |
+| 3D particles | three.quarks 0.17 (needs three ≥ 0.182, works on 0.186) | Check its WebGPU support; else our own node particles |
 | GPU points particles | `hd3d.js` `Particles` (ShaderMaterial) | A TSL points material |
-| Card pictures and test reads | `toDataURL` / `readPixels` | `await renderer.readRenderTargetPixelsAsync` |
-| Outdoor looks: ground, hills, rock, leaves | `src/kit/looks.js` (`lookPatch`, onBeforeCompile; listed in `material.userData.gsLooks`) | One TSL node per look name, same uniforms (`lk...`) |
+| Card pictures and test reads | `src/kit/gpu.js` `copyFrame` and `readPixels` (already async) | Nothing more: `readPixels` uses `readRenderTargetPixelsAsync` |
+| Outdoor looks: ground, hills, rock, leaves | `src/kit/looks.js` `looks.*` (effects 'ground', 'hills', 'rock', 'leaves' through `lookPatch`) | One TSL node per effect, same `lk...` uniforms |
 | Games with their own shaders | `deep-pressure.js` | Port to kit materials or TSL |
+
+## Already done (prep PR)
+
+- **One renderer maker**: `src/kit/gpu.js` `makeRenderer()` makes every 3D renderer (toon3d, hd3d, AR),
+  and `backend(r)`, `gpuName()`, `hasWebGPU()` live there. The WebGPU path only changes this file first.
+- **Named look effects**: `src/kit/looks.js` `lookPatch(material, name, spec)` is the only way kits
+  change a stock material's shader; `lookEffects()` lists them for porting and tests.
+- **Final pass in pieces**: `FINAL_EFFECTS` in `hd3d.js` (head, main, smooth, bloom, grade, glare,
+  tone, vignette, grain, hurt, out), joined into the same shader as before.
+- **three.js 0.186.1** (from 0.180; `PCFSoftShadowMap` became `PCFShadowMap`), three.quarks 0.17.1.
+  troika, InstancedMesh2, three-pinata and three.terrain.js work unchanged.
+- **game-lint warns** on `ShaderMaterial`, `RawShaderMaterial`, `onBeforeCompile`, `ShaderChunk` and
+  `ShaderLib` in games (a warning, not a failure).
+- **Look compare**: `node scripts/look-compare.cjs save <dir>` takes fixed Next Gen (every tier) and
+  Console shots; `check <dir>` compares against them and writes `.new.png` for anything that moved.
+  This is the tool for checking the WebGPU path against WebGL.
 
 Parts that already move without work: PixiJS (2D effects and sprites) supports WebGPU, so
 `look2d` only needs its `preference` changed; decals (`DecalGeometry`) and light probes (`LightProbe`)

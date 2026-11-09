@@ -1,60 +1,92 @@
-// Outdoor looks for Next Gen worlds: painted ground (meadow, patchwork fields with hedges, lanes,
-// forest floor, rock, river mud, puddles), a ring of far hills, rocks with moss, and leaves that sway
-// and glow with the sun behind them. Each look is a named patch on a three.js standard material, so
-// lighting, shadows, fog and gs.hd's air all still apply.
+// Named look effects for three.js materials: the one way kits change a stock material's shader
+// (outdoor air, ground layers, leaf sway...). Kept apart and named so that, when the 3D moves to
+// WebGPU (docs/webgpu-move.md), each effect can be rewritten as a TSL node on its own and checked
+// against the WebGL one, instead of hunting for shader patches spread through the kits.
 //
-//   const { Land, groundDetail, looks, horizon } = gs.outdoors;
-//   const tex = groundDetail();                                   // tiling detail + normal textures, made in code
-//   const mat = new THREE.MeshStandardMaterial({ normalMap: tex.normal });
-//   const ground = looks.ground(mat, { detail: tex.detail, fields: { angle: .33 }, roads: [[x0, z0, x1, z1]] });
-//   land = new Land({ kind: (x, z) => ..., material: mat });
-//   land.masks((x, z, y, slope) => [fields, forest, rock, trodden]);   // where each kind of ground goes (0..1)
-//   ground.uniforms.wet.value = .8;                                 // puddles in the rain
+//   lookPatch(material, 'air', {
+//     uniforms: AIR,                                     // shared { name: { value } } objects
+//     vertex: [['#include <fog_vertex>', 'after', '  gsW = ...;']],
+//     fragment: [['void main() {', 'before', GLSL_FUNCTIONS], ['#include <fog_fragment>', 'replace', code]],
+//     vertexHead: 'varying vec3 gsW;\n',                 // put before everything
+//   });
 //
-// WebGPU later: every patch goes through lookPatch() and is listed by name in material.userData.gsLooks,
-// so a WebGPU path can swap each name for a node. Settings are plain uniforms (named lk..., apart from gs.hd's own gs... ones); the maths is small
-// GLSL functions that only use the world position, the normal and the uv (see docs/webgpu-move.md).
+// Edits are [anchor, 'before' | 'after' | 'replace', code], where code can be a function (anchor) =>
+// string. A missing anchor skips that edit; check(shader) => false skips the whole effect (a
+// material without fog, say).
+// Each material records its effects in material.userData.gsLooks, and three's program cache key gets
+// '|gs<name>' per effect so patched and plain materials never share a program. Kit use only.
 
 import { Color, DataTexture, Float32BufferAttribute, BufferGeometry, Mesh, MeshStandardMaterial, RepeatWrapping, LinearFilter, LinearMipmapLinearFilter, RGBAFormat, ShaderChunk, Vector2, Vector3, Vector4 } from 'three';
 import { noiseTex } from './hd3d.js';
 import { fbm, rng } from './math.js';
+
+const EFFECTS = new Map();   // name -> spec, for the WebGPU port and for tests
+
+/** The named effects kits have registered (name -> spec). */
+export const lookEffects = () => EFFECTS;
+
+/** The effect names on a material. */
+export const looksOf = m => m?.userData?.gsLooks || [];
+
+function apply(src, edits) {
+  for (const [at, how, code] of edits) {
+    if (!src.includes(at)) continue;
+    const c = typeof code === 'function' ? code(at) : code;
+    src = src.replace(at, how === 'before' ? c + at : how === 'after' ? at + c : c);
+  }
+  return src;
+}
+
+/** Adds a named effect to a material (once). Returns true if it was added now. */
+export function lookPatch(m, name, spec) {
+  if (!m) return false;
+  const names = m.userData.gsLooks ||= [];
+  if (names.includes(name)) return false;
+  EFFECTS.set(name, spec);
+  names.push(name);
+  const base = m.onBeforeCompile, baseKey = m.customProgramCacheKey;
+  m.onBeforeCompile = function (sh, r) {
+    base.call(this, sh, r);
+    if (spec.check && !spec.check(sh)) return;
+    const v = apply(sh.vertexShader, spec.vertex || []), f = apply(sh.fragmentShader, spec.fragment || []);
+    if (spec.uniforms) Object.assign(sh.uniforms, spec.uniforms);
+    sh.vertexShader = (spec.vertexHead || '') + v;
+    sh.fragmentShader = (spec.fragmentHead || '') + f;
+  };
+  // three caches programs by this key; the default key is the source of onBeforeCompile, so ask the
+  // material's own key with its own onBeforeCompile in place
+  m.customProgramCacheKey = function () { const cur = this.onBeforeCompile; this.onBeforeCompile = base; try { return baseKey.call(this) + '|gs' + name; } finally { this.onBeforeCompile = cur; } };
+  m.needsUpdate = true;
+  return true;
+}
+
+// ---------------------------------------------------------------- outdoor looks
+// Next Gen landscapes that hold up through a scope, for games (gs.outdoors): painted ground
+// (meadow, patchwork fields with hedges, lanes, forest floor, rock, river mud, puddles), a ring of
+// far hills, rocks with moss, and leaves that sway and glow with the sun behind them. Each is one
+// named effect ('ground', 'hills', 'rock', 'leaves') through lookPatch, with its settings as lk...
+// uniforms (gs... belongs to the air). See docs/nextgen-3d.md "Outdoor looks".
 
 const uni = v => (v && typeof v === 'object' && 'value' in v ? v : { value: v });
 // colours: '#hex' (sRGB, like everywhere in three) or [r, g, b] in linear light
 const col = c => uni(c?.isColor ? c : Array.isArray(c) ? new Color().setRGB(...c) : new Color(c));
 const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-/**
- * lookPatch(material, name, { uniforms, world, vertex, fragment, key }): adds a named patch to a
- * three.js material. vertex / fragment: { head: 'declarations', after: { chunk: code }, before: { chunk: code },
- * replace: { chunk: code } } where chunk is a three.js shader chunk name ('color_fragment'). world: true
- * gives the shaders vec3 vGsWorld (world position, instancing included). Several looks stack on one
- * material; material.userData.gsLooks lists them. Returns the uniforms.
- */
-export function lookPatch(m, name, { uniforms = {}, world = false, vertex = {}, fragment = {}, key = '' } = {}) {
-  const ud = m.userData; if (!ud.gsLooks) { ud.gsLooks = []; ud.gsPatches = []; install(m); }
-  ud.gsLooks.push(name); ud.gsPatches.push({ name, uniforms, world, vertex, fragment, key });
-  return uniforms;
-}
-const edit = (src, { head = '', after = {}, before = {}, replace = {} } = {}, isVertex) => {
-  for (const [c, code] of Object.entries(replace)) src = src.replace(`#include <${c}>`, code);
-  for (const [c, code] of Object.entries(after)) src = src.replace(`#include <${c}>`, `#include <${c}>\n${code}`);
-  for (const [c, code] of Object.entries(before)) src = src.replace(`#include <${c}>`, `${code}\n#include <${c}>`);
-  if (head) src = isVertex ? head + '\n' + src : src.replace('void main() {', head + '\nvoid main() {');
-  return src;
-};
-function install(m) {
-  const base = m.onBeforeCompile, baseKey = m.customProgramCacheKey;
-  m.onBeforeCompile = function (sh, r) {
-    base?.call(this, sh, r);
-    const P = this.userData.gsPatches;
-    if (P.some(p => p.world)) {
-      sh.vertexShader = 'varying vec3 vGsWorld;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  vGsWorld = transpose(mat3(viewMatrix)) * (mvPosition.xyz - viewMatrix[3].xyz);');
-      sh.fragmentShader = 'varying vec3 vGsWorld;\n' + sh.fragmentShader;
-    }
-    for (const p of P) { Object.assign(sh.uniforms, p.uniforms); sh.vertexShader = edit(sh.vertexShader, p.vertex, true); sh.fragmentShader = edit(sh.fragmentShader, p.fragment, false); }
-  };
-  m.customProgramCacheKey = function () { return baseKey.call(this) + '|gs:' + this.userData.gsPatches.map(p => p.name + p.key).join('+'); };
+const MAX_ROADS = 32;   // road segments looks.ground draws (one fixed shader for every game)
+// the outdoor looks are written as { uniforms, world, vertex / fragment: { head, after, before,
+// replace } by chunk name }; this turns one into lookPatch's spec. world: true gives the look its
+// own world-position varying (instancing included), written vGsWorld in its code.
+const AT = c => `#include <${c}>`;
+function spec(name, { uniforms, world = false, vertex = {}, fragment = {} }) {
+  const wv = 'vLk' + name[0].toUpperCase() + name.slice(1) + 'W', sub = s => s.replaceAll('vGsWorld', wv);
+  const edits = o => [
+    ...Object.entries(o.replace || {}).map(([c, code]) => [AT(c), 'replace', sub(code)]),
+    ...Object.entries(o.after || {}).map(([c, code]) => [AT(c), 'after', '\n' + sub(code)]),
+    ...Object.entries(o.before || {}).map(([c, code]) => [AT(c), 'before', sub(code) + '\n']),
+  ];
+  const v = edits(vertex), dec = world ? `varying vec3 ${wv};\n` : '';
+  if (world) v.push([AT('project_vertex'), 'after', `\n  ${wv} = transpose(mat3(viewMatrix)) * (mvPosition.xyz - viewMatrix[3].xyz);`]);
+  return { uniforms, vertexHead: dec + (vertex.head || '') + '\n', fragmentHead: dec + sub(fragment.head || '') + '\n', vertex: v, fragment: edits(fragment) };
 }
 
 /* ---------- textures made in code ---------- */
@@ -144,9 +176,7 @@ vec4 lkFields(vec2 wp, vec4 dt, vec4 dt2, vec3 grass) {
 }
 float lkRoadDist(vec2 p) {
   float rd = 1e4;
-#if GS_ROADS > 0
-  for (int i = 0; i < GS_ROADS; i++) { vec4 s = lkRoads[i]; vec2 pa = p - s.xy, ba = s.zw - s.xy; float h = clamp(dot(pa, ba) / dot(ba, ba), 0., 1.); rd = min(rd, length(pa - ba * h)); }
-#endif
+  for (int i = 0; i < LK_ROADS; i++) { if (i >= lkRoadN) break; vec4 s = lkRoads[i]; vec2 pa = p - s.xy, ba = s.zw - s.xy; float h = clamp(dot(pa, ba) / dot(ba, ba), 0., 1.); rd = min(rd, length(pa - ba * h)); }
   return rd;
 }`;
 const GROUND_COLOUR = `
@@ -155,12 +185,12 @@ const GROUND_COLOUR = `
     vec3 grass = mix(lkGrassA, lkGrassB, smoothstep(.25, .75, nz.r));
     grass = mix(grass, lkDry, smoothstep(.55, .85, nz.g) * .65) * (.74 + .5 * dt.r * (.7 + .6 * dt2.a));
     vec3 c = grass; lkRough = .95;
-    float farm = vGsMask.x * smoothstep(.3, .5, nz.b + .25);
-    if (farm > .01) c = mix(c, lkFields(wp.xz, dt, dt2, grass).rgb, farm);
-    c = mix(c, lkForest * (.65 + .55 * dt.a) * (.85 + .3 * dt.g), vGsMask.y);
-    float rk = smoothstep(.35, .7, vGsMask.z + (dt2.b - .5) * .5);
+    float farm = vLkMask.x * smoothstep(.3, .5, nz.b + .25);
+    if (farm > .01 && lkFields > .5) c = mix(c, lkFields(wp.xz, dt, dt2, grass).rgb, farm);
+    c = mix(c, lkForest * (.65 + .55 * dt.a) * (.85 + .3 * dt.g), vLkMask.y);
+    float rk = smoothstep(.35, .7, vLkMask.z + (dt2.b - .5) * .5);
     c = mix(c, lkRock * (.6 + .65 * dt.b), rk); lkRough = mix(lkRough, .8, rk);
-    c = mix(c, mix(grass, lkDirt, .75) * (.8 + .4 * dt.g), vGsMask.w * smoothstep(.25, .6, dt2.r + nz.a * .4));
+    c = mix(c, mix(grass, lkDirt, .75) * (.8 + .4 * dt.g), vLkMask.w * smoothstep(.25, .6, dt2.r + nz.a * .4));
     float bank = 1. - smoothstep(lkBank.x, lkBank.y, wp.y + (dt2.r - .5) * 1.2);
     c = mix(c, lkMud * (.65 + .6 * dt.g), bank); lkRough = mix(lkRough, .45, bank * smoothstep(lkBank.z, lkBank.w, wp.y));
     float rd = lkRoadDist(wp.xz) + (dt2.g - .5) * .9, road = 1. - smoothstep(lkRoad.x, lkRoad.y, rd), ruts = smoothstep(.42, .06, abs(rd - lkRoad.z)), crown = 1. - smoothstep(.2, .55, rd);
@@ -188,16 +218,17 @@ function ground(m, { detail = groundDetail().detail, colours = {}, fields = {}, 
     lkCropA: col(C.cropA), lkCropB: col(C.cropB), lkPlough: col(C.plough), lkHedge: uni(new Vector4(...col(C.hedge).value.toArray(), F ? F.hedge : 0)),
     lkFieldAngle: uni(F ? F.angle : 0), lkFieldSize: uni(new Vector2(...(F ? F.size : [56, 34]))), lkFurrows: uni(F ? F.furrows : 7),
     lkBank: uni(new Vector4(b.low, b.high, b.shiny, b.shinier)), lkRoad: uni(new Vector3(rd.width, rd.width + rd.edge, rd.ruts)),
-    lkRoads: uni(nr ? roads.map(s => new Vector4(...s)) : [new Vector4()]),
+    lkRoads: uni(Array.from({ length: MAX_ROADS }, (_, i) => new Vector4(...(roads[i] || [0, 0, 0, 0])))), lkRoadN: uni(Math.min(nr, MAX_ROADS)), lkFields: uni(F ? 1 : 0),
   };
-  const decl = `#define GS_ROADS ${nr}
-uniform sampler2D lkDetail, lkNoise; uniform float lkWet, lkFieldAngle, lkFurrows; uniform vec3 lkScale, lkRoad; uniform vec2 lkFieldSize; uniform vec4 lkHedge, lkBank, lkRoads[${Math.max(1, nr)}];
-uniform vec3 lkGrassA, lkGrassB, lkDry, lkDirt, lkMud, lkRock, lkForest, lkCropA, lkCropB, lkPlough; varying vec4 vGsMask;`;
-  lookPatch(m, 'ground', {
-    uniforms: U, world: true, key: nr + (F ? 'f' : ''),
-    vertex: { head: 'attribute vec4 gsMask; varying vec4 vGsMask;', after: { begin_vertex: '  vGsMask = gsMask;' } },
-    fragment: { head: decl + GROUND_FNS, replace: { color_fragment: F ? GROUND_COLOUR : GROUND_COLOUR.replace('if (farm > .01)', 'if (false)'), roughnessmap_fragment: 'float roughnessFactor = lkRough;' } },
-  });
+  if (nr > MAX_ROADS) console.warn(`looks.ground: ${nr} road segments, only the first ${MAX_ROADS} are drawn`);
+  const decl = `#define LK_ROADS ${MAX_ROADS}
+uniform sampler2D lkDetail, lkNoise; uniform float lkWet, lkFieldAngle, lkFurrows, lkFields; uniform int lkRoadN; uniform vec3 lkScale, lkRoad; uniform vec2 lkFieldSize; uniform vec4 lkHedge, lkBank, lkRoads[LK_ROADS];
+uniform vec3 lkGrassA, lkGrassB, lkDry, lkDirt, lkMud, lkRock, lkForest, lkCropA, lkCropB, lkPlough; varying vec4 vLkMask;`;
+  lookPatch(m, 'ground', spec('ground', {
+    uniforms: U, world: true,
+    vertex: { head: 'attribute vec4 gsMask; varying vec4 vLkMask;', after: { begin_vertex: '  vLkMask = gsMask;' } },
+    fragment: { head: decl + GROUND_FNS, replace: { color_fragment: F ? GROUND_COLOUR : GROUND_COLOUR.replace('if (farm > .01 && lkFields > .5)', 'if (false)'), roughnessmap_fragment: 'float roughnessFactor = lkRough;' } },
+  }));
   return { uniforms: U, get wet() { return U.lkWet.value; }, set wet(v) { U.lkWet.value = v; } };
 }
 
@@ -207,7 +238,7 @@ uniform vec3 lkGrassA, lkGrassB, lkDry, lkDirt, lkMud, lkRock, lkForest, lkCropA
  */
 function hills(m, { wood = [.035, .05, .022], scale = .0019, woods = .55 } = {}) {
   const U = { lkNoise: uni(noiseTex()), lkWood: col(wood), lkHillScale: uni(scale), lkWoods: uni(woods) };
-  lookPatch(m, 'hills', {
+  lookPatch(m, 'hills', spec('hills', {
     uniforms: U, world: true,
     fragment: {
       head: 'uniform sampler2D lkNoise; uniform vec3 lkWood; uniform float lkHillScale, lkWoods;',
@@ -217,7 +248,7 @@ function hills(m, { wood = [.035, .05, .022], scale = .0019, woods = .55 } = {})
     diffuseColor.rgb = mix(diffuseColor.rgb, lkWood * (.55 + .9 * q.r), wood);
     diffuseColor.rgb *= 1. - bare * .35 * smoothstep(.4, .7, q.g); }` },
     },
-  });
+  }));
   return { uniforms: U };
 }
 
@@ -227,7 +258,7 @@ function hills(m, { wood = [.035, .05, .022], scale = .0019, woods = .55 } = {})
  */
 function rock(m, { detail = groundDetail().detail, scale = .7, moss = [.07, .09, .03], mossy = .85 } = {}) {
   const U = { lkDetail: uni(detail), lkRockScale: uni(scale), lkMoss: col(moss), lkMossy: uni(mossy) };
-  lookPatch(m, 'rock', {
+  lookPatch(m, 'rock', spec('rock', {
     uniforms: U, world: true,
     fragment: {
       head: 'uniform sampler2D lkDetail; uniform float lkRockScale, lkMossy; uniform vec3 lkMoss;',
@@ -238,7 +269,7 @@ function rock(m, { detail = groundDetail().detail, scale = .7, moss = [.07, .09,
     float moss = smoothstep(.55, .85, wn.y + (e.r - .5) * .6);
     diffuseColor.rgb = mix(diffuseColor.rgb, lkMoss * (.7 + .6 * d.r), moss * lkMossy); }` },
     },
-  });
+  }));
   return { uniforms: U };
 }
 
@@ -251,7 +282,7 @@ function rock(m, { detail = groundDetail().detail, scale = .7, moss = [.07, .09,
  */
 function leaves(m, { time = 0, wind = .6, sun = new Vector3(0, 1, 0), sway = .012, above = 2, glow = .6, atlas = [1024, 512] } = {}) {
   const U = { lkTime: uni(time), lkWind: uni(wind), lkSun: uni(sun), lkSway: uni(new Vector2(sway, above)), lkGlow: uni(glow), lkAtlas: uni(new Vector2(...atlas)) };
-  lookPatch(m, 'leaves', {
+  lookPatch(m, 'leaves', spec('leaves', {
     uniforms: U, world: true,
     vertex: {
       head: 'uniform float lkTime, lkWind; uniform vec2 lkSway;',
@@ -268,7 +299,7 @@ function leaves(m, { time = 0, wind = .6, sun = new Vector3(0, 1, 0), sway = .01
         emissivemap_fragment: '  { vec3 vd = normalize(vGsWorld - cameraPosition); diffuseColor.rgb *= 1. + lkGlow * pow(max(dot(vd, lkSun), 0.), 4.); }',
       },
     },
-  });
+  }));
   return { uniforms: U };
 }
 

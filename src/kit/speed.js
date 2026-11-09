@@ -12,25 +12,14 @@
 // after lowering its resolution, and it remembers per game where it settled, so the next round
 // starts there. Players can pin a rate in Settings (Auto / 120 / 60 / 30 battery saver).
 import { store } from '../util.js';
+import { gpuName } from './gpu.js';
 
 const PICK_KEY = 'gs_fps', SETTLE_KEY = 'gs_speed';
 const touchy = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
-let gpu = null, model = '', klass = null;
-/** The graphics chip's name, read once from a throwaway WebGL context (or handed in by a kit). */
-function chip() {
-  if (gpu != null) return gpu;
-  gpu = '';
-  try {
-    const cv = document.createElement('canvas'), g = cv.getContext('webgl2') || cv.getContext('webgl');
-    if (g) {
-      const e = g.getExtension('WEBGL_debug_renderer_info');
-      gpu = String((e && g.getParameter(e.UNMASKED_RENDERER_WEBGL)) || g.getParameter(g.RENDERER) || '');
-      g.getExtension('WEBGL_lose_context')?.loseContext();   // give the context straight back
-    }
-  } catch (_) { /* no WebGL: stays '' */ }
-  return gpu;
-}
+let model = '', klass = null;
+/** The graphics chip's name (src/kit/gpu.js reads it once). */
+const chip = () => gpuName();
 (async () => {
   try { const { Device } = await import('@capacitor/device'); model = String((await Device.getInfo()).model || ''); klass = null; } catch (_) { /* web */ }
 })();

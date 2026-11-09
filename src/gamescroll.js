@@ -135,6 +135,7 @@ export const HIDDEN = {
   gen: ['loadGen'],
   words: ['loadWords'],
   ui: ['loadUI'],
+  hd: ['FINAL_EFFECTS'],   // the Next Gen screen shader in pieces, for the WebGPU port (docs/webgpu-move.md)
 };
 
 // App state some kits keep on an exported object: games get a look, not a lever (one game pinning

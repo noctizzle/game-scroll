@@ -259,6 +259,5 @@ const leafLook = looks.leaves(leafMaterial, { wind: .6 });      // sway, sun glo
 - **`looks.rock(material, o)`** and **`looks.leaves(material, o)`**: `rock({ scale, moss, mossy })`;
   `leaves({ time, wind, sun, sway, above, glow, atlas })`. Pass numbers, or shared uniforms
   (`{ value }`) when several materials should move together.
-- Your own patch: `lookPatch(material, 'name', { uniforms, world: true, fragment: { head, after: { color_fragment: '...' } } })`.
-  Name uniforms after your look (not `gs...`, which the air uses). Every patch is listed in
-  `material.userData.gsLooks`, so a WebGPU version can swap each look by name later.
+- Every look is a named effect (`material.userData.gsLooks` lists them), so the WebGPU version can
+  swap each one for a node later (see `docs/webgpu-move.md`). Road segments: up to 32.

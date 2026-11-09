@@ -18,7 +18,7 @@
 
 import { BufferAttribute, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, IcosahedronGeometry, Mesh, MeshStandardMaterial, PlaneGeometry, SphereGeometry, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-export { lookPatch, looks, groundDetail, horizon } from './looks.js';
+export { looks, groundDetail, horizon } from './looks.js';
 import Terrain, { TerrainNS, createSeededRandom, scatterGrass, updateGrass, updateGrassLOD } from 'three.terrain.js';
 
 const KINDS = {

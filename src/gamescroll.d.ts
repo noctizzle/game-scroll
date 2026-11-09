@@ -995,8 +995,6 @@ export interface OutdoorsPart {
   Water: new (o?: { level?: number; waves?: number | { height: number; length: number; dir?: number; speed?: number }[]; size?: number; segments?: number; colour?: string; opacity?: number; material?: Loose; seed?: number }) => WaterPart;
   tree(o?: { kind?: 'pine' | 'round' | 'palm' | 'bush'; trunk?: string; leaves?: string; height?: number; seed?: number }): Loose;
   rock(o?: { size?: number; colour?: string; seed?: number }): Loose;
-  /** A named patch on a three.js material (stacks; listed in material.userData.gsLooks). vertex / fragment: { head, after, before, replace } by shader chunk name. world: true gives vec3 vGsWorld. */
-  lookPatch(material: Loose, name: string, o?: { uniforms?: Record<string, { value: Loose }>; world?: boolean; vertex?: LookCode; fragment?: LookCode; key?: string }): Record<string, { value: Loose }>;
   /** Outdoor looks for Next Gen worlds, as patches on standard materials. Colours: '#hex' or [r, g, b] linear. Numbers can be shared uniforms ({ value }). */
   looks: {
     /** Painted ground; needs land.masks(). */
@@ -1010,7 +1008,6 @@ export interface OutdoorsPart {
   /** A ring of far hills round a Land, with the hills look. */
   horizon(land: LandPart, o?: { inner?: number; outer?: number; height?: number; seed?: number; lower?: ((x: number, z: number) => number) | null; colours?: { meadow?: string; forest?: string; rock?: string }; segments?: number; rings?: number; look?: false | Loose }): Loose;
 }
-type LookCode = { head?: string; after?: Record<string, string>; before?: Record<string, string>; replace?: Record<string, string> };
 export interface CraftPart {
   /** Arcade-true flight. Events this frame in events[]: 'stall', 'land', 'touch', 'crash', 'takeoff'. */
   Plane: new (o?: { at?: P3; heading?: number; speed?: number; power?: number; lift?: number; drag?: number; stall?: number; top?: number; turn?: [number, number, number]; assist?: number; grip?: number; gravity?: number; ground?: ((x: number, z: number) => number) | null; gear?: number; crashSpeed?: number }) => {
