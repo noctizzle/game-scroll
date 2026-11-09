@@ -1143,3 +1143,28 @@ console.log('physics ok');
   const ff = new Face(m, { blinkEvery: 0 }); ff.set('tall', 1); for (let i = 0; i < 60; i++) ff.update(1 / 60); assert.ok(m.morphTargetInfluences[0] > .9, 'eased');
   console.log('skinned person, face shapes, lip sync, blend spaces, foot IK ok');
 }
+
+// occlusion culling: a wall hides what's behind it, never what's in front, beside or above it
+{
+  const { Occlusion } = await import('../src/kit/occlusion.js');
+  const { PerspectiveCamera, Vector3, Mesh, BoxGeometry } = await import('three');
+  const cam = new PerspectiveCamera(60, 1, .1, 500); cam.position.set(0, 1.6, 10); cam.lookAt(0, 1.6, 0); cam.updateMatrixWorld();
+  const oc = new Occlusion().set([{ x0: -5, x1: 5, y0: 0, y1: 4, z0: -.5, z1: .5 }]).frame(cam, 1);
+  assert.equal(oc.stats.boxes, 1, 'the wall is drawn');
+  assert.ok(oc.hidden(new Vector3(0, 1.5, -5), 1), 'behind the wall');
+  assert.ok(!oc.hidden(new Vector3(0, 1.5, 5), 1), 'in front of the wall');
+  assert.ok(!oc.hidden(new Vector3(9, 1.5, -5), 1), 'beside the wall');
+  assert.ok(!oc.hidden(new Vector3(0, 4.6, -3), 1), 'peeking over the top');
+  assert.ok(!oc.hidden(new Vector3(0, 1.5, -.2), 1), 'inside the wall pokes out');
+  // a box through the camera counts for nothing (it can't be drawn safely)
+  const o2 = new Occlusion().set([{ x0: -5, x1: 5, y0: 0, y1: 4, z0: 9, z1: 11 }]).frame(cam, 1);
+  assert.equal(o2.hidden(new Vector3(0, 1.5, -5), 1), false, 'camera inside a box');
+  // a wall you stand beside, reaching behind you, still hides what's past it
+  const side = new PerspectiveCamera(60, 1, .1, 500); side.position.set(0, 1.6, 0); side.lookAt(10, 1.6, -3); side.updateMatrixWorld();
+  const o3 = new Occlusion().set([{ x0: -20, x1: 20, y0: 0, y1: 10, z0: -3, z1: -2 }]).frame(side, 1);
+  assert.ok(o3.hidden(new Vector3(10, 1.6, -8), 1), 'behind a wall that reaches behind the camera');
+  assert.ok(!o3.hidden(new Vector3(10, 1.6, 1), 1), 'on the open side');
+  const m = new Mesh(new BoxGeometry(1, 1, 1)); m.position.set(0, 1.5, -6); m.updateMatrixWorld();
+  assert.ok(oc.hiddenObject(m), 'a mesh by its bounding sphere');
+  console.log('occlusion culling: behind, front, beside, over the top, camera in a box ok');
+}

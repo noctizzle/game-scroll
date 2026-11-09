@@ -48,6 +48,7 @@ import { SGSR2, SgsrFrame } from './sgsr2.js';
 import { lookPatch, looksOf, lookSpec } from './looks.js';
 import { copyFrame, webgpu, setGpuPick, prepareGPU } from './gpu.js';
 import { makeRenderer } from './renderer.js';
+import { Occlusion } from './occlusion.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -981,8 +982,42 @@ export class HDView {
     (this.rooms ||= []).push(room);
     return room;
   }
+  /**
+   * Occlusion culling: skip what's fully hidden behind big solid boxes before the frame is drawn (city
+   * blocks behind a row of buildings, rooms behind walls). list: boxes { x0, x1, y0, y1, z0, z1 } in
+   * world metres (city.occluders() gives them), Box3s, or solid box-like meshes; null turns it off.
+   * Only what you list hides things, so give the big, solid, still things (not glass, not fences).
+   * Every mesh (by its bounding box), and each instance of gs.props (InstancedMesh2), is tested; mark a
+   * mesh userData.noOcclude to always draw it. Hidden things still cast their shadows. Same on WebGL and
+   * WebGPU (it runs on the CPU, see occlusion.js). o: { max: boxes drawn per frame (nearest first, 300),
+   * w: depth picture width (128) }. v.occlusion.stats: { boxes, tested, hidden, ms } for the last frame.
+   */
+  occluders(list, o = {}) {
+    if (!list) { this.showHidden(); this.occlusion = null; return this; }
+    (this.occlusion ||= new Occlusion(o)).set(list); Object.assign(this.occlusion, o);
+    return this;
+  }
+  // hides (from the view's camera only: shadows and reflections still see them) what the occluders cover
+  cullHidden() {
+    const oc = this.occlusion, hid = this.occHid ||= new Map(); this.showHidden();
+    oc.frame(this.cam, this.W / this.H);
+    const view = this;
+    this.scene.traverseVisible(o => {
+      if (o.isLight) { if (o.shadow) o.shadow.camera.layers.enable(OCC_LAYER); return; }
+      if (o.isInstancedMesh2) {
+        if (!o.occWrapped) { const own = o.onFrustumEnter; o.occWrapped = true; o.onFrustumEnter = (i, cam, ...a) => (cam !== view.cam || !view.occlusion?.ready || !view.occlusion.hiddenInstance(o, i)) && (!own || own(i, cam, ...a)); }
+        return;
+      }
+      if (!o.isMesh || !o.frustumCulled || o.userData.noOcclude || !(o.layers.mask & 1)) return;
+      if (oc.hiddenObject(o)) { hid.set(o, o.layers.mask); o.layers.mask = (o.layers.mask & ~1) | (1 << OCC_LAYER); }
+    });
+  }
+  showHidden() { const hid = this.occHid; if (!hid?.size) return; for (const [o, m] of hid) o.layers.mask = m; hid.clear(); }
   // bounce light and room reflections, baked by the renderer drawing this frame (G: WebGPU) when they need it
   bakeExtras(G, r) {
+    const k = G ? 'gpu' : 'gl', gi = this.gi;
+    if (!(gi && (gi.dirty[k] || !gi.grids[k]?.parent)) && !this.rooms?.some(rm => rm.dirty[k])) return;   // nothing to bake this frame
+    this.showHidden();   // (the bakes look from elsewhere, so everything is drawn)
     // light, not a picture (no tone mapping), with the sun's shadows in it as the frame will have them
     const tm = r.toneMapping, sh = r.shadowMap.enabled; r.toneMapping = 0; r.shadowMap.enabled = tier().shadow > 0;
     if (!G) r.shadowMap.needsUpdate = true;
@@ -1356,6 +1391,7 @@ export class HDView {
     const ow = up || s2on ? fw : pw, oh = up || s2on ? fh : ph;
     const cv = r.domElement; if (cv.width !== ow || cv.height !== oh) r.setSize(ow, oh, false);
     if (!baking && !off) speed.gpu = !!G;   // (frame generation needs the game on screen drawn with WebGPU)
+    if (this.occlusion && HD.occlude !== false) { this.cullHidden(); HD.info.occluded = this.occlusion.stats.hidden; } else if (this.occHid?.size) this.showHidden();
     if (G) this.drawGPU(G, r, T, baking, off, now, (s2on || up) && { pw, fw, fh, s1: !s2on }, direct);
     else {
     if (!baking && !off) { speed.between = null; HD.info.framegen = false; }   // (frame generation is WebGPU only)
@@ -1578,6 +1614,8 @@ function shadowSize(sh, n) {
   sh.mapSize.set(n, n);
   if (sh.map?.isWebGLRenderTarget) { sh.map.dispose(); sh.map = null; } else sh.map?.setSize(n, n, sh.map.depth);
 }
+// the layer things hidden by occlusion culling move to: the view's camera doesn't draw it, shadow cameras do
+const OCC_LAYER = 30;
 export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
   const s = new DirectionalLight(col, i), c = s.shadow.camera, d = new Vector3(...dir).normalize();
   s.castShadow = true; c.left = c.bottom = -size; c.right = c.top = size; c.near = 1; c.far = 120;

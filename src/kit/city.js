@@ -750,9 +750,10 @@ export class City {
    * night; sound: the city's hum, horns and birds; at: where the player starts (built first);
    * detail: metres within which awnings, cornices and fire escapes show.
    */
-  constructor(view, { seed = 1, blocks = 6, style = 'downtown', side = 'right', traffic = 1, people = 1, night = 0, sky = null, lamps = true, sound = true, at = null, detail = 260, ...over } = {}) {
+  constructor(view, { seed = 1, blocks = 6, style = 'downtown', side = 'right', traffic = 1, people = 1, night = 0, sky = null, lamps = true, sound = true, at = null, detail = 260, occlude = true, ...over } = {}) {
     this.view = view; this.seed = seed; this.sky = sky; this.lampsOn = lamps; this.soundOn = sound; this.detail = detail;
     this.plan = layout({ seed, blocks, style, side, ...over }); const P = this.plan, S = P.style;
+    if (occlude) view.occluders?.(this.occluders());   // what's behind the buildings isn't drawn (occlude: false to draw it all)
     this.group = new Group(); this.group.name = 'city'; view.scene.add(this.group);
     this.t = 0; this._night = -1; this.night = night;
     const scale = TIER[phoneClass()] ?? .65;

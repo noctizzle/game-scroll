@@ -169,6 +169,18 @@ async function outdoor(tier, phys = false) {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend + (window.__hd.info.webgl ? ' (' + window.__hd.info.webgl + ')' : '')];
 }
+// a street in gs.city, low down between the buildings: with occlusion culling (default) most blocks are
+// hidden behind the first row; Q=occ=0 draws them all, and the two pictures must match
+async function cityScene() {
+  window.__hd.force = 2;
+  const Q = new URLSearchParams(location.search), v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .004, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const sun = gs.hd.sun('#fff2d8', 3, 60, [-.45, 1, .35]); v.scene.add(sun, sun.target); v.sun = sun;
+  const city = new gs.city.City(v, { seed: 3, blocks: 6, traffic: 0, people: 0, sound: false, lamps: false, occlude: Q.get('occ') !== '0' });
+  const s = city.start; v.cam.position.set(s.x, 1.7, s.z); v.cam.lookAt(s.x + 30, 4, s.z + 8); v.cam.updateMatrixWorld(); sun.follow(s.x, 0, s.z);
+  for (let i = 0; i < 8; i++) { v.t = 0; city.update(1 / 60, { x: s.x, z: s.z }); v.render(x, 240, 320); await frame(); }   // (builds the chunks round the street)
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + ', ' + (v.occlusion?.stats.hidden ?? 0) + ' hidden, ' + (v.occlusion?.stats.boxes ?? 0) + ' boxes'];
+}
 function consoleScene() {
   const { View, part, G } = gs.toon, v = new View(), c = document.createElement('canvas'); c.width = 192; c.height = 160; const x = c.getContext('2d');
   v.board(192, 160, .9);
@@ -186,6 +198,7 @@ try {
   [out.sparks, backends.sparks] = await sparksScene();
   [out.people, backends.people] = await peopleScene();
   [out.room, backends.room] = await roomScene();
+  [out.city, backends.city] = await cityScene();
   for (const t of [1, 3]) [out['outdoor-tier' + t], backends['outdoor-tier' + t]] = await outdoor(t);
   [out['outdoor-physical'], backends['outdoor-physical']] = await outdoor(3, true);
   out.console = consoleScene();
