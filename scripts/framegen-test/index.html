@@ -3,19 +3,25 @@
 <title>Frame generation check</title>
 <body style="margin:0;background:#000">
 <script type="module">
-// Draws a moving test scene at times 0 and 1 (two real frames), makes the frame in between with
-// src/kit/framegen.js, and scores it against the scene really drawn at that time. Baselines: showing
-// the last real frame again (what a 60 fps game does on a 120 Hz screen) and a plain 50/50 mix.
+// Draws a moving test scene at three real moments, makes the frames in between (or past the newest)
+// with src/kit/framegen.js, and scores each against the scene really drawn at that time. Baselines:
+// showing the last real frame again (what a 60 fps game does on a 120 Hz screen) and a plain 50/50 mix.
 // Query: ?scale=1.5 (render smaller than the screen, as under SGSR 2), &mode=ahead, &shots, &w=480&h=640,
-// &kinds=still,strafe,turn (the default) or glass,sparks,jitter (the hard cases: see-through things,
-// glowing particles, and SGSR 2's camera jitter, where the picture is steady but motion and depth shake)
+// &steps=3 (refreshes per real frame on a 120 Hz screen: 2 is 60 fps, 3 is 40 fps with two made frames
+// at a third and two thirds), &kinds=still,strafe,turn,pan,curve (the default; add aim for fresh aim's turn) or
+// glass,sparks,sparks-moving,smoke,jitter (the hard cases: see-through things, glowing particles that
+// don't and that do say how they move, smoke, and SGSR 2's camera jitter, where the picture is steady
+// but motion and depth shake), &plain (a plain ground)
 import * as THREE from 'three/webgpu';
-import { pass, mrt, output, velocity, texture, uv, vec4, mix } from 'three/tsl';
-import { FrameGen, frameGenMRT } from '/src/kit/framegen.js';
+import { pass, mrt, output, velocity, texture, uv, vec4, mix, uniform, screenUV } from 'three/tsl';
+import { FrameGen, frameGenMRT, particleMotion, fgPrevVP, poseOf, homography, warpUV } from '/src/kit/framegen.js';
 
 const Q = new URLSearchParams(location.search), OW = +(Q.get('w') || 512), OH = +(Q.get('h') || 640);
 const scale = +(Q.get('scale') || 1), RW = Math.round(OW / scale), RH = Math.round(OH / scale);
-const ahead = Q.get('mode') === 'ahead', H = 1 / 60, KINDS = (Q.get('kinds') || 'still,strafe,turn').split(',');
+const ahead = Q.get('mode') === 'ahead', STEPS = Math.max(2, Math.round(+(Q.get('steps') || 2))), H = STEPS / 120;
+const KINDS = (Q.get('kinds') || 'still,strafe,turn,pan,curve').split(',');
+// the moments made, as the app makes them: blend 1/steps .. (steps-1)/steps between the last two, ahead past the newest
+const TIMES = Array.from({ length: STEPS - 1 }, (_, k) => (ahead ? 1 : 0) + (k + 1) / STEPS);
 const out = { scenes: {}, shots: {} };
 
 const r = new THREE.WebGPURenderer({ antialias: false });
@@ -34,7 +40,8 @@ function makeScene(kind) {
   const scene = new THREE.Scene(); scene.background = new THREE.Color('#6a8fc0');
   const cam = new THREE.PerspectiveCamera(55, OW / OH, .1, 200);
   scene.add(new THREE.HemisphereLight('#ffffff', '#445566', 1.6)); const sun = new THREE.DirectionalLight('#fff4e0', 2.2); sun.position.set(3, 6, 2); scene.add(sun);
-  const gt = checker('#d8d0c0', '#5a6a50'); gt.repeat.set(20, 20);
+  // &plain: a plain ground (what the moving sparks are lifted off is then easy to tell from the sparks)
+  const gt = Q.has('plain') ? checker('#3a4038', '#3c4239') : checker('#d8d0c0', '#5a6a50'); gt.repeat.set(20, 20);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ map: gt })); ground.rotation.x = -Math.PI / 2; scene.add(ground);
   const things = [];
   const mat = c => new THREE.MeshStandardMaterial({ map: checker(c, '#202020', 4), roughness: .5 });
@@ -47,25 +54,49 @@ function makeScene(kind) {
   // see-through: a glass ball racing across in front of everything
   const glass = kind === 'glass' && new THREE.Mesh(new THREE.SphereGeometry(1.1, 32, 16), new THREE.MeshStandardMaterial({ color: '#a0e0ff', transparent: true, opacity: .35, roughness: .1 }));
   if (glass) scene.add(glass);
-  // glowing sparks (added light, no depth), flying fast
-  const sparks = [];
-  if (kind === 'sparks') {
+  // glowing sparks (added light, no depth), flying fast; 'sparks-moving' tells frame generation how
+  // each moves (particleMotion, as gs.hd's GPU particles do), 'sparks' doesn't
+  // 'smoke': soft grey puffs (ordinary see-through blending) that say how they move (frame generation
+  // leaves them as drawn: moving them dragged the ground behind along)
+  const sparks = [], smoke = kind === 'smoke', moving = kind === 'sparks-moving' || smoke;
+  if (kind === 'sparks' || moving) {
     const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d'), gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
-    gr.addColorStop(0, 'rgba(255,240,180,1)'); gr.addColorStop(1, 'rgba(255,120,20,0)'); g.fillStyle = gr; g.fillRect(0, 0, 32, 32);
+    if (smoke) { gr.addColorStop(0, 'rgba(70,70,78,.9)'); gr.addColorStop(1, 'rgba(90,90,96,0)'); }
+    else { gr.addColorStop(0, 'rgba(255,240,180,1)'); gr.addColorStop(1, 'rgba(255,120,20,0)'); }
+    g.fillStyle = gr; g.fillRect(0, 0, 32, 32);
     const tex = new THREE.CanvasTexture(c);
-    for (let i = 0; i < 40; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); sp.scale.setScalar(.5); scene.add(sp); sparks.push(sp); }
+    for (let i = 0; i < (smoke ? 24 : 40); i++) {
+      const o = { map: tex, blending: smoke ? THREE.NormalBlending : THREE.AdditiveBlending, depthWrite: false, transparent: true };
+      const m = moving ? new THREE.SpriteNodeMaterial(o) : new THREE.SpriteMaterial(o), sp = new THREE.Sprite(m); sp.scale.setScalar(smoke ? 1.1 : .5);
+      if (moving) { sp.userData.at = uniform(new THREE.Vector3()); sp.userData.step = uniform(new THREE.Vector3()); particleMotion(m, sp.userData.at, sp.userData.step); }
+      scene.add(sp); sparks.push(sp);
+    }
   }
+  const sparkAt = (i, t, v) => { const a = i * 2.4, r = 1 + (i % 7) * .5; return v.set(Math.cos(a + t * 3) * r, 1.5 + Math.sin(a * 3 + t * 4) * 1.2, 1 + Math.sin(a + t * 3) * r * .5); };
+  const V = new THREE.Vector3();
   const set = t => {
-    // things race across, spin and bob; the camera turns (kind 'turn'), strafes ('strafe') or stays ('still')
+    // things race across, spin and bob ('curve': whirl round in tight circles); the camera turns round
+    // the scene ('turn'), turns where it stands, faster and faster ('pan'), strafes ('strafe') or stays ('still')
     things.forEach((m, i) => {
       const sp = 3 + i * 1.3, ph = i * 1.7;
-      m.position.set(Math.sin(t * sp * .4 + ph) * 5, .8 + Math.abs(Math.sin(t * 3 + ph)) * 1.2, -2 - i * 1.5);
+      if (kind === 'curve') { const w = 11 - i, R = 1.2 + i * .25, a = t * w + ph; m.position.set(-2.5 + i + Math.cos(a) * R, 1.4 + Math.sin(a) * R * .7, -2 - i * 1.2 + Math.sin(a) * R * .5); }
+      else m.position.set(Math.sin(t * sp * .4 + ph) * 5, .8 + Math.abs(Math.sin(t * 3 + ph)) * 1.2, -2 - i * 1.5);
       m.rotation.set(t * 2 + i, t * 3 + i, 0);
     });
     if (glass) glass.position.set(Math.sin(t * 2.5) * 4, 1.6, 3.5);
-    sparks.forEach((sp, i) => { const a = i * 2.4, r = 1 + (i % 7) * .5; sp.position.set(Math.cos(a + t * 3) * r, 1.5 + Math.sin(a * 3 + t * 4) * 1.2, 1 + Math.sin(a + t * 3) * r * .5); });
-    const a = kind === 'turn' ? t * 1.2 : 0, sx = kind !== 'still' && kind !== 'turn' ? Math.sin(t * 2) * 3 : 0;
-    cam.position.set(sx + Math.sin(a) * 9, 3.2, Math.cos(a) * 9); cam.lookAt(sx, 1, -3); cam.updateMatrixWorld();
+    sparks.forEach((sp, i) => {
+      sparkAt(i, t, sp.position);
+      // its world position, and how far it went since the last real frame
+      if (moving) { sp.userData.at.value.copy(sp.position); sp.userData.step.value.copy(sp.position).sub(sparkAt(i, t - H, V)); }
+    });
+    if (kind === 'pan') {
+      const yaw = .4 + t * 1.6 + t * t * 1.5;
+      cam.position.set(0, 2.2, 6); cam.lookAt(Math.sin(yaw) * -10, 1.2, 6 - Math.cos(yaw) * 10);
+    } else {
+      const a = kind === 'turn' ? t * 1.2 : 0, sx = kind !== 'still' && kind !== 'turn' ? Math.sin(t * 2) * 3 : 0;
+      cam.position.set(sx + Math.sin(a) * 9, 3.2, Math.cos(a) * 9); cam.lookAt(sx, 1, -3);
+    }
+    cam.updateMatrixWorld();
   };
   return { scene, cam, set, glass, sparks };
 }
@@ -98,8 +129,30 @@ function shot(px) {
   im.data.set(px); g.putImageData(im, 0, 0); return c.toDataURL('image/png');
 }
 
+// 'aim': fresh aim's turn of a shown frame (as the app's show pass does it: the picture sampled at
+// warpUV(screenUV, homography(now, then))) against the scene drawn with the camera turned and zoomed that much
+const warpT = texture(new THREE.Texture()), warpH = uniform(new THREE.Matrix3()), warpMat = new THREE.NodeMaterial();
+warpMat.fragmentNode = vec4(warpT.sample(warpUV(screenUV, warpH)).rgb, 1);
+const warpQuad = new THREE.QuadMesh(warpMat), warpRT = new THREE.RenderTarget(OW, OH, { type: THREE.HalfFloatType });
+async function aimCheck() {
+  const S = makeScene('still'), sp = pass(S.scene, S.cam), pp = new THREE.RenderPipeline(r); pp.outputNode = sp; pp.outputColorTransform = false;
+  const shot1 = async () => { await new Promise(requestAnimationFrame); pp.render(); return sp.getTexture('output'); };
+  S.set(1.3); S.cam.rotation.order = 'YXZ'; const y0 = S.cam.rotation.y, x0 = S.cam.rotation.x, f0 = S.cam.fov;
+  const then = poseOf(S.cam); const tex = await shot1(); const keep = new THREE.RenderTarget(OW, OH, { type: THREE.HalfFloatType }); copyRT(tex, keep);
+  const shown = await grab(keep.texture);
+  // the finger turned the look right and up a little, and a scope zoomed in a touch
+  S.cam.rotation.set(x0 + .05, y0 - .09, 0, 'YXZ'); S.cam.fov = f0 * .96; S.cam.updateProjectionMatrix(); S.cam.updateMatrixWorld();
+  const now = poseOf(S.cam), truth = await grab(await shot1());
+  homography(now, then, warpH.value); warpT.value = keep.texture; r.setRenderTarget(warpRT); warpQuad.render(r); r.setRenderTarget(null);
+  const turned = await grab(warpRT.texture);
+  out.scenes.aim = { framegen: score(turned, truth), repeat: score(shown, truth), mix: null, ms: 0 };
+  if (Q.has('shots')) Object.assign(out.shots, { 'aim-framegen': shot(turned), 'aim-truth': shot(truth), 'aim-repeat': shot(shown) });
+  pp.dispose?.(); keep.dispose();
+}
+
 try {
   for (const kind of KINDS) {
+    if (kind === 'aim') { await aimCheck(); continue; }
     const S = makeScene(kind), jitter = kind === 'jitter';
     // &mask=0: the plain outputs, without the see-through mask (to compare)
     const mask = Q.get('mask') !== '0', sp = pass(S.scene, S.cam); sp.setMRT(mask ? frameGenMRT() : mrt({ output, velocity }));
@@ -107,7 +160,8 @@ try {
     const pp = new THREE.RenderPipeline(r); pp.outputNode = sp; pp.outputColorTransform = false;
     // jitter: motion and depth come from a shaking camera (as SGSR 2 draws them), the picture from a
     // steady one (as SGSR 2 gives it out), and the shake between the two frames is passed on
-    let n = 0, jd = [0, 0], lastOff = [0, 0];
+    let n = 0, jd = [0, 0], jit = [0, 0];
+    const lastVP = new THREE.Matrix4(), vp = new THREE.Matrix4();
     const halton = (i, b) => { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; };
     const steadyCam = jitter ? S.cam.clone() : null, steady = jitter ? pass(S.scene, steadyCam) : null;
     const pps = jitter ? new THREE.RenderPipeline(r) : null; if (pps) { pps.outputNode = steady; pps.outputColorTransform = false; }
@@ -122,32 +176,47 @@ try {
         const prev = [-S.cam.projectionMatrix.elements[8], -S.cam.projectionMatrix.elements[9]];
         if (shake) { n++; S.cam.setViewOffset(RW, RH, halton(n, 2) - .5, halton(n, 3) - .5, RW, RH); } else S.cam.clearViewOffset();
         S.cam.updateProjectionMatrix();
-        const now = [-S.cam.projectionMatrix.elements[8], -S.cam.projectionMatrix.elements[9]];
-        jd = [now[0] - prev[0], now[1] - prev[1]];
+        const now = [-S.cam.projectionMatrix.elements[8], -S.cam.projectionMatrix.elements[9]], se = steadyCam.projectionMatrix.elements;
+        jd = [now[0] - prev[0], now[1] - prev[1]]; jit = [now[0] + se[8], now[1] + se[9]];
         pps.render();
       }
+      // the camera at the last real frame, for the sparks that say how they move (the app does the same)
+      fgPrevVP.value.copy(lastVP); vp.multiplyMatrices(S.cam.projectionMatrix, S.cam.matrixWorldInverse);
       pp.render();
+      lastVP.copy(vp);
     };
     const colorOf = () => (jitter ? steady : sp).getTexture('output');
-    const feed = () => fg.real({ color: colorOf(), velocity: sp.getTexture('velocity'), reactive: mask ? sp.getTexture('reactive') : null, depth: sp.getTextureNode('depth').value, renderSize: [RW, RH], outputSize: [OW, OH], camera: S.cam, jitterDelta: Q.has('nojd') ? [0, 0] : jd });
-    // warm the velocity history, then the two real frames
-    await frame(t0 - 2 * H); await frame(t0 - H); feed(); fg.keep(); copyRT(colorOf(), prev);
+    const feed = () => fg.real({ color: colorOf(), velocity: sp.getTexture('velocity'), reactive: mask ? sp.getTexture('reactive') : null, depth: sp.getTextureNode('depth').value, renderSize: [RW, RH], outputSize: [OW, OH], camera: S.cam, jitter: jit, jitterDelta: Q.has('nojd') ? [0, 0] : jd });
+    // warm the velocity history, then three real frames (the third back gives the curve)
+    await frame(t0 - 3 * H); await frame(t0 - 2 * H); feed(); fg.keep();
+    await frame(t0 - H); feed(); fg.keep(); copyRT(colorOf(), prev);
     await frame(t0); feed();
-    const tm = ahead ? 1.5 : .5;
-    const ms0 = performance.now(); fg.make(tm); await r.backend.device.queue.onSubmittedWorkDone(); const ms = performance.now() - ms0;
-    const gen = await grab(fg.output);
     const last = await grab(colorOf());        // newest real frame, shown again
     const before = await grab(prev.texture);
     ma.value = prev.texture; mb.value = colorOf(); r.setRenderTarget(mixRT); mixQuad.render(r); r.setRenderTarget(null);
     const blend = await grab(mixRT.texture);
-    // the truth: the scene at that time (a fresh pipeline so the frames above are left alone)
-    await frame(t0 - H + tm * H, false);
-    const truth = await grab(colorOf());
-    out.scenes[kind] = { framegen: score(gen, truth), repeat: score(ahead ? last : before, truth), mix: ahead ? null : score(blend, truth), ms: +ms.toFixed(1) };
-    if (Q.has('shots')) Object.assign(out.shots, { [kind + '-framegen']: shot(gen), [kind + '-truth']: shot(truth), [kind + '-repeat']: shot(ahead ? last : before), [kind + '-mix']: shot(blend) });
+    const made = [];
+    for (const tm of TIMES) {
+      const ms0 = performance.now(); fg.make(tm); await r.backend.device.queue.onSubmittedWorkDone();
+      made.push({ tm, px: await grab(fg.output), ms: performance.now() - ms0 });
+    }
+    // the truth: the scene at each time (drawn last so the frames above are left alone); the error is the
+    // mean over the made frames, broken the worst
+    const sum = { framegen: [], repeat: [], mix: [] }; let ms = 0;
+    for (const m of made) {
+      await frame(t0 - H + m.tm * H, false);
+      const truth = await grab(colorOf());
+      // what the screen shows without frame generation: the newest real frame (ahead), or the last one
+      // until the newest is due (blend: the newest is shown late by the same amount, so it's the same picture)
+      sum.framegen.push(score(m.px, truth)); sum.repeat.push(score(ahead ? last : before, truth)); if (!ahead) sum.mix.push(score(blend, truth)); ms += m.ms;
+      if (Q.has('shots')) { const tag = `${kind}-${Math.round(m.tm * 100)}`; Object.assign(out.shots, { [tag + '-framegen']: shot(m.px), [tag + '-truth']: shot(truth) }); }
+    }
+    const avg = l => l.length ? { error: +(l.reduce((s, x) => s + x.error, 0) / l.length).toFixed(2), broken: Math.max(...l.map(x => x.broken)) } : null;
+    out.scenes[kind] = { framegen: avg(sum.framegen), repeat: avg(sum.repeat), mix: avg(sum.mix), ms: +(ms / made.length).toFixed(1) };
+    if (Q.has('shots')) Object.assign(out.shots, { [kind + '-repeat']: shot(ahead ? last : before), [kind + '-mix']: shot(blend) });
     fg.dispose(); pp.dispose?.(); pps?.dispose?.(); prev.dispose();
   }
-  out.mode = ahead ? 'ahead' : 'blend'; out.scale = scale;
+  out.mode = ahead ? 'ahead' : 'blend'; out.scale = scale; out.steps = STEPS; out.times = TIMES.map(t => +t.toFixed(3));
 } catch (e) { out.error = String(e && e.stack || e); }
 window.result = out;
 </script>

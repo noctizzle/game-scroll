@@ -1408,5 +1408,38 @@ console.log('physics ok');
   console.log('occlusion culling: behind, front, beside, over the top, camera in a box ok');
 }
 
+// frame generation: a camera's turn as a picture warp (exact for any turn and zoom), and the battery and heat reading
+{
+  const { poseOf, homography, lerpPose, newPose } = await import('../src/kit/framegen.js');
+  const { PerspectiveCamera, Vector3 } = await import('three');
+  const a = new PerspectiveCamera(60, 1.5, .1, 100), b = new PerspectiveCamera(48, 1.5, .1, 100);
+  a.position.set(1, 2, 3); a.lookAt(0, 1, -5); b.position.copy(a.position); b.lookAt(4, 3, -6);
+  a.updateMatrixWorld(); b.updateMatrixWorld();
+  const H = homography(poseOf(a), poseOf(b)), e = H.elements;
+  for (const p of [new Vector3(0, 1, -5), new Vector3(3, 2.5, -7), new Vector3(-1, 0, -2)]) {
+    const na = p.clone().project(a), nb = p.clone().project(b);
+    const h = [e[0] * na.x + e[3] * na.y + e[6], e[1] * na.x + e[4] * na.y + e[7], e[2] * na.x + e[5] * na.y + e[8]];
+    assert.ok(Math.abs(h[0] / h[2] - nb.x) < 1e-6 && Math.abs(h[1] / h[2] - nb.y) < 1e-6, 'a turn and zoom map a point exactly');
+  }
+  // halfway: the turn's middle (slerp), and past the end it keeps turning the same way
+  const mid = lerpPose(poseOf(a), poseOf(b), .5, newPose()), past = lerpPose(poseOf(a), poseOf(b), 1.5, newPose());
+  const qa = poseOf(a).q, qb = poseOf(b).q;
+  assert.ok(Math.abs(qa.angleTo(mid.q) - qb.angleTo(mid.q)) < 1e-6, 'halfway is halfway');
+  assert.ok(Math.abs(qb.angleTo(past.q) - qa.angleTo(qb) * .5) < 1e-6, 'past the end keeps turning');
+
+  const { heatOf, judge } = await import('../src/kit/power.js');
+  assert.equal(heatOf({ platform: 'android', thermal: 0, headroom: .4 }), 0, 'cool');
+  assert.equal(heatOf({ platform: 'android', thermal: 2, headroom: -1 }), 1, 'Android moderate is warm');
+  assert.equal(heatOf({ platform: 'android', thermal: 1, headroom: 1.02 }), 2, 'headroom 1 means throttling soon');
+  assert.equal(heatOf({ platform: 'ios', thermal: 2 }), 2, 'iPhone serious is hot');
+  const p = { heat: 0, saver: false, level: .5, charging: false, saving: false, why: '' };
+  assert.equal(judge(p, 0), false, 'nothing to save for');
+  p.level = .15; assert.equal(judge(p, 1000), true, 'low battery'); assert.equal(p.why, 'the battery is low');
+  p.charging = true; assert.equal(judge(p, 30000), true, 'held a minute after the reason goes');
+  assert.equal(judge(p, 62000), false, 'then lets go');
+  p.saver = true; judge(p, 70000); assert.equal(p.why, 'battery saver is on');
+  console.log('frame generation: exact camera turns, battery and heat ok');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);
