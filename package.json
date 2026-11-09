@@ -81,7 +81,7 @@
     "rich-haptics": "file:plugins/rich-haptics",
     "rot-js": "2.2.1",
     "simplex-noise": "4.0.3",
-    "three": "0.186.1",
+    "three": "^0.187.0",
     "three.quarks": "0.17.1",
     "three.terrain.js": "3.1.1",
     "tone": "15.1.22",
