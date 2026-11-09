@@ -37,3 +37,6 @@ project(':power-state').projectDir = new File('../plugins/power-state/android')
 
 include ':rich-haptics'
 project(':rich-haptics').projectDir = new File('../plugins/rich-haptics/android')
+
+include ':screen-rate'
+project(':screen-rate').projectDir = new File('../plugins/screen-rate/android')

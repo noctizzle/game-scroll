@@ -20,9 +20,15 @@
 // cooler, more detail) or Off; and how: blend (between the last two frames, the fewest flaws, shown a
 // refresh later) or ahead (past the newest, no delay). A game can say frameGen: false or 'ahead'; on a
 // phone where blend's refreshes are too full for a game, that game switches itself to ahead.
+//
+// The screen's rate (src/kit/screenrate.js, Android): while a round is played the app asks the screen
+// for the rate that suits the game (screenWant): the fastest that's a whole number of refreshes per real
+// frame when frame generation fills in (so the phone can't drop the card to 60 Hz and turn it off), the
+// game's own rate otherwise (a game at 60 or 30 asks for 60, which saves battery).
 import { store } from '../util.js';
 import { gpuName } from './gpu.js';
 import { power } from './power.js';
+import { screen, askRate, pickRate } from './screenrate.js';
 
 const PICK_KEY = 'gs_fps', SETTLE_KEY = 'gs_speed', FG_KEY = 'gs_fg', FG_HOW_KEY = 'gs_fg_how';
 const touchy = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
@@ -193,6 +199,26 @@ export function frameGenStatus(def) {
 }
 /** The 3D kit found the refreshes between real frames didn't come (the phone is too busy): no frame generation for this game until the app restarts. */
 export function frameGenFailed(id) { if (id) fgFailed.add(id); }
+
+/* ---------- asking the screen for a rate ---------- */
+/**
+ * The refresh rate to ask the screen for while this game is played (0: no wish, the phone decides; also
+ * where the screen's rates aren't known). Worked out against the screen's fastest rate, not the one it
+ * shows now: a screen held at 60 for one game must not keep the next one from 120.
+ */
+export function screenWant(def) {
+  const top = screen.top;
+  if (!def || !top) return 0;
+  let f = pick === 'auto' ? Math.min(autoFps(def), settled[def.id]?.fps || 999) : pick;
+  if (def.fps) f = Math.min(f, def.fps);
+  f = Math.max(30, Math.min(f, top));
+  // frame generation could fill in (as frameGenFor, at the screen's fastest rate) and the game runs below it
+  const fg = is3D(def) && def.frameGen !== false && (!!speed.forceFrameGen
+    || (fgPick !== 'off' && pick === 'auto' && top >= FG_HZ && speed.gpu && !fgFailed.has(def.id)));
+  return pickRate(screen.rates, f, fg && f < top * .9);
+}
+/** The feed, every refresh: the game being played (null between rounds, paused, or in the feed). */
+export function screenWish(def) { askRate(def ? screenWant(def) : 0); }
 
 /** The game on screen (set by the feed), so the 3D kit can remember things per game. */
 // offscreen: true while the feed draws a card that isn't the one on screen (one being added below).

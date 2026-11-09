@@ -31,7 +31,7 @@ import { hearts } from './hearts.js';
 import { playstats } from './playstats.js';
 import { boards, rankHTML, openBoard } from './boards.js';
 import { perf } from './perf.js';
-import { speed, fpsFor, tick as tickHz, screenHz, frameLate } from './kit/speed.js';
+import { speed, fpsFor, tick as tickHz, screenHz, frameLate, screenWish } from './kit/speed.js';
 import { history } from './history.js';
 import { savesFor } from './saves.js';
 import { brainsFor, sendFun } from './brainstore.js';
@@ -578,6 +578,8 @@ function frame(now){
   pollPads(padInput);
   tickHz(now);
   const s=active;
+  // the screen's rate for the game being played (src/kit/screenrate.js; the phone decides between rounds)
+  screenWish(s&&s.state==='playing'&&!s.paused?s.def:null);
   // Frame rate per game and phone (src/kit/speed.js): on a 120 Hz screen a 60 fps game skips every
   // other refresh, which saves battery and heat. Frames are due on a steady beat (nextAt), not a gap
   // since the last one, so a 60 fps game on a 90 Hz screen alternates 1 and 2 refreshes and still
