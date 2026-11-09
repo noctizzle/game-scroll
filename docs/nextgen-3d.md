@@ -8,7 +8,7 @@ rendering is what makes it Next Gen.
 The kit is `src/kit/hd3d.js`. Games built on it: `bunker-breakout.js` (corridor shooter),
 `suit-ops.js` (top-down jungle twin-stick), `gravity-grip.js` (tube racer that drives on walls and
 ceilings), `neon-drift.js` (drift racer on a wet neon street circuit), `storm-hook.js` (grapple swinging),
-`deep-pressure.js` (sonar sub; its walls use a small `onBeforeCompile` shader for the sonar ring),
+`deep-pressure.js` (sonar sub; its walls glow with the sonar ring through `gs.hd.pulse`),
 `mech-brawl.js` (boxing), `frost-line.js` (snowboarding, tilt to carve) and `canyon-ace.js` (tilt-to-fly jet).
 
 ## What the kit gives you
@@ -232,6 +232,15 @@ On top phones, Settings › Graphics (test) › "Use WebGPU for 3D games" draws 
 with three's WebGPU renderer instead of WebGL. Nothing changes in a game: a view that uses a part not
 ported yet (see `docs/webgpu-move.md`) stays on WebGL by itself. `node scripts/gpu-games.cjs <id>`
 plays a game on both and says which it drew on.
+
+## Glowing rings
+
+`gs.hd.pulse(material, { at, radius, strength, color, width, fill })` adds a glowing ring that
+sweeps out from a point over a lit material: sonar, a shockwave, a scanner. `at` is a `{ value: Vector3 }`,
+`radius` and `strength` are `{ value }` objects the game changes each frame (strength 0 hides it),
+`color` is linear `[r, g, b]` (above 1 is brighter), `width` the ring's thickness in metres and `fill`
+a faint glow inside it. Share the same objects across materials to move one ring over all of them. It
+works on instanced meshes and on WebGL and WebGPU alike.
 
 ## Decals, light probes and sun shafts
 

@@ -47,6 +47,20 @@ async function dark(tier) {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend];
 }
+// a sonar ring (gs.hd.pulse) sweeping over rock in the dark, with an instanced row of spikes
+async function pulseScene() {
+  window.__hd.force = 2;
+  const v = new gs.hd.HDView({ bg: '#02060a', fog: .04, env: .2, amb: .15 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 2, 7); v.cam.lookAt(0, 0, -3); v.cam.updateMatrixWorld();
+  const at = { value: new T.Vector3(0, 0, 2) }, radius = { value: 5 }, strength = { value: 2.2 };
+  const rock = gs.hd.pulse(gs.hd.pbr('#5a626c', { rough: 1 }), { at, radius, strength }), spike = gs.hd.pulse(gs.hd.pbr('#3a3e44', { rough: .8 }), { at, radius, strength, color: [1, .5, .2] });
+  v.scene.add(new T.Mesh(new T.PlaneGeometry(40, 40).rotateX(-Math.PI / 2).translate(0, -.5, -5), rock));
+  const sp = new T.InstancedMesh(new T.ConeGeometry(.3, 1.4, 8), spike, 9), d = new T.Object3D();
+  for (let i = 0; i < 9; i++) { d.position.set(-4 + i, .2, -2 - (i % 3)); d.updateMatrix(); sp.setMatrixAt(i, d.matrix); } v.scene.add(sp);
+  for (let i = 0; i < 3; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
 function consoleScene() {
   const { View, part, G } = gs.toon, v = new View(), c = document.createElement('canvas'); c.width = 192; c.height = 160; const x = c.getContext('2d');
   v.board(192, 160, .9);
@@ -60,6 +74,7 @@ try {
   for (const t of only ? [+only] : [0, 1, 2, 3]) [out['nextgen-tier' + t], backends['nextgen-tier' + t]] = await nextgen(t);
   [out['nextgen-wet'], backends['nextgen-wet']] = await nextgen(3, .3);
   for (const t of [0, 3]) [out['dark-tier' + t], backends['dark-tier' + t]] = await dark(t);   // rain on the air: WebGL only so far
+  [out.pulse, backends.pulse] = await pulseScene();
   out.console = consoleScene();
 } catch (e) { out.error = String(e && e.stack || e); }
 window.__hd.force = null;

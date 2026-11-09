@@ -13,7 +13,7 @@ import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Color, Sprite, Sprite
 import {
   pass, mrt, output, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
-  positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min,
+  positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min, materialEmissive, distance,
 } from 'three/tsl';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
@@ -59,6 +59,18 @@ export function airNodes(AIR) {
 // WebGL draws them as points with a shader of their own; here they are instanced sprites reading the
 // same arrays (position, size, tint), with the same round soft or glowing dot. size is the dot's
 // width in metres, as on WebGL.
+// Named looks (looks.js lookPatch) as nodes on the material, which three copies onto the node material
+// it makes from it. 'air' is the scene's fog node instead (airNodes).
+const live = o => uniform(o.value).onRenderUpdate(() => o.value);   // follows the { value } the game changes
+export const gpuLooks = {
+  // hd3d.js pulse(): a glowing ring at distance r from a point
+  pulse(m, s) {
+    const u = s.uniforms, d = distance(positionWorld, live(u.gsPulseAt)), r = live(u.gsPulseR), w = float(u.gsPulseW.value);
+    const band = exp(d.sub(r).div(w).pow(2).negate()).add(float(u.gsPulseFill.value).mul(select(d.lessThanEqual(r), float(1), float(0))).mul(float(1).sub(d.div(max(r, .01)))));
+    m.emissiveNode = materialEmissive.add(vec3(u.gsPulseCol.value).mul(band).mul(live(u.gsPulseA)));
+  },
+};
+
 export function gpuParticles(parts) {
   const g = parts.pts.geometry, A = n => { const a = g.attributes[n]; return new InstancedBufferAttribute(a.array, a.itemSize); };
   const pos = A('position'), size = A('size'), tint = A('tint');

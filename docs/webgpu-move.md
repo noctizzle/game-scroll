@@ -63,7 +63,7 @@ The rules for new 3D code until then:
 | Physical sky | `src/kit/sky.js` dome shader, Preetham branch on `pSun.z` | Three's `SkyMesh` (TSL), or the same sums as a TSL node |
 | Wind in leaves | `src/kit/looks.js` `looks.leaves` (`lkWindDir` lean) | Part of the leaves TSL node |
 | Tree impostors | `gs.outdoors` `impostor()` bakes with the WebGL renderer into a render target | The same bake on the WebGPU renderer (stock materials, so only the bake moves) |
-| Games with their own shaders | `deep-pressure.js` (stays on WebGL), `long-shadow.js` (sky) | Port to kit materials or TSL |
+| Games with their own shaders | `long-shadow.js` (sky). Deep Pressure's sonar is now the kit's `gs.hd.pulse` look, which has a WebGPU version | Port to kit materials or TSL |
 
 Status from `gpu-games.cjs` (2026-11-09): 18 of 20 Next Gen and AR games draw on WebGPU with no errors;
 Long Shadow (sky reflections) and Deep Pressure (its own shader) stay on WebGL.
