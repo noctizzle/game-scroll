@@ -1,0 +1,13 @@
+{
+  "name": "npu",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Game Scroll's AI chip plugin: ONNX Runtime with Qualcomm's NPU (QNN) on Android and Core ML on iOS, with the front camera and mic read natively, for face and hand tracking and sound recognition (src/kit/npu.js).",
+  "main": "index.js",
+  "files": ["index.js", "Package.swift", "ios/Sources", "android/src/main", "android/build.gradle"],
+  "capacitor": {
+    "ios": { "src": "ios" },
+    "android": { "src": "android" }
+  },
+  "peerDependencies": { "@capacitor/core": "^8.0.0" }
+}

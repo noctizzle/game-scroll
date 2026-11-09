@@ -1,0 +1,85 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>NPU vision check</title>
+<body>
+<script type="module">
+// Runs the face and hand steps that the phone's AI chip path uses (src/kit/vision-npu.js) on test
+// photos, with ONNX Runtime Web standing in for the phone's ONNX Runtime and the same ONNX models, and
+// compares them with MediaPipe's own landmarker on the same photos (what the web version uses). Also
+// YAMNet on made-up sounds against MediaPipe Audio.
+import * as ort from 'onnxruntime-web';
+import { FaceLandmarker, HandLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import { AudioClassifier } from '@mediapipe/tasks-audio';
+import visionLoader from '@mediapipe/tasks-vision/vision_wasm_internal.js?url';
+import audioLoader from '@mediapipe/tasks-audio/audio_wasm_internal.js?url';
+import { FacePipe, HandPipe, cropToTensor } from '/src/kit/vision-npu.js';
+import { ML_VERSION } from '/src/kit/vision-files.js';
+import { NPU_VERSION } from '/src/kit/npu-files.js';
+
+const ML = `/ml/${ML_VERSION}/`, NPU = `/ml/${NPU_VERSION}/`, IMG = '/ml/npu-test/';
+const out = { lines: [] }, say = s => out.lines.push(s);
+ort.env.wasm.wasmPaths = '/node_modules/onnxruntime-web/dist/'; ort.env.wasm.numThreads = 1;
+const sessions = {};
+const sess = async n => sessions[n] ||= await ort.InferenceSession.create(NPU + n + '.onnx', { executionProviders: ['wasm'] });
+const run = async (n, data, shape) => { const s = await sess(n), r = await s.run({ input: new ort.Tensor('float32', data, shape) }); return s.outputNames.map(k => r[k].data); };
+const engine = {
+  image: (n, f, rect, size, range) => run(n, cropToTensor(f.rgba, f.w, f.h, rect, size, range), [1, size, size, 3]),
+  tensor: (n, data) => run(n, data, n === 'face-shapes' ? [1, 146, 2] : [data.length]),
+};
+async function photo(name) {
+  const im = new Image(); im.src = IMG + name; await im.decode();
+  const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+  return { im, f: { id: 1, w: im.width, h: im.height, rgba: g.getImageData(0, 0, im.width, im.height).data } };
+}
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const mean = a => a.reduce((s, v) => s + v, 0) / a.length;
+let fail = 0;
+try {
+  const vfiles = { wasmLoaderPath: visionLoader, wasmBinaryPath: ML + 'vision_wasm_internal.wasm' };
+  const mpFace = await FaceLandmarker.createFromOptions(vfiles, { baseOptions: { modelAssetPath: ML + 'face_landmarker.task', delegate: 'CPU' }, runningMode: 'IMAGE', outputFaceBlendshapes: true, numFaces: 1 });
+  const mpHand = await HandLandmarker.createFromOptions(vfiles, { baseOptions: { modelAssetPath: ML + 'hand_landmarker.task', delegate: 'CPU' }, runningMode: 'IMAGE', numHands: 2 });
+
+  // faces: from a detection, then again from the last landmarks (how it runs frame to frame)
+  for (const name of ['portrait.jpg']) {
+    const { im, f } = await photo(name), want = mpFace.detect(im), pipe = new FacePipe(engine);
+    for (const pass of ['found', 'followed']) {
+      const t0 = performance.now(), have = await pipe.track(f), ms = performance.now() - t0;
+      if (!want.faceLandmarks.length || !have.faceLandmarks.length) { say(`FAIL ${name} ${pass}: face missing (MediaPipe ${want.faceLandmarks.length}, ours ${have.faceLandmarks.length})`); fail++; continue; }
+      const A = want.faceLandmarks[0], B = have.faceLandmarks[0], size = dist(A[234], A[454]);
+      const err = mean(A.map((p, i) => dist(p, B[i]))) / size;
+      const bs = n => [want, have].map(r => r.faceBlendshapes[0].categories.find(c => c.categoryName === n).score);
+      const shapeErr = Math.max(...want.faceBlendshapes[0].categories.map(c => Math.abs(c.score - bs(c.categoryName)[1])));
+      const ok = err < .03 && shapeErr < .15; if (!ok) fail++;
+      say(`${ok ? 'ok  ' : 'FAIL'} face ${name} ${pass}: landmarks off by ${(err * 100).toFixed(2)}% of face width, expressions by ${shapeErr.toFixed(3)} at most (jawOpen ${bs('jawOpen').map(v => v.toFixed(2)).join(' vs ')}, smile ${bs('mouthSmileLeft').map(v => v.toFixed(2)).join(' vs ')}), ${ms.toFixed(0)} ms in wasm`);
+    }
+  }
+  // hands
+  for (const name of ['thumb_up.jpg', 'pointing_up.jpg', 'right_hands.jpg']) {
+    const { im, f } = await photo(name), want = mpHand.detect(im), pipe = new HandPipe(engine, { max: 2 });
+    for (const pass of ['found', 'followed']) {
+      const have = await pipe.track(f);
+      if (have.landmarks.length !== want.landmarks.length) { say(`FAIL hands ${name} ${pass}: ${have.landmarks.length} hands, MediaPipe ${want.landmarks.length}`); fail++; continue; }
+      const errs = want.landmarks.map((A, i) => {
+        const B = have.landmarks.slice().sort((a, b) => dist(a[0], A[0]) - dist(b[0], A[0]))[0];
+        return mean(A.map((p, k) => dist(p, B[k]))) / dist(A[0], A[9]);
+      });
+      const sides = want.handednesses.map(h => h[0].categoryName).sort().join(',') === have.handednesses.map(h => h[0].categoryName).sort().join(',');
+      const ok = Math.max(...errs) < .1 && sides; if (!ok) fail++;
+      say(`${ok ? 'ok  ' : 'FAIL'} hands ${name} ${pass}: ${want.landmarks.length} hand(s), off by ${errs.map(e => (e * 100).toFixed(1) + '%').join(', ')} of palm length, sides ${sides ? 'match' : 'differ'}`);
+    }
+  }
+  // sounds: YAMNet on 0.975 s at 16 kHz against MediaPipe Audio (which resamples and frames it itself)
+  const ac = await AudioClassifier.createFromOptions({ wasmLoaderPath: audioLoader, wasmBinaryPath: ML + 'audio_wasm_internal.wasm' }, { baseOptions: { modelAssetPath: ML + 'yamnet.tflite' }, maxResults: 3 });
+  const labels = (await (await fetch(NPU + 'yamnet-labels.txt')).text()).trim().split('\n');
+  const N = 15600, wave = fn => Float32Array.from({ length: N }, (_, i) => fn(i / 16000, i));
+  const sounds = { 'sine 1500 Hz': wave(t => .5 * Math.sin(2 * Math.PI * 1500 * t)), 'hum 180 Hz': wave(t => .3 * Math.sin(2 * Math.PI * 180 * t) * (1 + Math.sin(2 * Math.PI * 4 * t))) };
+  for (const [k, w] of Object.entries(sounds)) {
+    const [scores] = await run('yamnet', w, [N]);
+    const top = [...scores].map((s, i) => [s, i]).sort((a, b) => b[0] - a[0])[0];
+    const mp = ac.classify(w, 16000)[0].classifications[0].categories[0];
+    const ok = labels[top[1]] === mp.categoryName; if (!ok) fail++;
+    say(`${ok ? 'ok  ' : 'FAIL'} sound ${k}: ours "${labels[top[1]]}" ${top[0].toFixed(2)}, MediaPipe "${mp.categoryName}" ${mp.score.toFixed(2)}`);
+  }
+} catch (e) { say('FAIL ' + (e.stack || e)); fail++; }
+out.fail = fail; window.result = out;
+</script>

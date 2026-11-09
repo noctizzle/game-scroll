@@ -684,7 +684,10 @@ turns the character floppy (each limb swings at its origin). `rag.push()`, `rag.
 ## Face and hands
 
 `const { Face, Hands } = gs.vision;` Face and hand tracking with the front camera, from Google's
-[MediaPipe](https://ai.google.dev/edge/mediapipe). It all runs on the phone: no picture leaves it.
+[MediaPipe](https://ai.google.dev/edge/mediapipe) models. It all runs on the phone: no picture leaves it.
+In the phone apps the models run on the phone's AI chip (Qualcomm's NPU on Snapdragon, the Neural
+Engine on iPhone, else the CPU) through [ONNX Runtime](https://onnxruntime.ai), with the camera read
+natively, so the game's frame time and the GPU stay free; on the web, MediaPipe runs in the page.
 
 ```js
 reset() { face = new Face(); }           // loads the library first
@@ -699,9 +702,14 @@ update(dt) {
   `smile`, `blink`, `winkLeft`, `winkRight`, `brows`, `points` (478), `shapes` (52 expressions by name).
 - `Hands`: `list` of `{ x, y, tipX, tipY, pinch, pinchX, pinchY, open, fist, point, side, points }`, `first`.
 - `ready` is true once the camera and model are running; `failed` holds the error if the player
-  said no to the camera. The app stops the camera when the round ends.
-- The models (4 MB face, 8 MB hands, plus a 14 MB engine) download from our games server the
-  first time; `npm run ml` fetches them for `npm run dev`.
+  said no to the camera. The app stops the camera when the round ends. `backend` says where it runs
+  (`'npu'` on the AI chip).
+- Drawing the camera picture (`face.picture`, a mirrored selfie view)? Make it with
+  `new Face({ preview: true })` (or `Hands({ preview: true })`): the AI chip never passes pictures to
+  the game, so with `preview` the tracker runs in the web view instead.
+- The models (4 MB face, 8 MB hands, plus a 14 MB engine on the web) download from our games server
+  the first time; `npm run ml` fetches the web ones for `npm run dev` (the AI chip's are in `ml-models/`).
+  `npm run kit-browser`-style checks of the AI chip steps against MediaPipe: `node scripts/npu-test.cjs`.
 
 ## Pause and resume
 
@@ -1301,8 +1309,9 @@ update(dt) { ears.update(dt); if (ears.heard('Dog')) scareCats(); }
 `heard(name)` is true once each time the sound starts, `hearing(name)` is how sure it is right now
 (0..1) and `top` is the surest sound. Options: `sure` (.3) and `every` (seconds between looks, .25).
 Some names: `'Speech'`, `'Singing'`, `'Whistling'`, `'Clapping'`, `'Finger snapping'`, `'Laughter'`,
-`'Dog'`, `'Cat'`, `'Bird'`, `'Knock'`, `'Bell'`, `'Cough'`, `'Snoring'`, `'Music'`. The engine and model
-(about 11 MB) download once from our games server; `npm run ml` fetches them for `npm run dev`.
+`'Dog'`, `'Cat'`, `'Bird'`, `'Knock'`, `'Bell'`, `'Cough'`, `'Snoring'`, `'Music'`. In the phone apps YAMNet
+runs on the phone's AI chip with the mic read natively (a 5 MB model); on the web the MediaPipe engine
+and model (about 11 MB) download once from our games server; `npm run ml` fetches them for `npm run dev`.
 
 **Spoken commands** (`gs.hear.Voice`): uses the phone's own on-device recogniser (iPhone, and
 Android 12 and later). Phones without one say `available` false, so keep touch controls:
