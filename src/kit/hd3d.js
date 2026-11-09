@@ -27,10 +27,10 @@
 import {
   Scene, Color, FogExp2, PerspectiveCamera, HemisphereLight, PointLight, SpotLight, DirectionalLight,
   MeshStandardMaterial, MeshPhysicalMaterial, ShaderMaterial, BufferGeometry, BufferAttribute, Points, AdditiveBlending, NormalBlending,
-  CanvasTexture, RepeatWrapping, SRGBColorSpace, NoColorSpace, PCFShadowMap, ACESFilmicToneMapping, HalfFloatType,
+  CanvasTexture, RepeatWrapping, SRGBColorSpace, NoColorSpace, PCFShadowMap, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, HalfFloatType,
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
   OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4, DataTexture, RGBAFormat, ShaderChunk,
-  LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion, DepthTexture, WebGLCoordinateSystem, Box3,
+  LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion, DepthTexture, WebGLCoordinateSystem, Box3, Sphere, UnsignedIntType,
 } from 'three';
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
@@ -160,7 +160,9 @@ export const HD = {
 };
 const tier = () => TIERS[HD.tier];
 // test hook: __hd.force = 3 pins ultra. Dev and test builds and test browsers only, not the store apps.
-if (typeof window !== 'undefined' && (import.meta.env?.MODE !== 'production' || navigator.webdriver)) { window.__hd = HD; window.__gpu = { pick: setGpuPick, ready: prepareGPU }; }
+// (window.__hdView: the view drawn last, for the test scripts)
+const TEST = typeof window !== 'undefined' && (import.meta.env?.MODE !== 'production' || navigator.webdriver);
+if (TEST) { window.__hd = HD; window.__gpu = { pick: setGpuPick, ready: prepareGPU }; }
 
 /* ---------- shared renderer + post chain ---------- */
 let R = null, broken = false, comp = null, P = {}, envTex = null, compKey = '', pmGen = null;
@@ -172,9 +174,44 @@ function renderer() {
     R.setPixelRatio(1); R.outputColorSpace = SRGBColorSpace;
     R.toneMapping = ACESFilmicToneMapping; R.toneMappingExposure = 1;
     R.shadowMap.enabled = true; R.shadowMap.type = PCFShadowMap; R.shadowMap.autoUpdate = false;   // redrawn only when something moved
+    splitShadowsGL(R);
     const pm = new PMREMGenerator(R); envTex = pm.fromScene(new RoomEnvironment(), .04).texture; pm.dispose();
   } catch (e) { broken = true; R = null; }
   return R;
+}
+// The still/moving shadow split on WebGL (HDView.shadowLights): three draws the shadow maps inside
+// render(), so its shadow drawing is wrapped. A light planned 'rebuild' has its still things drawn
+// alone and copied aside; 'overlay' puts that copy back; then both draw just the moving things over it
+// (the map is kept, not cleared: a map marked gsKeep skips three's clear).
+function splitShadowsGL(r) {
+  const sm = r.shadowMap, draw = sm.render, clear = r.clear;
+  r.clear = function (...a) { if (this.getRenderTarget()?.gsKeep) return; return clear.apply(this, a); };
+  sm.render = function (lights, scene, camera) {
+    if (sm.enabled === false || (!sm.autoUpdate && !sm.needsUpdate)) return;
+    let split = null;
+    for (const l of lights) { const sh = l.shadow; if (sh.needsUpdate && sh.map && sh.gsPlan && sh.gsPlan.mode !== 'full') { (split ||= []).push(l); sh.needsUpdate = false; } }
+    draw.call(sm, lights, scene, camera);
+    if (split) for (const l of split) shadowSplit(l, (mask, keep) => {
+      const sh = l.shadow, c = sh.camera, m0 = c.layers.mask;
+      c.layers.mask = mask; sh.needsUpdate = true; sm.needsUpdate = true; sh.map.gsKeep = keep;
+      try { draw.call(sm, [l], scene, camera); } finally { c.layers.mask = m0; sh.map.gsKeep = false; }
+    }, (from, to) => r.copyTextureToTexture(from, to), () => { const t = new WebGLRenderTarget(sh0(l).x, sh0(l).y, { depthBuffer: true }); t.depthTexture = new DepthTexture(t.width, t.height, UnsignedIntType); r.initRenderTarget(t); return t; });
+    sm.needsUpdate = false;
+  };
+}
+const sh0 = l => l.shadow.mapSize;
+// one light's still/moving shadow drawing, the same on WebGL and WebGPU: draw(layers, keep) draws the
+// map from the things on those layers (keep: over what's there), copy(from, to) copies a depth
+// picture, make() makes the copy's target
+function shadowSplit(l, draw, copy, make) {
+  const sh = l.shadow, plan = sh.gsPlan;
+  if (sh.gsCache && (sh.gsCache.width !== sh.mapSize.x || sh.gsCache.height !== sh.mapSize.y)) { sh.gsCache.dispose(); sh.gsCache = null; }
+  if (plan.mode === 'rebuild' || !sh.gsCache) {
+    draw(SH_STILL_BIT, false);
+    copy(sh.map.depthTexture, (sh.gsCache ||= make()).depthTexture);
+  } else copy(sh.gsCache.depthTexture, sh.map.depthTexture);
+  draw(SH_MOVE_BIT, true);
+  HD.info.shSplit = (HD.info.shSplit || 0) + 1;
 }
 /** True if this device can draw Next Gen games. */
 export const hasHD = () => !!renderer();
@@ -213,13 +250,7 @@ export const FINAL_EFFECTS = [
   // (three.js adds its tone mapping and sRGB helpers to every ShaderMaterial drawn to the screen; when
   // SGSR upscales after this pass, it draws into a buffer and three leaves tone mapping out, so here it is)
   #ifndef TONE_MAPPING
-  uniform float toneMappingExposure;
-  vec3 RRTAndODTFit(vec3 v){ vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }
-  vec3 ACESFilmicToneMapping(vec3 color){
-    const mat3 I = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
-    const mat3 O = mat3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
-    color *= toneMappingExposure / 0.6; color = O * RRTAndODTFit(I * color); return clamp(color, 0., 1.);
-  }
+${ShaderChunk.tonemapping_pars_fragment}
   #endif
   float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
   vec3 tex(vec2 p){ return texture2D(tDiffuse, p).rgb; }
@@ -267,7 +298,7 @@ export const FINAL_EFFECTS = [
       col += sunCol * gl * glare * seen;
     }
 ` },
-  { name: 'tone', what: 'ACES tone mapping and sRGB', glsl: `    col = ACESFilmicToneMapping(col);
+  { name: 'tone', what: 'tone mapping (v.tone: ACES, Khronos Neutral or AgX; three.js\'s own) and sRGB', glsl: `    col = TONE_FN(col);
     col = sRGBTransferOETF(vec4(col, 1.)).rgb;
 ` },
   { name: 'vignette', what: 'vignette', glsl: `    col *= 1. - vig * smoothstep(.12, .62, r2 * 1.6);
@@ -280,6 +311,11 @@ export const FINAL_EFFECTS = [
   }` },
 ];
 const FINAL = FINAL_EFFECTS.map(e => e.glsl).join('');
+// v.tone: which of three.js's tone mappers turns the light into screen colours. ACES (the film look,
+// the default) pushes very bright colours towards yellow and white; Neutral (Khronos PBR Neutral)
+// keeps colours true to the material; AgX keeps hue in bright light and rolls off softly (Blender's).
+const TONE_FN = { aces: 'ACESFilmicToneMapping', neutral: 'NeutralToneMapping', agx: 'AgXToneMapping' };
+const TONES = { aces: ACESFilmicToneMapping, neutral: NeutralToneMapping, agx: AgXToneMapping };
 const MIPS = 5;
 class FinalPass extends Pass {
   constructor() {
@@ -288,7 +324,7 @@ class FinalPass extends Pass {
     this.down = qmat(DOWN, { tDiffuse: { value: null }, px: { value: new Vector2() } });
     this.up = qmat(UP, { tDiffuse: { value: null }, px: { value: new Vector2() }, k: { value: 1 } }, { blending: ADD });
     this.final = qmat(FINAL, { tDiffuse: { value: null }, tBloom: { value: null }, t: { value: 0 }, hurt: { value: 0 }, vig: { value: .32 }, bloom: { value: .7 }, px: { value: new Vector2(1, 1) }, toneMappingExposure: { value: 1 },
-      gradeOn: { value: 0 }, sat: { value: 1 }, con: { value: 1 }, lo: { value: new Vector3(1, 1, 1) }, hi: { value: new Vector3(1, 1, 1) }, glare: { value: 0 }, sunUV: { value: new Vector2() }, sunCol: { value: new Color() }, aspect: { value: 1 } }, { defines: { SRGB_TRANSFER: '' } });
+      gradeOn: { value: 0 }, sat: { value: 1 }, con: { value: 1 }, lo: { value: new Vector3(1, 1, 1) }, hi: { value: new Vector3(1, 1, 1) }, glare: { value: 0 }, sunUV: { value: new Vector2() }, sunCol: { value: new Color() }, aspect: { value: 1 } }, { defines: { SRGB_TRANSFER: '', TONE_FN: TONE_FN.aces } });
     this.quad = new FullScreenQuad(null); this.mips = []; this.scale = .5; this.w = 0; this.h = 0; this.fxaa = false; this.strength = .7;
   }
   setSize(w, h) {
@@ -299,6 +335,7 @@ class FinalPass extends Pass {
     for (let i = 0, x = bw, y = bh; i < MIPS && x >= 2 && y >= 2; i++, x = Math.max(1, x >> 1), y = Math.max(1, y >> 1))
       this.mips.push(new WebGLRenderTarget(x, y, { type: HalfFloatType, depthBuffer: false, minFilter: LinearFilter, magFilter: LinearFilter }));
   }
+  setTone(t) { const f = TONE_FN[t] || TONE_FN.aces; if (this.final.defines.TONE_FN === f) return; this.final.defines.TONE_FN = f; this.final.needsUpdate = true; }
   setFxaa(on) { if (this.fxaa === on) return; this.fxaa = on; if (on) this.final.defines.FXAA = ''; else delete this.final.defines.FXAA; this.final.needsUpdate = true; }
   pass(r, mat, target) { this.quad.material = mat; r.setRenderTarget(target); this.quad.render(r); }
   render(r, writeBuffer, readBuffer) {
@@ -599,27 +636,55 @@ export function pbr(col = '#ffffff', { rough = .6, metal = 0, glow = 0, glowCol,
  */
 export function surface(size, paint, { strength = 2.5 } = {}) {
   const mk = () => { const c = document.createElement('canvas'); c.width = c.height = size; return c; };
-  const C = mk(), Hc = mk(), Rc = mk(), g = { col: C.getContext('2d'), h: Hc.getContext('2d', { willReadFrequently: true }), r: Rc.getContext('2d'), size };
+  const C = mk(), Hc = mk(), Rc = mk(), g = { col: C.getContext('2d'), h: Hc.getContext('2d', { willReadFrequently: true }), r: Rc.getContext('2d', { willReadFrequently: true }), size };
   g.h.fillStyle = '#808080'; g.h.fillRect(0, 0, size, size); g.r.fillStyle = '#999'; g.r.fillRect(0, 0, size, size);
   paint(g);
   // height -> tangent-space normal map (wrapping Sobel)
-  const hd = g.h.getImageData(0, 0, size, size).data, N = mk(), nc = N.getContext('2d'), out = nc.createImageData(size, size);
+  const hd = g.h.getImageData(0, 0, size, size).data, N = mk(), nc = N.getContext('2d'), out = nc.createImageData(size, size), nf = new Float32Array(size * size * 3);
   const at = (x, y) => hd[(((y + size) % size) * size + ((x + size) % size)) * 4] / 255;
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const dx = (at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2 * at(x - 1, y) + at(x - 1, y + 1));
     const dy = (at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2 * at(x, y - 1) + at(x + 1, y - 1));
     let nx = -dx * strength, ny = dy * strength, nz = 1; const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
+    const j = (y * size + x) * 3; nf[j] = nx; nf[j + 1] = ny; nf[j + 2] = nz;
     const i = (y * size + x) * 4; out.data[i] = (nx * .5 + .5) * 255; out.data[i + 1] = (ny * .5 + .5) * 255; out.data[i + 2] = (nz * .5 + .5) * 255; out.data[i + 3] = 255;
   }
   nc.putImageData(out, 0, 0);
   const tx = (cv, srgb) => { const t = new CanvasTexture(cv); t.wrapS = t.wrapT = RepeatWrapping; t.colorSpace = srgb ? SRGBColorSpace : NoColorSpace; t.anisotropy = 4; t.minFilter = LinearMipmapLinearFilter; return t; };
-  const base = { map: tx(C, true), normal: tx(N), rough: tx(Rc) };
+  const base = { map: tx(C, true), normal: tx(N), rough: roughMips(tx(Rc), g.r.getImageData(0, 0, size, size).data, nf, size) };
   const set = (u, v, b = base) => {
     if (u === 1 && v === 1) return { ...b, repeat: set };
     const cl = {}; for (const k of ['map', 'normal', 'rough']) { cl[k] = b[k].clone(); cl[k].repeat.set(u, v); cl[k].needsUpdate = true; }
     return { ...cl, repeat: set };
   };
   return { ...base, repeat: set };
+}
+// Specular anti-aliasing for bumpy surfaces (Toksvig; the way Filament's roughness-prefilter and
+// Unreal's normal-map roughness do it). Far away, a texture's smaller copies average many tiny bumps
+// into one pixel; a shiny surface then sparkles as the bumps' highlights flick on and off. Here
+// each smaller copy of the roughness map is made a little rougher by how much the normals under it
+// disagree (the shorter their average, the more they disagree), so the highlight spreads into the
+// soft sheen the bumps would really make. three.js already does the same for curved shapes
+// (geometry roughness); this adds the bumps. Close up (the full-size copy) nothing changes.
+function roughMips(t, rd, nf, size) {
+  if (size & (size - 1)) return t;   // whole halvings only
+  let n = nf, r = new Float32Array(size * size); for (let i = 0; i < r.length; i++) r[i] = rd[i * 4 + 1] / 255;
+  const mips = [t.image];
+  for (let s = size >> 1; s >= 1; s >>= 1) {
+    const S = s * 2, n2 = new Float32Array(s * s * 3), r2 = new Float32Array(s * s), cv = document.createElement('canvas'); cv.width = cv.height = s;
+    const ctx = cv.getContext('2d'), im = ctx.createImageData(s, s);
+    for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+      const a = (y * 2 * S + x * 2), q = [a, a + 1, a + S, a + S + 1], o = y * s + x;
+      let nx = 0, ny = 0, nz = 0, rr = 0; for (const k of q) { nx += n[k * 3]; ny += n[k * 3 + 1]; nz += n[k * 3 + 2]; rr += r[k]; }
+      nx /= 4; ny /= 4; nz /= 4; rr /= 4; n2[o * 3] = nx; n2[o * 3 + 1] = ny; n2[o * 3 + 2] = nz; r2[o] = rr;
+      // the averaged normal's length -> how spread the bumps are (von Mises-Fisher), added to the roughness (alpha = r^2)
+      const len = Math.min(.9999, Math.hypot(nx, ny, nz)), kappa = (3 * len - len * len * len) / (1 - len * len);
+      const a2 = Math.min(1, rr ** 4 + Math.min(2 / kappa, .18)), v = Math.round(Math.sqrt(Math.sqrt(a2)) * 255), i = o * 4;
+      im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255;
+    }
+    ctx.putImageData(im, 0, 0); mips.push(cv); n = n2; r = r2;
+  }
+  t.mipmaps = mips; t.generateMipmaps = false; return t;
 }
 /** Speckle noise helper for surface painters: n dots of colour col, radius up to r. */
 export function speckle(ctx, size, n, col, r = 1.5, a = .2) {
@@ -972,7 +1037,7 @@ export class HDView {
     if (fog) this.scene.fog = new FogExp2(bg, fog);
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
-    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7;
+    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces';
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
     this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null; this.beams = null; this.motionBlur = null;
@@ -1203,9 +1268,9 @@ export class HDView {
     this.showHidden();   // (the bakes look from elsewhere, so everything is drawn)
     // light, not a picture (no tone mapping), with the sun's shadows in it as the frame will have them
     const tm = r.toneMapping, sh = r.shadowMap.enabled; r.toneMapping = 0; r.shadowMap.enabled = tier().shadow > 0;
-    if (!G) r.shadowMap.needsUpdate = true;
     this.scene.updateMatrixWorld();
-    try { this.bakeExtras2(G, r); } finally { r.toneMapping = tm; r.shadowMap.enabled = sh; if (!G) { this.shKey = null; r.shadowMap.needsUpdate = true; } }
+    this.shadowLights(true, !!G); if (!G) r.shadowMap.needsUpdate = true;
+    try { this.bakeExtras2(G, r); } finally { r.toneMapping = tm; r.shadowMap.enabled = sh; if (!G) { this.shadowsDirty(); r.shadowMap.needsUpdate = true; } }
   }
   bakeExtras2(G, r) {
     const gi = this.gi, k = G ? 'gpu' : 'gl';
@@ -1410,24 +1475,75 @@ export class HDView {
   }
   /** Called when the quality tier changes: let the game switch shadows on lights it owns. */
   onTier(fn) { this.tierFn = fn; return this; }
-
   /**
-   * A number that changes whenever anything that casts a shadow moves, turns, appears or hides, or a
-   * shadow light changes. While it stays the same, the shadow maps from last frame are still right.
+   * Which shadow maps need drawing this frame, and how. Each shadow light keeps its own map and a
+   * number made from the light (where it is, where it points, its shadow camera) and from the shadow
+   * casters its shadow camera can see. Only a light whose number changed is drawn again, so a car
+   * moving at one end of the level redraws the lamp over it, not every lamp (what Unity and Unreal
+   * call cached shadow maps, updated on demand).
+   *
+   * A light that stays put over a level that mostly doesn't move also keeps a copy of the map with only
+   * the still things in it (things that haven't moved for SH_STILL frames). When only moving things
+   * changed, that copy is put back and just the moving things are drawn over it: a few draws instead
+   * of the whole level (Unity's mixed cached shadows, Unreal's static/dynamic shadow split). Both
+   * steps use three.js's own shadow drawing, so the shadows look exactly the same.
+   * Returns true if any light needs its map drawn.
    */
-  shadowKey() {
-    let h = 0, i = 0;
+  shadowLights(force, gpu = false) {
+    const L = this.shL ||= [], keys = this.shK ||= new Map(); L.length = 0;
+    this.scene.traverseVisible(o => { if (o.isLight && o.castShadow && o.shadow) L.push(o); });
+    const n = L.length; if (!n) return false;
+    if (SH_H.length < n * 5) SH_H = new Float64Array(n * 10);
+    const H = SH_H; H.fill(0, 0, n * 5);   // per light: [own, still sum, moving sum, still triangles, moving triangles]
+    for (let i = 0; i < n; i++) {
+      const l = L[i], sh = l.shadow, c = sh.camera, e = l.matrixWorld.elements, t = l.target?.matrixWorld.elements;
+      if (!l.isPointLight) sh.updateMatrices(l);   // (three does the same as it draws; here it also gives the frustum)
+      H[i * 5] = sh.mapSize.x + e[12] * 3.1 + e[13] * 3.7 + e[14] * 4.3 + (t ? t[12] * 5.3 + t[13] * 5.9 + t[14] * 6.1 : 0) + (l.angle || 0) * 11 + (l.distance || 0) * 13
+        + (c.left ?? 0) * 17 + (c.right ?? 0) * 19 + (c.top ?? 0) * 23 + (c.bottom ?? 0) * 29 + c.near * 31 + c.far * 37 + (c.fov ?? 0) * 41 + sh.bias * 43 + (sh.map ? 0 : Math.random());
+    }
     this.scene.traverseVisible(o => {
-      if (!o.castShadow) return;
-      const e = o.matrixWorld.elements, w = (++i % 89) + 1;
-      h += (e[0] * 1.3 + e[1] * 1.7 + e[2] * 2.3 + e[4] * 2.9 + e[5] * 3.1 + e[6] * 3.7 + e[8] * 4.1 + e[9] * 4.3 + e[10] * 4.7 + e[12] * 5.3 + e[13] * 5.9 + e[14] * 6.1) * w;
-      if (o.isInstancedMesh) h += (o.instanceMatrix.version + o.count * 7) * w;
-      if (o.isLight) h += (o.shadow.mapSize.x + (o.target ? o.target.matrixWorld.elements[12] * 3 + o.target.matrixWorld.elements[14] * 5 : 0) + o.angle * 11 + o.distance * 13) * w;
+      if (o.isLight) return;
+      if (!o.castShadow) { if (o.layers.mask & SH_BITS) o.layers.mask &= ~SH_BITS; return; }
+      const e = o.matrixWorld.elements, w = (o.id % 89) + 1, held = (o.layers.mask & HOLD_BIT) !== 0;
+      let h = (e[0] * 1.3 + e[1] * 1.7 + e[2] * 2.3 + e[4] * 2.9 + e[5] * 3.1 + e[6] * 3.7 + e[8] * 4.1 + e[9] * 4.3 + e[10] * 4.7 + e[12] * 5.3 + e[13] * 5.9 + e[14] * 6.1 + (held ? .5 : 0)) * w;
+      let wide = false, copies = 1;   // instanced and skinned things: counted for every light (their bounds move without the object)
+      const tw = o.userData.gsTwin;
+      if (tw) { h += ((tw.instanceCount ?? 0) * 7 + (tw.matricesTexture?.version ?? 0) + tw.matrixWorld.elements[12] * 3 + tw.matrixWorld.elements[14] * 5) * w; wide = true; copies = o.count; }
+      else if (o.isInstancedMesh) { h += (o.instanceMatrix.version + o.count * 7) * w; wide = true; copies = o.count; }
+      else if (o.isInstancedMesh2 || o.isBatchedMesh) { h += ((o.instanceCount ?? o.count ?? 0) * 7 + (o.matricesTexture?.version ?? 0)) * w; wide = true; copies = o.instanceCount ?? 1; }
+      if (o.isSkinnedMesh && o.skeleton) { const b = o.skeleton.bones; for (let j = 0; j < b.length; j += 3) { const m = b[j].matrixWorld.elements; h += (m[12] * 1.1 + m[13] * 1.9 + m[14] * 2.7 + m[0] + m[5] * 1.3) * (j + 1); } wide = true; }
+      // still or moving: frames since it last changed
+      let rec = SH_LAST.get(o); if (!rec) SH_LAST.set(o, rec = { h, still: 0 }); else if (rec.h !== h) { rec.h = h; rec.still = 0; } else if (rec.still < 1e4) rec.still++;
+      const still = rec.still >= (HD.shadowStill ?? SH_STILL) && !held, bit = held ? 0 : still ? SH_STILL_BIT : SH_MOVE_BIT;
+      if ((o.layers.mask & SH_BITS) !== bit) o.layers.mask = (o.layers.mask & ~SH_BITS) | bit;
+      const g = o.geometry, bs = !wide && g && (g.boundingSphere || (g.computeBoundingSphere(), g.boundingSphere));
+      const tris = g ? ((g.index ? g.index.count : g.attributes.position?.count ?? 0) / 3) * copies : 0;
+      if (bs) SH_S.copy(bs).applyMatrix4(o.matrixWorld);
+      for (let i = 0; i < n; i++) {
+        const l = L[i];
+        if (bs) {
+          const sees = l.isPointLight ? SH_P.setFromMatrixPosition(l.matrixWorld).distanceTo(SH_S.center) < SH_S.radius + (l.distance || l.shadow.camera.far) : l.shadow._frustum.intersectsSphere(SH_S);
+          if (!sees) continue;
+        }
+        const b = i * 5; if (still) { H[b + 1] += h; H[b + 3] += tris; } else { H[b + 2] += h; H[b + 4] += tris; }
+      }
     });
-    return h + i * 1e-4;
+    let any = false;
+    for (let i = 0; i < n; i++) {
+      const l = L[i], sh = l.shadow, b = i * 5, all = H[b] + H[b + 1] + H[b + 2];
+      sh.autoUpdate = false;
+      if (!(force || !sh.map || keys.get(l) !== all)) continue;
+      keys.set(l, all); sh.needsUpdate = true; any = true;
+      // the still/moving split: a light that isn't a point light, one map, still things well outweighing moving ones
+      const plan = sh.gsPlan ||= { mode: 'full', key: 0 }, sKey = H[b] + H[b + 1];
+      const fits = HD.shadowCache !== false && !l.isPointLight && sh.getViewportCount() === 1 && H[b + 3] >= SH_MIN_TRIS && H[b + 3] >= 2 * H[b + 4] && (!gpu || sh.shadowNode?.gsSplit);
+      plan.mode = !fits ? 'full' : force || !sh.gsCache || plan.key !== sKey || sh.gsCache.width !== sh.mapSize.x || sh.gsCache.height !== sh.mapSize.y ? 'rebuild' : 'overlay';
+      plan.key = fits ? sKey : 0;
+    }
+    return any;
   }
   /** Redraw the shadow maps next frame even if nothing seems to have moved (e.g. after changing a geometry in place). */
-  shadowsDirty() { this.shKey = null; return this; }
+  shadowsDirty() { this.shK?.clear(); return this; }
   // The WebGPU frame (render() decided this view fits): the same numbers as the WebGL chain, drawn by hd3d-gpu.js.
   // up: { pw, fw, fh, s1 } when the scene is drawn pw wide and upscaled to the canvas (fw x fh) by SGSR 2, or SGSR 1 if s1
   drawGPU(G, r, T, baking, off, now, up, direct) {
@@ -1453,7 +1569,7 @@ export class HDView {
       let role = sunRoles.get(l); if (!role) sunRoles.set(l, role = G.fx.gpuSunLight(l, AIR, noiseTex()));
       role.value = casc ? (l === cs.near ? 1 : l === cs.far ? 2 : 0) : 0;
     });
-    r.toneMapping = ACESFilmicToneMapping; r.toneMappingExposure = this.exposure;
+    r.toneMapping = TONES[this.tone] ?? ACESFilmicToneMapping; r.toneMappingExposure = this.exposure;
     if (this.decals.length && !baking && !off) this.tickDecals(Math.min(.1, (now - (this.decalT || now)) / 1000)); this.decalT = now;
     if (!baking && !off) this.t += 1 / 60;
     gpuSwap(this, G);
@@ -1466,7 +1582,7 @@ export class HDView {
     for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
     // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
     const pw = up ? up.pw : r.domElement.width, ph = up ? Math.max(1, Math.floor(up.fh * (pw + .5) / up.fw)) : r.domElement.height;
-    const o = { w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, s1: !!up?.s1, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
+    const o = { tone: this.tone, w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, s1: !!up?.s1, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
       dofOn: false, lens: null, near: this.cam.near, far: this.cam.far, shaftsOn: false, shaft: 0, shaftCol: null };
     const g = this.grade;
     if (g) o.grade = { sat: g.saturation ?? 1, con: g.contrast ?? 1, lo: toRGB(g.shadows, GL), hi: toRGB(g.highlights, GH) };
@@ -1493,15 +1609,25 @@ export class HDView {
         if (o.shaftsOn) { o.shaft = Math.min(2, this.shafts) * seen; o.shaftCol = this.sun?.color || C_WARM; o.shaftAt = this.shaftsAt; }
       }
     }
-    // shadows: three's WebGPU renderer redraws them each frame (top phones only, for now)
+    // shadows: each light's map is drawn again only when it or a caster it sees moved (shadowLights)
     r.shadowMap.enabled = T.shadow > 0; r.shadowMap.type = PCFShadowMap;
+    if (T.shadow > 0) {
+      this.scene.updateMatrixWorld();
+      if (this.shadowLights(lastView !== this || baking || off, true) && !baking && !off) HD.info.shDraws = (HD.info.shDraws || 0) + 1;
+      for (const l of this.shL) {
+        const sh = l.shadow;
+        if (!sh.needsUpdate || !sh.map || sh.gsPlan?.mode === 'full' || !sh.gsPlan || !sh.shadowNode?.gsSplit || sh.shadowNode.shadowMap !== sh.map) continue;
+        shadowSplit(l, (mask, keep) => G.fx.splitDraw(r, this.scene, this.cam, l, mask, keep), (from, to) => r.copyTextureToTexture(from, to), () => G.fx.splitTarget(r, sh.mapSize.x, sh.mapSize.y));
+        sh.needsUpdate = false;
+      }
+    }
     if (!this.warmed && !off) { this.warmed = true; r.compileAsync(this.scene, this.cam).catch(() => {}); }
     // an instanced mesh made with room for none (an empty list in a game) has a zero-size buffer that WebGPU
     // won't bind; it draws nothing anyway, so it sits this frame out
     const empty = []; this.scene.traverseVisible(o => { if (o.isInstancedMesh && (!o.count || !o.instanceMatrix.count)) empty.push(o); });
     for (const e of empty) e.visible = false;
     r.info.autoReset = false; r.info.reset();
-    const cut = lastView !== this || this._cut; lastView = this; this._cut = false;
+    const cut = lastView !== this || this._cut; lastView = this; this._cut = false; if (TEST) window.__hdView = this;
     // Frame generation starts again after a cut (another view drew, v.cut(), a pause, the camera
     // jumping): the frames either side of one don't belong together.
     let fg = null;
@@ -1700,7 +1826,7 @@ export class HDView {
     if (!baking && !off) this.t += 1 / 60;
     if (!this.clearBg) {
       const F = P.final; P.ao.enabled = T.ao > 0; if (T.ao > 0 && P.ao.scale !== T.ao) { P.ao.scale = T.ao; P.ao.setSize(P.ao.fw || pw, P.ao.fh || ph); }
-      F.strength = this.bloom; F.scale = T.bloom; F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
+      F.strength = this.bloom; F.scale = T.bloom; F.setTone(this.tone); F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
       const u = F.final.uniforms; u.t.value = this.t % 10; u.hurt.value = this.hurt;
       const g = this.grade; u.gradeOn.value = g ? 1 : 0;
       if (g) { u.sat.value = g.saturation ?? 1; u.con.value = g.contrast ?? 1; toRGB(g.shadows, u.lo.value); toRGB(g.highlights, u.hi.value); }
@@ -1742,8 +1868,9 @@ export class HDView {
     this.scene.updateMatrixWorld();
     r.shadowMap.enabled = T.shadow > 0;
     let shadows = false; const cut = lastView !== this || this._cut; this._cut = false;
-    if (T.shadow > 0) { const k = this.shadowKey(); if (k !== this.shKey || lastView !== this) { this.shKey = k; r.shadowMap.needsUpdate = shadows = true; } }
-    lastView = this;
+    if (T.shadow > 0 && this.shadowLights(lastView !== this)) r.shadowMap.needsUpdate = shadows = true;
+    if (shadows && !baking && !off) HD.info.shDraws = (HD.info.shDraws || 0) + 1;
+    lastView = this; if (TEST) window.__hdView = this;
     r.info.autoReset = false; r.info.reset();
     const mwa = this.scene.matrixWorldAutoUpdate; this.scene.matrixWorldAutoUpdate = false;   // already updated above
     if (s2) s2.begin(this.cam, pw, ph, fw, fh, this, now, cut);   // the camera's move and this frame's jitter
@@ -1823,9 +1950,13 @@ function gpuSwap(v, G) {
   v.scene.traverse(o => {
     const sk = G && o.isSkinnedMesh && o.skeleton;
     if (sk?.boneTexture) { const n = sk.bones.length * 16; sk.boneTexture.dispose(); sk.boneTexture = null; if (sk.boneMatrices.length !== n) sk.boneMatrices = sk.boneMatrices.slice(0, n); }
-    const sh = o.isLight && o.shadow; if (!sh?.map) return;
-    if (G) { if (sh.map.isWebGLRenderTarget) { sh.map.dispose(); sh.map = sh.gpuMap || null; } }
-    else if (!sh.map.isWebGLRenderTarget) { sh.gpuMap = sh.map; sh.map = null; }
+    const sh = o.isLight && o.shadow;
+    // (each spot and sun light gets a shadow node the still/moving split can drive, before its shaders are built)
+    if (G && sh && !o.isPointLight && sh.shadowNode === undefined) sh.shadowNode = G.fx.splitShadowNode(o);
+    if (!sh?.map) return;
+    if (sh.gsCache && !!G !== !sh.gsCache.isWebGLRenderTarget) { sh.gsCache.dispose(); sh.gsCache = null; }   // (a copy belongs to the renderer that made it)
+    if (G) { if (sh.map.isWebGLRenderTarget) { sh.map.dispose(); sh.map = sh.gpuMap || null; sh.needsUpdate = true; } }
+    else if (!sh.map.isWebGLRenderTarget) { sh.gpuMap = sh.map; sh.map = null; sh.needsUpdate = true; }
   });
   // materials with a named look that has a WebGPU version (PORTED_LOOKS): set its nodes before
   // three first turns the material into a node material (it copies them over); with the air on, lit
@@ -1926,13 +2057,19 @@ function mount(cv, c, view) {
 // a texture that frame has already used ("Destroyed texture used in a submit", the frame is lost). So the
 // map is resized here, before the frame, and three then finds it the right size.
 function shadowSize(sh, n) {
-  sh.mapSize.set(n, n);
+  sh.mapSize.set(n, n); sh.needsUpdate = true;
   if (sh.map?.isWebGLRenderTarget) { sh.map.dispose(); sh.map = null; } else sh.map?.setSize(n, n, sh.map.depth);
 }
 // the layer things hidden by occlusion culling move to: the view's camera doesn't draw it, shadow cameras do
 const OCC_LAYER = 30;
+// shadowLights(): scratch (no garbage per frame)
+let SH_H = new Float64Array(40); const SH_S = new Sphere(), SH_P = new Vector3(), SH_LAST = new WeakMap();
+// the still/moving shadow split: frames before a thing counts as still, the layers that pick still or
+// moving things for a shadow drawing (no camera of the game's draws them), and how many still triangles
+// a light needs before keeping a copy pays for itself (the copy is one full-map depth copy per redraw)
+const SH_STILL = 45, SH_STILL_BIT = 1 << 27, SH_MOVE_BIT = 1 << 28, SH_BITS = SH_STILL_BIT | SH_MOVE_BIT, SH_MIN_TRIS = 20000;
 // the layer things wait on while their shaders build (holdNew): nothing draws it
-const HOLD_LAYER = 29;
+const HOLD_LAYER = 29, HOLD_BIT = 1 << HOLD_LAYER;
 // what makes a thing need its own shader: its materials (and their versions), its kind and its geometry's layout
 // (asked for every visible thing every frame: when nothing changed, the answer comes back without
 // building any strings, so it leaves no garbage)
