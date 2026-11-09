@@ -68,8 +68,8 @@ function probe() {
   let ms = Infinity;
   for (let r = 0; r < 3; r++) {
     const t0 = performance.now(); let a = 0;
-    for (let k = 0; k < 16; k++) for (let i = 0; i < 2048; i++) a += Math.sqrt(PROBE[i] + i * k + 1);
-    PROBE[kk = (kk + 1) & 2047] = a * 1e-12; ms = Math.min(ms, performance.now() - t0);
+    for (let k = 0; k < 96; k++) for (let i = 0; i < 2048; i++) a += Math.sqrt(PROBE[i] + i * k + 1);
+    PROBE[kk = (kk + 1) & 2047] = a * 1e-12; ms = Math.min(ms, Math.max(.05, performance.now() - t0));
   }
   probeBest = Math.min(probeBest, ms); return probeBest / ms;
 }
@@ -94,9 +94,9 @@ function loafAt(t0, t1) {
   for (const e of loafs) if (e.startTime + e.duration >= t0 - 4 && e.startTime <= t1 && (!best || e.duration > best.duration)) best = e;
   if (!best) return '';
   const sc = (best.scripts || []).slice().sort((a, b) => b.duration - a.duration)[0];
-  if (sc) return `script ${file(sc.sourceURL) || sc.invokerType || '?'}${sc.sourceFunctionName ? ' ' + sc.sourceFunctionName : ''} ${Math.round(sc.duration)} ms`;
+  if (sc) return `script ${file(sc.sourceURL) || sc.invokerType || '?'}${sc.sourceFunctionName ? ' ' + sc.sourceFunctionName : ''} (${Math.round(sc.duration)} ms)`;
   const lay = best.styleAndLayoutStart && best.renderStart ? best.startTime + best.duration - best.styleAndLayoutStart : 0;
-  return lay > 20 ? `layout ${Math.round(lay)} ms` : `long task ${Math.round(best.duration)} ms`;
+  return lay > 20 ? `layout (${Math.round(lay)} ms)` : `long task (${Math.round(best.duration)} ms)`;
 }
 
 function event(k, text, t = performance.now(), ms = 0) {
@@ -109,16 +109,16 @@ function counters(s) {
   const G = webgpu(), d = s?.def;
   let progs = glStats.programs, tex = glStats.r?.info?.memory?.textures ?? 0;
   if (G && HD?.info.backend === 'webgpu' && is3D(d)) { progs += G.r.info?.memory?.programs ?? 0; tex += G.r.info?.memory?.textures ?? 0; }
-  if (C.progs >= 0 && progs > C.progs) { const n = progs - C.progs; pend.push(`${n} shader${n > 1 ? 's' : ''} built`); event('S', `${n} shader${n > 1 ? 's' : ''} built`); }
-  if (C.tex >= 0 && tex > C.tex + 0) { const n = tex - C.tex; pend.push(`${n} texture${n > 1 ? 's' : ''} uploaded`); if (n >= 2) event('X', `${n} textures uploaded`); }
+  if (C.progs >= 0 && progs > C.progs) { const n = progs - C.progs; pend.push(`shaders built (${n})`); event('S', `${n} shader${n > 1 ? 's' : ''} built`); }
+  if (C.tex >= 0 && tex > C.tex + 0) { const n = tex - C.tex; pend.push(`textures uploaded (${n})`); if (n >= 2) event('X', `${n} textures uploaded`); }
   C.progs = progs; C.tex = tex;
   const h = performance.memory?.usedJSHeapSize || 0;
   if (C.heap && h < C.heap - 1.5 * 1048576) { const mb = (C.heap - h) / 1048576; pend.push(`garbage collected (${mb.toFixed(1)} MB)`); event('G', `heap fell ${mb.toFixed(1)} MB (garbage collection)`); }
   C.heap = h;
   if (HD && is3D(d)) {
     const tier = HD.name, res = HD.res, rw = HD.info.rw || 0;
-    if (C.tier != null && tier !== C.tier) { pend.push(`tier ${C.tier} → ${tier}`); event('Q', `quality tier ${C.tier} → ${tier}`); }
-    if (C.res != null && res !== C.res) { pend.push(`resolution step ${Math.round(C.res * 100)}% → ${Math.round(res * 100)}%`); event('Q', `resolution step ${Math.round(C.res * 100)}% → ${Math.round(res * 100)}%`); }
+    if (C.tier != null && tier !== C.tier) { pend.push(`quality tier change (${C.tier} → ${tier})`); event('Q', `quality tier ${C.tier} → ${tier}`); }
+    if (C.res != null && res !== C.res) { pend.push(`resolution step change (${Math.round(C.res * 100)}% → ${Math.round(res * 100)}%)`); event('Q', `resolution step ${Math.round(C.res * 100)}% → ${Math.round(res * 100)}%`); }
     C.tier = tier; C.res = res; C.rw = rw;
   } else { C.tier = C.res = null; }
   const id = d?.id || '', st = s?.state || '';
@@ -163,9 +163,9 @@ function hitch(now, iv, exp, s, upd, drw) {
   if (now - C.resizeAt < 600) why.push('fold / resize');
   if (now - C.hiddenAt < 1500) why.push('app came back to the front');
   const lf = loafAt(now - iv, now); if (lf) why.push(lf);
-  if (upd + drw > exp) why.push(`game CPU ${r1(upd)} + ${r1(drw)} ms`);
-  const gpu = HD?.info.gpuMs; if (gpu != null && gpu > exp) why.push(`GPU ${r1(gpu)} ms`);
-  if (!why.length) why.push(HD && is3D(s?.def) ? 'no cause seen (GPU, driver or system?)' : 'no cause seen (system?)');
+  if (upd + drw > exp) why.push(`game CPU over the beat (update ${r1(upd)} + draw ${r1(drw)} ms)`);
+  const gpu = HD?.info.gpuMs; if (gpu != null && gpu > exp) why.push(`GPU over the beat (${r1(gpu)} ms)`);
+  if (!why.length) why.push(HD && is3D(s?.def) ? 'no cause seen (GPU / driver / system?)' : 'no cause seen (system?)');
   event('H', why.join(', '), now, iv);
 }
 function paintTint(s, k, now) {
@@ -501,7 +501,7 @@ export function summary(R = lastRec) {
   if (!R) return 'Frame lab: nothing recorded yet (Rec, play, Rec again).';
   const m = measure(recRows(R), R.cfg[0]?.hz || 60), c = R.cfg[0] || {}, c1 = R.cfg[R.cfg.length - 1] || c, secs = ((R.t1 || performance.now()) - R.t0) / 1000;
   const hit = R.events.filter(e => e.k === 'H'), groups = {};
-  for (const h of hit) for (const why of h.text.split(', ')) { const k = why.replace(/\b\d+(?:\.\d+)?(?: ms| MB|%)?/g, '#').replace(/\(#\)/g, '').trim(); (groups[k] ||= { n: 0, worst: 0 }).n++; groups[k].worst = Math.max(groups[k].worst, h.ms); }
+  for (const h of hit) for (const why of h.text.split(', ')) { const k = why.replace(/\s*\([^)]*\d[^)]*\)/g, '').trim(); (groups[k] ||= { n: 0, worst: 0 }).n++; groups[k].worst = Math.max(groups[k].worst, h.ms); }
   const S = R.samples, s0 = S[0], s1 = S[S.length - 1];
   const lines = [
     `Frame lab · ${R.title || R.game} · ${phoneLabel()} · build ${BUILD} · ${secs.toFixed(0)} s · ${c.view} (${c.form})`,
@@ -626,7 +626,7 @@ function panel() {
     UI.render();
   });
   let msgT = 0;
-  UI.flash = m => { if (!UI.el) return; UI.msg.textContent = m; clearTimeout(msgT); msgT = setTimeout(() => { if (!UI.busyNow) UI.msg.textContent = ''; }, 6000); };
+  UI.flash = m => { if (!UI.el) return m; UI.msg.textContent = m; clearTimeout(msgT); msgT = setTimeout(() => { if (!UI.busyNow && UI.msg) UI.msg.textContent = ''; }, 6000); return m; };
   UI.busy = m => { UI.busyNow = !!m; if (UI.el) UI.msg.textContent = m; };
   UI.render = () => {
     const q = a => el.querySelector(`[data-a="${a}"]`);

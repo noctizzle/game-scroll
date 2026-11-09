@@ -89,14 +89,16 @@ const SIZES = { cover: { width: 374, height: 591 }, inner: { width: 549, height:
   await p.evaluate(() => document.querySelector('.fl-view [data-a="x"]')?.click());
 
   if (gpu && info.backend === 'webgpu') {
-    await p.evaluate(() => { window.__fgDone = false; __gs.lab(true).then(L => L.fg()).finally(() => { window.__fgDone = true; }); });
+    // the test browser is too slow to have refreshes between frames: run them by hand, as framegen-games.cjs does
+    await p.evaluate(() => { __hd.direct = true; __hd.scale = .45; __hd.aim = false; const prev = __hd.fgTap; __hd.fgTap = (k, cv, w) => { prev?.(k, cv, w); if (w === 'frame') setTimeout(() => __hd.between(), 0); }; });
+    await p.evaluate(() => { window.__fgDone = false; __gs.lab(true).then(L => L.fg()).then(m => { window.__fgMsg = m; }, e => { window.__fgMsg = 'Error ' + e; }).finally(() => { window.__fgDone = true; }); });
     for (let i = 0; i < 12 && !await p.evaluate(() => window.__fgDone); i++) await play(1500);
     await p.waitForFunction(() => window.__fgDone, null, { timeout: 60000 });
-    const fg = await p.evaluate(async () => { const L = await __gs.lab(true); const s = L.shots[L.shots.length - 1]; return s && s.kind === 'fg' ? s.notes[0] : document.querySelector('.fl-msg').textContent; });
+    const fg = await p.evaluate(async () => { const L = await __gs.lab(true); const s = L.shots[L.shots.length - 1]; return s && s.kind === 'fg' ? s.notes[0] : String(window.__fgMsg); });
     console.log('   FG check: ' + fg);
     check(!/did not|Error/.test(fg), 'FG check runs');
     if (/made frames checked/.test(fg)) await shot('fg-check');
-    await p.evaluate(() => document.querySelector('.fl-view [data-a="x"]')?.click());
+    await p.evaluate(() => { document.querySelector('.fl-view [data-a="x"]')?.click(); __hd.direct = false; __hd.scale = null; __hd.aim = true; });
   } else console.log('SKIP FG check (no WebGPU in this browser)');
 
   await p.evaluate(async () => (await __gs.lab(true)).rec(false));
