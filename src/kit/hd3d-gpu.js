@@ -9,7 +9,7 @@
 // scripts/look-compare.cjs --webgpu draws the same scenes both ways and compares them.
 // Kit use only.
 import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Vector4, Color, BackSide, Sprite, Group, InstancedMesh, BufferGeometry, Frustum, Sphere, InstancedBufferAttribute as IBA, SpriteNodeMaterial, InstancedBufferAttribute, AdditiveBlending, NormalBlending,
-  MeshBasicNodeMaterial, NodeMaterial, QuadMesh, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, NoToneMapping, ACESFilmicToneMapping, SRGBColorSpace, LinearSRGBColorSpace } from 'three/webgpu';
+  MeshBasicNodeMaterial, NodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, NoToneMapping, ACESFilmicToneMapping, SRGBColorSpace, LinearSRGBColorSpace } from 'three/webgpu';
 import {
   pass, mrt, output, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
@@ -289,7 +289,21 @@ export function gpuParticles(parts) {
 }
 
 /** A material that takes no ambient occlusion (hd3d.js seeThrough3d: see-through, cut-out, noAO). */
-export function noAO(m) { m.mrtNode = mrt({ output, normal: vec4(normalView, 0) }); }   // (output too: without an MRT in use, three draws the material's own MRT alone)
+// Its own MRT (output, and a zero normal so the AO pass skips it). three builds a material MRT against the
+// target it is drawn into and keeps only the outputs the target has textures for, so in a target with none
+// of them (a cube camera's, a card's copy) nothing was left: an empty WGSL output, an invalid pipeline and
+// that frame's whole command buffer dropped. There the plain colour is written instead.
+class SoftMRT extends MRTNode {
+  setup(builder) {
+    const tex = builder.renderer.getRenderTarget()?.textures || [];
+    if (!Object.keys(this.outputNodes).some(n => tex.some(t => t.name === n))) {
+      this.members = [output.convert(builder.getOutputType(0))];
+      return OutputStructNode.prototype.setup.call(this, builder);
+    }
+    return super.setup(builder);
+  }
+}
+export function noAO(m) { m.mrtNode = new SoftMRT({ output, normal: vec4(normalView, 0) }); }   // (output too: without an MRT in use, three draws the material's own MRT alone)
 
 /* ---------- gs.props on WebGPU ---------- */
 // Props draws each kind as an InstancedMesh2 (@three.ez/instanced-mesh), which reads its matrices from a
