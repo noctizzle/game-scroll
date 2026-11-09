@@ -533,10 +533,12 @@ export interface BonesPart { Rig: typeof Rig }
 
 export interface ToonPart { View: new (...a: Loose[]) => Loose; G: Loose; part: Loose; grp: Loose; blob: Loose; toon: Loose; flat: Loose; dude: Loose; has3D(): boolean; THREE: Loose }
 /** An HDView's extras for the ray-traced look: v.reflect(...meshes) (reflections on top-end phones), v.contact({ y, size }) (soft contact shadows) (mesh.userData.noAO = true keeps a mesh out of ambient occlusion). */
-/** HDView extras: v.decal(mesh, point, normal, { size, colour, paint, life }), v.clearDecals(), v.bakeLight(at, { radius, strength }) (light probes, blended by v.probeAt or the camera), v.clearProbes(), v.shafts = 0..2 (sun shafts), v.upscaler = 'sgsr1' (one-frame upscaling instead of Snapdragon GSR 2). */
+/** HDView extras: v.decal(mesh, point, normal, { size, colour, paint, life }), v.clearDecals(), v.bakeLight(at, { radius, strength }) (light probes, blended by v.probeAt or the camera), v.clearProbes(), v.shafts = 0..2 (sun shafts), v.upscaler = 'sgsr1' (one-frame upscaling instead of Snapdragon GSR 2), v.focus = { at, range, depth, blur } | null (depth of field, high and ultra), sun().fit(view, { far, near }) (near: a sharp shadow cascade over the first metres). */
 export interface HdPart { ContactShadows: new (o?: { y?: number; size?: number; blur?: number; darkness?: number; opacity?: number; height?: number }) => Loose; HDView: new (...a: Loose[]) => Loose; HD: Loose; TIERS: Loose; hasHD(): boolean; pbr: Loose; rbox: Loose; surface: Loose; speckle: Loose; /** pulse(material, { at, radius, strength, color, width, fill }): a glowing ring sweeping out from a point (sonar, shockwave). */ pulse(m: Loose, o?: { at?: { value: Loose }; radius?: { value: number }; strength?: { value: number }; color?: number[] | Loose; width?: number; fill?: number }): Loose; Particles: Loose; sun: Loose; spot: Loose; THREE: Loose;
   /** A shared 256 x 256 tiling noise texture (four noise sizes in r, g, b, a) for your own shaders: clouds, water, grass. */
-  noiseTex(): Loose }
+  noiseTex(): Loose;
+  /** The shared WebGL renderer for kit bakes (gs.outdoors impostor()); null without 3D. */
+  bakeRenderer(): Loose }
 /** v.air(...) settings (Next Gen outdoor air): change them any time. */
 export interface HdAir {
   haze: number; colour: Loose; sunColour: Loose | null; mist: number; mistFall: number; mistY: number; patchy: number;
@@ -880,7 +882,7 @@ export interface Level3dPart { Level3D: new (text: string, o?: { size?: number; 
 
 export interface SkyPart {
   DAY: [number, { top: string; horizon: string; sun: string; sunI: number; amb: number }][];
-  Sky: new (view: Loose, o?: { time?: number; speed?: number; day?: SkyPart['DAY']; stars?: number; physical?: boolean; fog?: boolean; light?: boolean; sun?: Loose; hemi?: Loose; tilt?: number;
+  Sky: new (view: Loose, o?: { time?: number; speed?: number; day?: SkyPart['DAY']; stars?: number; /** Colours from light scattering in air (Preetham). */ physical?: boolean | { haze?: number; blue?: number; mie?: number; glow?: number; bright?: number }; fog?: boolean; light?: boolean; sun?: Loose; hemi?: Loose; tilt?: number;
     /** Cloud cover 0..1 (clouds lit by the sun; on a view with air() their shadows cross the ground). */ clouds?: number; cloudLight?: string; cloudDark?: string;
     /** 0..1: keeps the low sky round the sun clear of cloud. */ gap?: number;
     /** Next Gen: reflections and sky light come from this sky (redone as it changes). */ env?: boolean; sunSize?: number }) => {
@@ -1030,7 +1032,7 @@ export interface PropsPart {
 }
 
 export interface LandPart {
-  object: Loose; mesh: Loose; size: number; segments: number; low: number; high: number;
+  object: Loose; mesh: Loose; /** A gs.outdoors Wind: the grass sways with it. */ wind?: WindPart | null; size: number; segments: number; low: number; high: number;
   height(x: number, z: number): number; normal(x: number, z: number): P3; slope(x: number, z: number): number; inside(x: number, z: number): boolean;
   flatten(x: number, z: number, r: number, h?: number, soft?: number): LandPart; paint(stops: [number, string][]): LandPart; masks(fn: (x: number, z: number, y: number, slope: number) => number[]): LandPart; solid(world: Loose, o?: Loose): Loose;
   grass(o?: { count?: number; colour?: string; tint?: string; width?: number; height?: number; blades?: number; above?: number; below?: number; steep?: number; far?: number; seed?: number; wind?: number }): Loose;
@@ -1040,6 +1042,11 @@ export interface LandPart {
 export interface WaterPart {
   mesh: Loose; level: number; t: number;
   height(x: number, z: number, t?: number): number; normal(x: number, z: number, t?: number): P3; depth(p: P3): number; update(dt: number, centre?: P3 | null): WaterPart; dispose(): void;
+}
+export interface WindPart {
+  x: number; z: number; gust: number; gustSize: number; sway: number; grass: number; readonly speed: number; readonly angle: number;
+  uniforms: { lkWind: { value: number }; lkWindDir: { value: Loose } };
+  update(dt: number, at?: P3 | null): WindPart; at(x: number, z: number, out?: Loose): { x: number; z: number; speed: number; gust: number };
 }
 export interface OutdoorsPart {
   /** Terrain (THREE.Terrain): kind 'hills' | 'mountains' | 'rolling' | 'islands' | 'bumps' | 'dunes' | 'cracked' | 'ridges' | 'smooth', or (x, z) => height. */
@@ -1054,8 +1061,12 @@ export interface OutdoorsPart {
     ground(material: Loose, o?: { detail?: Loose; colours?: Partial<Record<'grassA' | 'grassB' | 'dry' | 'dirt' | 'mud' | 'rock' | 'forest' | 'cropA' | 'cropB' | 'plough' | 'hedge', string | number[]>>; fields?: false | { angle?: number; size?: [number, number]; furrows?: number; hedge?: number }; roads?: [number, number, number, number][]; road?: { width?: number; edge?: number; ruts?: number }; bank?: { low?: number; high?: number; shiny?: number; shinier?: number }; wet?: number | { value: number }; scale?: [number, number, number] }): { uniforms: Record<string, { value: Loose }>; wet: number };
     hills(material: Loose, o?: { wood?: string | number[]; scale?: number; woods?: number }): { uniforms: Record<string, { value: Loose }> };
     rock(material: Loose, o?: { detail?: Loose; scale?: number; moss?: string | number[]; mossy?: number }): { uniforms: Record<string, { value: Loose }> };
-    leaves(material: Loose, o?: { time?: number | { value: number }; wind?: number | { value: number }; sun?: Loose; sway?: number; above?: number; glow?: number; atlas?: [number, number] }): { uniforms: Record<string, { value: Loose }> };
+    leaves(material: Loose, o?: { time?: number | { value: number }; wind?: number | { value: number } | WindPart; sun?: Loose; sway?: number; above?: number; glow?: number; atlas?: [number, number] }): { uniforms: Record<string, { value: Loose }> };
   };
+  /** One wind for a world: grass (land.wind), leaves, rain, particles, cloud shadows; at(x, z) for bullets and flags. */
+  Wind: new (o?: { x?: number; z?: number; gust?: number; gustSize?: number; sway?: number; grass?: number }) => WindPart;
+  /** Far stand-in for a tree: crossed cards with baked pictures of it (null without 3D). Use as a props lod level: [dist, imp.geometry, imp.material]. */
+  impostor(geometry: Loose, material: Loose, o?: { cards?: number; size?: number; round?: number; material?: Loose }): { geometry: Loose; material: Loose; texture: Loose; target: Loose; dispose(): void } | null;
   /** Tiling detail, normal and ripple textures for ground and rock, made in code (shared: clone() before changing repeat). */
   groundDetail(o?: { seed?: number }): { detail: Loose; normal: Loose; ripple: Loose };
   /** A ring of far hills round a Land, with the hills look. */

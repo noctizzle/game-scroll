@@ -144,7 +144,7 @@ try {
     const tv = new View(); tv.scene.fog = new gs.THREE.Fog('#fff', 10, 100); const sky = new Sky(tv, { time: 12, speed: 6 }); sky.update(0); const noon = tv.sun.intensity;
     sky.time = 0; sky.update(0); ok(sky.night > .9 && tv.sun.intensity < noon * .3, 'night falls: sun ' + tv.sun.intensity.toFixed(2) + ' vs ' + noon.toFixed(2));
     sky.time = 11; sky.update(1); ok(sky.time > 16.9 && sky.time < 17.1, 'time moves at its speed');
-    const hv = new HDView(); const hs = new Sky(hv, { physical: true, time: 8 }); hs.update(0); ok(hs.dome.material.uniforms.sunPosition.value.y > 0, 'physical sky sun up at 8');
+    const hv = new HDView(); const hs = new Sky(hv, { physical: true, time: 8 }); hs.update(0); ok(hs.physical && hs.dome.material.uniforms.pSun.value.z > 0 && hs.sunDir.y > 0, 'physical sky sun up at 8');
     // Next Gen outdoors: shadows fitted to the view, air (haze, mist, cloud shadows, wet), grade, glare, clouds and sky reflections
     {
       const T3 = gs.THREE, HDh = window.__hd, ov = new HDView({ fog: .001 }), oc = document.createElement('canvas'); oc.width = 160; oc.height = 120; const ox = oc.getContext('2d');
@@ -183,6 +183,31 @@ try {
       dv.shafts = 1; dv.cam.lookAt(0, 1, -10); dv.cam.updateMatrixWorld(); HDh.force = 3; dv.render(dx, 160, 120); dv.render(dx, 160, 120); HDh.force = null;
       ok(dx.getImageData(80, 60, 1, 1).data[3] > 0, 'renders with decals, probe and shafts');
       dv.clearDecals(); dv.clearProbes(); ok(!dv.decals.length && !dv.probe, 'decals and probes cleared');
+    }
+    // shadow cascades, depth of field and the physical sky on Next Gen
+    {
+      const T3 = gs.THREE, HDh = window.__hd, cv = new HDView({ fog: .001 }), cc = document.createElement('canvas'); cc.width = 160; cc.height = 120; const cx = cc.getContext('2d');
+      cv.cam.far = 1500; cv.cam.position.set(0, 2, 0); cv.cam.lookAt(0, 0, -40); cv.cam.updateProjectionMatrix(); cv.cam.updateMatrixWorld();
+      const sl = gs.hd.sun('#fff', 2, 20, [.5, .6, .3]); cv.scene.add(sl, sl.target); cv.sun = sl; sl.setTier(gs.hd.TIERS[3]);
+      const gm = gs.hd.pbr('#7a8', { rough: .9 }), ground = new T3.Mesh(new T3.PlaneGeometry(800, 800).rotateX(-Math.PI / 2), gm); ground.receiveShadow = true; cv.scene.add(ground);
+      for (const z of [-8, -30, -120]) { const post = new T3.Mesh(new T3.BoxGeometry(1, 4, 1), gs.hd.pbr('#a55')); post.position.set(1, 2, z); post.castShadow = true; cv.scene.add(post); }
+      cv.air({ haze: .001 });
+      const sky = new Sky(cv, { time: 17.5, physical: true, clouds: .4, env: true, stars: 0 }); sky.update(.1);
+      ok(sky.sunCol.b < sky.sunCol.r && sky.top.b > sky.top.r, `physical sky: orange evening sun (${sky.sunCol.getHexString()}), blue overhead (${sky.top.getHexString()})`);
+      sl.fit(cv, { far: 300, near: 25, ground: () => 0 });
+      ok(cv.cascade && sl.nearLight.parent && sl.nearLight.shadow.camera.right < sl.shadow.camera.right, `near cascade is the sharper one: ${(sl.nearLight.shadow.camera.right * 2).toFixed(0)} m vs ${(sl.shadow.camera.right * 2).toFixed(0)} m`);
+      cv.focus = { at: 30, range: 3, depth: .5, blur: 8 };
+      let bad = ''; const rr = gs.hd.bakeRenderer(); rr.debug.onShaderError = (g, p, vs, fs) => { bad = g.getShaderInfoLog(fs) || g.getShaderInfoLog(vs) || 'link'; };
+      const lumC = () => { const d = cx.getImageData(0, 60, 160, 60).data; let t = 0; for (let i = 0; i < d.length; i += 4) t += d[i] + d[i + 1] + d[i + 2]; return t / (d.length / 4 * 3); };
+      HDh.force = 3; cv.focus = null; sl.fit(cv, { far: 300, ground: () => 0 }); cv.render(cx, 160, 120); cv.render(cx, 160, 120); const one = lumC();
+      sl.fit(cv, { far: 300, near: 25, ground: () => 0 }); cv.render(cx, 160, 120); cv.render(cx, 160, 120); const two = lumC();
+      ok(Math.abs(two - one) < one * .06, `the sun isn't counted twice with a cascade: ${one.toFixed(0)} vs ${two.toFixed(0)}`);
+      cv.focus = { at: 30, range: 3, depth: .5, blur: 8 };
+      HDh.force = 3; cv.render(cx, 160, 120); cv.render(cx, 160, 120); rr.debug.onShaderError = null;
+      ok(!bad && cx.getImageData(80, 90, 1, 1).data[3] > 0, 'renders with cascades, depth of field and the physical sky' + (bad ? ': ' + bad.slice(0, 300) : ''));
+      HDh.force = 0; sl.setTier(gs.hd.TIERS[1]); sl.fit(cv, { far: 300, near: 25, ground: () => 0 }); cv.render(cx, 160, 120); HDh.force = null;
+      ok(!cv.cascade && !sl.nearLight.visible, 'no cascade on the lower tiers');
+      cv.focus = null; sky.dispose();
     }
     const rain = new Weather(hv, { kind: 'storm', amount: .5 }); let flashes = 0; rain.onFlash = () => flashes++; for (let i = 0; i < 60 * 15; i++) rain.update(1 / 60);
     ok(flashes >= 1 && rain.rainMesh.visible, 'storm rains and flashes: ' + flashes); rain.set('snow', 1); rain.update(.1); ok(rain.snowMesh.visible && !rain.rainMesh.visible, 'snow');
@@ -262,6 +287,17 @@ try {
       let bad = ''; rr.debug.onShaderError = (g, p, vs, fs) => { bad = g.getShaderInfoLog(fs) || g.getShaderInfoLog(vs) || 'link'; };
       rr.render(s2, cam); rr.debug.onShaderError = null;
       ok(!bad && gm.userData.gsLooks.join() === 'ground' && lm.userData.gsLooks.join() === 'leaves' && l2.mesh.geometry.attributes.gsMask, 'outdoor looks compile and draw' + (bad ? ': ' + bad.slice(0, 200) : ''));
+    }
+    { // one wind: gusts, leaves, grass, particles; far trees as baked impostor cards
+      const { Wind, impostor, looks } = gs.outdoors, w = new Wind({ x: 4, z: 0, gust: .5 }); w.update(1);
+      const g1 = w.at(0, 0).speed, g2 = w.at(37, 11).speed; ok(g1 > 0 && Math.abs(g1 - g2) > 1e-3 && w.uniforms.lkWindDir.value.x === 1, `wind with gusts: ${g1.toFixed(2)} / ${g2.toFixed(2)} m/s`);
+      land.wind = w; land.update(1 / 60, cam); ok(true, 'grass follows the wind');
+      const lm = new T.MeshStandardMaterial({ alphaTest: .5 }), lu = looks.leaves(lm, { wind: w }); ok(lu.uniforms.lkWindDir === w.uniforms.lkWindDir, 'leaves share the wind');
+      const hv2 = new gs.hd.HDView({}), pt = new gs.hd.Particles(hv2, { wind: w, additive: false }); pt.emit({ x: 0, y: 1, z: 0, life: 2 }); for (let i = 0; i < 30; i++) pt.update(1 / 30); ok(pt.list[0].x > .5, 'smoke drifts downwind: ' + pt.list[0].x.toFixed(2));
+      const tg = tree({ kind: 'round', height: 6 }), imp = impostor(tg, new T.MeshStandardMaterial({ vertexColors: true }), { cards: 3, size: 64 });
+      const px = new Uint8Array(4), mid = new Uint8Array(4), r3 = gs.hd.bakeRenderer(); r3.readRenderTargetPixels(imp.target, 0, 63, 1, 1, px); r3.readRenderTargetPixels(imp.target, 96, 32, 1, 1, mid);
+      ok(imp && imp.geometry.attributes.position.count === 12 && imp.target.width === 192 && mid[3] > 200 && px[3] === 0, `tree impostor: 3 cards on a 192 x 64 picture (tree ${mid[3]}, corner ${px[3]})`);
+      imp.dispose();
     }
     const w9 = new gs.physics3d.World3D(); land.solid(w9); const b9 = w9.ball(null, .5, { at: { x: 0, y: 8, z: 0 } }); for (let i = 0; i < 120; i++) w9.step(1 / 60);
     ok(Math.abs(b9.pos.y - (land.height(b9.pos.x, b9.pos.z) + .5)) < .3, 'land is solid in physics3d: ' + b9.pos.y.toFixed(2));

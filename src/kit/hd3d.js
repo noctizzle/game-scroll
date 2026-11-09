@@ -145,6 +145,8 @@ function renderer() {
 }
 /** True if this device can draw Next Gen games. */
 export const hasHD = () => !!renderer();
+/** The shared WebGL renderer, for kit bakes (outdoors impostor()); null without 3D. */
+export const bakeRenderer = () => renderer();
 
 // The final pass: bloom, tone mapping, sRGB and the colour grade in one full-screen pass (they used
 // to be four: bloom blend, output, grade, plus bloom's own full-size copy). The grade is a vignette,
@@ -328,6 +330,35 @@ class ShaftsPass extends Pass {
   dispose() { this.a?.dispose(); this.b?.dispose(); for (const m of [this.mask, this.blur, this.add]) m.dispose(); this.quad.dispose(); }
 }
 
+// Depth of field (v.focus = { at, range, depth, blur }): what's `at` metres away (give or take
+// `range`) stays sharp, the rest goes soft, fully so `depth` x `at` metres nearer or further on; blur
+// is the widest blur in pixels. A pass of its own, reading the depth picture the ambient occlusion
+// already draws (so high and ultra only, and no second scene draw). See-through things (leaf cards)
+// aren't in that picture: they take the depth of what's behind them.
+const DOF = `uniform sampler2D tDiffuse, tDepth; uniform vec2 px; uniform vec4 lens; uniform float cn, cf; varying vec2 vUv;
+  float dist(vec2 uv){ float d = texture2D(tDepth, uv).x; return d >= 1. ? 0. : cn * cf / (cf - d * (cf - cn)); }
+  float coc(float z){ return z <= 0. ? 0. : clamp((abs(z - lens.x) - lens.y) / max(lens.x * lens.z, 1e-3), 0., 1.); }
+  void main(){ vec3 base = texture2D(tDiffuse, vUv).rgb; float z = dist(vUv), c = coc(z);
+    if (c * lens.w < .5) { gl_FragColor = vec4(base, 1.); return; }
+    vec3 sum = base; float wsum = 1.;
+    for (int i = 1; i < 16; i++) { float r = sqrt(float(i) / 15.), a = float(i) * 2.39996;
+      vec2 o = vec2(cos(a), sin(a)) * r * c * lens.w * px; float zs = dist(vUv + o), cs = coc(zs);
+      float w = zs > 0. && zs < z ? cs : 1.;   // a sharp thing in front doesn't smear over a soft background
+      sum += texture2D(tDiffuse, vUv + o).rgb * w; wsum += w; }
+    gl_FragColor = vec4(sum / wsum, 1.); }`;
+class DofPass extends Pass {
+  constructor() {
+    super(); this.needsSwap = true;
+    this.mat = qmat(DOF, { tDiffuse: { value: null }, tDepth: { value: null }, px: { value: new Vector2() }, lens: { value: new Vector4() }, cn: { value: .1 }, cf: { value: 1000 } });
+    this.quad = new FullScreenQuad(this.mat);
+  }
+  render(r, writeBuffer, readBuffer) {
+    const u = this.mat.uniforms; u.tDiffuse.value = readBuffer.texture; u.px.value.set(1 / readBuffer.width, 1 / readBuffer.height);
+    r.setRenderTarget(this.renderToScreen ? null : writeBuffer); this.quad.render(r);
+  }
+  dispose() { this.mat.dispose(); this.quad.dispose(); }
+}
+
 // Ambient occlusion and reflections draw their own depth + normals picture of the scene with one
 // plain material, so anything see-through came out as a solid wall: Suit Ops' light shafts (and any
 // glow, blob shadow, rotor blur or contact-shadow plane) became dark bands fixed to the camera, and
@@ -500,9 +531,11 @@ export function noiseTex() {
 const AIR = {
   gsAirOn: { value: 0 }, gsSun: { value: new Vector3(0, 1, 0) }, gsAirC: { value: new Color() }, gsAirSun: { value: new Color() },
   gsHaze: { value: 0 }, gsMist: { value: new Vector4() }, gsCloud: { value: new Vector4() }, gsDrift: { value: new Vector2() }, gsWet: { value: 0 }, gsNoise: { value: null },
+  gsCasc: { value: new Vector4(-1, -1, .06, 0) },   // shadow cascades: near light's index, far light's index, edge fade
 };
 const AIR_GLSL = `
-uniform float gsAirOn, gsHaze, gsWet; uniform vec3 gsSun, gsAirC, gsAirSun; uniform vec4 gsMist, gsCloud; uniform vec2 gsDrift; uniform sampler2D gsNoise; varying vec3 gsW;
+uniform float gsAirOn, gsHaze, gsWet; uniform vec3 gsSun, gsAirC, gsAirSun; uniform vec4 gsMist, gsCloud, gsCasc; uniform vec2 gsDrift; uniform sampler2D gsNoise; varying vec3 gsW;
+float gsInside(vec4 c){ vec3 p = c.xyz / c.w; vec2 e = min(p.xy, 1. - p.xy); return p.z > 0. && p.z < 1. ? smoothstep(0., gsCasc.z, min(e.x, e.y)) : 0.; }
 float gsShadeAt(vec3 wp){
   vec2 c = wp.xz + gsSun.xz / max(gsSun.y, .15) * (gsCloud.z - wp.y);
   float n = texture2D(gsNoise, c / gsCloud.w + gsDrift).r;
@@ -524,6 +557,29 @@ const AIR_WET = `#ifdef USE_FOG
     roughnessFactor = mix(roughnessFactor, .12, w * .8); diffuseColor.rgb *= 1. - w * .3; }
 #endif
 `;
+// Shadow cascades (sun().fit(view, { near })): a second sun light with a small sharp shadow close to
+// the camera. Each spot takes its light from the near one inside its box (fading at the edges) and
+// from the far one elsewhere, so the sun isn't counted twice. Three's own CSM swaps the shader chunks
+// for every game; this rides on the air's light patch instead (WebGPU: CSMShadowNode).
+const CASC_NEAR = `  float gsNearW = 0.;
+#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 1
+  #pragma unroll_loop_start
+  for ( int i = 0; i < NUM_DIR_LIGHT_SHADOWS; i ++ ) {
+    if ( float( UNROLLED_LOOP_INDEX ) == gsCasc.x ) gsNearW = gsInside( vDirectionalShadowCoord[ i ] );
+  }
+  #pragma unroll_loop_end
+#endif
+`;
+const CASC_W = `#if defined( USE_SHADOWMAP ) && ( UNROLLED_LOOP_INDEX < NUM_DIR_LIGHT_SHADOWS )
+    if ( float( UNROLLED_LOOP_INDEX ) == gsCasc.x ) directLight.color *= gsNearW; else if ( float( UNROLLED_LOOP_INDEX ) == gsCasc.y ) directLight.color *= 1. - gsNearW;
+#endif
+`;
+function cascades(chunk) {
+  const at = chunk.indexOf('#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )'), call = 'RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );';
+  if (at < 0) return chunk;
+  const i = chunk.indexOf(call, at); if (i < 0) return chunk;
+  return chunk.slice(0, at) + CASC_NEAR + chunk.slice(at, i) + CASC_W + chunk.slice(i);
+}
 const airSpec = (lit, wets) => ({
   uniforms: AIR,
   check: sh => sh.fragmentShader.includes('#include <fog_fragment>') && sh.vertexShader.includes('#include <fog_vertex>'),
@@ -533,7 +589,7 @@ const airSpec = (lit, wets) => ({
     ['void main() {', 'before', AIR_GLSL],
     ['#include <fog_fragment>', 'replace', () => '#ifdef USE_FOG\n  if (gsAirOn > .5) gl_FragColor.rgb = gsAir(gl_FragColor.rgb, gsW); else {\n' + ShaderChunk.fog_fragment + '\n  }\n#endif'],
     ...(lit ? [['#include <lights_fragment_begin>', 'replace', () => '#ifdef USE_FOG\n  float gsShade = gsAirOn > .5 && gsCloud.y > 0. ? gsShadeAt(gsW) : 1.;\n#else\n  float gsShade = 1.;\n#endif\n'
-      + ShaderChunk.lights_fragment_begin.replace('getDirectionalLightInfo( directionalLight, directLight );', 'getDirectionalLightInfo( directionalLight, directLight ); directLight.color *= gsShade;')]] : []),
+      + cascades(ShaderChunk.lights_fragment_begin.replace('getDirectionalLightInfo( directionalLight, directLight );', 'getDirectionalLightInfo( directionalLight, directLight ); directLight.color *= gsShade;'))]] : []),
     ...(wets ? [['#include <emissivemap_fragment>', 'before', AIR_WET]] : []),
   ],
 });
@@ -556,11 +612,12 @@ const PF = `varying vec4 vT; uniform float soft; void main(){ vec2 d = gl_PointC
 /**
  * A pool of camera-facing soft particles, drawn in view v (new Particles(v, ...)). additive: true for sparks / fire / glints (colours
  * above 1 bloom), false for smoke and dust. p.emit({ x, y, z, vx, vy, vz, life, size, grow,
- * col: [r, g, b], a, drag, grav }) then p.update(dt) once per frame.
+ * col: [r, g, b], a, drag, grav, blow }) then p.update(dt) once per frame. With { wind } (a gs.outdoors
+ * Wind) they drift with it: blow is how much (1 = with the air, 0 = not at all; default the pool's blow).
  */
 export class Particles {
-  constructor(view, { max = 300, additive = true } = {}) {
-    this.max = max; this.list = [];
+  constructor(view, { max = 300, additive = true, wind = null, blow = 1 } = {}) {
+    this.max = max; this.list = []; this.wind = wind; this.blow = blow; this.wAt = {};
     const g = new BufferGeometry();
     g.setAttribute('position', new BufferAttribute(new Float32Array(max * 3), 3));
     g.setAttribute('size', new BufferAttribute(new Float32Array(max), 1));
@@ -573,12 +630,14 @@ export class Particles {
   emit(o) { if (this.list.length >= this.max) this.list.shift(); this.list.push({ vx: 0, vy: 0, vz: 0, life: 1, size: .1, grow: 0, col: [1, 1, 1], a: 1, drag: 0, grav: 0, ...o, t: 0 }); }
   clear() { this.list.length = 0; }
   update(dt) {
+    this.tick = (this.tick || 0) + 1;
     const L = this.list, g = this.pts.geometry, P = g.attributes.position.array, S = g.attributes.size.array, T = g.attributes.tint.array;
     let n = 0;
     for (let i = 0; i < L.length; i++) {
       const p = L[i]; p.t += dt; if (p.t >= p.life) continue;
       const k = Math.max(0, 1 - p.drag * dt); p.vx *= k; p.vy = p.vy * k - p.grav * dt; p.vz *= k;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      const bl = p.blow ?? this.blow; if (this.wind && bl) { if (p.wx === undefined || ((i + this.tick) & 7) === 0) { const w = this.wind.at(p.x, p.z, this.wAt); p.wx = w.x; p.wz = w.z; } p.x += p.wx * bl * dt; p.z += p.wz * bl * dt; }   // the wind where it is, looked up every 8th frame
       if (p.floor != null && p.y < p.floor) { p.y = p.floor; p.vy *= -.35; p.vx *= .6; p.vz *= .6; }
       const f = p.t / p.life;
       P[n * 3] = p.x; P[n * 3 + 1] = p.y; P[n * 3 + 2] = p.z; S[n] = p.size * (1 + p.grow * f);
@@ -619,14 +678,14 @@ export class HDView {
     this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
-    this.shafts = 0; this.decals = []; this.probes = []; this.probe = null;
+    this.shafts = 0; this.decals = []; this.probes = []; this.probe = null; this.focus = null; this.cascade = null;
     this.upscaler = undefined;   // 'sgsr1' keeps this view on Snapdragon GSR 1 (lots of fast movers: SGSR 2 can leave a short soft trail)
   }
   /**
    * Outdoor air for every lit material in the scene: haze (how thick the air is: .001 is about 1 km of
    * view), colour (far away fades to it) and sunColour (towards the sun), mist (thickness at mistY,
    * thinning by mistFall a metre upwards; patchy 0..1), clouds (cover 0..1) with cloudShade (how
-   * dark their shadows are), cloudHeight, cloudSize (metres), wind ([x, z] m/s they drift), and wet
+   * dark their shadows are), cloudHeight, cloudSize (metres), wind ([x, z] m/s they drift, or a gs.outdoors Wind), and wet
    * (0..1: rain darkens things and makes up-facing surfaces shiny). sun: direction towards the sun
    * (default: v.sun, the light from sun()). Returns the settings, which you can change any time;
    * v.air(false) turns it off.
@@ -753,8 +812,17 @@ export class HDView {
     if (a.sunColour) U.gsAirSun.value.copy(a.sunColour); else U.gsAirSun.value.copy(a.colour).lerp(this.sun?.color || C_WARM, .35).multiplyScalar(1.15);
     U.gsHaze.value = a.haze; U.gsMist.value.set(a.mist, a.mistFall, a.mistY, a.patchy);
     U.gsCloud.value.set(a.clouds, a.clouds > 0 ? a.cloudShade : 0, a.cloudHeight, a.cloudSize);
-    U.gsDrift.value.set(a.wind[0] * this.t / a.cloudSize, a.wind[1] * this.t / a.cloudSize);
+    const w = a.wind; U.gsDrift.value.set((w.x ?? w[0]) * this.t / a.cloudSize, (w.z ?? w[1]) * this.t / a.cloudSize);
     U.gsWet.value = a.wet; U.gsNoise.value = noiseTex();
+    U.gsCasc.value.x = U.gsCasc.value.y = -1;
+    const cs = this.cascade;
+    if (cs?.near.visible && cs.near.castShadow && cs.near.parent) {
+      // three numbers the sun lights in the order it meets them in the scene, shadow casters first
+      const dirs = []; this.scene.traverseVisible(o => { if (o.isDirectionalLight && o.layers.test(this.cam.layers)) dirs.push(o); });
+      const key = l => (l.castShadow ? 2 : 0) + (l.map ? 1 : 0);
+      dirs.sort((p, q) => key(q) - key(p));
+      U.gsCasc.value.x = dirs.indexOf(cs.near); U.gsCasc.value.y = dirs.indexOf(cs.far); U.gsCasc.value.z = cs.fade;
+    }
   }
   /**
    * Marks shiny surfaces (a wet floor, a polished wall, a car) for screen-space reflections. They
@@ -1012,7 +1080,9 @@ export class HDView {
     }
     // extra effects a game added (gs.fx3d: outline, glitch, trails, depth of field, pixelate) go between the scene and the final pass
     if (!this.clearBg) {
-      const ex = this.extras || [];
+      const dof = this.focus && T.ao > 0 && P.ao.depthTexture ? (P.dof ||= new DofPass()) : null;
+      if (dof) { const f = this.focus, u = dof.mat.uniforms; u.tDepth.value = P.ao.depthTexture; u.cn.value = this.cam.near; u.cf.value = this.cam.far; u.lens.value.set(f.at ?? 50, f.range ?? 2, f.depth ?? .5, (f.blur ?? 6) * ph / 640); }
+      const ex = dof ? [dof, ...(this.extras || [])] : this.extras || [];
       const first = ssr ? P.ssr : P.render;
       const sh = P.shafts && P.shafts.amount > 0 ? [P.shafts] : [];
       if (sh.length && (P.shafts.cw !== pw || P.shafts.ch !== ph)) { P.shafts.setSize(pw, ph); P.shafts.cw = pw; P.shafts.ch = ph; }
@@ -1061,6 +1131,8 @@ export function gpuFits(v) {
   if (v.extras?.length) return 'screen effects (gs.fx3d)';
   if (v.probes.length) return 'light probes';
   if (v.shafts > 0) return 'sun shafts';
+  if (v.focus) return 'depth of field';
+  if (v.cascade) return 'shadow cascades';
   if (v.env || v.envMaker) return 'sky reflections';
   if (T.ssr && v.reflectors.length) return 'reflections';
   const a = v._air; if (a && (a.clouds > 0 || a.wet > 0)) return a.clouds > 0 ? 'cloud shadows' : 'rain on the air';
@@ -1143,12 +1215,14 @@ function mount(cv, c, view) {
  * outdoor levels use s.fit(view, { far, ground }) each frame instead: the shadow then covers just what
  * the camera can see, out to `far` metres, and gets sharper the narrower the view (a zoomed scope gets
  * crisp shadows where it looks). s.aim(x, y, z) points it (the direction towards the sun).
+ * Cascades: s.fit(view, { far: 300, near: 40 }) adds a second, much sharper shadow over the first 40 m
+ * (high and ultra tiers, with v.air() on), so the grass at your feet and the far hills both get theirs.
  */
 export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
   const s = new DirectionalLight(col, i), c = s.shadow.camera, d = new Vector3(...dir).normalize();
   s.castShadow = true; c.left = c.bottom = -size; c.right = c.top = size; c.near = 1; c.far = 120;
   s.shadow.bias = -.0004; s.shadow.normalBias = .04; s.shadow.radius = 2;
-  s.setTier = T => { s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow * 2) { s.shadow.mapSize.set(T.shadow * 2, T.shadow * 2); s.shadow.map?.dispose(); s.shadow.map = null; } };
+  s.setTier = T => { s.tierShadow = T.shadow; s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow * 2) { s.shadow.mapSize.set(T.shadow * 2, T.shadow * 2); s.shadow.map?.dispose(); s.shadow.map = null; } };
   s.dir = d;
   s.aim = (x, y, z) => { if (x?.isVector3) d.copy(x); else d.set(x, y, z); d.normalize(); return s; };
   s.follow = (x, y, z) => {
@@ -1156,7 +1230,20 @@ export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
     const tx = 2 * size / s.shadow.mapSize.x; x = Math.round(x / tx) * tx; z = Math.round(z / tx) * tx;
     s.target.position.set(x, y, z); s.position.set(x + d.x * 50, y + d.y * 50, z + d.z * 50); s.target.updateMatrixWorld();
   };
-  s.fit = (view, o) => fitShadow(s, view, o);
+  s.fit = (view, o = {}) => {
+    const r = fitShadow(s, view, o), nf = o.near || 0;
+    // a near cascade (high and ultra, with v.air on): a second, sharp shadow over the first `near` metres
+    if (nf > 0 && s.castShadow && (s.tierShadow ?? 1024) >= 1024 && s.parent && view._air) {
+      let n = s.nearLight;
+      if (!n) { n = s.nearLight = new DirectionalLight(); n.name = 'sun-near'; n.dir = d; n.shadow.radius = s.shadow.radius; }
+      if (n.parent !== s.parent) s.parent.add(n, n.target);
+      n.visible = true; n.castShadow = true; n.color.copy(s.color); n.intensity = s.intensity;
+      const ms = s.shadow.mapSize.x; if (n.shadow.mapSize.x !== ms) { n.shadow.mapSize.set(ms, ms); n.shadow.map?.dispose(); n.shadow.map = null; }
+      fitShadow(n, view, { ...o, far: nf, around: 0, max: nf * 2 });
+      view.cascade = { near: n, far: s, fade: o.fade ?? .06 };
+    } else if (s.nearLight?.visible) { s.nearLight.visible = false; view.cascade = null; }
+    return r;
+  };
   return s;
 }
 // Fitting the sun's shadow to the view. Rays across the screen find what can be seen: where they meet

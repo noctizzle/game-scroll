@@ -48,7 +48,8 @@ export class Props {
   constructor(scene, { renderer = null, shadows = true } = {}) { this.scene = scene; this.renderer = renderer; this.shadows = shadows; this.kinds = new Map(); }
   /**
    * A kind of prop. lod: distances where simpler shapes take over (made by simplify(), keeping
-   * `keep` of the detail at each step), or [[distance, geometry], ...] for your own; shadowFar:
+   * `keep` of the detail at each step), or [[distance, geometry, material?], ...] for your own (a
+   * material of its own for that level, e.g. gs.outdoors impostor() cards); shadowFar:
    * past this the shadow uses the simplest shape; capacity: how many to expect (it grows if needed).
    */
   kind(name, geometry, material, { lod = [], keep = [.45, .15], shadows = this.shadows, shadowFar = 40, capacity = 256 } = {}) {
@@ -56,9 +57,11 @@ export class Props {
     m.castShadow = shadows; m.receiveShadow = true; m.name = 'props:' + name;
     if (lod.length) {
       m.setFirstLODDistance(0);
-      lod.forEach((d, i) => { const [dist, geo] = Array.isArray(d) ? d : [d, simplify(geometry, keep[i] ?? keep.at(-1) / (i + 1))]; m.addLOD(geo, material, dist); });
+      lod.forEach((d, i) => { const [dist, geo, mat] = Array.isArray(d) ? d : [d, simplify(geometry, keep[i] ?? keep.at(-1) / (i + 1))]; m.addLOD(geo, mat || material, dist); });
     }
-    if (shadows && lod.length) m.addShadowLOD(m.LODinfo.render.levels.at(-1).object.geometry, shadowFar);
+    // far shadows from the simplest level drawn with the kind's own material (a level with a material of
+    // its own, like impostor cards, is cut out from another picture)
+    if (shadows && lod.length) { const own = m.LODinfo.render.levels.filter(l => l.object.material === material).at(-1); if (own) m.addShadowLOD(own.object.geometry, shadowFar); }
     this.scene.add(m);
     this.kinds.set(name, { mesh: m, items: [] });
     return m;

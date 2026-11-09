@@ -283,17 +283,20 @@ function rock(m, { detail = groundDetail().detail, scale = .7, moss = [.07, .09,
  * when you look towards the sun, and keep their outline far away (alpha that thins less in the mips).
  * The material wants a map with alphaTest and DoubleSide. o: time, wind, sun (a direction, Vector3)
  * as numbers or shared uniforms ({ value }), sway, above (metres of trunk that don't sway), glow,
- * atlas: [w, h] of the map in texels. Returns its uniforms: set time and wind each frame (or share them).
+ * atlas: [w, h] of the map in texels. wind can be a gs.outdoors Wind: the trees then lean and stream
+ * the way it blows, harder in its gusts. Returns its uniforms: set time and wind each frame (or share them).
  */
 function leaves(m, { time = 0, wind = .6, sun = new Vector3(0, 1, 0), sway = .012, above = 2, glow = .6, atlas = [1024, 512] } = {}) {
-  const U = { lkTime: uni(time), lkWind: uni(wind), lkSun: uni(sun), lkSway: uni(new Vector2(sway, above)), lkGlow: uni(glow), lkAtlas: uni(new Vector2(...atlas)) };
+  const W = wind?.uniforms?.lkWindDir ? wind.uniforms : null;
+  const U = { lkTime: uni(time), lkWind: W ? W.lkWind : uni(wind), lkWindDir: W ? W.lkWindDir : uni(new Vector2()), lkSun: uni(sun), lkSway: uni(new Vector2(sway, above)), lkGlow: uni(glow), lkAtlas: uni(new Vector2(...atlas)) };
   lookPatch(m, 'leaves', spec('leaves', {
     uniforms: U, world: true,
     vertex: {
-      head: 'uniform float lkTime, lkWind; uniform vec2 lkSway;',
+      head: 'uniform float lkTime, lkWind; uniform vec2 lkSway, lkWindDir;',
       after: { project_vertex: `  { vec3 wp = transpose(mat3(viewMatrix)) * (mvPosition.xyz - viewMatrix[3].xyz);
     float hh = max(position.y - lkSway.y, 0.), ph = wp.x * .19 + wp.z * .23;
     vec3 sw = vec3(sin(lkTime * 1.7 + ph) + sin(lkTime * 3.1 + ph * 2.3) * .3, 0., cos(lkTime * 1.3 + ph * 1.4)) * lkWind * hh * lkSway.x;
+    sw.xz += lkWindDir * lkWind * hh * lkSway.x * (1.2 + .6 * sin(lkTime * .9 + ph * .5));   // a lean downwind (none without a Wind)
     mvPosition.xyz += mat3(viewMatrix) * sw; gl_Position = projectionMatrix * mvPosition; }` },
     },
     fragment: {

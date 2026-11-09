@@ -58,6 +58,11 @@ The rules for new 3D code until then:
 | 3D text | troika-three-text (patches shaders) | Three's own text geometry or an SDF text node |
 | 3D particles | three.quarks 0.17 (needs three ≥ 0.182, works on 0.186) | Check its WebGPU support; else our own node particles |
 | Outdoor looks: ground, hills, rock, leaves | `src/kit/looks.js` `looks.*` (effects 'ground', 'hills', 'rock', 'leaves' through `lookPatch`; a view using them stays on WebGL) | One TSL node per effect, same `lk...` uniforms |
+| Shadow cascades | `hd3d.js` the air look's light edit (`gsCasc`: a second sun light, weights in `lights_fragment_begin`) | Three's `CSMShadowNode` |
+| Depth of field | `hd3d.js` `DofPass` (reads the AO pass's depth) | Three's TSL `dof()` node on the scene pass's depth |
+| Physical sky | `src/kit/sky.js` dome shader, Preetham branch on `pSun.z` | Three's `SkyMesh` (TSL), or the same sums as a TSL node |
+| Wind in leaves | `src/kit/looks.js` `looks.leaves` (`lkWindDir` lean) | Part of the leaves TSL node |
+| Tree impostors | `gs.outdoors` `impostor()` bakes with the WebGL renderer into a render target | The same bake on the WebGPU renderer (stock materials, so only the bake moves) |
 | Games with their own shaders | `long-shadow.js` (sky). Deep Pressure's sonar is now the kit's `gs.hd.pulse` look, which has a WebGPU version | Port to kit materials or TSL |
 
 Status from `gpu-games.cjs` (2026-11-09): 18 of 20 Next Gen and AR games draw on WebGPU with no errors;
