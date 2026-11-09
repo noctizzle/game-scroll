@@ -30,7 +30,7 @@ import {
   CanvasTexture, RepeatWrapping, SRGBColorSpace, NoColorSpace, PCFShadowMap, ACESFilmicToneMapping, HalfFloatType,
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
   OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4, DataTexture, RGBAFormat, ShaderChunk,
-  LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion,
+  LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion, DepthTexture,
 } from 'three';
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
@@ -43,6 +43,7 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { SGSR } from './sgsr.js';
+import { SGSR2 } from './sgsr2.js';
 import { lookPatch, looksOf } from './looks.js';
 import { copyFrame, webgpu, setGpuPick, prepareGPU } from './gpu.js';
 import { makeRenderer } from './renderer.js';
@@ -115,8 +116,12 @@ export const HD = {
   set force(t) { Q.force = t; }, get force() { return Q.force; },
   /** Last frame: draw calls, triangles, milliseconds spent in render() on the CPU, and whether the shadows were redrawn. */
   info: { calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '' },
-  /** Upscale with Snapdragon GSR 1 when the 3D is drawn below the screen's size (false: plain stretch). */
+  /** Upscale when the 3D is drawn below the screen's size (false: plain stretch). */
   upscale: true,
+  /** Which upscaler: 'sgsr2' (Snapdragon GSR 2, temporal; Next Gen without reflections) or 'sgsr1' (one frame). AR and the rest use SGSR 1. */
+  upscaler: 'sgsr2',
+  /** Tests: draw the 3D at this fraction of the screen's size (null: the tier and frame rate decide). */
+  scale: null,
   /** Show the 3D canvas directly on the card (false: copy each frame into the card's canvas, as tests and screenshots need). */
   direct: typeof navigator === 'undefined' || !navigator.webdriver,
 };
@@ -347,7 +352,7 @@ function chain(r, w, h) {
   }
   if (!comp) {
     compKey = T.msaa;
-    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: T.msaa });
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: T.msaa, depthTexture: new DepthTexture(w, h) });   // depth: SGSR 2 reads it
     comp = new EffectComposer(r, rt);
     P.render = new RenderPass(new Scene(), new PerspectiveCamera());
     P.ao = new GTAOPass(new Scene(), new PerspectiveCamera(), w, h);
@@ -595,6 +600,7 @@ export class HDView {
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
     this.shafts = 0; this.decals = []; this.probes = []; this.probe = null;
+    this.upscaler = undefined;   // 'sgsr1' keeps this view on Snapdragon GSR 1 (lots of fast movers: SGSR 2 can leave a short soft trail)
   }
   /**
    * Outdoor air for every lit material in the scene: haze (how thick the air is: .001 is about 1 km of
@@ -919,13 +925,18 @@ export class HDView {
     }
     const T = tier();
     if (this.tierSeen !== HD.tier) { this.tierSeen = HD.tier; this.tierFn?.(T); }
-    const fw = c.canvas.width, fh = c.canvas.height; let pw = fw, ph = fh; const q = Math.min(1, Math.sqrt(T.px / (pw * ph))) * HD.res;
+    const fw = c.canvas.width, fh = c.canvas.height; let pw = fw, ph = fh; const q = HD.scale ?? Math.min(1, Math.sqrt(T.px / (pw * ph))) * HD.res;
     pw = Math.max(16, Math.round(pw * q)); ph = Math.max(16, Math.round(ph * q));
     // The 3D is drawn at pw x ph (fewer pixels on big screens and when the phone struggles). Below the
-    // screen's size, Snapdragon GSR 1 (sgsr.js) upscales it to the full screen with sharp edges, as the
-    // last pass; HD.upscale = false shows the plain stretched picture instead (tests, comparisons).
+    // screen's size, Snapdragon GSR 2 (sgsr2.js, temporal: jitters the camera and builds on the frames
+    // before) or GSR 1 (sgsr.js, AR and SSR) upscales it to the full screen as the last pass;
+    // HD.upscale = false shows the plain stretched picture instead (tests, comparisons).
     const up = !G && HD.upscale && !baking && pw < fw * .95;   // (WebGPU: plain stretch for now)
-    const ow = up ? fw : pw, oh = up ? fh : ph;
+    // SGSR 2 also runs at full size, as anti-aliasing (grass and leaves stop shimmering); not for AR,
+    // SSR (it draws the scene itself), card pictures or WebGPU
+    const ssr = !G && !this.clearBg && T.ssr && this.reflectors.length > 0;
+    const s2 = !G && HD.upscale && !baking && !this.clearBg && !ssr && (this.upscaler ?? HD.upscaler) === 'sgsr2' ? (P.sgsr2 ||= new SGSR2()) : null;
+    const ow = up || s2 ? fw : pw, oh = up || s2 ? fh : ph;
     const cv = r.domElement; if (cv.width !== ow || cv.height !== oh) r.setSize(ow, oh, false);
     if (G) this.drawGPU(G, r, T, baking, off, now);
     else {
@@ -938,7 +949,6 @@ export class HDView {
     r.toneMappingExposure = this.exposure;
     if (this.clearBg) { P.arRender.scene = this.scene; P.arRender.camera = this.cam; } else { P.render.scene = P.ao.scene = this.scene; P.render.camera = P.ao.camera = this.cam; }
     // reflections (ultra, and only if the game marked shiny surfaces): SSR draws the scene itself
-    const ssr = !this.clearBg && T.ssr && this.reflectors.length > 0;
     if (ssr) {
       if (!P.ssr) {
         P.ssr = new SSRPass({ renderer: r, scene: this.scene, camera: this.cam, width: pw, height: ph, selects: [], groundReflector: null });
@@ -956,7 +966,7 @@ export class HDView {
     if (!baking && !off) this.t += 1 / 60;
     if (!this.clearBg) {
       const F = P.final; P.ao.enabled = T.ao > 0; if (T.ao > 0 && P.ao.scale !== T.ao) { P.ao.scale = T.ao; P.ao.setSize(P.ao.fw || pw, P.ao.fh || ph); }
-      F.strength = this.bloom; F.scale = T.bloom; F.setFxaa(!T.msaa || ssr);
+      F.strength = this.bloom; F.scale = T.bloom; F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
       const u = F.final.uniforms; u.t.value = this.t % 10; u.hurt.value = this.hurt;
       const g = this.grade; u.gradeOn.value = g ? 1 : 0;
       if (g) { u.sat.value = g.saturation ?? 1; u.con.value = g.contrast ?? 1; toRGB(g.shadows, u.lo.value); toRGB(g.highlights, u.hi.value); }
@@ -981,21 +991,23 @@ export class HDView {
       const first = ssr ? P.ssr : P.render;
       const sh = P.shafts && P.shafts.amount > 0 ? [P.shafts] : [];
       if (sh.length && (P.shafts.cw !== pw || P.shafts.ch !== ph)) { P.shafts.setSize(pw, ph); P.shafts.cw = pw; P.shafts.ch = ph; }
-      cp.passes = up ? [first, P.ao, ...ex, ...sh, P.final, P.sgsr] : [first, P.ao, ...ex, ...sh, P.final];
-      P.final.needsSwap = up;   // the final pass writes into the next buffer only when SGSR reads it
+      // SGSR 2 reads the scene's depth straight after it's drawn
+      cp.passes = s2 ? [first, s2.convertPass, P.ao, ...ex, ...sh, P.final, s2.upscalePass] : up ? [first, P.ao, ...ex, ...sh, P.final, P.sgsr] : [first, P.ao, ...ex, ...sh, P.final];
+      P.final.needsSwap = up || !!s2;   // the final pass writes into the next buffer only when SGSR reads it
       for (const p of ex) if (p.cw !== pw || p.ch !== ph) { p.setSize(pw, ph); p.cw = pw; p.ch = ph; }
     }
     if (!this.warmed && !off) this.warm();
     // shadows: redraw the maps only when a shadow caster or a shadow light moved (or the tier, view or map changed)
     this.scene.updateMatrixWorld();
     r.shadowMap.enabled = T.shadow > 0;
-    let shadows = false;
+    let shadows = false; const cut = lastView !== this;
     if (T.shadow > 0) { const k = this.shadowKey(); if (k !== this.shKey || lastView !== this) { this.shKey = k; r.shadowMap.needsUpdate = shadows = true; } }
     lastView = this;
     r.info.autoReset = false; r.info.reset();
     const mwa = this.scene.matrixWorldAutoUpdate; this.scene.matrixWorldAutoUpdate = false;   // already updated above
-    try { cp.render(); } finally { this.scene.matrixWorldAutoUpdate = mwa; }
-    if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = shadows; HD.info.upscaled = up; HD.info.backend = 'webgl'; HD.info.webgl = this._gpuWhy || ''; }
+    if (s2) s2.begin(this.cam, pw, ph, fw, fh, this, now, cut);   // the camera's move and this frame's jitter
+    try { cp.render(); } finally { this.scene.matrixWorldAutoUpdate = mwa; s2?.end(this.cam); }
+    if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = shadows; HD.info.upscaled = s2 ? 'sgsr2' : up && 'sgsr1'; HD.info.backend = 'webgl'; HD.info.webgl = this._gpuWhy || ''; }
     }
     if (direct) { c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, c.canvas.width, c.canvas.height); c.restore(); return; }
     c.save(); c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
