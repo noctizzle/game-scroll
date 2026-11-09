@@ -14,9 +14,17 @@
 //   }
 //   update(dt) { land.update(dt, camera); sea.update(dt, camera.position); hero.y = land.height(hero.x, hero.z); }
 //
+// One wind for the whole world (new Wind({ x, z, gust })): land.wind = wind sways the grass,
+// looks.leaves(m, { wind }) the trees, Weather({ wind }) the rain, Particles' wind the smoke and dust,
+// v.air({ wind }) the cloud shadows, and wind.at(x, z) is the push on a bullet or a flag. Gusts roll
+// across the land downwind, so a gust shows in the grass before it reaches you.
+// impostor(geometry, material): far trees as a few crossed cards with pictures of the real tree.
+//
 // Sizes are metres; y is up. Keep segments modest on phones (64-128 a side).
 
-import { BufferAttribute, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, IcosahedronGeometry, Mesh, MeshStandardMaterial, PlaneGeometry, SphereGeometry, Vector3 } from 'three';
+import { BufferAttribute, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DodecahedronGeometry, DoubleSide, Float32BufferAttribute, IcosahedronGeometry, LinearMipmapLinearFilter, Mesh, MeshBasicMaterial, MeshStandardMaterial, OrthographicCamera, PlaneGeometry, SRGBColorSpace, Scene, SphereGeometry, Vector2, Vector3, WebGLRenderTarget } from 'three';
+import { fbm } from './math.js';
+import { bakeRenderer as renderer } from './hd3d.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 export { looks, groundDetail, horizon } from './looks.js';
 import Terrain, { TerrainNS, createSeededRandom, scatterGrass, updateGrass, updateGrassLOD } from 'three.terrain.js';
@@ -134,7 +142,11 @@ export class Land {
   /** Each frame: sways the grass and hides tufts far from the camera. */
   update(dt, camera = null) {
     this.time += dt;
-    if (this.grassScene) { this.grassScene.traverse(o => { if (o.isMesh) updateGrass(o, this.time); }); if (camera) updateGrassLOD(this.grassScene, camera, this.grassFar); }
+    if (this.grassScene) {
+      const w = this.wind, k = w && camera ? w.at(camera.position.x, camera.position.z).gust : 1;
+      this.grassScene.traverse(o => { if (!o.isMesh) return; updateGrass(o, this.time); const u = (o.userData.grassMaterial || o.material)?.userData?.grassUniforms; if (w && u?.windStrength) u.windStrength.value = w.speed * k * w.grass; });
+      if (camera) updateGrassLOD(this.grassScene, camera, this.grassFar);
+    }
     return this;
   }
   dispose() { this.object.traverse(o => { o.geometry?.dispose(); }); this.object.removeFromParent(); }
@@ -178,6 +190,81 @@ export class Water {
     return this;
   }
   dispose() { this.mesh.geometry.dispose(); this.mesh.removeFromParent(); }
+}
+
+/**
+ * The wind over a world: x, z its steady push (metres a second, towards +x / +z), gust 0..1 (how much
+ * stronger and weaker it gets), gustSize (metres across a gust), sway and grass (how much leaves and
+ * grass move per m/s). Call wind.update(dt) each frame. wind.at(x, z) is the wind there now: { x, z,
+ * speed, gust } (gust: 1 is the steady wind). wind.uniforms (lkWind: leaf sway, lkWindDir: which way)
+ * plug into looks.leaves; wind.speed and wind.angle are the steady wind. Change x, z any time.
+ */
+export class Wind {
+  constructor({ x = 3, z = 0, gust = .35, gustSize = 70, sway = .12, grass = 1.2 } = {}) {
+    Object.assign(this, { x, z, gust, gustSize, sway, grass }); this.t = 0;
+    this.uniforms = { lkWind: { value: 0 }, lkWindDir: { value: new Vector2(1, 0) } };
+    this.update(0);
+  }
+  get speed() { return Math.hypot(this.x, this.z); }
+  get angle() { return Math.atan2(this.z, this.x); }
+  update(dt, at = null) {
+    this.t += dt;
+    const s = this.speed, d = this.uniforms.lkWindDir.value; if (s > 1e-4) d.set(this.x / s, this.z / s);
+    this.uniforms.lkWind.value = s * this.sway * (at ? this.at(at.x, at.z).gust : 1);
+    return this;
+  }
+  at(x, z, out = {}) {
+    const s = this.speed, k = this.gustSize, drift = this.t * .8;   // gusts travel at most of the wind's speed
+    const g = Math.max(0, 1 + this.gust * fbm((x - this.x * drift) / k, (z - this.z * drift) / k, 2) * 1.6);
+    out.x = this.x * g; out.z = this.z * g; out.speed = s * g; out.gust = g; return out;
+  }
+}
+
+/**
+ * A far-away stand-in for a tree (or any prop): a few cards crossed through its middle, each with a
+ * picture of the real thing seen from that side, baked once. Lighting stays live (the cards get
+ * rounded normals, so a crown lights like one shape), so they match the near trees in any light.
+ * geometry + material: the near one (a map with alphaTest is cut out the same way). Options: cards
+ * (2..4), size (texels per card picture), round (0 flat .. 1 round normals), material (options for
+ * the cards' MeshStandardMaterial). Returns { geometry, material, texture, target, dispose() }, or null when
+ * there is no 3D (tests without WebGL). Use it as the last level: props.kind(..., { lod: [[90, mid],
+ * [240, imp.geometry, imp.material]] }).
+ */
+export function impostor(geometry, material, { cards = 3, size = 256, round = .7, material: mo = {} } = {}) {
+  const r = renderer(); if (!r) return null;
+  geometry.computeBoundingBox(); const bb = geometry.boundingBox;
+  const rad = Math.max(-bb.min.x, bb.max.x, -bb.min.z, bb.max.z) * 1.02, y0 = bb.min.y, y1 = bb.max.y + .02, h = y1 - y0, cy = y0 + h * .55;
+  const rt = new WebGLRenderTarget(size * cards, size, { samples: 0, generateMipmaps: true, minFilter: LinearMipmapLinearFilter, colorSpace: SRGBColorSpace });
+  rt.texture.anisotropy = 4;
+  const src = Array.isArray(material) ? material[0] : material;
+  const flat = new MeshBasicMaterial({ map: src?.map || null, color: src?.color || '#ffffff', vertexColors: !!src?.vertexColors, alphaTest: src?.alphaTest || (src?.map ? .5 : 0), side: DoubleSide });
+  const scene = new Scene(), mesh = new Mesh(geometry, flat); scene.add(mesh);
+  const cam = new OrthographicCamera(-rad, rad, y1, y0, .1, rad * 4 + 10);
+  // the clear colour is the tree's own (with no alpha), so cut-out edges don't go dark in the mips
+  const c = new Color(src?.color || '#ffffff'), was = { rt: r.getRenderTarget(), auto: r.autoClear, alpha: r.getClearAlpha(), col: r.getClearColor(new Color()), sc: r.getScissorTest() };
+  if (geometry.attributes.color) { const a = geometry.attributes.color, m = new Color(0, 0, 0); for (let i = 0; i < a.count; i++) { m.r += a.getX(i); m.g += a.getY(i); m.b += a.getZ(i); } c.multiply(m.multiplyScalar(1 / a.count)); }
+  try {
+    r.setRenderTarget(rt); r.setClearColor(c.multiplyScalar(.35), 0); r.autoClear = false; r.clear(); r.setScissorTest(true);
+    for (let k = 0; k < cards; k++) {
+      const a = k / cards * Math.PI, nx = -Math.sin(a), nz = Math.cos(a);   // the card's front: looking back along -n
+      cam.position.set(nx * (rad * 2 + 5), 0, nz * (rad * 2 + 5)); cam.up.set(0, 1, 0); cam.lookAt(0, 0, 0); cam.updateMatrixWorld();
+      r.setViewport(k * size, 0, size, size); r.setScissor(k * size, 0, size, size); r.render(scene, cam);
+    }
+  } finally { r.setScissorTest(was.sc); r.setRenderTarget(was.rt); r.autoClear = was.auto; r.setClearColor(was.col, was.alpha); flat.dispose(); }
+  // the cards: one per picture, crossed through the middle
+  const P = [], N = [], U = [], I = [], up = new Vector3(0, 1, 0), q = new Vector3(), n = new Vector3();
+  for (let k = 0; k < cards; k++) {
+    const a = k / cards * Math.PI, ax = Math.cos(a), az = Math.sin(a), b = P.length / 3;
+    for (const [sx, sy] of [[-1, 1], [1, 1], [1, -1], [-1, -1]]) {
+      q.set(ax * rad * sx, sy > 0 ? y1 : y0, az * rad * sx); P.push(q.x, q.y, q.z);
+      n.set(-Math.sin(a), 0, Math.cos(a)).lerp(q.clone().setY(q.y - cy).normalize(), round).lerp(up, .25).normalize(); N.push(n.x, n.y, n.z);
+      U.push((k + (sx + 1) / 2) / cards, sy > 0 ? 1 : 0);
+    }
+    I.push(b, b + 3, b + 1, b + 1, b + 3, b + 2);
+  }
+  const g = new BufferGeometry(); g.setAttribute('position', new Float32BufferAttribute(P, 3)); g.setAttribute('normal', new Float32BufferAttribute(N, 3)); g.setAttribute('uv', new Float32BufferAttribute(U, 2)); g.setIndex(I); g.computeBoundingSphere();
+  const m = new MeshStandardMaterial({ map: rt.texture, alphaTest: .5, side: DoubleSide, roughness: .85, ...mo });
+  return { geometry: g, material: m, texture: rt.texture, target: rt, dispose() { g.dispose(); m.dispose(); rt.dispose(); } };
 }
 
 const tint = (geo, colour) => { const c = new Color(colour), n = geo.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; } geo.setAttribute('color', new BufferAttribute(a, 3)); return geo; };

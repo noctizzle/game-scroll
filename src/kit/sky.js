@@ -20,13 +20,47 @@
 // On a Next Gen view with v.air() on, the clouds' shadows drift over the ground below and the air takes
 // its colours from the sky. { env: true } (Next Gen) makes reflections and sky light from this sky
 // instead of the kit's soft studio, redone as the sky changes. sky.flash = 1 lights the clouds (lightning).
+//
+// Physical sky: { physical: true } (or { physical: { haze, blue, mie, glow, bright } }) works the sky's
+// colours out from how sunlight scatters in air (the Preetham model, as in three.js's Sky): deep blue
+// overhead, pale at the horizon, a white sun at noon going orange and red as it sets, with the glow
+// round it. Clouds, reflections, the air's colours, fog and the sky light all follow it; the day keys
+// then only set how strong the sun and fill lights are.
 
 import { AdditiveBlending, BackSide, BufferAttribute, BufferGeometry, Color, LineBasicMaterial, LineSegments, Mesh, Points, PointsMaterial, Scene, ShaderMaterial, SphereGeometry, Vector3, Vector4 } from 'three';
-import { Sky as PhysicalSky } from 'three/examples/jsm/objects/Sky.js';
 import { prefs } from './prefs.js';
 import { noiseTex } from './hd3d.js';
 
 const C = c => new Color(c);
+// Preetham daylight (the same sums as three.js's Sky shader), worked out on the CPU for the colours the
+// rest of the scene takes from the sky, and in the dome's shader for every pixel
+const TOTAL_RAYLEIGH = [5.804542996261093e-6, 1.3562911419845635e-5, 3.0265902468824876e-5], MIE_CONST = [1.8399918514433978e14, 2.7798023919660528e14, 4.0790479543861094e14];
+const PHYS = { haze: 6, blue: 1.6, mie: .004, glow: .8, bright: .55 };
+function physConsts(p, sun, out) {
+  const zc = Math.max(-1, Math.min(1, sun.y));
+  out.sunE = 1000 * Math.max(0, 1 - Math.exp(-((1.6110731556870734 - Math.acos(zc)) / 1.5)));
+  const m = .434 * (.2 * p.haze * 1e-17) * p.mie;
+  out.bR = TOTAL_RAYLEIGH.map(v => v * p.blue); out.bM = MIE_CONST.map(v => v * m); out.g = p.glow; out.k = p.bright;
+  return out;
+}
+function physAt(q, d, sun, out) {   // the sky's colour looking along d (unit), into out (a Color)
+  const zen = Math.acos(Math.max(0, d.y)), inv = 1 / (Math.cos(zen) + .15 * Math.pow(93.885 - zen * 180 / Math.PI, -1.253));
+  const sR = 8400 * inv, sM = 1250 * inv, ct = d.x * sun.x + d.y * sun.y + d.z * sun.z;
+  const rP = .05968310365946075 * (1 + (ct * .5 + .5) ** 2), g2 = q.g * q.g, mP = .07957747154594767 * (1 - g2) / Math.pow(1 - 2 * q.g * ct + g2, 1.5);
+  const mixK = Math.max(0, Math.min(1, (1 - sun.y) ** 5)), c = [0, 0, 0];
+  for (let i = 0; i < 3; i++) {
+    const fex = Math.exp(-(q.bR[i] * sR + q.bM[i] * sM)), r = (q.bR[i] * rP + q.bM[i] * mP) / (q.bR[i] + q.bM[i]);
+    let lin = Math.pow(q.sunE * r * (1 - fex), 1.5); lin *= 1 + (Math.sqrt(q.sunE * r * fex) - 1) * mixK;
+    c[i] = ((lin + .1 * fex) * .04 + [0, .0003, .00075][i]) * q.k;
+  }
+  return out.setRGB(c[0], c[1], c[2]);
+}
+// the colour sunlight has after its trip through the air (white overhead, orange low down), brightest channel 1
+function physSun(q, sun, out) {
+  const zen = Math.acos(Math.max(0, sun.y)), inv = 1 / (Math.cos(zen) + .15 * Math.pow(Math.max(1e-3, 93.885 - zen * 180 / Math.PI), -1.253));
+  const f = [0, 1, 2].map(i => Math.exp(-(q.bR[i] * 8400 * inv + q.bM[i] * 1250 * inv))), m = Math.max(...f, 1e-6);
+  return out.setRGB(f[0] / m, f[1] / m, f[2] / m);
+}
 /** The default day: hour -> sky top, horizon, sun colour, sun strength (x the light's own), fill strength. */
 export const DAY = [
   [0, { top: '#05070f', horizon: '#141a30', sun: '#7088c0', sunI: .12, amb: .35 }],
@@ -44,7 +78,8 @@ const radiusOf = cam => Math.max(10, (cam?.far ?? 100) * .9);
 export class Sky {
   /**
    * time: hour 0..24. speed: in-game hours per second (0 = still). day: keyframes like DAY to recolour
-   * the day. stars: count (0 for none). physical: true uses three.js's physical sky (Next Gen looks).
+   * the day. stars: count (0 for none). physical: true (or { haze, blue, mie, glow, bright }) works the
+   * colours out from light scattering in air (Next Gen looks; see the top of this file).
    * fog: recolour the scene's fog to the horizon (default true). light: false leaves your lights alone.
    */
   constructor(view, { time = 12, speed = 0, day = DAY, stars = 400, physical = false, fog = true, light = true, sun = view.sun, hemi = view.hemi, tilt = .35,
@@ -55,23 +90,32 @@ export class Sky {
     this.cloudLight = cloudLight ? C(cloudLight) : null; this.cloudDark = cloudDark ? C(cloudDark) : null;
     this.cLit = C('#fff'); this.cDark = C('#888'); this.envAt = null; this.envT = 0; this.t = 0;
     const R = radiusOf(view.cam);
-    if (physical) {
-      this.dome = new PhysicalSky(); this.dome.scale.setScalar(R);
-      const u = this.dome.material.uniforms; u.turbidity.value = 6; u.rayleigh.value = 1.6; u.mieCoefficient.value = .004; u.mieDirectionalG.value = .8;
-    } else {
+    this.phys = physical ? { ...PHYS, ...(physical === true ? {} : physical) } : null; this.pq = {};
+    {
       // a gradient from the horizon up, a glow round the sun, the sun itself (on Next Gen bright enough
       // to bloom) and, when asked for, drifting clouds lit from the sun's side
       const hd = !!view.envFrom;
       this.dome = new Mesh(new SphereGeometry(1, 32, 16), new ShaderMaterial({
         side: BackSide, depthWrite: false, fog: false,
         uniforms: { top: { value: this.top }, horizon: { value: this.horizon }, sunCol: { value: this.sunCol }, sunDir: { value: this.sunDir }, size: { value: 1 - .0006 * sunSize * sunSize },
-          disc: { value: hd ? 24 : 1.5 }, cloud: { value: new Vector4() }, cloudLit: { value: this.cLit }, cloudDark: { value: this.cDark }, noise: { value: clouds != null ? noiseTex() : null } },
-        defines: clouds != null ? { CLOUDS: '' } : {},
+          disc: { value: hd ? 24 : 1.5 }, cloud: { value: new Vector4() }, cloudLit: { value: this.cLit }, cloudDark: { value: this.cDark }, noise: { value: clouds != null ? noiseTex() : null },
+          pBR: { value: new Vector3() }, pBM: { value: new Vector3() }, pSun: { value: new Vector4() } },
+        defines: { ...(clouds != null ? { CLOUDS: '' } : {}), ...(physical ? { PHYSICAL: '' } : {}) },
         vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w; }',
-        fragmentShader: `varying vec3 vDir; uniform vec3 top, horizon, sunCol, sunDir, cloudLit, cloudDark; uniform float size, disc; uniform vec4 cloud; uniform sampler2D noise;
+        fragmentShader: `varying vec3 vDir; uniform vec3 top, horizon, sunCol, sunDir, cloudLit, cloudDark, pBR, pBM; uniform float size, disc; uniform vec4 cloud, pSun; uniform sampler2D noise;
           void main(){ vec3 d = normalize(vDir), sd = normalize(sunDir); float h = clamp(d.y, -1., 1.), s = max(dot(d, sd), 0.);
+          #ifdef PHYSICAL
+            // light scattered by the air towards the eye (Preetham; pSun: sun strength, glow, brightness, how low the sun is)
+            float zen = acos(max(d.y, 0.)), inv = 1. / (cos(zen) + .15 * pow(93.885 - zen * 57.29578, -1.253));
+            vec3 fex = exp(-(pBR * 8400. * inv + pBM * 1250. * inv));
+            float ct = dot(d, sd), g2 = pSun.y * pSun.y;
+            vec3 r = (pBR * (.0596831 * (1. + pow(ct * .5 + .5, 2.))) + pBM * (.0795775 * (1. - g2) / pow(1. - 2. * pSun.y * ct + g2, 1.5))) / (pBR + pBM);
+            vec3 lin = pow(pSun.x * r * (1. - fex), vec3(1.5)); lin *= mix(vec3(1.), sqrt(pSun.x * r * fex), pSun.w);
+            vec3 c = ((lin + .1 * fex) * .04 + vec3(0., .0003, .00075)) * pSun.z; c = mix(c, c * .55, clamp(-h * 3., 0., 1.));
+          #else
             vec3 c = mix(horizon, top, pow(max(h, 0.), .55)); c = mix(c, horizon * .55, clamp(-h * 3., 0., 1.));
             c += sunCol * (pow(s, 24.) * .35 + pow(s, 90.) * .4);
+          #endif
             float sun = smoothstep(size, size + .0004, s);
           #ifdef CLOUDS
             if (h > -.03) {
@@ -118,7 +162,7 @@ export class Sky {
     if (this.makesEnv) { this.envT -= dt; if (this.envT <= 0 && this.envKey() !== this.envAt) this.makeEnv(); }
     return this;
   }
-  get makesEnv() { return this.env && !!this.view.envFrom && !this.physical; }
+  get makesEnv() { return this.env && !!this.view.envFrom; }
   envKey() { return this.time.toFixed(2) + '|' + this.clouds.toFixed(2) + '|' + this.horizon.getHexString() + this.top.getHexString(); }
   makeEnv() {
     if (!this.envScene) { this.envScene = new Scene(); this.envDome = new Mesh(this.dome.geometry, this.dome.material); this.envDome.scale.setScalar(1000); this.envScene.add(this.envDome); }
@@ -139,7 +183,19 @@ export class Sky {
     this.sunDir.set(Math.cos(ang), up, this.tilt).normalize();
     this.night = Math.min(1, Math.max(0, (-up + .1) * 3));
     const lightDir = this.night > .5 ? this.sunDir.clone().negate() : this.sunDir;   // moonlight from the other side
-    if (this.physical) this.dome.material.uniforms.sunPosition.value.copy(this.sunDir);
+    if (this.phys) {
+      // the colours come from the scattering sums: overhead, round the horizon, and the sunlight itself
+      const q = physConsts(this.phys, this.sunDir, this.pq), u = this.dome.material.uniforms, d = new Vector3(), tmp = C('#000');
+      u.pBR.value.fromArray(q.bR); u.pBM.value.fromArray(q.bM); u.pSun.value.set(q.sunE, q.g, q.k, Math.max(0, Math.min(1, (1 - this.sunDir.y) ** 5)));
+      physAt(q, d.set(0, 1, 0), this.sunDir, this.top);
+      this.horizon.setRGB(0, 0, 0);
+      for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; this.horizon.add(physAt(q, d.set(Math.cos(a), .06, Math.sin(a)).normalize(), this.sunDir, tmp)); }
+      this.horizon.multiplyScalar(1 / 8);
+      // the sky's colours are light, not paint: keep them in the range the rest of the kit expects
+      const m = Math.max(this.horizon.r, this.horizon.g, this.horizon.b, this.top.r, this.top.g, this.top.b); if (m > 1) { this.horizon.multiplyScalar(1 / m); this.top.multiplyScalar(1 / m); }
+      if (this.night > 0) { this.top.lerp(C(a.top).lerp(C(b.top), k), this.night); this.horizon.lerp(C(a.horizon).lerp(C(b.horizon), k), this.night); }
+      physSun(q, this.sunDir, this.sunCol); if (this.night > .5) this.sunCol.set(a.sun).lerp(C(b.sun), k);
+    }
     if (this.stars) this.stars.material.opacity = this.night * .9;
     if (this.light && this.sunLight) {
       this.sunLight.color.copy(this.sunCol); this.sunLight.intensity = this.base.sun * sunI;
@@ -169,7 +225,8 @@ export class Sky {
 
 /**
  * Rain, snow and storms round the camera. kind: 'rain' | 'snow' | 'storm' | 'clear'; amount 0..1.
- * area: the box of weather round the camera (default fits the view's units). wind: [x, z] push.
+ * area: the box of weather round the camera (default fits the view's units). wind: [x, z] push, or a
+ * gs.outdoors Wind (followed as it changes).
  * Storms flash lightning every few seconds: set onFlash(far) (far 0..1) for thunder. Reduce motion
  * turns flashes down.
  */
@@ -198,7 +255,7 @@ export class Weather {
   }
   update(dt) {
     this.t += dt; const cam = this.view.cam, A = this.area, n = Math.floor(this.max * this.amount);
-    const cx = cam?.position.x ?? 0, cy = cam?.position.y ?? 0, cz = cam?.position.z ?? 0, [wx, wz] = this.wind, o = this.off;
+    const cx = cam?.position.x ?? 0, cy = cam?.position.y ?? 0, cz = cam?.position.z ?? 0, W = this.wind, wx = W.x ?? W[0] ?? 0, wz = W.z ?? W[1] ?? 0, o = this.off;
     if (this.rainMesh.visible) {
       const p = this.rainMesh.geometry.attributes.position, a = p.array, fall = A * 1.6, len = A * .03;
       for (let i = 0; i < n; i++) {
