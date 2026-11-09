@@ -1570,11 +1570,19 @@ function mount(cv, c, view) {
  * Cascades: s.fit(view, { far: 300, near: 40 }) adds a second, much sharper shadow over the first 40 m
  * (high and ultra tiers, with v.air() on), so the grass at your feet and the far hills both get theirs.
  */
+// A new shadow map size, set between frames. WebGL makes a new map when the old one is gone. On WebGPU three's
+// shadow node keeps its map and resizes it itself, but in the middle of drawing the frame, which throws away
+// a texture that frame has already used ("Destroyed texture used in a submit", the frame is lost). So the
+// map is resized here, before the frame, and three then finds it the right size.
+function shadowSize(sh, n) {
+  sh.mapSize.set(n, n);
+  if (sh.map?.isWebGLRenderTarget) { sh.map.dispose(); sh.map = null; } else sh.map?.setSize(n, n, sh.map.depth);
+}
 export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
   const s = new DirectionalLight(col, i), c = s.shadow.camera, d = new Vector3(...dir).normalize();
   s.castShadow = true; c.left = c.bottom = -size; c.right = c.top = size; c.near = 1; c.far = 120;
   s.shadow.bias = -.0004; s.shadow.normalBias = .04; s.shadow.radius = 2;
-  s.setTier = T => { s.tierShadow = T.shadow; s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow * 2) { s.shadow.mapSize.set(T.shadow * 2, T.shadow * 2); s.shadow.map?.dispose(); s.shadow.map = null; } };
+  s.setTier = T => { s.tierShadow = T.shadow; s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow * 2) shadowSize(s.shadow, T.shadow * 2); };
   s.dir = d;
   s.aim = (x, y, z) => { if (x?.isVector3) d.copy(x); else d.set(x, y, z); d.normalize(); return s; };
   s.follow = (x, y, z) => {
@@ -1590,7 +1598,7 @@ export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
       if (!n) { n = s.nearLight = new DirectionalLight(); n.name = 'sun-near'; n.dir = d; n.shadow.radius = s.shadow.radius; }
       if (n.parent !== s.parent) s.parent.add(n, n.target);
       n.visible = true; n.castShadow = true; n.color.copy(s.color); n.intensity = s.intensity;
-      const ms = s.shadow.mapSize.x; if (n.shadow.mapSize.x !== ms) { n.shadow.mapSize.set(ms, ms); n.shadow.map?.dispose(); n.shadow.map = null; }
+      const ms = s.shadow.mapSize.x; if (n.shadow.mapSize.x !== ms) shadowSize(n.shadow, ms);
       fitShadow(n, view, { ...o, far: nf, around: 0, max: nf * 2 });
       view.cascade = { near: n, far: s, fade: o.fade ?? .06 };
     } else if (s.nearLight?.visible) { s.nearLight.visible = false; view.cascade = null; }
@@ -1658,7 +1666,7 @@ function fitShadow(s, view, { far = 250, ground = null, low = -5, high = 30, tal
 export function spot(col = '#fff2e0', i = 30, dist = 16, angle = .5) {
   const s = new SpotLight(col, i, dist, angle, .55, 1.6);
   s.castShadow = true; s.shadow.bias = -.0004; s.shadow.normalBias = .02; s.shadow.camera.near = .2; s.shadow.radius = 3;
-  s.setTier = T => { s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow) { s.shadow.mapSize.set(T.shadow, T.shadow); s.shadow.map?.dispose(); s.shadow.map = null; } };
+  s.setTier = T => { s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow) shadowSize(s.shadow, T.shadow); };
   return s;
 }
 
