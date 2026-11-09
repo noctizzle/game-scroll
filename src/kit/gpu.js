@@ -1,21 +1,14 @@
-// One place that makes the app's 3D renderers and talks to the graphics chip. Classic Console
-// (toon3d.js), Next Gen and AR (hd3d.js) and the speed check (speed.js) all come here, so the move
-// to WebGPU (docs/webgpu-move.md) changes this file instead of every kit. Today every renderer is
-// three.js's WebGLRenderer; backend() says which one a renderer is.
+// One place that talks to the graphics chip: its name, whether it has WebGPU, the player's WebGPU
+// pick, and frame copies and pixel reads that work on both. Classic Console (toon3d.js), Next Gen and
+// AR (hd3d.js), the speed check (speed.js) and Settings all come here, so the move to WebGPU
+// (docs/webgpu-move.md) changes this file instead of every kit. With WebGPU switched on (Settings ›
+// Graphics, top phones that have it), prepareGPU() makes the one WebGPURenderer that Next Gen views
+// draw with when everything in them has a WebGPU version (hd3d.js); renderer.js makes the WebGL ones.
+// No three.js here (the app loads it only with the first 3D game): three's WebGPU build is a dynamic import.
 // Not for games: they get 3D through gs.toon, gs.hd and gs.ar.
-import { WebGLRenderer } from 'three';
+import { store } from '../util.js';
 
-/** Makes a three.js renderer on a new canvas (options as WebGLRenderer's), or throws if this device can't. */
-export function makeRenderer(o = {}) {
-  const canvas = o.canvas || document.createElement('canvas');
-  const r = new WebGLRenderer({ powerPreference: 'high-performance', ...o, canvas });
-  r.gsBackend = 'webgl';
-  // keep the page alive if the phone takes the graphics context away (the kits make it again)
-  canvas.addEventListener('webglcontextlost', e => e.preventDefault());
-  return r;
-}
-
-/** 'webgl' (or 'webgpu' once that path exists) for a renderer from makeRenderer. */
+/** 'webgl' or 'webgpu' for a renderer from makeRenderer or webgpu(). */
 export const backend = r => r?.gsBackend || 'webgl';
 
 let chip = null;
@@ -34,10 +27,10 @@ export function gpuName() {
   return chip;
 }
 
-let webgpu = null;
-/** Resolves true if this device offers WebGPU (asked once). Nothing uses WebGPU yet. */
+let gpuAsked = null;
+/** Resolves true if this device offers WebGPU (asked once). */
 export function hasWebGPU() {
-  return webgpu ||= (async () => {
+  return gpuAsked ||= (async () => {
     try { return !!(globalThis.navigator?.gpu && await navigator.gpu.requestAdapter()); } catch (_) { return false; }
   })();
 }
@@ -60,3 +53,36 @@ export function readPixels(r, target, x, y, w, h, buf = new Uint8Array(w * h * 4
   r.readRenderTargetPixels(target, x, y, w, h, buf);
   return Promise.resolve(buf);
 }
+
+/* ---------- WebGPU (the player's choice, off by default) ---------- */
+const PICK_KEY = 'gs.gpu';
+let pick = store.get(PICK_KEY, 'webgl') === 'webgpu' ? 'webgpu' : 'webgl';
+/** The player's pick: 'webgl' (default) or 'webgpu'. */
+export const gpuPick = () => pick;
+/** Sets the pick; turning WebGPU on gets it ready in the background (3D views switch over once it is). */
+export function setGpuPick(v) { pick = v === 'webgpu' ? 'webgpu' : 'webgl'; store.set(PICK_KEY, pick); if (pick === 'webgpu') prepareGPU(); }
+
+let gpu = null, gpuLoad = null;
+/**
+ * Gets WebGPU ready if the player picked it and the device has it: loads three's WebGPU build and the
+ * Next Gen WebGPU effects (hd3d-gpu.js), and makes the shared WebGPURenderer. Never rejects; resolves
+ * to the same thing webgpu() returns. The app calls it while loading the 3D parts.
+ */
+export function prepareGPU() {
+  if (pick !== 'webgpu') return Promise.resolve(null);
+  return gpuLoad ||= (async () => {
+    try {
+      if (!await hasWebGPU()) { console.warn('WebGPU: no adapter'); return null; }
+      const [W, fx] = await Promise.all([import('three/webgpu'), import('./hd3d-gpu.js')]);
+      const canvas = document.createElement('canvas');
+      const r = new W.WebGPURenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance' });
+      await r.init();
+      if (!r.backend?.isWebGPUBackend) { console.warn('WebGPU: three fell back to WebGL 2'); r.dispose(); return null; }   // three fell back to WebGL 2: keep our own WebGL path
+      r.gsBackend = 'webgpu';
+      r.backend.device?.lost?.then(() => { if (gpu?.r === r) gpu = null; gpuLoad = null; });   // the GPU went away: back to WebGL
+      return gpu = { r, W, fx };
+    } catch (e) { console.warn('WebGPU did not start:', e); gpuLoad = null; return null; }
+  })();
+}
+/** The ready WebGPU setup { r (WebGPURenderer), W (three/webgpu), fx (hd3d-gpu.js) }, or null (not picked, not supported, not ready). */
+export const webgpu = () => pick === 'webgpu' ? gpu : null;

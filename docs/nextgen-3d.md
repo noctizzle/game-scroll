@@ -93,7 +93,7 @@ so its next round starts there instead of stuttering down again.
 Shaders are compiled up front: the first `render()` calls `v.warm()`, which compiles every material
 in the scene, including hidden ones, with shadows on and off. If you build new geometry or
 materials later (a new floor), set `v.warmed = false` so the next frame warms again before play.
-`__hd.info` reports `{ calls, tris, cpu, shadows, upscaled }` for the last frame. The 3D frame is rendered at the tier's pixel count (and lower while the phone struggles), then upscaled to the card's full resolution with **Snapdragon Game Super Resolution 1** (Qualcomm's one-pass upscaler with edge-aware sharpening, `src/kit/sgsr.js`), so a smaller frame still has crisp edges. `HD.upscale = false` shows the plain stretched picture for comparison. The 2D HUD is always drawn at
+`__hd.info` reports `{ calls, tris, cpu, shadows, upscaled }` for the last frame. The 3D frame is rendered at the tier's pixel count (and lower while the phone struggles), then upscaled to the card's full resolution with **Snapdragon Game Super Resolution 2** (Qualcomm's temporal upscaler, `src/kit/sgsr2.js`): the camera is nudged by a fraction of a pixel each frame and each new small frame is blended into the full-size picture of the frames before, moved by the camera's own move. That gives a sharper, steadier picture than one frame can, and it also runs at full size as anti-aliasing (grass, leaves, wires and thin poles stop shimmering; FXAA is off then). Things that move fast across a still camera can leave a short soft trail (there are no per-object motion vectors), so a view can set `v.upscaler = 'sgsr1'` to use **SGSR 1** (`src/kit/sgsr.js`, one frame, edge-aware sharpening). AR views and frames with screen-space reflections use SGSR 1 too, and `HD.upscaler = 'sgsr1'` switches every view. `HD.upscale = false` shows the plain stretched picture for comparison, and `node scripts/upscale-compare.cjs` scores plain, SGSR 1 and SGSR 2 against a supersampled picture. The 2D HUD is always drawn at
 full resolution on top. `v.onTier(T => ...)` lets a game react (for example `spotLight.setTier(T)`).
 
 Rules of thumb:
@@ -211,6 +211,13 @@ s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
   `v.env = null` goes back to the studio.
 - `gs.hd.noiseTex()` is a shared 256 x 256 tiling noise texture (four sizes of noise in r, g, b and a)
   for your own shaders: clouds, water, grass, dirt.
+
+## WebGPU (test)
+
+On top phones, Settings › Graphics (test) › "Use WebGPU for 3D games" draws Next Gen and AR views
+with three's WebGPU renderer instead of WebGL. Nothing changes in a game: a view that uses a part not
+ported yet (see `docs/webgpu-move.md`) stays on WebGL by itself. `node scripts/gpu-games.cjs <id>`
+plays a game on both and says which it drew on.
 
 ## Decals, light probes and sun shafts
 

@@ -21,7 +21,8 @@ import {
   WebGLRenderTarget, DepthTexture, UnsignedIntType, MeshNormalMaterial,
 } from 'three';
 
-import { makeRenderer, copyFrame } from './gpu.js';
+import { copyFrame } from './gpu.js';
+import { makeRenderer } from './renderer.js';
 export * as THREE from 'three';
 
 /* ---------- shared renderer ---------- */

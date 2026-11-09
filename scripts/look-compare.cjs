@@ -3,19 +3,26 @@
 // update, a refactor, later WebGPU) keeps the look.
 //   node scripts/look-compare.cjs save <dir>        draw and save
 //   node scripts/look-compare.cjs check <dir>       draw and compare with <dir> (fails on a visible change)
+//   add --webgpu to draw on WebGPU (SwiftShader's Vulkan driver here): `save base` then
+//   `check base --webgpu` compares the WebGPU path with WebGL scene by scene.
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
 (async () => {
-  const [mode, dir] = process.argv.slice(2);
+  const argv = process.argv.slice(2), gpu = argv.includes('--webgpu'), [mode, dir] = argv.filter(a => !a.startsWith('--'));
   if (!['save', 'check'].includes(mode) || !dir) { console.log('usage: look-compare.cjs save|check <dir>'); process.exit(2); }
   const vite = await import('vite');
   const server = await vite.createServer({ server: { port: 4183 }, mode: 'bundled', logLevel: 'error' }); await server.listen();
-  const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] }), p = await b.newPage();
-  const errs = [], warns = new Set(); p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'warning' && /THREE/.test(m.text())) warns.add(m.text()); });
-  await p.goto('http://localhost:4183/scripts/look-compare/'); await p.waitForFunction(() => window.result, null, { timeout: 400000 });
+  // WebGPU in a headless browser needs Chromium's own SwiftShader Vulkan driver
+  const icd = path.join(path.dirname(chromium.executablePath()), 'vk_swiftshader_icd.json');
+  const b = await chromium.launch(gpu
+    ? { args: ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--use-angle=vulkan', '--enable-features=Vulkan'], env: { ...process.env, VK_ICD_FILENAMES: icd } }
+    : { args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] }), p = await b.newPage();
+  const errs = [], warns = new Set(); p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'warning' && /THREE|WebGPU/.test(m.text())) warns.add(m.text()); });
+  await p.goto('http://localhost:4183/scripts/look-compare/?' + (gpu ? 'gpu&' : '') + (process.env.ONLY ? 'only=' + process.env.ONLY : '') + (process.env.Q ? '&' + process.env.Q : '')); await p.waitForFunction(() => window.result, null, { timeout: 400000 });
   const res = await p.evaluate(() => window.result);
-  if (res.error || errs.length) { console.log('FAIL', res.error || errs.join('\n')); process.exit(1); }
+  if (res.error || errs.length) { for (const w of warns) console.log('warning:', w); console.log('FAIL', res.error || errs.join('\n')); process.exit(1); }
   for (const w of warns) console.log('three.js warning:', w);
+  const backends = res.backends || {}; delete res.backends;
   fs.mkdirSync(dir, { recursive: true });
   let bad = 0;
   for (const [name, url] of Object.entries(res)) {
@@ -30,10 +37,11 @@ const fs = require('fs'), path = require('path');
       let sum = 0, big = 0; for (let i = 0; i < pa.length; i += 4) { const e = (Math.abs(pa[i] - pc[i]) + Math.abs(pa[i + 1] - pc[i + 1]) + Math.abs(pa[i + 2] - pc[i + 2])) / 3; sum += e; if (e > 24) big++; }
       return { mean: sum / (pa.length / 4), big: big / (pa.length / 4) };
     }, [old, url]);
-    // grain and dithering move a little between runs; a real change moves a lot of pixels a lot
-    const ok = d.mean < 2.5 && d.big < .01;
+    // grain and dithering move a little between runs; a real change moves a lot of pixels a lot (WebGPU
+    // against WebGL: edge smoothing differs a little more along every edge)
+    const ok = d.mean < 2.5 && d.big < (gpu ? .02 : .01);
     if (!ok) bad++;
-    console.log(`${ok ? 'same' : 'CHANGED'}  ${name}: mean difference ${d.mean.toFixed(2)}/255, ${(d.big * 100).toFixed(2)}% of pixels clearly different`);
+    console.log(`${ok ? 'same' : 'CHANGED'}  ${name}${backends[name] ? ` (${backends[name]})` : ''}: mean difference ${d.mean.toFixed(2)}/255, ${(d.big * 100).toFixed(2)}% of pixels clearly different`);
     fs.writeFileSync(path.join(dir, name + '.new.png'), png);
   }
   await b.close(); await server.close();

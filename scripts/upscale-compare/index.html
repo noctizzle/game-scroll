@@ -1,0 +1,57 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#000">
+<script type="module">
+// Upscaler comparison for scripts/upscale-compare.cjs: the same Next Gen scene drawn at full size (the
+// reference) and drawn smaller then upscaled by plain stretch, SGSR 1 and SGSR 2, with the camera
+// still and moving, and a box moving across the scene. Each is scored against the full-size picture.
+import gs, { loadParts } from '../../src/gamescroll.js';
+import { setGpuPick } from '../../src/kit/gpu.js';
+setGpuPick('webgl');
+await loadParts();
+const T = gs.THREE, HD = window.__hd, W = 480, H = 640, Q = new URLSearchParams(location.search), K = +(Q.get('scale') || 1.5);
+HD.force = 0;
+const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .002, amb: .3 }), c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+const sun = gs.hd.sun('#fff2d8', 3, 18, [-.45, 1, .35]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+const ground = new T.Mesh(new T.PlaneGeometry(60, 60).rotateX(-Math.PI / 2), gs.hd.pbr('#6a7a58', { rough: .9 })); v.scene.add(ground);
+const cols = ['#c44', '#4a8', '#48c', '#cc4', '#a6c'];
+for (let i = 0; i < 5; i++) { const m = new T.Mesh(gs.hd.rbox(1, 1.6, 1), gs.hd.pbr(cols[i], { rough: .3 + i * .1, metal: i % 2 })); m.position.set(-3 + i * 1.5, .8, -i * .7); m.rotation.y = i * .4; v.scene.add(m); }
+// thin things: a fence of poles and wires, the hard case for any upscaler
+for (let i = 0; i < 24; i++) { const p = new T.Mesh(new T.BoxGeometry(.04, 1.2, .04), gs.hd.pbr('#eee')); p.position.set(-4 + i * .35, .6, 2); v.scene.add(p); }
+for (let j = 0; j < 3; j++) { const w = new T.Mesh(new T.BoxGeometry(8.4, .02, .02), gs.hd.pbr('#222')); w.position.set(0, .3 + j * .4, 2); v.scene.add(w); }
+const mover = new T.Mesh(gs.hd.rbox(.8, .8, .8), gs.hd.pbr('#f80', { rough: .4 })); mover.position.set(0, .4, 3.5); v.scene.add(mover);
+v.grade = { saturation: 1.1, contrast: 1.05 };
+const pose = f => { const a = f * .004; v.cam.position.set(Math.sin(a) * 9, 4, Math.cos(a) * 9); v.cam.lookAt(0, 1, 0); v.cam.updateMatrixWorld(); };
+const place = f => { mover.position.x = -3 + f * .05; };
+// modes: full (the reference: drawn at twice the size and scaled down, no jaggies), plain, sgsr1 and sgsr2
+// (drawn at 1/K size), native (full size, FXAA) and aa (full size, SGSR 2 as anti-aliasing)
+const set = mode => {
+  HD.upscale = !['full', 'plain', 'native'].includes(mode); HD.upscaler = mode === 'sgsr1' ? 'sgsr1' : 'sgsr2';
+  HD.scale = mode === 'full' ? 2 : mode === 'native' || mode === 'aa' ? 1 : 1 / K;
+};   // the reference: drawn at twice the size and scaled down (no jaggies)
+const draw = () => { v.t = 0; v.render(x, W, H); return x.getImageData(0, 0, W, H).data; };
+const err = (a, b) => { let s = 0; for (let i = 0; i < a.length; i += 4) s += (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])) / 3; return s / (a.length / 4); };
+// flicker: how much the picture changes from frame to frame with nothing moving
+const out = { scale: K, scenes: {} }, shots = {};
+const run = async (name, frames, moveCam, moveBox, modes = ['plain', 'sgsr1', 'sgsr2']) => {
+  set('full'); pose(moveCam ? frames : 0); place(moveBox ? frames : 0); const ref = draw();
+  const res = {};
+  for (const mode of modes) {
+    set(mode); let prev = null, flick = 0, ms = 0;
+    for (let f = 0; f <= frames; f++) {
+      pose(moveCam ? f : 0); place(moveBox ? f : 0);
+      const t0 = performance.now(), d = draw(); ms += performance.now() - t0;
+      if (prev && f > frames - 8) flick += err(d, prev) / 8; prev = d;
+      if (f === frames) { res[mode] = { error: +err(d, ref).toFixed(2), flicker: +flick.toFixed(2), ms: +(ms / (frames + 1)).toFixed(1), used: HD.info.upscaled }; if (Q.has('shots')) shots[name + '.' + mode] = c.toDataURL(); }
+      await new Promise(r => requestAnimationFrame(r));
+    }
+  }
+  if (Q.has('shots')) { set('full'); pose(moveCam ? frames : 0); place(moveBox ? frames : 0); draw(); shots[name + '.full'] = c.toDataURL(); }
+  out.scenes[name] = res;
+};
+try {
+  await run('still', 24, false, false);
+  await run('camera-moves', 40, true, false);
+  await run('box-moves', 40, false, true);
+  await run('anti-aliasing', 24, true, false, ['native', 'aa']);
+  HD.scale = null; out.shots = shots; window.result = out;
+} catch (e) { window.result = { error: e.message + '\n' + e.stack }; }
+</script>

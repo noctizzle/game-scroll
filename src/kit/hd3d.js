@@ -30,7 +30,7 @@ import {
   CanvasTexture, RepeatWrapping, SRGBColorSpace, NoColorSpace, PCFShadowMap, ACESFilmicToneMapping, HalfFloatType,
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
   OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4, DataTexture, RGBAFormat, ShaderChunk,
-  LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion,
+  LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion, DepthTexture,
 } from 'three';
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
@@ -43,8 +43,10 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { SGSR } from './sgsr.js';
-import { lookPatch } from './looks.js';
-import { makeRenderer, copyFrame } from './gpu.js';
+import { SGSR2 } from './sgsr2.js';
+import { lookPatch, looksOf } from './looks.js';
+import { copyFrame, webgpu, setGpuPick, prepareGPU } from './gpu.js';
+import { makeRenderer } from './renderer.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -113,15 +115,19 @@ export const HD = {
   get tier() { return Q.force ?? Q.tier; }, get name() { return TIERS[this.tier].name; }, get res() { return Q.force != null ? 1 : LEVELS[Q.lvl]; },
   set force(t) { Q.force = t; }, get force() { return Q.force; },
   /** Last frame: draw calls, triangles, milliseconds spent in render() on the CPU, and whether the shadows were redrawn. */
-  info: { calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false },
-  /** Upscale with Snapdragon GSR 1 when the 3D is drawn below the screen's size (false: plain stretch). */
+  info: { calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '' },
+  /** Upscale when the 3D is drawn below the screen's size (false: plain stretch). */
   upscale: true,
+  /** Which upscaler: 'sgsr2' (Snapdragon GSR 2, temporal; Next Gen without reflections) or 'sgsr1' (one frame). AR and the rest use SGSR 1. */
+  upscaler: 'sgsr2',
+  /** Tests: draw the 3D at this fraction of the screen's size (null: the tier and frame rate decide). */
+  scale: null,
   /** Show the 3D canvas directly on the card (false: copy each frame into the card's canvas, as tests and screenshots need). */
   direct: typeof navigator === 'undefined' || !navigator.webdriver,
 };
 const tier = () => TIERS[HD.tier];
 // test hook: __hd.force = 3 pins ultra. Dev and test builds and test browsers only, not the store apps.
-if (typeof window !== 'undefined' && (import.meta.env?.MODE !== 'production' || navigator.webdriver)) window.__hd = HD;
+if (typeof window !== 'undefined' && (import.meta.env?.MODE !== 'production' || navigator.webdriver)) { window.__hd = HD; window.__gpu = { pick: setGpuPick, ready: prepareGPU }; }
 
 /* ---------- shared renderer + post chain ---------- */
 let R = null, broken = false, comp = null, P = {}, envTex = null, compKey = '', pmGen = null;
@@ -346,7 +352,7 @@ function chain(r, w, h) {
   }
   if (!comp) {
     compKey = T.msaa;
-    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: T.msaa });
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: T.msaa, depthTexture: new DepthTexture(w, h) });   // depth: SGSR 2 reads it
     comp = new EffectComposer(r, rt);
     P.render = new RenderPass(new Scene(), new PerspectiveCamera());
     P.ao = new GTAOPass(new Scene(), new PerspectiveCamera(), w, h);
@@ -541,6 +547,8 @@ export class Particles {
     g.setAttribute('tint', new BufferAttribute(new Float32Array(max * 4), 4));
     this.mat = new ShaderMaterial({ vertexShader: PV, fragmentShader: PF, transparent: true, depthWrite: false, blending: additive ? AdditiveBlending : NormalBlending, uniforms: { scale: { value: 300 }, soft: { value: additive ? 0 : 1 } } });
     this.pts = new Points(g, this.mat); this.pts.frustumCulled = false; this.pts.renderOrder = 5; view.scene.add(this.pts); view.parts.push(this);
+    this.pts.userData.gsTwin = true;   // on WebGPU, hd3d-gpu.js draws them instead (gpuParticles)
+    this.view = view;
   }
   emit(o) { if (this.list.length >= this.max) this.list.shift(); this.list.push({ vx: 0, vy: 0, vz: 0, life: 1, size: .1, grow: 0, col: [1, 1, 1], a: 1, drag: 0, grav: 0, ...o, t: 0 }); }
   clear() { this.list.length = 0; }
@@ -557,13 +565,13 @@ export class Particles {
       T[n * 4] = p.col[0]; T[n * 4 + 1] = p.col[1]; T[n * 4 + 2] = p.col[2]; T[n * 4 + 3] = p.a * (p.fadeIn ? Math.min(1, f * 6) : 1) * (1 - f) ** (p.ease ?? 1);
       L[n++] = p;
     }
-    L.length = n; g.setDrawRange(0, n);
+    L.length = n; g.setDrawRange(0, n); this.n = n;
     for (const [a, k] of [['position', 3], ['size', 1], ['tint', 4]]) { const at = g.attributes[a]; at.clearUpdateRanges(); at.addUpdateRange(0, Math.max(1, n * k)); at.needsUpdate = true; }
   }
 }
 
 /* ---------- view ---------- */
-const C_WARM = new Color('#ffe2b8'), GV = new Vector3(), GP = new Vector3(), GW = new Vector3();
+const C_WARM = new Color('#ffe2b8'), GV = new Vector3(), GP = new Vector3(), GW = new Vector3(), GQ = new Vector2(), GL = new Vector3(), GH = new Vector3();
 // a grade tint: '#rrggbb', a Color or [r, g, b] (1 = no change)
 const toRGB = (c, out) => { if (c == null) out.set(1, 1, 1); else if (Array.isArray(c)) out.set(c[0], c[1], c[2]); else { const k = c.isColor ? c : new Color(c); out.set(k.r, k.g, k.b); } return out; };
 // decal pictures: drawn once per key and kept (a soft round mark by default)
@@ -592,6 +600,7 @@ export class HDView {
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
     this.shafts = 0; this.decals = []; this.probes = []; this.probe = null;
+    this.upscaler = undefined;   // 'sgsr1' keeps this view on Snapdragon GSR 1 (lots of fast movers: SGSR 2 can leave a short soft trail)
   }
   /**
    * Outdoor air for every lit material in the scene: haze (how thick the air is: .001 is about 1 km of
@@ -668,6 +677,7 @@ export class HDView {
    */
   bakeLight(at, { radius = 10, strength = 1, size = 32 } = {}) {
     const r = renderer(); if (!r) return Promise.resolve(null);
+    gpuSwap(this, null);
     const pos = at.isVector3 ? at.clone() : new Vector3(...at);
     const rt = new WebGLCubeRenderTarget(size, { type: HalfFloatType }), cc = new CubeCamera(.05, 400, rt);
     cc.position.copy(pos); this.scene.add(cc);
@@ -772,7 +782,9 @@ export class HDView {
    * extra materials that get swapped in later can be passed in.
    */
   warm(...extra) {
-    const r = renderer(); if (!r) return; this.warmed = true;
+    const G = gpuFor(this);
+    if (G) { gpuSwap(this, G); this.warmed = true; this.scene.environment = gpuEnv(G); G.r.compileAsync(this.scene, this.cam).catch(() => {}); return; }
+    const r = renderer(); if (!r) return; this.warmed = true; gpuSwap(this, null);
     const hidden = [], tmp = [];
     this.scene.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
     for (const m of extra) { const ms = new Mesh(new BoxGeometry(.01, .01, .01), m); this.scene.add(ms); tmp.push(ms); }
@@ -792,7 +804,13 @@ export class HDView {
    */
   prepare() {
     if (this.preparing) return this.preparing;
+    const G = gpuFor(this);
+    if (G) {
+      gpuSwap(this, G); this.scene.environment = gpuEnv(G); this.warmed = true;
+      return this.preparing = G.r.compileAsync(this.scene, this.cam).catch(() => {}).then(() => { this.ready = true; });
+    }
     const r = renderer(); if (!r) return Promise.resolve();
+    gpuSwap(this, null);
     const hidden = [], jobs = [], was = r.shadowMap.enabled, sh = tier().shadow > 0;
     this.scene.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
     this.patchAir(true); this.airUniforms();
@@ -828,6 +846,38 @@ export class HDView {
   }
   /** Redraw the shadow maps next frame even if nothing seems to have moved (e.g. after changing a geometry in place). */
   shadowsDirty() { this.shKey = null; return this; }
+  // The WebGPU frame (render() decided this view fits): the same numbers as the WebGL chain, drawn by hd3d-gpu.js.
+  drawGPU(G, r, T, baking, off, now) {
+    const ch = this._gpuChain?.r === r ? this._gpuChain : (this._gpuChain = new G.fx.GpuChain(r, this.scene, this.cam, !!this.clearBg));
+    this.scene.environment = gpuEnv(G); this.scene.environmentIntensity = this.envI;
+    if (this._air) { this.airUniforms(); const a = gpuAir(G); a.sync(); this.scene.fogNode = a.node(); } else this.scene.fogNode = null;
+    r.toneMapping = ACESFilmicToneMapping; r.toneMappingExposure = this.exposure;
+    if (this.decals.length && !baking && !off) this.tickDecals(Math.min(.1, (now - (this.decalT || now)) / 1000)); this.decalT = now;
+    if (!baking && !off) this.t += 1 / 60;
+    gpuSwap(this, G);
+    for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
+    const o = { w: r.domElement.width, h: r.domElement.height, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H };
+    const g = this.grade;
+    if (g) o.grade = { sat: g.saturation ?? 1, con: g.contrast ?? 1, lo: toRGB(g.shadows, GL), hi: toRGB(g.highlights, GH) };
+    if (this.glare > 0) {
+      const sd = this.sunDir(GV), cam = this.cam; GP.copy(cam.position).addScaledVector(sd, 1000).project(cam);
+      cam.getWorldDirection(GW);
+      if (GW.dot(sd) > 0 && Math.abs(GP.x) < 1.6 && Math.abs(GP.y) < 1.6) {
+        o.glare = this.glare * Math.min(1, (1.6 - Math.max(Math.abs(GP.x), Math.abs(GP.y))) * 2);
+        o.sunUV.set(GP.x * .5 + .5, GP.y * .5 + .5); o.sunCol = this.sun?.color || C_WARM;
+      }
+    }
+    // shadows: three's WebGPU renderer redraws them each frame (top phones only, for now)
+    r.shadowMap.enabled = T.shadow > 0; r.shadowMap.type = PCFShadowMap;
+    if (!this.warmed && !off) { this.warmed = true; r.compileAsync(this.scene, this.cam).catch(() => {}); }
+    // an instanced mesh made with room for none (an empty list in a game) has a zero-size buffer that WebGPU
+    // won't bind; it draws nothing anyway, so it sits this frame out
+    const empty = []; this.scene.traverseVisible(o => { if (o.isInstancedMesh && (!o.count || !o.instanceMatrix.count)) empty.push(o); });
+    for (const e of empty) e.visible = false;
+    r.info.autoReset = false; r.info.reset();
+    try { ch.render(o); } finally { for (const e of empty) e.visible = true; }
+    if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = T.shadow > 0; HD.info.upscaled = false; HD.info.backend = 'webgpu'; }
+  }
   /**
    * The 3D canvas belongs to another card now: draw this view's last frame under the HUD already on
    * its canvas (and the camera picture under that, for AR), so the card keeps its picture.
@@ -851,7 +901,7 @@ export class HDView {
    */
   render(c, w = this.W, h = this.H, baking = false) {
     this.fit(w, h);
-    const r = renderer();
+    const G = gpuFor(this), r = G ? G.r : renderer();
     if (!r) { c.fillStyle = this.scene.background ? '#' + this.scene.background.getHexString() : '#0b0f14'; c.fillRect(0, 0, w, h); c.fillStyle = '#fff'; c.font = '600 12px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('This device cannot show 3D', w / 2, h / 2); return; }
     const now = performance.now();
     // where the frame goes: straight onto the card (moving the 3D canvas here first, which bakes the
@@ -875,14 +925,22 @@ export class HDView {
     }
     const T = tier();
     if (this.tierSeen !== HD.tier) { this.tierSeen = HD.tier; this.tierFn?.(T); }
-    const fw = c.canvas.width, fh = c.canvas.height; let pw = fw, ph = fh; const q = Math.min(1, Math.sqrt(T.px / (pw * ph))) * HD.res;
+    const fw = c.canvas.width, fh = c.canvas.height; let pw = fw, ph = fh; const q = HD.scale ?? Math.min(1, Math.sqrt(T.px / (pw * ph))) * HD.res;
     pw = Math.max(16, Math.round(pw * q)); ph = Math.max(16, Math.round(ph * q));
     // The 3D is drawn at pw x ph (fewer pixels on big screens and when the phone struggles). Below the
-    // screen's size, Snapdragon GSR 1 (sgsr.js) upscales it to the full screen with sharp edges, as the
-    // last pass; HD.upscale = false shows the plain stretched picture instead (tests, comparisons).
-    const up = HD.upscale && !baking && pw < fw * .95;
-    const ow = up ? fw : pw, oh = up ? fh : ph;
+    // screen's size, Snapdragon GSR 2 (sgsr2.js, temporal: jitters the camera and builds on the frames
+    // before) or GSR 1 (sgsr.js, AR and SSR) upscales it to the full screen as the last pass;
+    // HD.upscale = false shows the plain stretched picture instead (tests, comparisons).
+    const up = !G && HD.upscale && !baking && pw < fw * .95;   // (WebGPU: plain stretch for now)
+    // SGSR 2 also runs at full size, as anti-aliasing (grass and leaves stop shimmering); not for AR,
+    // SSR (it draws the scene itself), card pictures or WebGPU
+    const ssr = !G && !this.clearBg && T.ssr && this.reflectors.length > 0;
+    const s2 = !G && HD.upscale && !baking && !this.clearBg && !ssr && (this.upscaler ?? HD.upscaler) === 'sgsr2' ? (P.sgsr2 ||= new SGSR2()) : null;
+    const ow = up || s2 ? fw : pw, oh = up || s2 ? fh : ph;
     const cv = r.domElement; if (cv.width !== ow || cv.height !== oh) r.setSize(ow, oh, false);
+    if (G) this.drawGPU(G, r, T, baking, off, now);
+    else {
+    gpuSwap(this, null);
     const cp = this.clearBg ? seeThrough(r, pw, ph) : chain(r, pw, ph); if (cp.cw !== pw || cp.ch !== ph) { cp.setSize(pw, ph); cp.cw = pw; cp.ch = ph; }
     if (up) { P.sgsr ||= new ShaderPass(SGSR); P.sgsr.uniforms.ViewportInfo.value = (P.sgsrV ||= new Vector4()).set(1 / pw, 1 / ph, pw, ph); }
     if (this.clearBg) cp.passes = up ? [P.arRender, P.arOut, P.sgsr] : [P.arRender, P.arOut];
@@ -891,7 +949,6 @@ export class HDView {
     r.toneMappingExposure = this.exposure;
     if (this.clearBg) { P.arRender.scene = this.scene; P.arRender.camera = this.cam; } else { P.render.scene = P.ao.scene = this.scene; P.render.camera = P.ao.camera = this.cam; }
     // reflections (ultra, and only if the game marked shiny surfaces): SSR draws the scene itself
-    const ssr = !this.clearBg && T.ssr && this.reflectors.length > 0;
     if (ssr) {
       if (!P.ssr) {
         P.ssr = new SSRPass({ renderer: r, scene: this.scene, camera: this.cam, width: pw, height: ph, selects: [], groundReflector: null });
@@ -909,7 +966,7 @@ export class HDView {
     if (!baking && !off) this.t += 1 / 60;
     if (!this.clearBg) {
       const F = P.final; P.ao.enabled = T.ao > 0; if (T.ao > 0 && P.ao.scale !== T.ao) { P.ao.scale = T.ao; P.ao.setSize(P.ao.fw || pw, P.ao.fh || ph); }
-      F.strength = this.bloom; F.scale = T.bloom; F.setFxaa(!T.msaa || ssr);
+      F.strength = this.bloom; F.scale = T.bloom; F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
       const u = F.final.uniforms; u.t.value = this.t % 10; u.hurt.value = this.hurt;
       const g = this.grade; u.gradeOn.value = g ? 1 : 0;
       if (g) { u.sat.value = g.saturation ?? 1; u.con.value = g.contrast ?? 1; toRGB(g.shadows, u.lo.value); toRGB(g.highlights, u.hi.value); }
@@ -934,21 +991,24 @@ export class HDView {
       const first = ssr ? P.ssr : P.render;
       const sh = P.shafts && P.shafts.amount > 0 ? [P.shafts] : [];
       if (sh.length && (P.shafts.cw !== pw || P.shafts.ch !== ph)) { P.shafts.setSize(pw, ph); P.shafts.cw = pw; P.shafts.ch = ph; }
-      cp.passes = up ? [first, P.ao, ...ex, ...sh, P.final, P.sgsr] : [first, P.ao, ...ex, ...sh, P.final];
-      P.final.needsSwap = up;   // the final pass writes into the next buffer only when SGSR reads it
+      // SGSR 2 reads the scene's depth straight after it's drawn
+      cp.passes = s2 ? [first, s2.convertPass, P.ao, ...ex, ...sh, P.final, s2.upscalePass] : up ? [first, P.ao, ...ex, ...sh, P.final, P.sgsr] : [first, P.ao, ...ex, ...sh, P.final];
+      P.final.needsSwap = up || !!s2;   // the final pass writes into the next buffer only when SGSR reads it
       for (const p of ex) if (p.cw !== pw || p.ch !== ph) { p.setSize(pw, ph); p.cw = pw; p.ch = ph; }
     }
     if (!this.warmed && !off) this.warm();
     // shadows: redraw the maps only when a shadow caster or a shadow light moved (or the tier, view or map changed)
     this.scene.updateMatrixWorld();
     r.shadowMap.enabled = T.shadow > 0;
-    let shadows = false;
+    let shadows = false; const cut = lastView !== this;
     if (T.shadow > 0) { const k = this.shadowKey(); if (k !== this.shKey || lastView !== this) { this.shKey = k; r.shadowMap.needsUpdate = shadows = true; } }
     lastView = this;
     r.info.autoReset = false; r.info.reset();
     const mwa = this.scene.matrixWorldAutoUpdate; this.scene.matrixWorldAutoUpdate = false;   // already updated above
-    try { cp.render(); } finally { this.scene.matrixWorldAutoUpdate = mwa; }
-    if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = shadows; HD.info.upscaled = up; }
+    if (s2) s2.begin(this.cam, pw, ph, fw, fh, this, now, cut);   // the camera's move and this frame's jitter
+    try { cp.render(); } finally { this.scene.matrixWorldAutoUpdate = mwa; s2?.end(this.cam); }
+    if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = shadows; HD.info.upscaled = s2 ? 'sgsr2' : up && 'sgsr1'; HD.info.backend = 'webgl'; HD.info.webgl = this._gpuWhy || ''; }
+    }
     if (direct) { c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, c.canvas.width, c.canvas.height); c.restore(); return; }
     c.save(); c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
     if (baking) { c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'destination-over'; copyFrame(r, c, 0, 0, ow, oh, 0, 0, c.canvas.width, c.canvas.height); }
@@ -956,6 +1016,53 @@ export class HDView {
     c.restore();
   }
 }
+
+/* ---------- WebGPU (gpu.js, hd3d-gpu.js) ---------- */
+// A view draws on WebGPU when the player switched it on, it's ready, and everything in the view has a
+// WebGPU version so far. Anything else keeps the view on WebGL: game effects (gs.fx3d), GPU particles,
+// contact shadows, reflections, sun shafts, light probes, a sky's own reflections, cloud shadows and
+// rain on the air, and any material with its own shader (ShaderMaterial or a shader patch that isn't
+// one of the kit's ported look effects). docs/webgpu-move.md lists what's left to port.
+const PORTED_LOOKS = new Set(['air']);
+function materialFits(m) {
+  if (!m) return true;
+  if (m.isShaderMaterial || m.isRawShaderMaterial) return false;
+  if (Object.hasOwn(m, 'onBeforeCompile')) { const l = looksOf(m); return l.length > 0 && l.every(n => PORTED_LOOKS.has(n)); }
+  return true;
+}
+/** '' if every part of this view has a WebGPU version, else what keeps it on WebGL (HD.info.webgl). */
+export function gpuFits(v) {
+  const T = tier();
+  if (v.extras?.length) return 'screen effects (gs.fx3d)';
+  if (v.probes.length) return 'light probes';
+  if (v.shafts > 0) return 'sun shafts';
+  if (v.env || v.envMaker) return 'sky reflections';
+  if (T.ssr && v.reflectors.length) return 'reflections';
+  const a = v._air; if (a && (a.clouds > 0 || a.wet > 0)) return a.clouds > 0 ? 'cloud shadows' : 'rain on the air';
+  let why = '';
+  v.scene.traverse(o => { if (!why && o.material && !o.userData.gsTwin) for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (!materialFits(m)) { why = `a material with its own shader (${m.type}${o.name ? ' on ' + o.name : ''})`; break; } });
+  return why;
+}
+// asked every frame (a quick walk over the scene), so a game that adds an effect mid-round moves back to WebGL before it draws
+function gpuFor(v) {
+  const G = webgpu(); if (!G) return null;
+  v._gpuWhy = gpuFits(v);
+  return v._gpuWhy ? null : G;
+}
+// swap each view's parts between their WebGL and WebGPU versions (particles: points or sprites)
+function gpuSwap(v, G) {
+  for (const p of v.parts) {
+    if (G) {
+      const tw = p.gpuTwin?.r === G.r ? p.gpuTwin : (p.gpuTwin = { r: G.r, ...G.fx.gpuParticles(p) });
+      if (p.pts.parent) { p.pts.parent.add(tw.sprite); p.pts.removeFromParent(); }
+      tw.sync(p.n || 0);
+    } else if (p.gpuTwin?.sprite.parent) { p.gpuTwin.sprite.parent.add(p.pts); p.gpuTwin.sprite.removeFromParent(); }
+  }
+}
+const gpuEnvs = new WeakMap();
+const gpuEnv = G => { let e = gpuEnvs.get(G); if (!e) { e = G.fx.studioEnv(G.r); gpuEnvs.set(G, e); } return e; };
+const gpuAirs = new WeakMap();
+const gpuAir = G => { let a = gpuAirs.get(G); if (!a) { a = G.fx.airNodes(AIR); gpuAirs.set(G, a); } return a; };
 
 /* ---------- showing the 3D canvas on the card ---------- */
 // The 3D canvas (and, for AR, the camera video under it) sits inside the card's screen, right before
@@ -972,7 +1079,7 @@ function bakeLater(view, c) {
   // canvas off it, and draw this card's picture
   const r = renderer(); if (!r) return;
   if (host) { const old = host; host = null; if (old.canvas.isConnected) try { old.view.bake(old.ctx); } catch (_) { /* best effort */ } old.canvas.classList.remove('hd-host'); old.under?.remove(); }
-  r.domElement.remove();
+  r.domElement.remove(); webgpu()?.r.domElement.remove();
   try { view.bake(c); } catch (_) { /* best effort */ }
 }
 function mount(cv, c, view) {
@@ -982,6 +1089,8 @@ function mount(cv, c, view) {
     if (old.canvas.isConnected) try { old.view.bake(old.ctx); } catch (_) { /* best effort */ }
     old.canvas.classList.remove('hd-host');
   }
+  // a view that moved between WebGL and WebGPU: take the other renderer's canvas off this card
+  const prev = hc.previousSibling; if (prev && prev !== cv && (prev === R?.domElement || prev === webgpu()?.r.domElement)) prev.remove();
   if (hc.previousSibling !== cv) par.insertBefore(cv, hc);
   cv.classList.add('hd-layer'); hc.classList.add('hd-host');
   const u = view.under || null;
@@ -1120,6 +1229,7 @@ export class ContactShadows {
   update(r, scene, res) {
     if (this.enabled === false) res = 0;
     this.set(res); this.plane.visible = !!res; if (!res) return;
+    if (this.mat.map !== this.rt.texture) { this.mat.map = this.rt.texture; this.mat.needsUpdate = true; }   // back from WebGPU (hd3d-gpu.js gpuContact)
     // only things that cast shadows go in (not floors, shadow catchers or effects)
     const hidden = [];
     scene.traverseVisible(o => { if ((o.isMesh || o.isPoints || o.isSprite || o.isLine) && (!o.castShadow || o.userData.noContact)) hidden.push(o); });

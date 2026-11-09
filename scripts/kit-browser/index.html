@@ -80,9 +80,16 @@ try {
       const bc = document.createElement('canvas'); bc.width = 1200; bc.height = 900; const bx = bc.getContext('2d');
       const edges = () => { const d = bx.getImageData(0, 0, 1200, 900).data; let e = 0; for (let y = 0; y < 900; y += 3) for (let x = 1; x < 1200; x++) { const i = (y * 1200 + x) * 4; e += Math.abs(d[i] - d[i - 4]) + Math.abs(d[i + 1] - d[i - 3]); } return e; };
       window.__hd.upscale = false; hv.render(bx, 1200, 900); hv.render(bx, 1200, 900); const plain = edges(), plainUp = gs.hd.HD.info.upscaled;
-      window.__hd.upscale = true; hv.render(bx, 1200, 900); hv.render(bx, 1200, 900); const sharp = edges();
-      ok(gs.hd.HD.info.upscaled && !plainUp, 'drawn smaller and upscaled with SGSR 1');
+      window.__hd.upscale = true; window.__hd.upscaler = 'sgsr1'; hv.render(bx, 1200, 900); hv.render(bx, 1200, 900); const sharp = edges();
+      ok(gs.hd.HD.info.upscaled === 'sgsr1' && !plainUp, 'drawn smaller and upscaled with SGSR 1');
       ok(bx.getImageData(600, 450, 1, 1).data[3] > 0 && sharp >= plain * .98, 'SGSR picture is as sharp or sharper: edges ' + sharp + ' vs plain ' + plain);
+      // Snapdragon GSR 2 (the default): jitters the camera, builds on the frames before, and puts the camera back
+      window.__hd.upscaler = 'sgsr2'; const pm = hv.cam.projectionMatrix.clone();
+      for (let i = 0; i < 6; i++) hv.render(bx, 1200, 900);
+      const px = bx.getImageData(600, 450, 1, 1).data, t2 = edges();
+      ok(gs.hd.HD.info.upscaled === 'sgsr2' && px[3] > 0 && px[0] + px[1] + px[2] > 0 && t2 > plain * .5, 'drawn smaller and upscaled with SGSR 2: edges ' + t2);
+      ok(hv.cam.projectionMatrix.equals(pm), 'SGSR 2 leaves the camera as it was');
+      hv.upscaler = 'sgsr1'; hv.render(bx, 1200, 900); ok(gs.hd.HD.info.upscaled === 'sgsr1', 'a view can pick SGSR 1'); hv.upscaler = undefined;
       window.__hd.force = 3;
     }
     window.__hd.direct = direct; window.__hd.force = null;
