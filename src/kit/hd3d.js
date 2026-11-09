@@ -1256,7 +1256,7 @@ export class HDView {
     if (!baking && !off) this.t += 1 / 60;
     gpuSwap(this, G);
     if (this.gi || this.rooms?.length) this.bakeExtras(G, r);
-    this.scene.traverse(o => { if (o.isInstancedMesh2 && o.userData.gpuHid) o.userData.gpuTwin.sync(this.cam); });
+    this.scene.traverse(o => { if (o.isInstancedMesh2 && o.userData.gpuHid) o.userData.gpuTwin.sync(this.cam, this.occlusion?.ready && HD.occlude !== false ? this.occlusion : null); });
     for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
     // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
     const pw = up ? up.pw : r.domElement.width, ph = up ? Math.max(1, Math.floor(up.fh * (pw + .5) / up.fw)) : r.domElement.height;
@@ -1523,6 +1523,14 @@ function swapTwins(scene, G) {
 }
 function gpuSwap(v, G) {
   swapTwins(v.scene, G);
+  // shadow maps: each renderer keeps its own. WebGL drew into WebGPU's map when it found one on the light
+  // (and the other way round), which made WebGPU remake it in the middle of a frame that still used it:
+  // that frame was lost, and every frame after it while the old one stayed bound
+  v.scene.traverse(o => {
+    const sh = o.isLight && o.shadow; if (!sh?.map) return;
+    if (G) { if (sh.map.isWebGLRenderTarget) { sh.map.dispose(); sh.map = sh.gpuMap || null; } }
+    else if (!sh.map.isWebGLRenderTarget) { sh.gpuMap = sh.map; sh.map = null; }
+  });
   // materials with a named look that has a WebGPU version (PORTED_LOOKS): set its nodes before
   // three first turns the material into a node material (it copies them over); with the air on, lit
   // standard materials also get wet in the rain (AIR_WET)
@@ -1537,8 +1545,9 @@ function gpuSwap(v, G) {
     }
   });
   // gs.props (InstancedMesh2): plain instanced twins on WebGPU (hd3d-gpu.js gpuProps)
-  v.scene.traverse(o => {
-    if (!o.isInstancedMesh2 || o._parentLOD) return;
+  // (listed first: adding and removing the twins while walking the scene skipped things and threw)
+  const props = []; v.scene.traverse(o => { if (o.isInstancedMesh2 && !o._parentLOD) props.push(o); });
+  for (const o of props) {
     const ud = o.userData;
     if (G) {
       if (ud.gpuTwin?.r !== G.r) { ud.gpuTwin?.group.removeFromParent(); ud.gpuTwin = { r: G.r, ...G.fx.gpuProps(o) }; }
@@ -1546,7 +1555,7 @@ function gpuSwap(v, G) {
       if (!ud.gpuHid) { ud.gpuHid = true; ud.gpuWasVisible = o.visible; }
       o.visible = false; ud.gpuTwin.group.visible = ud.gpuWasVisible;
     } else if (ud.gpuHid) { o.visible = ud.gpuWasVisible; ud.gpuHid = false; ud.gpuTwin?.group.removeFromParent(); }
-  });
+  }
   for (const p of v.parts) {
     if (G) {
       const tw = p.gpuTwin?.r === G.r ? p.gpuTwin : (p.gpuTwin = { r: G.r, ...(p.makeTwin ? p.makeTwin(G) : G.fx.gpuParticles(p)) });
