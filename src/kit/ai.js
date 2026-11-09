@@ -10,6 +10,9 @@
 //   }
 //   update(dt) { crowd.update(dt); }                            // moves everyone; read bat.x, bat.y, bat.angle
 //
+// For hundreds or thousands of simple flockers (shoals, bats, hordes) use Swarm (swarm.js), which
+// runs on the graphics chip where the phone can.
+//
 //   nav = new NavGrid(20, 30, 16, (cx, cy) => level[cy][cx] === '#');   // cols, rows, cell size, is it a wall?
 //   const route = nav.path(bat.x, bat.y, player.x, player.y);           // [{ x, y }, ...] round the walls, or null
 //   bat.follow(route);  or crowd.add(...).hunt(player, nav)             // re-plans the route as the player moves
@@ -23,6 +26,7 @@
 
 import * as YUKA from 'yuka';
 export { YUKA };
+export { Swarm } from './swarm.js';
 const { Vehicle, EntityManager, Vector3, SeekBehavior, FleeBehavior, ArriveBehavior, PursuitBehavior, EvadeBehavior, WanderBehavior,
   FollowPathBehavior, SeparationBehavior, AlignmentBehavior, CohesionBehavior, Path, Graph, NavNode, NavEdge, AStar } = YUKA;
 

@@ -342,5 +342,19 @@ try {
   ok(!('stopHearing' in gs.hear) && !('loadDoodle' in gs.doodle) && !('phoneAIStatus' in gs.phoneai), 'smarts helpers stay hidden');
   ok(await new gs.phoneai.PhoneAI().ask('hi', { fallback: 'ok' }) === 'ok', 'phone AI falls back with no model');
 }
+{
+  // Swarm: the WebGPU compute version matches the CPU one (where this browser has WebGPU)
+  const { Swarm } = gs.ai, mk = gpu => new Swarm({ count: 1200, w: 400, h: 400, speed: 60, seed: 9, gpu });
+  const c = mk(false), g = mk(true);
+  if (!(await g.ready)) ok(!g.gpu && g.count === 1200, 'swarm: no WebGPU here, so it runs on the CPU');
+  else {
+    for (const s of [c, g]) { s.obstacle(200, 200, 30).pull(100, 100, { strength: 1, radius: 150 }); s.update(1 / 60); }
+    await g.sync();
+    let d = 0; for (let i = 0; i < c.count; i++) { const dx = Math.abs(c.x[i] - g.x[i]), dy = Math.abs(c.y[i] - g.y[i]); d = Math.max(d, Math.min(dx, 400 - dx), Math.min(dy, 400 - dy)); }
+    ok(d < .05, 'swarm: the GPU and CPU agree within ' + d.toExponential(1) + ' units after a frame');
+    g.kill(3); g.update(1 / 60); await g.sync(); ok(g.near(g.x[3], g.y[3], .01).indexOf(3) < 0 && g.gpu, 'swarm: kill on the GPU');
+    g.dispose(); ok(!g.gpu, 'swarm: dispose');
+  }
+}
 window.result = out;
 </script>
