@@ -329,6 +329,10 @@ spin and tumble, and you can join them with hinges, springs, ropes, welds and sl
 bridges, wrecking balls, ragdolls, cars, stacking, pinball. Everything is in your game's units
 (pixels, y down); angles are radians, clockwise on screen, so `c.rotate(t.angle)` just works.
 
+Phones with WebAssembly SIMD (nearly all from the last few years) get Rapier's SIMD build, which
+turns into ARM Neon and steps about 10-20% faster; older phones get the plain build. Same engine,
+same results for your game, only one is downloaded. `?nosimd` in the URL tries the plain build in dev.
+
 ```js
 reset() {
   phys = new Physics({ gravity: 900, walls: [0, 0, W, H] });   // in make() or reset(): the engine loads first

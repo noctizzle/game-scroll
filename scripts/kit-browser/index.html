@@ -23,6 +23,7 @@ try {
   ok(gs.prefs.reduceMotion === false && gs.prefs.motion === 1, 'prefs defaults');
   try { gs.prefs.motion = 0; } catch (_) { /* frozen */ } ok(gs.prefs.motion === 1, 'games cannot change prefs');
   // lazy: physics
+  { const { wasmSimd } = await import('/src/kit/simd.js'); ok(true, 'physics build: ' + (wasmSimd() ? 'SIMD' : 'plain (no SIMD)')); }
   let e; try { new gs.physics.Physics(); } catch (x) { e = x; } ok(e && e.kitLoading, 'physics StillLoading'); await e.kitLoading;
   const p = new gs.physics.Physics({ walls: [0, 0, 320, 240] }); const b = p.box(100, 20, 20, 20); for (let i = 0; i < 90; i++) p.step(1 / 60); ok(b.y > 200, 'physics in browser ' + b.y);
   try { new gs.physics3d.World3D(); } catch (x) { e = x; } await e.kitLoading; const w3 = new gs.physics3d.World3D(); w3.floor(0); const bb = w3.ball(null, .5, { at: { x: 0, y: 3, z: 0 } }); for (let i = 0; i < 90; i++) w3.step(1 / 60); ok(Math.abs(bb.pos.y - .5) < .05, 'physics3d in browser');

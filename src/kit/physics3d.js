@@ -20,9 +20,12 @@
 // Like 2D physics the engine loads the first time a game needs it (the app waits for it).
 
 import { lazy } from './lazy.js';
+import { wasmSimd } from './simd.js';
 import { Box3, Matrix4, Vector3 as V3, Quaternion } from 'three';
 import { own } from './cleanup.js';
-const engine = lazy('The 3D physics engine', () => import('@dimforge/rapier3d-compat').then(async m => {
+// The SIMD build where the phone has WebAssembly SIMD (faster: Neon on ARM phones), else the plain one.
+// Same engine and API; only one of the two is ever downloaded.
+const engine = lazy('The 3D physics engine', () => (wasmSimd() ? import('@dimforge/rapier3d-simd-compat') : import('@dimforge/rapier3d-compat')).then(async m => {
   const r = m.default?.init ? m.default : m;
   await r.init();
   return r;
