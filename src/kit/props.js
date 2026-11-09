@@ -15,17 +15,29 @@
 //   chunks: new Chunks(view.scene, { size: 40, radius: 2, make: (cx, cz) => buildChunk(cx, cz) }); update: chunks.update(player.pos)
 
 import { Vector3, Box3, Color } from 'three';
-import { SimplifyModifier } from 'three/examples/jsm/modifiers/SimplifyModifier.js';
+import { MeshoptSimplifier } from 'three/examples/jsm/libs/meshopt_simplifier.module.js';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { InstancedMesh2 } from '@three.ez/instanced-mesh';
+
+// meshoptimizer's simplifier (what three's SimplifyModifier uses; its modify() became async in three
+// 0.186, so it's called directly here). Its wasm starts at once; the app waits for it with the 3D parts.
+let canSimplify = false;
+/** Resolves once simplify() can work (gamescroll.js waits for it while loading the 3D parts). */
+export const simplifyReady = MeshoptSimplifier.ready.then(() => { canSimplify = true; }, () => {});
 
 /** A simpler copy of a geometry with about `keep` (0..1) of its points. */
 export function simplify(geometry, keep = .5) {
   let g = geometry.clone(); g.deleteAttribute?.('uv2');
   if (!g.index) g = mergeVertices(g);
-  const n = g.attributes.position.count, remove = Math.floor(n * (1 - Math.max(.02, Math.min(1, keep))));
-  if (remove <= 0) return g;
-  try { const out = new SimplifyModifier().modify(g, remove); out.computeVertexNormals(); return out; } catch (_) { return g; }
+  const pos = g.attributes.position, n = pos.count, k = Math.max(.02, Math.min(1, keep));
+  if (k >= 1 || !canSimplify) return g;
+  try {
+    const p = new Float32Array(n * 3); for (let i = 0; i < n; i++) { p[i * 3] = pos.getX(i); p[i * 3 + 1] = pos.getY(i); p[i * 3 + 2] = pos.getZ(i); }
+    const idx = new Uint32Array(g.index.array), target = Math.max(3, Math.floor(idx.length * k / 3) * 3);
+    const [out] = MeshoptSimplifier.simplify(idx, p, 3, target, 1, ['LockBorder']);
+    g.setIndex(Array.from(out)); g.computeVertexNormals();   // (unused points stay in the arrays; only the triangles go)
+    return g;
+  } catch (_) { return g; }
 }
 
 const rng = seed => { let s = (seed ?? Math.random() * 2 ** 31) | 0; return () => { s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };

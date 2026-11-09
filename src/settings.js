@@ -6,6 +6,7 @@ import { HEARTS_URL } from './hearts.js';
 import { nativeARSupported } from './kit/native-ar.js';
 import { fpsPick, setFpsPick, autoFps, phoneClass, screenHz } from './kit/speed.js';
 import { geoSettings } from './geo.js';
+import { gpuPick, setGpuPick, hasWebGPU } from './kit/gpu.js';
 import { OPEN_SOURCE } from './licences.js';
 
 const size = b => b < 1024 * 1024 ? `${Math.ceil(b / 1024)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
@@ -14,6 +15,10 @@ const size = b => b < 1024 * 1024 ? `${Math.ceil(b / 1024)} KB` : `${(b / 1024 /
  *  Sound & haptics live in their own sheet (the 🔊 button, src/feel.js), not here. */
 export function openSettings({ stream, cached, clear, arTest }) {
   const el = document.createElement('dialog'); el.className = 'qa-panel settings';
+  // Graphics shows on top-end phones that have WebGPU (asked once, so it can appear a moment later),
+  // and always once WebGPU is picked, so it can be turned back off
+  let webgpuHere = null;
+  if (phoneClass() === 'top' || gpuPick() === 'webgpu') hasWebGPU().then(v => { webgpuHere = v; if (el.open) render(); });
   document.body.appendChild(el);
   const render = note => {
     const c = cached();
@@ -32,6 +37,11 @@ export function openSettings({ stream, cached, clear, arTest }) {
         <p class="qa-help">Auto picks by phone: on this one ${Math.min(autoFps({ era: 'nextgen' }), screenHz())} fps for 3D games and ${Math.min(autoFps({}), screenHz())} fps for the rest (${{ top: 'a top-end', mid: 'a mid-range', low: 'an entry-level' }[phoneClass()]} phone with a ${screenHz()} Hz screen), and 3D games step down if the phone can't keep up. A lower rate saves battery and keeps the phone cooler.</p>
         <div class="qa-actions set-fps">${['auto', 120, 60, 30].map(v => `<button data-fps="${v}"${fpsPick() === v ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}${v !== 'auto' && v > screenHz() ? ' disabled' : ''}>${v === 'auto' ? 'Auto' : v === 30 ? '30 · battery saver' : v}</button>`).join('')}</div>
       </section>
+      ${webgpuHere || gpuPick() === 'webgpu' ? `<section class="set-row">
+        <h3>Graphics (test)</h3>
+        <p class="qa-help">Draw Next Gen and AR games with WebGPU, the newer graphics system, instead of WebGL. They should look the same and may run smoother. Games with an effect that isn't ready for WebGPU yet keep using WebGL.${webgpuHere === false ? ' This phone doesn’t offer WebGPU, so games keep using WebGL.' : ''}</p>
+        <label class="set-toggle"><input type="checkbox" class="set-gpu"${gpuPick() === 'webgpu' ? ' checked' : ''}> Use WebGPU for 3D games</label>
+      </section>` : ''}
       ${arTest ? `<section class="set-row">
         <h3>AR test</h3>
         <p class="qa-help">A cube on your floor for checking how well AR games track the room: walk around it and it should stay put.${nativeARSupported() === false ? ' This phone or version plays AR games in look-around mode.' : ''}</p>
@@ -59,6 +69,7 @@ export function openSettings({ stream, cached, clear, arTest }) {
     el.querySelector('.qa-x').onclick = () => el.close();
     el.querySelector('.set-ar')?.addEventListener('click', () => { el.close(); arTest(); });
     el.querySelectorAll('.set-fps button').forEach(b => b.addEventListener('click', () => { setFpsPick(b.dataset.fps); render(); }));
+    el.querySelector('.set-gpu')?.addEventListener('change', e => setGpuPick(e.target.checked ? 'webgpu' : 'webgl'));
     el.querySelector('.set-loc').addEventListener('change', e => { geoSettings.enabled = e.target.checked; });
     el.querySelector('.set-stats')?.addEventListener('change', e => { playstats.enabled = e.target.checked; });
     el.querySelector('.set-clear')?.addEventListener('click', async e => {

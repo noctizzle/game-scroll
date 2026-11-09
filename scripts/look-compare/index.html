@@ -4,21 +4,48 @@
 // Console toon + ink), for scripts/look-compare.cjs to compare two versions of the engine (or,
 // later, WebGPU against WebGL) pixel by pixel. Everything here is seeded: no randomness, no time.
 import gs, { loadParts } from '../../src/gamescroll.js';
+import { setGpuPick, prepareGPU } from '../../src/kit/gpu.js';
+// ?gpu: draw on WebGPU (look-compare.cjs --webgpu), to compare with a set saved on WebGL
+const GPU = new URLSearchParams(location.search).has('gpu');
+setGpuPick(GPU ? 'webgpu' : 'webgl');
 await loadParts();
-const T = gs.THREE, out = {};
+if (GPU && !await prepareGPU()) { window.result = { error: 'WebGPU did not start in this browser' }; throw new Error(window.result.error); }
+const T = gs.THREE, out = {}, backends = {};
+const frame = () => new Promise(r => requestAnimationFrame(r));
 window.__hd.force = 3; window.__hd.upscale = false;
-function nextgen(tier) {
+async function nextgen(tier, wet = 0) {
   window.__hd.force = tier;
   const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .002, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 4, 9); v.cam.lookAt(0, 1, 0); v.cam.updateMatrixWorld();
-  const sun = gs.hd.sun('#fff2d8', 3, 18, [-.45, 1, .35]); v.scene.add(sun, sun.target); v.sun = sun;
+  const sun = gs.hd.sun('#fff2d8', 3, 18, [-.45, 1, .35]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const ground = new T.Mesh(new T.PlaneGeometry(60, 60).rotateX(-Math.PI / 2), gs.hd.pbr('#6a7a58', { rough: .9 })); ground.receiveShadow = true; v.scene.add(ground);
   const cols = ['#c44', '#4a8', '#48c', '#cc4', '#a6c'];
   for (let i = 0; i < 5; i++) { const m = new T.Mesh(gs.hd.rbox(1, 1.6, 1), gs.hd.pbr(cols[i], { rough: .3 + i * .1, metal: i % 2 })); m.position.set(-3 + i * 1.5, .8, -i * .7); m.rotation.y = i * .4; m.castShadow = m.receiveShadow = true; v.scene.add(m); }
   const glow = new T.Mesh(new T.SphereGeometry(.4, 24, 16), gs.hd.pbr('#fff', { glow: 3, glowCol: '#ffb040' })); glow.position.set(1.5, 2.5, 0); v.scene.add(glow);
-  v.air({ haze: .002, mist: .004, mistFall: .3, wet: .3 }); v.grade = { saturation: 1.1, contrast: 1.05, shadows: '#e8f0ff', highlights: [1.06, 1, .92] }; v.glare = .6;
-  v.t = 0; v.render(x, 240, 320); v.t = 0; v.render(x, 240, 320);
-  return c.toDataURL();
+  v.air({ haze: .002, mist: .004, mistFall: .3, wet }); v.grade = { saturation: 1.1, contrast: 1.05, shadows: '#e8f0ff', highlights: [1.06, 1, .92] }; v.glare = .6;
+  for (let i = 0; i < 3; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
+// a dark room: thick fog, point lights from the lamp pool, metal walls (indoor games)
+async function dark(tier) {
+  window.__hd.force = tier;
+  const Q = new URLSearchParams(location.search), v = new gs.hd.HDView({ bg: '#05060c', fog: .05, env: +(Q.get('env') ?? .45), sky: '#6080c0', ground: '#201018', amb: +(Q.get('amb') ?? .3) }).lampLights(12), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 1.5, 6); v.cam.lookAt(0, 1, -6); v.cam.updateMatrixWorld();
+  const wall = gs.hd.pbr('#ffffff', { rough: 1, metal: .45, side: T.BackSide });
+  v.scene.add(new T.Mesh(new T.BoxGeometry(6, 4, 40).translate(0, 2, -10), wall));
+  for (let i = 0; i < 4; i++) { const m = new T.Mesh(gs.hd.rbox(1, 1, 1), gs.hd.pbr(['#c44', '#4a8', '#48c', '#cc4'][i], { rough: .4, metal: .3 })); m.position.set(i % 2 ? 1.2 : -1.2, .5, -i * 4); v.scene.add(m); }
+  const neon = new T.Mesh(new T.BoxGeometry(.1, .1, 30).translate(-2.9, 3.5, -10), gs.hd.pbr('#ff2a8a', { glow: 2.4 })); v.scene.add(neon);
+  for (const m of v.scene.children) if (m.isMesh && m.material !== wall) m.castShadow = true;
+  v.contact({ y: 0, size: 8 }).at(0, -3);
+  // a headlight that casts shadows (racing and shooter games), turned on for the tier like the games do
+  const head = gs.hd.spot('#e8f0ff', 60, 30, .45); head.position.set(.3, 1.2, 4); head.target.position.set(0, .3, -8); v.scene.add(head, head.target); head.setTier(gs.hd.TIERS[tier]);
+  const post = new T.Mesh(new T.BoxGeometry(.3, 1.4, .3), gs.hd.pbr('#888')); post.position.set(.6, .7, 1); post.castShadow = true; v.scene.add(post);   // soft contact shadows under the boxes
+  if (Q.get('bloom')) v.bloom = +Q.get('bloom');
+  if (Q.get('lamps') !== '0') v.placeLamps([{ x: 0, y: 3.5, z: 2 }, { x: 0, y: 3.5, z: -6 }, { x: 0, y: 3.5, z: -14 }], 0, 1.5, 6);
+  for (let i = 0; i < 3; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
 }
 function consoleScene() {
   const { View, part, G } = gs.toon, v = new View(), c = document.createElement('canvas'); c.width = 192; c.height = 160; const x = c.getContext('2d');
@@ -29,9 +56,13 @@ function consoleScene() {
   return c.toDataURL();
 }
 try {
-  for (const t of [0, 1, 2, 3]) out['nextgen-tier' + t] = nextgen(t);
+  const only = new URLSearchParams(location.search).get('only');
+  for (const t of only ? [+only] : [0, 1, 2, 3]) [out['nextgen-tier' + t], backends['nextgen-tier' + t]] = await nextgen(t);
+  [out['nextgen-wet'], backends['nextgen-wet']] = await nextgen(3, .3);
+  for (const t of [0, 3]) [out['dark-tier' + t], backends['dark-tier' + t]] = await dark(t);   // rain on the air: WebGL only so far
   out.console = consoleScene();
 } catch (e) { out.error = String(e && e.stack || e); }
 window.__hd.force = null;
+out.backends = backends;
 window.result = out;
 </script>
