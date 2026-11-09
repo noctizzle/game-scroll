@@ -267,40 +267,76 @@ focus, cascades, Props trees) and Deep Pressure has a WebGPU version.
 
 ### Frame generation
 
-On WebGPU, a Next Gen or AR game that draws 60 frames a second on a 120 Hz screen gets a made frame
-on each refresh in between, so it moves at 120 (`src/kit/framegen.js`). It's not a neural network:
-every pixel moves along its own motion (three's per-pixel velocity, so moving things move, not just
-the camera), depth decides what's in front, and gaps that open behind moving things are filled from
-the background round them. The method follows AMD FSR 3's frame interpolation (MIT) and Mob-FGSR
-(SIGGRAPH 2024), written fresh as WebGPU compute. It runs after SGSR 2 at the screen's size, takes
-SGSR 2's camera jitter back out of the motion, and costs a few milliseconds of compute instead of a
-whole extra frame.
+On WebGPU, a Next Gen or AR game that draws fewer frames than a fast screen shows gets made frames on
+the refreshes in between, so it moves at the screen's rate (`src/kit/framegen.js`): 60 frames a
+second on a 120 Hz screen gets one made frame between each pair, 40 gets two, 30 gets three, and a
+90 Hz screen fills its odd refreshes the same way. It's not a neural network: every pixel moves along
+its own motion (three's per-pixel velocity, so moving things move, not just the camera), depth
+decides what's in front, and gaps that open behind moving things are filled from the background
+round them. The method follows AMD FSR 3's frame interpolation (MIT) and Mob-FGSR (SIGGRAPH 2024),
+written fresh as WebGPU compute. It runs after SGSR 2 at the screen's size, takes SGSR 2's camera
+jitter back out of the motion, and costs a few milliseconds of compute instead of a whole extra frame.
 
-- **When:** Settings › Frame generation (on devices with WebGPU). Auto (the default) makes frames only for a game that can't
-  reach the screen's rate (the 3D kit stepped it down to 60); Always draws half the frames of every 3D
-  game and makes the rest (cooler, more detail per real frame); Off. A pinned frame rate turns it off.
-  If the refreshes in between keep not arriving (the phone is too busy), it switches itself off for
-  that game until the app restarts.
-- **How:** blend (the default) makes the frame halfway between the last two real frames and shows it
-  before the newest, so each real frame shows half a frame (about 8 ms) later, with the fewest flaws.
-  Ahead guesses half a frame past the newest, so nothing is delayed; edges round fast things are a
-  little softer. A reflex or rhythm game can ask for it with `frameGen: 'ahead'` in its definition, and
-  `frameGen: false` turns it off for a game (a look that flickers on purpose, a picture that changes
-  in ways motion can't follow).
-- **See-through and glowing things** (transparent or added-light materials: glass, water, smoke,
-  sparks) have no single motion, so the background's motion is kept under them and the made frame
-  shows them from the newest real frame, unmoved: they never smear or show twice.
+- **Camera turns are exact.** The camera's turn and zoom between frames are worked out from its pose
+  (a rotation of the picture), not guessed from pixels, so a fast pan lands where the real frame
+  would. What's left (things moving, the camera sliding) follows a curve through the last three real
+  frames, so things going round a bend don't cut the corner.
+- **Fresh aim.** Each made frame can turn to where the camera points *now*, from the newest touch,
+  instead of where it pointed at the last real frame, so looking and steering answer at the screen's
+  rate. Camera rigs (`gs.camera`) and AR views do it by themselves; a game with its own camera says
+  how with `v.aimNow(cam => { cam.rotation.y = lookAngle; })`: point the camera from the input the
+  game has already taken (a look angle a finger moved), without moving the game on. The camera is put
+  back straight after.
+- **When:** Settings › Frame generation (on devices with WebGPU). Auto (the default) makes frames for a
+  game that can't reach the screen's rate (the 3D kit stepped it down), and for every 3D game while the
+  phone is warm, in battery saver, or under 20% battery and not charging (`src/kit/power.js` asks the
+  phone every 15 seconds; it holds a minute after the reason goes); then the game draws half the
+  frames, which keeps the phone cooler. Always does that all the time; Off. A pinned frame rate turns it off.
+- **Stutter shield:** a game drawing every refresh whose frames start coming late (two late in a
+  second) gets frame generation at once for two seconds, so the refreshes it would miss show made
+  frames instead of the same frame twice. It can't help a hitch that holds the whole app up (nothing
+  is shown then), only a run of slow frames.
+- **Pacing per phone:** blend puts a made frame on the same refresh as the real frame's work. If the
+  refreshes in between keep coming late in blend, that game switches to ahead on that phone (the work
+  is spread over both refreshes; it's remembered with the game's settled frame rate); if they still
+  don't come, frame generation turns off for that game until the app restarts.
+- **How:** blend (the default) makes the frames between the last two real frames and shows them
+  before the newest, so each real frame shows a little later (half a frame at 60 on 120 Hz, about
+  8 ms), with the fewest flaws. Ahead guesses past the newest, so nothing is delayed; edges round fast
+  things are a little softer. A reflex or rhythm game can ask for it with `frameGen: 'ahead'` in its
+  definition, and `frameGen: false` turns it off for a game (a look that flickers on purpose, a
+  picture that changes in ways motion can't follow).
+- **See-through things** (transparent materials: glass, water, smoke) have no single motion, so the
+  background's motion is kept under them and the made frame shows them from the newest real frame,
+  unmoved: they never smear or show twice. **Glowing sparks** (added-light particles that say how
+  they move, as `GPUParticles` do) are moved along their own motion where the last frame shows the
+  same spark where it came from, so sparks fly at the screen's rate; where sparks cross or flare up
+  they stay as drawn. Smoke stays as drawn: moving it dragged the ground behind it along, which looked
+  worse than leaving it.
+- **Still pictures:** when nothing on screen changed for three frames in a row (the GPU compares a
+  sample of pixels; the camera, the hurt flash and the last touch are checked too), the 3D view shows
+  its last picture again instead of drawing, and draws one frame in six to look again.
+- **With SGSR 2:** SGSR 2 uses the same per-pixel motion (so moving things stop leaving soft trails)
+  and the see-through mask (glass and sparks don't smear into its history), whether frame generation
+  is on or not. While frame generation is on, each real frame is drawn with 1.6 times the pixels (it
+  has twice the time), and at moving edges the made frame picks, of the motions round each screen
+  pixel, the one both real frames agree on, so upscaled edges stay sharp. Motion blur is cut by the
+  number of refreshes each real frame covers, so it isn't doubled.
 - **The HUD** is drawn on the card's own canvas over the 3D, so it is never warped. Vignette, grain
   and the hurt flash go on as each refresh is shown, so they stay put and the grain stays even.
 - **Cuts:** after a cut nothing is made until two new real frames. Another view drawing, a pause and
   big camera jumps (turning more than 20 degrees, moving 8 metres or zooming by a quarter in one frame) are found by themselves;
   call `v.cut()` when the camera switches somewhere new in a smaller step (it also restarts SGSR 2).
 
-`__hd.info.framegen` says which way it ran last frame ('blend', 'ahead' or false) and `fgMs` the
-CPU time to queue it. `node scripts/framegen-test.cjs [--mode ahead] [--hard]` scores made frames
-against the truth on test scenes (moving things, a turning camera, glass, sparks, SGSR 2's jitter), and
-`npm run build:bundled && node scripts/framegen-games.cjs [id ...] [--shots dir]` plays the Next Gen and
-AR games with it on and checks every made frame sits between the real frames round it.
+`__hd.info.framegen` says which way it ran last frame ('blend', 'ahead' or false), `fgSteps` the
+refreshes per real frame, `fgMs` the CPU time to queue it and `still` whether the last refresh
+showed a still picture again. `node scripts/framegen-test.cjs [--mode ahead] [--steps 3] [--hard]`
+scores made frames against the truth on test scenes (moving things, things going round in circles,
+a camera turning round the scene and on the spot, glass, sparks, smoke, SGSR 2's jitter), and
+`node scripts/framegen-test.cjs --check` runs every suite against `scripts/framegen-test/baseline.json`
+(the PR check does this when frame generation's code changes; `--save` after a change meant to move
+the numbers). `npm run build:bundled && node scripts/framegen-games.cjs [id ...] [--shots dir]` plays
+the Next Gen and AR games with it on and checks every made frame sits between the real frames round it.
 
 ## Lots of particles
 

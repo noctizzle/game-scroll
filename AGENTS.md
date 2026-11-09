@@ -94,8 +94,9 @@ export default {
 (2 KB JSON; changing its shape? add `save: { version, migrate(data, from) }` to the definition), `location()` / `watchLocation(cb)` (needs `location: 'coarse'` or `'precise'` in the
 definition). Optional game methods: `snapshot()` / `restore(data)` (keep a round across hot reload), `fx(dt)` (effects behind the game-over screen), `resize(w, h)`
 (fluid games with `maxW`, `maxH`), `debug(c)`, `pause()`, `resume()`.
-Next Gen and AR: frame generation makes the in-between frames on 120 Hz screens by itself; `frameGen: 'ahead'`
-(no added delay) or `frameGen: false` in the definition, and `view.cut()` after a camera jump.
+Next Gen and AR: frame generation makes the in-between frames on fast screens by itself; `frameGen: 'ahead'`
+(no added delay) or `frameGen: false` in the definition, `view.cut()` after a camera jump, and
+`view.aimNow(cam => ...)` for a game turning its own camera from touch (gs.camera rigs already do).
 
 The app draws the start and game-over screens and the score. The game only draws play.
 
