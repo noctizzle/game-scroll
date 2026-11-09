@@ -1,0 +1,13 @@
+{
+  "name": "power-state",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Game Scroll's phone heat and power saving state: Android's thermal status and headroom and battery saver, iPhone's thermal state and Low Power Mode. Read by src/kit/power.js for frame generation's power saving.",
+  "main": "index.js",
+  "files": ["index.js", "Package.swift", "ios/Sources", "android/src/main", "android/build.gradle"],
+  "capacitor": {
+    "ios": { "src": "ios" },
+    "android": { "src": "android" }
+  },
+  "peerDependencies": { "@capacitor/core": "^8.0.0" }
+}

@@ -346,6 +346,8 @@ function make(api) {
     const { m, G } = looks();
     v = new HDView({ bg: '#06080c', fog: .075, env: .14, sky: '#7890b8', ground: '#2a2018', amb: .14, fov: 75 }).lampLights(9);
     v.exposure = 1.05; v.bloom = .8;
+    // frame generation's fresh aim: made frames turn to where the finger has already turned the look
+    v.aimNow(cam => { if (pl) cam.rotation.y = pl.a; });
     spt = spot('#fff1dc', 11, 16, .5); v.scene.add(spt, spt.target);
     v.onTier(T => spt.setTier(T));
     flashL = new PointLight('#ffc070', 0, 7, 1.6); v.scene.add(flashL);

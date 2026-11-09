@@ -52,7 +52,7 @@ import { Occlusion } from './occlusion.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { speed, phoneClass, fpsFor, stepDown, stepUp, settle, settledFor, frameGenFor, frameGenFailed } from './speed.js';
+import { speed, phoneClass, fpsFor, stepDown, stepUp, settle, settledFor, frameGenFor, frameGenFailed, frameGenReady, frameGenPace, frameGenSteps, fgSaving, screenHz } from './speed.js';
 
 export * as THREE from 'three';
 
@@ -90,6 +90,8 @@ const START = { top: 3, mid: 2, low: 1 };
 const LEVELS = [1, .85, .7, .55];
 // Most pixels in the final picture once a game has stepped down (about a phone screen's worth; see draw()).
 const OUT_PX = 2.4e6;
+// How many more pixels the 3D gets while frame generation makes every other refresh (see draw()).
+const FG_PX = 1.6;
 // A climb that turns out too slow again soon after doubles how long the step it fell back to holds
 // (30 s, 1, 2, 4 min), so a game that's on the edge doesn't keep stuttering every half a minute.
 const HOLD = 30000, HOLD_MAX = 240000;
@@ -136,7 +138,7 @@ export const HD = {
   get tier() { return Q.force ?? Q.tier; }, get name() { return TIERS[this.tier].name; }, get res() { return Q.force != null ? 1 : LEVELS[Q.lvl]; },
   set force(t) { Q.force = t; }, get force() { return Q.force; },
   /** Last frame: draw calls, triangles, milliseconds spent in render() on the CPU, and whether the shadows were redrawn. */
-  info: { calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0 },
+  info: { calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0, fgSteps: 0, still: false },
   /** Things needing a shader not built yet wait (hidden) at most this long while it builds in the background (v.holdNew); hold = false: build it in the frame instead. */
   holdMs: 500, hold: true,
   /** Upscale when the 3D is drawn below the screen's size (false: plain stretch). */
@@ -936,6 +938,8 @@ const C_WARM = new Color('#ffe2b8'), GV = new Vector3(), GP = new Vector3(), GW 
 // if since the last real frame it moved 8 m, turned more than 20 degrees or zoomed by a quarter. The
 // frames either side don't belong together then, so none is made between them.
 const FG_P = new Vector3(), FG_D = new Vector3(), COS20 = Math.cos(20 * Math.PI / 180);
+// fresh aim (HDView.aimPose): the camera as it was, and its pose now
+const NO_JIT = [0, 0], AIM = { pos: new Vector3(), q0: new Quaternion(), fov: 50, zoom: 1, proj: new Matrix4(), pose: { q: new Quaternion(), fx: 1, fy: 1, cx: 0, cy: 0, persp: true } };
 function cameraMove(cam, last) {
   cam.getWorldPosition(FG_P); cam.getWorldDirection(FG_D);
   const zoom = cam.projectionMatrix.elements[5];
@@ -1432,6 +1436,12 @@ export class HDView {
     // shared chain flipped between the two and rebuilt all its passes twice whenever the game's card was baked
     const ck = baking ? '_gpuBakeChain' : '_gpuChain';
     const ch = this[ck]?.r === r ? this[ck] : (this[ck] = new G.fx.GpuChain(r, this.scene, this.cam, !!this.clearBg));
+    // the game on screen: drawn into a picture and shown (see GpuChain.realFrame). Nothing on screen has
+    // changed for a while (the picture check and the camera agree, and no finger moved): show the last
+    // frame again instead of drawing it, and draw for real every few refreshes to look again
+    const live = direct && !baking && !off;
+    if (live && this.stillSkip(ch, now)) { speed.between = null; HD.info.still = true; HD.info.cpu = performance.now() - now; return; }
+    if (!baking && !off) HD.info.still = false;
     try { this.envMaker?.(); } catch (e) { /* the studio reflections stay */ }
     this.scene.environment = this.envFor(G); this.scene.environmentIntensity = this.envI;
     if (this._air) { this.airUniforms(); const a = gpuAir(G); a.sync(); this.scene.fogNode = a.node(); } else { this.scene.fogNode = null; AIR.gsAirOn.value = 0; }
@@ -1469,6 +1479,10 @@ export class HDView {
     this._volUsed ||= !!this.beams; this._mbUsed ||= !!this.motionBlur;
     o.volOn = this._volUsed && T.ao > 0 && T.shadow > 0; o.vol = o.volOn && this.beams ? beamsFrame(this) : null;
     const mbm = blurFrame(this, lastView !== this || this._cut); o.mbOn = this._mbUsed && T.ao > 0; o.mb = o.mbOn ? mbm : null;
+    // frame generation (speed.js says when, framegen.js makes the frames, hd3d-gpu.js shows them): for the game being played
+    const how = live ? frameGenFor(speed.game) : false, steps = how ? frameGenSteps(speed.game) : 1;
+    // with frames made in between, each one shown is a fraction of a real frame's move apart: blur that much
+    if (mbm && how) mbm.mb.x /= steps;
     if (this.glare > 0 || (o.shaftsOn && this.shafts > 0)) {
       const sd = this.sunDir(GV), cam = this.cam; GP.copy(cam.position).addScaledVector(sd, 1000).project(cam);
       cam.getWorldDirection(GW);
@@ -1488,34 +1502,85 @@ export class HDView {
     for (const e of empty) e.visible = false;
     r.info.autoReset = false; r.info.reset();
     const cut = lastView !== this || this._cut; lastView = this; this._cut = false;
-    // frame generation (speed.js says when, framegen.js makes the frames, hd3d-gpu.js shows them): for
-    // the game being played, drawn straight onto its card. It starts again after a cut (another view
-    // drew, v.cut(), a pause, the camera jumping): the frames either side of one don't belong together.
-    const how = direct && !baking && !off ? frameGenFor(speed.game) : false;
+    // Frame generation starts again after a cut (another view drew, v.cut(), a pause, the camera
+    // jumping): the frames either side of one don't belong together.
     let fg = null;
     if (how) {
       this.scene.updateMatrixWorld(); this.cam.updateMatrixWorld();
       const m = cameraMove(this.cam, this._fgCam); this._fgCam = m.last;
-      fg = { mode: how, reset: cut || m.jumped || now - (this._fgT || 0) > HD.fgGap, jd: [0, 0] }; this._fgT = now;
+      fg = { mode: how, reset: cut || m.jumped || now - (this._fgT || 0) > HD.fgGap, jd: [0, 0], jit: [0, 0], steps, hz: screenHz() }; this._fgT = now;
     } else this._fgCam = null;
     if (s2) { o.s2 = GS2 ||= new SgsrFrame(); this.scene.updateMatrixWorld(); o.s2.begin(this.cam, pw, ph, o.fw, o.fh, this, now, cut, true); }   // WebGPU pictures count rows from the top
     // SGSR 2 moves the camera by a fraction of a pixel each frame (its jitter) and three's motion picture
-    // includes the change: frame generation takes it back out (in NDC: x right, y up, so rows down are minus)
-    if (fg && s2) { const j = o.s2.jitter, x = 2 * j.x / pw, y = -2 * j.y / ph, p = this._fgJ || [x, y]; fg.jd = [x - p[0], y - p[1]]; this._fgJ = [x, y]; }
-    else this._fgJ = null;
-    o.fg = fg;
+    // includes the change: SGSR 2 and frame generation take it back out (in NDC: x right, y up, so rows down are minus)
+    if (s2) {
+      const j = o.s2.jitter, x = 2 * j.x / pw, y = -2 * j.y / ph, p = !cut && this._fgJ || [x, y], jd = [x - p[0], y - p[1]]; this._fgJ = [x, y];
+      o.s2.jd = jd; if (fg) { fg.jd = jd; fg.jit = [x, y]; }
+    } else this._fgJ = null;
+    // the scene's pass writes each pixel's motion and the see-through mask while frame generation could
+    // come on for this game (so it can start without rebuilding the chain) or SGSR 2 can use them
+    o.live = live; o.mrt = live && (!!s2 || frameGenReady(speed.game)); o.still = live && HD.still !== false; o.fg = fg; o.now = now;
+    // fresh aim: made frames turned to where the camera points at the moment they're shown (v.aimNow, AR's own)
+    ch.aim = live && fg && HD.aim !== false && (this.aimFn || this.freshAim) ? () => this.aimPose() : null;
+    this._aimJit = s2 && fg ? fg.jit : null;   // the real frame is shown while SGSR 2's jitter is still on the camera
     let shown = false;
-    try { shown = ch.render(o) || false; } finally { for (const e of empty) e.visible = true; if (s2) o.s2.end(this.cam); }
+    try { shown = ch.render(o) || false; } finally { for (const e of empty) e.visible = true; if (s2) o.s2.end(this.cam); this._aimJit = null; }
     const made = !!fg && !!shown;
     if (made) HD.fgTap?.(shown, r.domElement, 'frame');
-    // the refresh after this one (the feed skips it at half the screen's rate) shows the frame planned for it
-    speed.between = made ? () => { const k = ch.between(); if (k) HD.fgTap?.(k, r.domElement, 'between'); } : null;
-    // the refreshes between kept not coming (the phone is too busy to draw them in time): stop for this game
-    if (made && ch.fgWin.real >= 90 && ch.missRate() > .3) { frameGenFailed(speed.game?.id); console.info('Frame generation off for this game: the phone is too busy for the frames between'); }
+    // the refreshes after this one that the feed skips show the moments due then (last: the next draws a real frame)
+    speed.between = made ? (last = true) => { const k = ch.between(last); if (k) HD.fgTap?.(k, r.domElement, 'between'); } : null;
+    // the refreshes between kept not coming (the phone is too busy to draw them in time): blend puts the
+    // made frame on the real frame's refresh, so first try ahead (its work is spread over both); then stop for this game
+    if (made && ch.fgWin.real >= 90) {
+      const miss = ch.missRate(), id = speed.game?.id;
+      if (miss > .3 || (miss > .08 && how === 'blend' && !frameGenPace(id))) { if (!speed.shield) { frameGenFailed(id); console.info('Frame generation off for this game: the phone is too busy for the frames between'); } }
+      else if (miss > .08 && how === 'blend') console.info('Frame generation: ahead for this game, its refreshes were too full in blend');
+    }
     if (!baking && !off) {
       HD.info.calls = r.info.render.drawCalls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = T.shadow > 0; HD.info.upscaled = s2 ? 'sgsr2' : up ? 'sgsr1' : false; HD.info.backend = 'webgpu';
-      HD.info.framegen = made ? how : false; HD.info.fgMs = made ? ch.fg.stats.ms : 0;
+      HD.info.framegen = made ? how : false; HD.info.fgMs = made ? ch.fg.stats.ms : 0; HD.info.fgSteps = made ? steps : 0;
     }
+  }
+  // Still frames: true when this refresh can show the last frame again instead of drawing (see drawGPU).
+  stillSkip(ch, now) {
+    const st = ch.still, S = this._still ||= { cam: new Float64Array(32), run: 0, seen: -1, skip: 0, hurt: 0 };
+    if (!st || HD.still === false || lastView !== this || this._cut || !ch.lastColor) { S.run = 0; return false; }
+    const cam = this.cam; cam.updateMatrixWorld();
+    const e = cam.matrixWorld.elements, p = cam.projectionMatrix.elements, k = S.cam; let same = true;
+    for (let i = 0; i < 16; i++) { if (k[i] !== e[i]) { same = false; k[i] = e[i]; } if (k[16 + i] !== p[i]) { same = false; k[16 + i] = p[i]; } }
+    // a change it can't see in the picture yet: the camera, the hurt flash, a finger or key in the last moment
+    if (!same || this.hurt !== S.hurt || now - (speed.inputAt || 0) < 300) { S.run = 0; S.hurt = this.hurt; return false; }
+    // a new answer from the picture check (a frame or two late): how many checks in a row saw nothing change
+    if (st.seen !== S.seen) { S.seen = st.seen; S.run = st.changed() === 0 ? S.run + 1 : 0; }
+    if (S.run < 3) return false;
+    if (++S.skip >= 6) { S.skip = 0; return false; }   // draw one in six to look again
+    return ch.showLast();
+  }
+  /**
+   * Fresh aim (frame generation): fn(cam) points the camera where the newest input says, right now,
+   * without moving the game on (as your update() would from it: a look angle a finger already changed).
+   * Each made frame is then turned to that, so aiming and steering answer at the screen's rate, not the
+   * game's. Kit camera rigs (gs.camera) and AR views do it themselves. Returns the view.
+   */
+  aimNow(fn) { this.aimFn = fn; return this; }
+  // the camera's pose now (framegen.js's pose: facing and projection): fn(cam) runs on the game's camera,
+  // which is put back as it was straight after
+  aimPose() {
+    const cam = this.cam, A = AIM, P = cam.projectionMatrix.elements;
+    A.pos.copy(cam.position); A.q0.copy(cam.quaternion); A.fov = cam.fov; A.zoom = cam.zoom; A.proj.copy(cam.projectionMatrix);
+    let ok = true;
+    try {
+      if (this.aimFn) this.aimFn(cam); else this.freshAim(cam);
+      if (cam.fov !== A.fov || cam.zoom !== A.zoom) cam.updateProjectionMatrix();
+      cam.updateMatrixWorld(); cam.getWorldQuaternion(A.pose.q);
+      const j = this._aimJit || NO_JIT;
+      A.pose.persp = !!cam.isPerspectiveCamera && P[15] === 0; A.pose.fx = P[0]; A.pose.fy = P[5]; A.pose.cx = P[8] + j[0]; A.pose.cy = P[9] + j[1];
+    } catch (_) { ok = false; }
+    finally {
+      cam.position.copy(A.pos); cam.quaternion.copy(A.q0); cam.fov = A.fov; cam.zoom = A.zoom;
+      cam.projectionMatrix.copy(A.proj); cam.projectionMatrixInverse.copy(A.proj).invert(); cam.updateMatrixWorld();
+    }
+    return ok ? A.pose : null;
   }
   /**
    * The camera cut to somewhere new (a teleport, another camera, a replay): the next frame starts
@@ -1583,7 +1648,11 @@ export class HDView {
     // screen stretches it. A game keeping up is never touched.
     let fw = c.canvas.width, fh = c.canvas.height;
     if (!baking && !off && HD.scale == null && Q.force == null && Q.lvl >= 1 && fw * fh > OUT_PX) { const k = Math.sqrt(OUT_PX / (fw * fh)); fw = Math.round(fw * k); fh = Math.round(fh * k); }
-    let pw = fw, ph = fh; const px = baking === 'small' ? Math.min(T.px, PIC_PX) : T.px, q = HD.scale ?? Math.min(1, Math.sqrt(px / (pw * ph))) * HD.res;
+    // With frame generation on, each real frame has two (or more) refreshes' time, so the 3D is drawn with
+    // more pixels (SGSR 2 has less to make up). Not while it's on to save power or to ride out a busy spell;
+    // the resolution steps still take them back if the phone can't keep up.
+    const fgMore = !baking && !off && G && !speed.shield && !fgSaving() && frameGenFor(speed.game) ? FG_PX : 1;
+    let pw = fw, ph = fh; const px = baking === 'small' ? Math.min(T.px, PIC_PX) : T.px * fgMore, q = HD.scale ?? Math.min(1, Math.sqrt(px / (pw * ph))) * HD.res;
     pw = Math.max(16, Math.round(pw * q)); ph = Math.max(16, Math.round(ph * q));
     // The 3D is drawn at pw x ph (fewer pixels on big screens and when the phone struggles). Below the
     // screen's size, Snapdragon GSR 2 (sgsr2.js, temporal: jitters the camera and builds on the frames

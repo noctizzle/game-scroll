@@ -19,6 +19,7 @@ dependencies {
     implementation project(':native-ar')
     implementation project(':npu')
     implementation project(':phone-ai')
+    implementation project(':power-state')
     implementation project(':rich-haptics')
 
 }

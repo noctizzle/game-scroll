@@ -12,14 +12,17 @@
 // after lowering its resolution, and it remembers per game where it settled, so the next round
 // starts there. Players can pin a rate in Settings (Auto / 120 / 60 / 30 battery saver).
 //
-// Frame generation (src/kit/framegen.js, Next Gen and AR on WebGPU): where a 3D game runs at half
-// the screen's rate (60 fps on a 120 Hz screen), the 3D kit makes a frame for each refresh in
-// between, so it moves at the screen's rate. Settings › Frame generation: Auto (only when a game can't reach
-// the screen's rate), Always (3D games draw half the frames and make the rest: cooler, more detail)
-// or Off; and how: blend (between the last two frames, the fewest flaws, shown half a frame later)
-// or ahead (half a frame past the newest, no delay). A game can say frameGen: false or 'ahead'.
+// Frame generation (src/kit/framegen.js, Next Gen and AR on WebGPU): where a 3D game runs below the
+// screen's rate (60 fps on a 120 or 90 Hz screen, 30 on 120...), the 3D kit makes a frame for each
+// refresh in between, so it moves at the screen's rate. Settings › Frame generation: Auto (a game that
+// can't reach the screen's rate; and any 3D game while the phone is warm, saving power or low on battery,
+// or for a moment while frames come late), Always (3D games draw half the frames and make the rest:
+// cooler, more detail) or Off; and how: blend (between the last two frames, the fewest flaws, shown a
+// refresh later) or ahead (past the newest, no delay). A game can say frameGen: false or 'ahead'; on a
+// phone where blend's refreshes are too full for a game, that game switches itself to ahead.
 import { store } from '../util.js';
 import { gpuName } from './gpu.js';
+import { power } from './power.js';
 
 const PICK_KEY = 'gs_fps', SETTLE_KEY = 'gs_speed', FG_KEY = 'gs_fg', FG_HOW_KEY = 'gs_fg_how';
 const touchy = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
@@ -91,10 +94,12 @@ function realFps(def) {
   if (def?.fps) f = Math.min(f, def.fps);
   return Math.max(30, Math.min(f, hz));
 }
-/** The frame rate a game runs its update and draw at now. Never above the screen's rate; half of it while frame generation fills the rest. */
+/** The frame rate a game runs its update and draw at now. Never above the screen's rate; lower while frame generation fills the rest. */
 export function fpsFor(def) {
-  return frameGenFor(def) ? hz / 2 : realFps(def);
+  return (frameGenFor(def) && fgRate(def)) || realFps(def);
 }
+/** Refreshes per real frame while frame generation is on (2 at 60 fps on 120 Hz, 1.5 on 90 Hz, 4 at 30 fps on 120 Hz). */
+export const frameGenSteps = def => hz / fpsFor(def);
 
 /* ---------- frame generation ---------- */
 let fgPick = store.get(FG_KEY, 'auto'), fgHow = store.get(FG_HOW_KEY, 'game');
@@ -105,20 +110,55 @@ export function setFrameGenPick(v) { fgPick = ['auto', 'always', 'off'].includes
 /** How frames are made: 'game' (the game's choice, else blend) | 'blend' | 'ahead'. */
 export const frameGenHow = () => fgHow;
 export function setFrameGenHow(v) { fgHow = ['game', 'blend', 'ahead'].includes(v) ? v : 'game'; store.set(FG_HOW_KEY, fgHow); }
+// screens frame generation fills: 90 Hz and up (60 fps on 90 Hz is one or two refreshes a frame)
+const FG_HZ = 90;
+/* Battery and heat (src/kit/power.js): in Auto, while the phone is warm, in its power saving mode or low on
+   battery and not charging, every 3D game draws half the frames and makes the rest. */
+export const fgSaving = () => fgPick === 'auto' && power.saving;
+/* Stutter shield: a game drawing every refresh whose frames start coming late (two late in a second)
+   gets frame generation at once, for two seconds after the last late one, so the refreshes it would
+   miss show made frames instead of the same frame twice. src/main.js reports the late frames. */
+const late = [];
+let shieldUntil = 0;
+export function frameLate(now) {
+  late.push(now); while (late.length && now - late[0] > 1000) late.shift();
+  if (late.length >= 2) shieldUntil = now + 2000;
+}
+const shieldOn = () => typeof performance !== 'undefined' && performance.now() < shieldUntil;
+// the real frame rate with frame generation on (0: it isn't)
+function fgRate(def) {
+  const f = realFps(def);
+  // Auto: a game that can't reach the screen's rate (it settled lower); Always, saving power or riding
+  // out a busy spell: half the screen's rate (or the game's own, if lower)
+  const real = fgPick === 'always' || fgSaving() || shieldOn() ? Math.min(f, hz / 2) : f < hz * .9 ? f : 0;
+  // at least 25 real frames a second, and at least half a refresh between them to fill
+  return real >= 25 && hz / real >= 1.4 ? real : 0;
+}
+/** Frame generation could come on for this game here (the 3D kit then has the scene write motion, so it can start without a rebuild). */
+export function frameGenReady(def) {
+  if (!is3D(def) || def.frameGen === false) return false;
+  return !!speed.forceFrameGen || (fgPick !== 'off' && hz >= FG_HZ && pick === 'auto' && !fgFailed.has(def.id));
+}
 /**
  * Whether the 3D kit makes frames between this game's real ones now: 'blend' | 'ahead' | false.
- * Needs the game's view on WebGPU (speed.gpu, set by the 3D kit), a screen of 100 Hz or more and the
- * game running at about half of it (Auto), or able to (Always). speed.forceFrameGen (tests) skips the checks.
+ * Needs the game's view on WebGPU (speed.gpu, set by the 3D kit), a screen of 90 Hz or more and the
+ * game running below it (Auto), or able to (Always, saving power, the stutter shield). speed.forceFrameGen (tests) skips the checks.
  */
 export function frameGenFor(def) {
   if (!is3D(def) || def.frameGen === false) return false;
-  const how = fgHow !== 'game' ? fgHow : def.frameGen === 'ahead' ? 'ahead' : 'blend';
+  const how = fgHow !== 'game' ? fgHow : def.frameGen === 'ahead' || settled[def.id]?.fgHow === 'ahead' ? 'ahead' : 'blend';
   if (speed.forceFrameGen) return speed.forceFrameGen === true ? how : speed.forceFrameGen;
-  if (fgPick === 'off' || !speed.gpu || hz < 100 || fgFailed.has(def.id) || pick !== 'auto') return false;   // a pinned rate is what the screen shows
-  const half = hz / 2, f = realFps(def);
-  // Auto: only a game that can't reach the screen's rate (it settled at 60); Always: any that can do half
-  const on = fgPick === 'always' ? f >= half * .8 : f >= half * .8 && f < hz * .9;
-  return on ? how : false;
+  if (fgPick === 'off' || !speed.gpu || hz < FG_HZ || fgFailed.has(def.id) || pick !== 'auto') return false;   // a pinned rate is what the screen shows
+  return fgRate(def) ? how : false;
+}
+/**
+ * The 3D kit found blend's refreshes too full for this game on this phone (the made frame shares the
+ * real frame's refresh): from now on it makes them ahead (its work is spread over both). False if it
+ * can't switch (already ahead, or the player picked how).
+ */
+export function frameGenPace(id) {
+  if (!id || fgHow !== 'game' || settled[id]?.fgHow === 'ahead') return false;
+  settle(id, { fgHow: 'ahead' }); return true;
 }
 /** One line for Settings: whether the game on screen makes frames in between now, and if not, why. */
 export function frameGenStatus(def) {
@@ -127,13 +167,16 @@ export function frameGenStatus(def) {
   if (def.frameGen === false) return `${name} turns it off.`;
   if (fgPick === 'off') return 'Off.';
   if (pick !== 'auto') return `Off while Frame rate is set to ${pick}: set it to Auto.`;
-  if (hz < 100) return `Off: this screen runs at ${hz} Hz, so there are no refreshes in between to fill.`;
+  if (hz < FG_HZ) return `Off: this screen runs at ${hz} Hz, so there are no refreshes in between to fill.`;
   if (!speed.gpu) return `Off: ${name} draws with WebGL here (an effect it uses isn’t ready for WebGPU).`;
   if (fgFailed.has(def.id)) return `Off for ${name} until the app restarts: the phone was too busy for the frames in between.`;
   const how = frameGenFor(def);
-  if (how) return `${name}: draws ${Math.round(hz / 2)} frames a second and makes ${Math.round(hz / 2)} more (${how}).`;
+  if (how) {
+    const real = Math.round(fpsFor(def)), why = fgPick === 'always' ? '' : shieldOn() ? ', riding out a busy moment' : fgSaving() ? `, ${power.why || 'saving power'}` : '';
+    return `${name}: draws ${real} frames a second and makes ${Math.round(hz - real)} more (${how}${why}).`;
+  }
   const f = realFps(def);
-  return f >= hz * .9 ? `${name} already draws ${Math.round(f)} frames a second, the screen’s rate, so Auto leaves it. Pick Always to try it.`
+  return f >= hz * .9 ? `${name} already draws ${Math.round(f)} frames a second, the screen’s rate, so Auto leaves it (until the phone is warm or low on battery). Pick Always to try it.`
     : `${name} runs at ${Math.round(f)} frames a second here, too few to fill in between.`;
 }
 /** The 3D kit found the refreshes between real frames didn't come (the phone is too busy): no frame generation for this game until the app restarts. */
@@ -146,13 +189,16 @@ export function frameGenFailed(id) { if (id) fgFailed.add(id); }
 // refresh it skips (src/main.js).
 // busy(): the feed is moving or under a finger; playing(): a round is being played. Both set by the
 // feed (src/main.js): the 3D kit keeps heavy work it can put off (card pictures) out of those moments.
-export const speed = { game: null, offscreen: false, gpu: false, between: null, forceFrameGen: null, busy: () => false, playing: () => false };
+// inputAt: when a finger, key or pad last moved the game on screen (performance.now(), set by the feed).
+// shield: the stutter shield is on (frameLate()).
+export const speed = { game: null, offscreen: false, gpu: false, between: null, forceFrameGen: null, inputAt: 0, busy: () => false, playing: () => false };
+Object.defineProperty(speed, 'shield', { get: shieldOn });
 
 /** The 3D kit settled on a tier and frame rate for this game: start there next time. */
 export function settle(id, o) {
   if (!id) return;
   const was = settled[id] || {}, now = { ...was, ...o };
-  if (was.tier === now.tier && was.fps === now.fps && was.lvl === now.lvl) return;
+  if (was.tier === now.tier && was.fps === now.fps && was.lvl === now.lvl && was.fgHow === now.fgHow) return;
   settled[id] = now; store.set(SETTLE_KEY, settled);
 }
 export const settledFor = id => settled[id] || null;

@@ -39,7 +39,9 @@ const fs = require('fs'), path = require('path'), os = require('os');
     if (!ok) { console.log('FAIL WebGPU did not start in this browser'); process.exit(1); }
     // the lowest tier at a small size, so SwiftShader keeps up with the refreshes in between
     // (and real frames come seconds apart in the heaviest games here: not a pause, as it would be on a phone)
-    await p.evaluate(() => { __hd.force = 0; __hd.scale = .45; __hd.direct = true; __hd.fgGap = 3000; });
+    // fresh aim off: it turns frames to where the newest touch points, and the random touches here jump
+    // about, so frames wouldn't sit between their neighbours (scripts/framegen-test.cjs checks the turn itself)
+    await p.evaluate(() => { __hd.force = 0; __hd.scale = .45; __hd.direct = true; __hd.fgGap = 3000; __hd.aim = false; });
     return w;
   };
   const first = await open();

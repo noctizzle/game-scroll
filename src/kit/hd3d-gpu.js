@@ -9,7 +9,7 @@
 // scripts/look-compare.cjs --webgpu draws the same scenes both ways and compares them.
 // Kit use only.
 import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Vector4, Color, BackSide, Sprite, Group, InstancedMesh, BufferGeometry, Frustum, Sphere, InstancedBufferAttribute as IBA, SpriteNodeMaterial, InstancedBufferAttribute, AdditiveBlending, NormalBlending,
-  MeshBasicNodeMaterial, NodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, DepthTexture, LessEqualCompare, NoToneMapping, ACESFilmicToneMapping, SRGBColorSpace, LinearSRGBColorSpace } from 'three/webgpu';
+  MeshBasicNodeMaterial, NodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, DepthTexture, LessEqualCompare, NoToneMapping, ACESFilmicToneMapping, SRGBColorSpace, LinearSRGBColorSpace, Matrix3 } from 'three/webgpu';
 import {
   pass, mrt, output, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
@@ -25,7 +25,7 @@ import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { FrameGen, frameGenMRT } from './framegen.js';
+import { FrameGen, StillCheck, frameGenMRT, fgPrevVP, newPose, copyPose, homography, warpUV } from './framegen.js';
 
 const LUM = vec3(.2126, .7152, .0722);
 
@@ -543,9 +543,13 @@ function sgsr1Gpu(src) {
 // picture are drawn at the render size; the upscale is drawn at the screen's size into a history
 // picture, which is copied to the screen and kept for next frame. Pictures here count rows from the
 // top, so this is the shader's REQUEST_NDC_Y_UP variant, and WebGPU depth is already 0..1 like NDC z.
-function sgsr2Gpu(fin, depthT) {
+// mo (when the scene's pass writes them, frameGenMRT): each pixel's own motion and the see-through mask.
+// With them, things that move by themselves are followed (the shader's motion vector input; without, all
+// motion comes from the depth and the camera's move, so moving things smear), and see-through things
+// (sparks, smoke, glass) lean on the new frame instead of the history, so they leave no trails.
+function sgsr2Gpu(fin, depthT, mo = null) {
   const U = { rs: uniform(new Vector2(1, 1)), os: uniform(new Vector2(1, 1)), jit: uniform(new Vector2()), sr: uniform(new Vector2(1, 1)),
-    fov: uniform(1), minLerp: uniform(0), reset: uniform(1), c2p: uniform(new Matrix4()) };
+    fov: uniform(1), minLerp: uniform(0), reset: uniform(1), c2p: uniform(new Matrix4()), jd: uniform(new Vector2()) };
   const low = rtt(fin, 1, 1, { depthBuffer: false });
   // convert: motion back to last frame from the nearest depth and the camera's move, and the depth clip
   const conv = Fn(() => {
@@ -561,8 +565,17 @@ function sgsr2Gpu(fin, depthT) {
     const w = g => clamp(sep.div(abs(maxC.sub(min4(g))).add(1.19e-07)), 0, 1);
     const clip = select(maxC.lessThan(1 - 1e-5), clamp(float(1).sub(w(bl).add(w(br)).add(w(tl)).add(w(tr)).mul(.25)), 0, 1), float(0));
     const u = vec2(P).add(.5).div(U.rs), ndc = vec2(u.x.mul(2).sub(1), float(1).sub(u.y.mul(2)));
-    const pre = U.c2p.mul(vec4(ndc, bl9, 1));
-    return vec4(ndc.sub(pre.xy.div(pre.w)), clip, 0);
+    const pre = U.c2p.mul(vec4(ndc, bl9, 1)), camM = ndc.sub(pre.xy.div(pre.w));
+    if (!mo) return vec4(camM, clip, 0);
+    // the motion of the nearest surface in the 3 x 3 round it (edges move with what's in front), less the
+    // change in jitter; where nothing was drawn (the sky), the camera's move
+    const at = (x, y) => clamp(P.add(ivec2(x, y)), ivec2(0, 0), hi);
+    const near = ivec2(P).toVar(), nz = depthT.load(P).x.toVar();
+    for (const [x, y] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) {
+      const z = depthT.load(at(x, y)).x; If(z.lessThan(nz), () => { nz.assign(z); near.assign(at(x, y)); });
+    }
+    const M = select(nz.lessThan(1 - 1e-6), mo.vel.load(near).xy.sub(U.jd), camM);
+    return vec4(M, clip, mo.rea.load(P).x);
   })();
   const mdc = rtt(conv, 1, 1, { depthBuffer: false });
   // two history pictures taking turns: this frame's upscale is drawn into one while it reads last
@@ -574,7 +587,7 @@ function sgsr2Gpu(fin, depthT) {
   // upscale: Lanczos of the 5 nearest small pixels, a colour box, history clamped to it, then blended
   const upscale = Fn(() => {
     const H = screenUV, J = clamp(H.add(U.jit.div(U.rs)), 0, 1), IP = ivec2(J.mul(U.rs)), hi = ivec2(U.rs).sub(1);
-    const mda = mdc.sample(J).xyz, M = mda.xy, df = mda.z;
+    const mda = mdc.sample(J), M = mda.xy, df = mda.z, see = mo ? smoothstep(.1, .6, mda.w).mul(.9) : float(0);
     const prevUV = clamp(vec2(M.x.mul(-.5).add(H.x), M.y.mul(.5).add(H.y)), 0, 1);
     const histC = histT.sample(prevUV).rgb;
     const biasmax = U.sr.x, biasmin = max(float(1), biasmax.mul(.3).add(.3));
@@ -606,7 +619,7 @@ function sgsr2Gpu(fin, depthT) {
     const lerpC = clamp(select(outside, start, float(1)), 0, 1);
     const h = mix(clamped, histC, lerpC);
     const ba = mix(min(base, .1), base, lerpC);
-    const a = clamp(upw.div(max(1.192e-07, ba.add(upw))).add(U.reset), 0, 1);
+    const a = max(clamp(upw.div(max(1.192e-07, ba.add(upw))).add(U.reset), 0, 1), see);
     return vec4(mix(h, upc, a), 1);
   })();
   const upMat = new NodeMaterial(); upMat.fragmentNode = upscale; upMat.name = 'SGSR2';
@@ -621,6 +634,7 @@ function sgsr2Gpu(fin, depthT) {
     set(f) {
       U.rs.value.copy(f.renderSize); U.os.value.copy(f.outputSize); U.jit.value.copy(f.jitter); U.sr.value.copy(f.scaleRatio);
       U.fov.value = f.fovH; U.minLerp.value = f.minLerp; U.reset.value = f.reset; U.c2p.value.copy(f.clipToPrevClip);
+      if (f.jd) U.jd.value.set(f.jd[0], f.jd[1]);
     },
     // draw (the scene and the small finished picture are drawn on the way, by the nodes the upscale reads);
     // show = false leaves the screen alone (frame generation shows it, or a made frame, itself)
@@ -666,19 +680,24 @@ export class GpuChain {
       prevVP: uniform(new Matrix4()), mb: uniform(new Vector4()),
     };
     this.bloomN = null; this.aoN = null;
-    // frame generation (framegen.js): the generator, what the next refresh between real frames does, and how often that refresh didn't come
-    this.fg = null; this.pend = null; this.fgMode = null; this.fgWin = { real: 0, missed: 0 };
+    // the game on screen (live): each real frame is drawn into a picture and shown by a copy that adds the
+    // last touches, so the refreshes in between can show made frames (framegen.js), a still scene can be
+    // shown again without drawing it, and frame generation can come and go without rebuilding the chain.
+    // fg: the generator; sched: where the refreshes since the newest real frame stand; fgWin: how often a
+    // refresh between real frames didn't come; still: the still-picture check
+    this.fg = null; this.sched = null; this.fgMode = null; this.fgWin = { real: 0, missed: 0 }; this.still = null; this.lastShown = null;
+    this.warp = uniform(new Matrix3()); this.aim = null; this.aimBase = newPose(); this.aimAt = -1e9;
   }
-  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, fg = false, s1 = false, volOn = false, mbOn = false) {
-    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${fg}|${s1}|${volOn}|${mbOn}`;
+  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false) {
+    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}`;
     if (key === this.key) return;
-    this.key = key; this.fg?.reset(); this.pend = null;
+    this.key = key; this.fg?.reset(); this.sched = null; this.still?.reset();
     this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose(); this.s2?.dispose(); this.s1?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose();
     for (const t of [this.volT, this.baseT, this.mbT]) t?.renderTarget?.dispose();
     this.aoN = this.dnN = this.bloomN = this.s2 = this.s1 = this.dofT = this.shM = this.shB = this.volT = this.baseT = this.mbT = null;
     const sp = this.sp = pass(this.scene, this.cam, { samples: msaa || 0 });
-    // frame generation: the scene's pass also writes each pixel's motion and where see-through things are
-    if (fg && this.clear) sp.setMRT(frameGenMRT());
+    // frame generation and SGSR 2: the scene's pass also writes each pixel's motion and where see-through things are
+    if (mrtOn && this.clear) sp.setMRT(frameGenMRT());
     if (this.clear) {
       // AR: just the scene on a see-through background, tone mapped (bloom and the grade would tint the room behind it);
       // with SGSR 1, drawn small and upscaled (tone mapping named outright: drawn outside the pipeline's own)
@@ -689,7 +708,7 @@ export class GpuChain {
     // (the normals picture's alpha says whether a pixel takes ambient occlusion: see-through things,
     // leaf cards and anything marked noAO write 0, as WebGL's AO leaves them out: noAO() below)
     const nrm = aoOn ? { normal: vec4(normalView, 1) } : {};
-    if (fg) sp.setMRT(frameGenMRT(nrm)); else if (aoOn) sp.setMRT(mrt({ output, ...nrm }));
+    if (mrtOn) sp.setMRT(frameGenMRT(nrm)); else if (aoOn) sp.setMRT(mrt({ output, ...nrm }));
     const U = this.U, colT = sp.getTextureNode('output');
     let lit = colT.rgb, aoF = float(1);
     if (aoOn) {
@@ -811,9 +830,9 @@ export class GpuChain {
     // tone mapping (ACES, the renderer's exposure) and sRGB (named outright under SGSR 2 and 1: drawn outside the pipeline)
     let out = s2 || s1 ? renderOutput(vec4(graded, 1), ACESFilmicToneMapping, SRGBColorSpace) : renderOutput(vec4(graded, 1));
     if (smooth) out = fxaa(out);
-    // with frame generation the last touches go on as each refresh is shown (show()), not here
-    const fin = fg ? vec4(out.rgb, 1) : Fn(() => vec4(touches(U, out.rgb, U.t, float(1)), 1))();
-    if (s2) { this.s2 = sgsr2Gpu(fin, sp.getTextureNode('depth')); return; }
+    // live, the last touches go on as each refresh is shown (show()), not here
+    const fin = live ? vec4(out.rgb, 1) : Fn(() => vec4(touches(U, out.rgb, U.t, float(1)), 1))();
+    if (s2) { this.s2 = sgsr2Gpu(fin, sp.getTextureNode('depth'), mrtOn ? { vel: sp.getTextureNode('velocity'), rea: sp.getTextureNode('reactive') } : null); return; }
     if (s1) this.s1 = sgsr1Gpu(fin);
     this.pp.outputNode = s1 ? this.s1.node : fin; this.pp.needsUpdate = true;
   }
@@ -821,10 +840,10 @@ export class GpuChain {
    *  fg (frame generation: { mode: 'blend' | 'ahead', reset, jd: SGSR 2's jitter change in NDC }) }. With fg, returns what it showed ('real' | 'made'). */
   render(o) {
     // o.s2: SGSR 2's frame numbers (sgsr2.js SgsrFrame): the scene and effects at o.w x o.h, upscaled to o.fw x o.fh;
-    // o.s1: the same sizes, upscaled by SGSR 1
-    const f = !this.clear && o.s2 ? o.s2 : null, s1 = !f && !!o.s1, fg = o.fg || null;
-    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, !!fg, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn);
-    if (!fg) { this.pend = null; this.fgMode = null; }
+    // o.s1: the same sizes, upscaled by SGSR 1. o.live: the game on screen (drawn into a picture and shown);
+    // o.mrt: the scene's pass also writes motion and the see-through mask (frame generation, SGSR 2)
+    const f = !this.clear && o.s2 ? o.s2 : null, s1 = !f && !!o.s1, live = !!o.live;
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt);
     if (this.s1) this.s1.size(o.w, o.h);
     // the passes size themselves from the canvas: upscaled, the canvas is the screen's size, so scale them down
     const k = f || s1 ? (o.w + .5) / o.fw : 1;
@@ -853,22 +872,28 @@ export class GpuChain {
       if (this.shM) { const bw = Math.max(8, Math.round(o.w / 4)), bh = Math.max(8, Math.round(o.h / 4)); this.shM.setSize(bw, bh); this.shB.setSize(bw, bh); U.shaft.value = o.shaft || 0; if (o.shaftCol) U.shaftTint.value.copy(o.shaftCol);
         const t = Math.max(1.1, o.shaftAt ?? 1.1), lit = t > 1.1; U.shThr.value = t; U.shHi.value = lit ? t * 1.2 : t * 2.2; U.shCap.value = lit ? t * 1.2 : 1e9; U.shGain.value = 1.1 / t; }
     }
-    if (fg) return this.realFrame(o, f);
+    if (live) return this.realFrame(o, f);
     if (this.s2) { this.s2.size(o.w, o.h, o.fw, o.fh); this.s2.set(f); this.s2.render(this.r); }
     else this.pp.render();
   }
 
-  /* ---------- frame generation (framegen.js) ---------- */
-  // The real frame is drawn into a picture (SGSR 2's own, or one of ours), handed to the generator,
-  // and shown by a copy. blend: this refresh shows the frame made halfway from the last real frame to
-  // this one, and the next refresh (between()) shows this one. ahead: this refresh shows this one, and
-  // the next shows a frame made half a frame past it. The refresh between is the one the feed skips
-  // when a game runs at half the screen's rate (src/main.js, speed.between).
+  /* ---------- the game on screen: real frames, made frames, still frames ---------- */
+  // Each real frame is drawn into a picture (SGSR 2's own, or one of ours) and shown by a copy that adds
+  // the last touches. With frame generation (o.fg: { mode, reset, jd, jit, steps, hz }), every refresh
+  // shows a moment on an even beat: t = 1 + (k - D) / gap, k refreshes after the newest real frame, which
+  // came gap refreshes after the last one. blend shows each moment D refreshes late, so every moment is
+  // between two real frames (D = 1 at twice the game's rate, 2 at three times...); ahead (D = 0) shows
+  // the newest real frame on its own refresh and guesses past it after. That covers two, three or four
+  // refreshes per real frame, and a screen that isn't a whole multiple (60 fps on 90 Hz: one or two).
+  // The refreshes between are the ones the feed skips (src/main.js, speed.between).
   realFrame(o, f) {
-    const r = this.r, fg = this.fg ||= new FrameGen(r), sp = this.sp;
-    // the refresh between the last two real frames never came (the phone is busy): what it would have
-    // kept is kept now, so this frame is made from the right one
-    if (this.pend) { if (!o.fg.reset) { this.fgWin.missed++; if (this.pend.keep) fg.keep(); } this.pend = null; }
+    const r = this.r, sp = this.sp, fgo = o.mrt ? o.fg : null, cam = this.cam;
+    if (!fgo && this.fg?.frames) { this.fg.reset(); this.sched = null; }
+    // the last pair's newest frame becomes the next pair's last (when no refresh between did it)
+    if (fgo && this.owe && !fgo.reset) this.fg.keep();
+    this.owe = false;
+    // particles' own motion is measured from the camera as the last real frame drew it
+    fgPrevVP.value.copy(this.vpLast ||= cam.projectionMatrix.clone().multiply(cam.matrixWorldInverse));
     let color;
     if (this.s2) { this.s2.size(o.w, o.h, o.fw, o.fh); this.s2.set(f); this.s2.render(r, false); color = this.s2.last(); }
     else {
@@ -878,35 +903,68 @@ export class GpuChain {
       try { this.pp.render(); } finally { r.setRenderTarget(was); }
       color = rt.texture;
     }
-    const mode = o.fg.mode === 'ahead' ? 'ahead' : 'blend';
-    if (o.fg.reset || mode !== this.fgMode) fg.reset();
+    this.vpLast.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    this.lastColor = color;
+    if (o.still) (this.still ||= new StillCheck(r)).check(color, o.fw, o.fh);
+    if (!fgo) { this.fgMode = null; this.showFrame(color, null); return 'real'; }
+    const fg = this.fg ||= new FrameGen(r);
+    const mode = fgo.mode === 'ahead' ? 'ahead' : 'blend';
+    if (fgo.reset || mode !== this.fgMode) { fg.reset(); this.sched = null; }
     this.fgMode = mode;
     const vel = sp.getTexture('velocity');
     this.U.gk.value = vel.image.width / o.fw;
     fg.real({ color, velocity: vel, reactive: sp.getTexture('reactive'), depth: sp.getTextureNode('depth').value,
-      renderSize: [vel.image.width, vel.image.height], outputSize: [o.fw, o.fh], camera: this.cam, jitterDelta: o.fg.jd });
-    this.fgWin.real++;
-    if (mode === 'ahead') { this.show(color); this.pend = { make: 1.5 }; return 'real'; }
-    if (fg.make(.5)) { this.show(fg.output); this.pend = { show: color, keep: true }; return 'made'; }
-    this.show(color); this.pend = { keep: true }; return 'real';
+      renderSize: [vel.image.width, vel.image.height], outputSize: [o.fw, o.fh], camera: cam, jitter: fgo.jit, jitterDelta: fgo.jd });
+    // the gap since the last real frame, in refreshes as the screen saw them (one that can't be a refresh
+    // count, like a test's slow frames, counts as the usual one)
+    const S = this.sched, steps = Math.max(1, fgo.steps || 2), ms = 1000 / (fgo.hz || 120);
+    let gap = S ? Math.round((o.now - S.at) / ms) : 0;
+    if (!(gap >= 1 && gap <= 6)) gap = Math.max(1, Math.round(steps));
+    if (S) { this.fgWin.real++; if (S.k < gap - 1) this.fgWin.missed++; }   // refreshes in that gap showed nothing new
+    this.sched = { at: o.now, gap, k: 0, D: mode === 'blend' ? Math.max(1, Math.ceil(steps - .01) - 1) : 0 };
+    this.owe = true;
+    // fresh aim: where the input pointed the camera for this frame (a later change is the finger's own)
+    const base = this.aim && fg.ready ? this.aim() : null; if (base) copyPose(base, this.aimBase);
+    return this.showAt(0);
   }
-  /** The refresh after a real frame: shows what frame generation planned for it. Returns what it showed ('real' | 'made'), or false. */
-  between() {
-    const p = this.pend; if (!p) return false;
-    this.pend = null;
-    let shown = false;
-    if (p.show) { this.show(p.show); shown = 'real'; }
-    if (p.keep) this.fg.keep();
-    if (p.make && this.fg.make(p.make)) { this.show(this.fg.output); shown = 'made'; }
+  // the moment due k refreshes after the newest real frame: the newest, the last, or a made one
+  showAt(k) {
+    const S = this.sched, fg = this.fg, t = 1 + (k - S.D) / S.gap;
+    if (!fg.ready || Math.abs(t - 1) < .02) { this.showFrame(this.lastColor, 1); return 'real'; }
+    if (t < .02) { this.showFrame(fg.prevColor, 0); return 'real'; }
+    if (t > 2.6) return false;   // too far past the newest to guess: the screen keeps what it has
+    fg.make(t); this.showFrame(fg.output, t); return 'made';
+  }
+  /**
+   * A refresh after a real frame (the feed's skipped refresh): shows the moment due then. last: the next
+   * refresh draws a real frame (so the newest is kept now, on this lighter refresh). Returns 'real' | 'made' | false.
+   */
+  between(last = true) {
+    const S = this.sched; if (!S || !this.fg) return false;
+    S.k++;
+    const shown = this.showAt(S.k);
+    if (last && this.owe) { this.fg.keep(); this.owe = false; }
     return shown;
   }
+  /** Shows the last real frame again (a still scene that isn't drawn this refresh). */
+  showLast() { if (!this.lastColor) return false; this.warp.value.identity(); this.show(this.lastColor); return true; }
   /** How often, out of the last real frames, the refresh between them didn't come (0..1), then starts counting again. */
   missRate() { const w = this.fgWin, m = w.real ? w.missed / w.real : 0; w.real = w.missed = 0; return m; }
+  // a frame onto the screen; with fresh aim (this.aim: the camera's pose now, from the newest input), turned
+  // from the camera it was made for (the moment t) to where the camera points now. Only while the input is
+  // turning the camera between real frames (a finger looking round, the phone turning in AR): a turn the
+  // game makes in its update (a stick held over) is followed by the made frames' own motion instead.
+  showFrame(tex, t) {
+    const fresh = this.aim && t != null && this.fg?.ready ? this.aim() : null, now = performance.now(), B = this.aimBase;
+    if (fresh && (fresh.q.angleTo(B.q) > 1e-5 || Math.abs(fresh.fx - B.fx) > 1e-6 * Math.abs(B.fx))) this.aimAt = now;
+    if (fresh && now - this.aimAt < AIM_HOLD) homography(fresh, this.fg.poseAt(t, AIM_POSE), this.warp.value); else this.warp.value.identity();
+    this.show(tex);
+  }
   // a picture onto the screen (already tone mapped and in sRGB), with the last touches (AR: as it is, see-through)
   show(tex) {
     if (!this.showQ) {
-      const m = new NodeMaterial(), T = this.showT = texture(tex), U = this.U; m.name = 'Frame gen show';
-      m.fragmentNode = this.clear ? T.sample(screenUV) : Fn(() => vec4(touches(U, T.sample(screenUV).rgb, U.gt, U.gk), 1))();
+      const m = new NodeMaterial(), T = this.showT = texture(tex), U = this.U, at = warpUV(screenUV, this.warp); m.name = 'Frame gen show';
+      m.fragmentNode = this.clear ? T.sample(at) : Fn(() => vec4(touches(U, T.sample(at).rgb, U.gt, U.gk), 1))();
       this.showQ = new QuadMesh(m);
     }
     this.showT.value = tex; this.U.gt.value = (this.U.gt.value + .37) % 10;
@@ -915,7 +973,8 @@ export class GpuChain {
   }
   dispose() {
     this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose?.(); this.s2?.dispose(); this.s1?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose(); for (const t of [this.volT, this.baseT, this.mbT]) t?.renderTarget?.dispose(); this.pp.dispose?.();
-    this.fg?.dispose(); this.fgRT?.dispose(); this.showQ?.material.dispose(); this.fg = this.fgRT = this.showQ = null; this.pend = null;
+    this.fg?.dispose(); this.still?.dispose(); this.fgRT?.dispose(); this.showQ?.material.dispose(); this.fg = this.still = this.fgRT = this.showQ = null; this.sched = null; this.lastColor = null;
   }
 }
+const AIM_POSE = newPose(), AIM_HOLD = 150;   // fresh aim: the pose a frame was made for; ms the input counts as turning the camera after it last did
 export { gpuSparks } from './particles-gpu.js';

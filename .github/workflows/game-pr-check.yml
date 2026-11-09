@@ -6,8 +6,8 @@
 # Console games and changed Next Gen games), plus the speed budget
 # and Tiny Brains check for changed games. "code-flags" flags game code that touches the network,
 # storage or native features (scripts/game-lint.mjs), and lists changed files outside src/games/ that
-# need a careful read. Two more jobs: a mutation check of the server and licence guards, and a maths
-# probe across JavaScript engines (both only when those parts change). Runs with read-only
+# need a careful read. Three more jobs: a mutation check of the server and licence guards, a maths
+# probe across JavaScript engines, and a frame generation quality check (each only when those parts change). Runs with read-only
 # permissions and no secrets, so it is safe for pull requests from forks. See CONTRIBUTING.md.
 name: Game PR check
 
@@ -242,6 +242,60 @@ jobs:
       - name: Every guard is reached by a test
         if: steps.changed.outputs.run
         run: node scripts/mutants.mjs
+
+  # Frame generation quality: made frames scored against the scene really drawn at that moment, in 8
+  # suites (blend, ahead, two frames between, hard cases, upscaled), each scene no worse than
+  # scripts/framegen-test/baseline.json. WebGPU in software (SwiftShader), so no GPU needed. Runs when
+  # frame generation, the 3D kit's WebGPU path, SGSR 2, the frame pacing or the check change.
+  framegen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Did frame generation change?
+        id: changed
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          if git diff --name-only "origin/$BASE...HEAD" | grep -qE '^(src/kit/(framegen|hd3d|hd3d-gpu|sgsr2|speed|particles-gpu|power)\.js|scripts/framegen-test|package(-lock)?\.json|\.github/workflows/game-pr-check\.yml)'; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "No frame generation changes."; fi
+
+      - uses: actions/setup-node@v7
+        if: steps.changed.outputs.run
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        if: steps.changed.outputs.run
+        run: npm ci
+
+      - name: Which Playwright
+        if: steps.changed.outputs.run
+        id: pw
+        run: echo "version=$(npm view playwright version)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the browser
+        if: steps.changed.outputs.run
+        id: pwcache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright
+        if: steps.changed.outputs.run
+        env:
+          PW: ${{ steps.pw.outputs.version }}
+        run: |
+          npm i --no-save "playwright@$PW"
+          if [ "${{ steps.pwcache.outputs.cache-hit }}" = "true" ]; then npx playwright install-deps chromium; else npx playwright install --with-deps chromium; fi
+
+      - name: Made frames no worse than the baseline
+        if: steps.changed.outputs.run
+        run: node scripts/framegen-test.cjs --check
 
   # Maths probe: do V8 (Android, the Worker) and JavaScriptCore (iPhone) give the same bits for
   # Math.sin, exp...? Informational (a warning, never red). Runs when the kits change.

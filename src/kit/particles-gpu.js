@@ -8,6 +8,8 @@ import {
   sin, fract, max, min, select, smoothstep,
 } from 'three/tsl';
 
+import { particleMotion } from './framegen.js';
+
 export const BURSTS = 16, ROWS = 7;   // bursts a frame, vec4 rows each (see hd3d.js GPUParticles.packBurst)
 
 // a random number 0..1 for particle i, burst seed s and channel k (the CPU path has its own; they needn't match)
@@ -70,6 +72,8 @@ export function gpuSparks(p) {
   const shape = p.additive ? smoothstep(1, .3, r) : float(1).sub(r).mul(float(1).sub(r));
   const fade = pow(float(1).sub(f), ev.w).mul(select(sv.z.greaterThan(.5), min(f.mul(6), 1), float(1)));
   m.opacityNode = cv.a.mul(fade).mul(shape).mul(select(r.greaterThan(1), float(0), float(1))).mul(alive);
+  // frame generation moves each glowing spark along its own last step (framegen.js), so they move at the screen's rate
+  particleMotion(m, pv.xyz, vv.xyz.add(wind).mul(dt).mul(alive));
   const sprite = new Sprite(m); sprite.count = N; sprite.frustumCulled = false; sprite.renderOrder = 5; sprite.userData.noAO = true;
 
   let fresh = true;

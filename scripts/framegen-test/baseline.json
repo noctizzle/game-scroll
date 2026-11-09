@@ -1,0 +1,59 @@
+{
+  "blend": {
+    "still": {"error":0.17,"broken":0.1},
+    "strafe": {"error":0.47,"broken":0.18},
+    "turn": {"error":1.78,"broken":0.24},
+    "pan": {"error":2.16,"broken":0.04},
+    "curve": {"error":0.42,"broken":0.13},
+    "aim": {"error":4.48,"broken":2.47}
+  },
+  "ahead": {
+    "still": {"error":0.28,"broken":0.23},
+    "strafe": {"error":0.86,"broken":0.65},
+    "turn": {"error":2.14,"broken":0.4},
+    "pan": {"error":3.19,"broken":1.39},
+    "curve": {"error":0.84,"broken":0.65}
+  },
+  "hard": {
+    "glass": {"error":0.83,"broken":0.33},
+    "sparks": {"error":1.96,"broken":1.19},
+    "sparks-moving": {"error":2.04,"broken":1.29},
+    "smoke": {"error":1.1,"broken":0.3},
+    "jitter": {"error":0.52,"broken":0.23}
+  },
+  "hard-ahead": {
+    "glass": {"error":1.17,"broken":0.77},
+    "sparks": {"error":2.52,"broken":1.85},
+    "sparks-moving": {"error":2.64,"broken":1.98},
+    "smoke": {"error":1.56,"broken":0.71},
+    "jitter": {"error":0.88,"broken":0.66}
+  },
+  "thirds": {
+    "still": {"error":0.22,"broken":0.21},
+    "strafe": {"error":0.53,"broken":0.28},
+    "turn": {"error":1.93,"broken":0.4},
+    "pan": {"error":2.06,"broken":0.12},
+    "curve": {"error":0.47,"broken":0.19}
+  },
+  "thirds-ahead": {
+    "still": {"error":0.38,"broken":0.44},
+    "strafe": {"error":1.24,"broken":0.99},
+    "turn": {"error":2.4,"broken":0.68},
+    "pan": {"error":4.65,"broken":3.52},
+    "curve": {"error":1.2,"broken":1}
+  },
+  "upscaled": {
+    "still": {"error":0.19,"broken":0.11},
+    "strafe": {"error":0.59,"broken":0.19},
+    "turn": {"error":1.27,"broken":0.22},
+    "pan": {"error":1.7,"broken":0},
+    "curve": {"error":0.54,"broken":0.16}
+  },
+  "upscaled-hard": {
+    "glass": {"error":0.87,"broken":0.29},
+    "sparks": {"error":2.01,"broken":1.14},
+    "sparks-moving": {"error":2.05,"broken":1.14},
+    "smoke": {"error":1.08,"broken":0.25},
+    "jitter": {"error":0.51,"broken":0.18}
+  }
+}

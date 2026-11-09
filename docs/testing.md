@@ -26,13 +26,14 @@ How to check a change without waiting longer than you need to. Written for peopl
 | The 3D look (hd3d, toon3d, post effects, a three.js update) | `node scripts/look-compare.cjs save base` **before** the change, `check base` after; add `--webgpu` to check the WebGPU path | about 16 s each |
 | Next Gen / AR on WebGPU | `node scripts/gpu-games.cjs [id ...]` | about 25 s a game |
 | Shaders built mid-round (hd3d `holdNew`) | `node scripts/shader-hold.cjs [--webgpu]` | about a minute |
-| Frame generation | `node scripts/framegen-test.cjs`, `node scripts/framegen-games.cjs [--jobs n]` | 1 to 4 min |
+| Frame generation | `node scripts/framegen-test.cjs --check` (8 suites against `scripts/framegen-test/baseline.json`; `--save` after a change meant to move the numbers), `node scripts/framegen-games.cjs [--jobs n]` | about 3 min, then 1 to 4 min |
 | Engine speed (CPU per frame) | `node scripts/perf-bench.cjs [id ...] --json before.json` before, `--vs before.json` after (see below) | about 15 s a game per backend |
 | Everything (before a big engine PR) | `node scripts/smoke.cjs` (all 162 games) | about 3.5 min |
 
 The PR check (`.github/workflows/game-pr-check.yml`) runs the node checks (`npm run games`,
 `licences`, `types-check`, `kit-test`, `brains`, `recommend`, `site`) and then smoke, streamed,
-fold, sweep, Tiny Brains and budget on the changed games, split over several machines.
+fold, sweep, Tiny Brains and budget on the changed games, split over several machines. When frame
+generation's code changes it also runs `framegen-test.cjs --check`.
 
 ## Running many games at once
 

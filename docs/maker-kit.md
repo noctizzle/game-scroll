@@ -1100,11 +1100,14 @@ Shared CI machines vary, so the same code can land either side of the line. A ga
 little over (up to 1.5 times the budget) is played twice more and judged on the middle run; the
 report shows all three times and their spread, so you can tell a real slowdown from a noisy machine.
 
-**Next Gen and AR on 120 Hz screens.** With WebGPU on, a 3D game the phone can only draw at 60 frames
-a second gets a made frame between each pair (frame generation), so it still moves at 120. Nothing to
-do in the game. `frameGen: 'ahead'` in the definition guesses ahead instead of blending (no added delay,
-for reflex and rhythm games), `frameGen: false` turns it off, and `v.cut()` after a camera jump starts it
-(and the upscaler) fresh. Details: [docs/nextgen-3d.md](nextgen-3d.md#frame-generation).
+**Next Gen and AR on fast screens.** With WebGPU on, a 3D game the phone can't draw at the screen's
+rate (90, 120 or 144 Hz) gets made frames between its real ones (frame generation), so it still moves
+at the screen's rate; the same happens while the phone is warm or low on battery. Nothing to do in the
+game. `frameGen: 'ahead'` in the definition guesses ahead instead of blending (no added delay, for
+reflex and rhythm games), `frameGen: false` turns it off, and `v.cut()` after a camera jump starts it
+(and the upscaler) fresh. A game that turns its own camera from touch can add
+`v.aimNow(cam => { cam.rotation.y = lookAngle; })` so made frames turn with the finger at the screen's
+rate (`gs.camera` rigs do this already). Details: [docs/nextgen-3d.md](nextgen-3d.md#frame-generation).
 
 ## 2D cameras, tile levels and movement
 
