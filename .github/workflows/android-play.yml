@@ -111,6 +111,10 @@ jobs:
           unzip -q game-scroll.aab 'base/lib/*' -d "$RUNNER_TEMP/aab" || true
           bad=0; n=0
           while IFS= read -r so; do
+            # Only 64-bit ARM/x86 code runs on the phone's CPU. Qualcomm's *Skel.so files sit in
+            # lib/arm64-v8a but are 32-bit programs for the NPU itself (Hexagon), so they're skipped.
+            readelf -hW "$so" | grep -Eq 'Machine:[[:space:]]+(AArch64|Advanced Micro Devices X86-64)' || continue
+            readelf -hW "$so" | grep -q 'Class:[[:space:]]*ELF64' || continue
             n=$((n+1))
             for a in $(readelf -lW "$so" | awk '$1=="LOAD"{print $NF}'); do
               if [ $((a)) -lt 16384 ]; then echo "::error::${so#$RUNNER_TEMP/aab/} is aligned to $a, not 16 KB"; bad=1; break; fi
