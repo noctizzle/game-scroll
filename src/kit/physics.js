@@ -21,8 +21,11 @@
 // so use phys.toWorld(x) / phys.toGame(m) to convert.
 
 import { lazy } from './lazy.js';
+import { wasmSimd } from './simd.js';
 import { own } from './cleanup.js';
-const engine = lazy('The physics engine', () => import('@dimforge/rapier2d-compat').then(async m => {
+// The SIMD build where the phone has WebAssembly SIMD (faster: Neon on ARM phones), else the plain one.
+// Same engine and API; only one of the two is ever downloaded.
+const engine = lazy('The physics engine', () => (wasmSimd() ? import('@dimforge/rapier2d-simd-compat') : import('@dimforge/rapier2d-compat')).then(async m => {
   const r = m.default?.init ? m.default : m;
   await r.init();
   return r;

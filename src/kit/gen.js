@@ -4,7 +4,7 @@
 // the day). Dungeons, caves, mazes and field of view use rot.js; tile patterns use WaveFunctionCollapse.
 // Both load the first time a game uses them: call these in make() or reset().
 //
-//   const { dungeon, cave, maze, islands, heightmap, pattern, fov } = gs.gen;
+//   const { dungeon, cave, maze, islands, heightmap, pattern, fov, proven, reach } = gs.gen;
 //   reset() {
 //     const d = dungeon(40, 30, { seed: daily() });          // { text, rooms, start, end }
 //     map = TileMap.fromText(d.text, { size: 16 });          // 'S' start and 'E' exit are marks
@@ -116,6 +116,53 @@ export function fov(map, col, row, radius = 8) {
   const clear = grid ? (x, y) => { const ch = grid[y]?.[x]; return ch != null && ch !== '#' && ch !== '='; } : map;
   new R.FOV.PreciseShadowcasting((x, y) => clear(x, y)).compute(col, row, radius, (x, y) => see.add(x + ',' + y));
   return see;
+}
+
+/**
+ * Proven levels: makes levels until one passes your check, so players never get one that can't be
+ * beaten or is dull. make(seed) builds a level (any of the makers here, or your own); check(level)
+ * says how good it is: false/null to throw it away, true or a number (higher is better). Use reach()
+ * for "can you get from S to E", or play it with a bot or an Imagine plan driving your own update.
+ * It stops at the first level scoring `good` or more, else keeps the best of `tries`. Seeded: the
+ * same seed always gives the same level, so a level of the day stays the same for everyone.
+ *
+ *   const { level, score, tried } = proven(
+ *     s => cave(40, 30, { seed: s }),
+ *     l => { const n = reach(l.text, 'S', 'E'); return n > 30 && n;  },   // reachable, and not too short
+ *     { seed: daily(), good: 60 },
+ *   );
+ *
+ * Returns { level, score, tried, seed } (level is null if nothing passed).
+ */
+export function proven(make, check, { seed, tries = 20, good = Infinity } = {}) {
+  const base = seedOf(seed); let best = null, bestScore = -Infinity, bestSeed = base, i = 0;
+  for (; i < tries; i++) {
+    const s = (base + Math.imul(i, 0x9e3779b1)) | 0, level = make(s);
+    const r = check(level), v = r === true ? 1 : typeof r === 'number' && isFinite(r) ? r : -Infinity;
+    if (v > bestScore) { best = level; bestScore = v; bestSeed = s; }
+    if (v >= good) { i++; break; }
+  }
+  return { level: bestScore > -Infinity ? best : null, score: bestScore, tried: i, seed: bestSeed };
+}
+
+/**
+ * Steps from one mark to another in level text, walking up, down, left and right through anything
+ * that isn't a wall: a number, or -1 when you can't get there. from / to are mark letters ('S', 'E')
+ * or { col, row }. walls: the characters that block ('#' by default).
+ */
+export function reach(text, from = 'S', to = 'E', { walls = '#' } = {}) {
+  const g = String(text).split('\n'), find = m => { if (typeof m === 'object') return m; for (let y = 0; y < g.length; y++) { const x = g[y].indexOf(m); if (x >= 0) return { col: x, row: y }; } return null; };
+  const a = find(from), b = find(to); if (!a || !b) return -1;
+  const h = g.length, w = Math.max(...g.map(r => r.length)), dist = new Int32Array(w * h).fill(-1), q = [a.col + a.row * w];
+  const open = (x, y) => x >= 0 && y >= 0 && x < w && y < h && x < g[y].length && !walls.includes(g[y][x]);
+  if (!open(a.col, a.row)) return -1;
+  dist[q[0]] = 0;
+  for (let i = 0; i < q.length; i++) {
+    const k = q[i], x = k % w, y = (k / w) | 0;
+    if (x === b.col && y === b.row) return dist[k];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy, nk = nx + ny * w; if (open(nx, ny) && dist[nk] < 0) { dist[nk] = dist[k] + 1; q.push(nk); } }
+  }
+  return -1;
 }
 
 // ---- helpers

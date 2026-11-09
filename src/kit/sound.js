@@ -288,6 +288,48 @@ export function music({ tempo = 120, vol = 1, swing = 0, layers = null, ...parts
   };
   return m;
 }
+/**
+ * Living music: makes a tune follow the play. Close calls push the tension up, it eases back when
+ * things calm down, a loss brings it right down, and the tempo drifts a little towards the
+ * player's own pace. It drives the tune's intensity() (so give it layers) and speed().
+ *
+ *   const song = music({ tempo: 112, layers: { drums: .25, lead2: .7 }, ... });
+ *   const live = follow(song, { pace: 2 });   // pace: taps a second that count as "normal"
+ *   update(dt) { if (!song.playing) song.start(); live.update(dt); }
+ *   on a close call: live.feel(1)     on each tap: live.tap()     on game over: live.lost() / live.won()
+ *
+ * opts: calm (the resting intensity, .15), ease (how fast tension falls, per second, .25),
+ * tempo ([lowest, highest] speed, [.92, 1.12]), brain (a Tiny Brain: its mood keeps tension up too).
+ */
+export function follow(song, { calm = .15, ease = .25, tempo = [.92, 1.12], pace = 2, brain = null } = {}) {
+  let tension = calm, gap = 1 / pace, lastTap = -1, t = 0, speed = 1, lift = 0;
+  const L = {
+    get tension() { return tension; },
+    get speed() { return speed; },
+    /** A tense or exciting moment, about 0..1 (close call 1, a hit .5). */
+    feel(x = 1) { tension = Math.min(1, tension + Math.max(0, +x || 0) * .35); return L; },
+    /** The player did something: the tempo leans towards their pace. */
+    tap() { if (lastTap >= 0) { const d = t - lastTap; if (d > .05 && d < 2) gap += (d - gap) * .15; } lastTap = t; return L; },
+    /** The player lost: everything settles at once. */
+    lost() { tension = calm * .5; lift = 0; return L; },
+    /** The player won: a short lift. */
+    won() { lift = 1; return L; },
+    update(dt) {
+      t += dt;
+      const floor = brain ? Math.max(calm, Math.min(1, calm + (brain.mood || 0) * .5)) : calm;
+      tension = Math.max(floor, tension - ease * dt);
+      lift = Math.max(0, lift - dt * .5);
+      const want = Math.min(1, tension + lift * .4);
+      // the player's pace: quicker taps than `pace`, a bit faster; slower, a bit slower; tension adds a little
+      const p = Math.max(tempo[0], Math.min(tempo[1], 1 + ((1 / gap) / pace - 1) * .08 + want * .05));
+      speed += (p - speed) * Math.min(1, dt * .8);
+      song.intensity(want, 1.2); song.speed(speed);
+      return L;
+    },
+  };
+  return L;
+}
+
 /** Stops every tune. The app calls it when a round ends or the player leaves a game. */
 export function stopMusic() { for (const m of [...playing, ...held]) m.stop(); }
 /** Holds every playing tune; resumeMusic() carries them on. The app calls these when a game pauses. */

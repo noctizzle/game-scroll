@@ -12,7 +12,7 @@ export const OPEN_SOURCE = [
     packages: ['@capacitor/android', '@capacitor/ios', '@capacitor/core', '@capacitor/app', '@capacitor/device',
       '@capacitor/geolocation', '@capacitor/haptics', '@capacitor/motion', '@capacitor/share'] },
   { name: 'Rapier', for: '2D and 3D physics', licence: 'Apache 2.0', spdx: 'Apache-2.0',
-    packages: ['@dimforge/rapier2d-compat', '@dimforge/rapier3d-compat'] },
+    packages: ['@dimforge/rapier2d-compat', '@dimforge/rapier3d-compat', '@dimforge/rapier2d-simd-compat', '@dimforge/rapier3d-simd-compat'] },
   { name: 'MediaPipe', for: 'face and hand tracking, and its models', licence: 'Apache 2.0', spdx: 'Apache-2.0',
     packages: ['@mediapipe/tasks-vision'] },
   { name: 'Yuka', for: 'game AI', licence: 'MIT', spdx: 'MIT', packages: ['yuka'] },

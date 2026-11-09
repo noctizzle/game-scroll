@@ -37,7 +37,7 @@
 //   gs.story     Story (branching dialogue in ink; lazy) and Typewriter text
 //   gs.replay    Ghost (record and race a run; packs for api.save), Recorder / Replayer (whole rounds)
 //   gs.look2d    Lights (with shadows off walls), Screen (CRT, bloom, glitch...; lazy), Batch (fast WebGL sprites; lazy)
-//   gs.brains    Tiny Brains: small neural networks that learn as you play, with guard rails (Brain, Wave, Imagine, Predict)
+//   gs.brains    Tiny Brains: small neural networks that learn as you play, with guard rails (Brain, Wave, Imagine, Predict, Player, Nemesis, Shadow, tune)
 //   gs.board     grid boards: match, fall and refill, slide and merge, flood fill, hints
 //   gs.battle    turn-based battles: fighters, moves, types, status effects, items (Bag), XP and loot
 //   gs.gen       levels made by code: dungeons, caves, mazes, islands, heightmaps, tile patterns, field of view
@@ -135,6 +135,7 @@ export const HIDDEN = {
   gen: ['loadGen'],
   words: ['loadWords'],
   ui: ['loadUI'],
+  brains: ['liveBrains', 'brainStats'],   // the debug overlay's list of live brains
   hd: ['FINAL_EFFECTS', 'gpuFits'],
   props: ['simplifyReady'],   // the Next Gen screen shader in pieces, for the WebGPU port (docs/webgpu-move.md)
 };
