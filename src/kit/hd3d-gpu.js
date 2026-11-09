@@ -9,15 +9,17 @@
 // scripts/look-compare.cjs --webgpu draws the same scenes both ways and compares them.
 // Kit use only.
 import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Vector4, Color, BackSide, Sprite, Group, InstancedMesh, BufferGeometry, Frustum, Sphere, InstancedBufferAttribute as IBA, SpriteNodeMaterial, InstancedBufferAttribute, AdditiveBlending, NormalBlending,
-  MeshBasicNodeMaterial, NodeMaterial, QuadMesh, RenderTarget, Texture, Matrix4, HalfFloatType, NoToneMapping, ACESFilmicToneMapping, SRGBColorSpace, LinearSRGBColorSpace } from 'three/webgpu';
+  MeshBasicNodeMaterial, NodeMaterial, QuadMesh, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, NoToneMapping, ACESFilmicToneMapping, SRGBColorSpace, LinearSRGBColorSpace } from 'three/webgpu';
 import {
   pass, mrt, output, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
   positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min, materialEmissive, distance,
   attribute, vertexColor, normalWorld, normalViewGeometry, positionLocal, positionGeometry, modelWorldMatrix, modelWorldMatrixInverse,
   materialColor, materialOpacity, materialRoughness, cos, floor, step, fwidth, dFdx, dFdy, normalize, uniformArray, Loop, int, If, sqrt,
-  modelViewProjection, acos,
+  modelViewProjection, acos, getParallaxCorrectNormal,
 } from 'three/tsl';
+import { LightProbeGrid } from 'three/examples/jsm/lighting/LightProbeGrid.js';
+export { LightProbeGrid };
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
@@ -132,7 +134,32 @@ function afterColor(m, o, fn) {
   m.colorNode = vec4(vc ? out.div(max(vc.rgb, 1e-4)) : out, base.a);
 }
 const hash2 = p => { const a = fract(vec3(p.x, p.y, p.x).mul(.1031)), b = a.add(dot(a, a.yzx.add(33.33))); return fract(b.x.add(b.y).mul(b.z)); };
+// hd3d.js v.room(): the room's own cube picture, read box-projected. The reflection direction comes from
+// three's own (roughness bend and all, through the context's getUV), then is moved to where it meets the
+// room's walls, as the WebGL patch does.
+class BoxPMREM extends PMREMNode {
+  constructor(tex, at, size) { super(tex); this.gsAt = at; this.gsSize = size; }
+  setup(builder) {
+    const ctx = builder.getContext(), g = ctx.getUV;
+    if (!g || ctx.gsBox) return super.setup(builder);
+    builder.setContext({ ...ctx, gsBox: true, getUV: (n, b) => getParallaxCorrectNormal(g(n, b), this.gsSize, this.gsAt) });
+    try { return super.setup(builder); } finally { builder.setContext(ctx); }
+  }
+}
+/** The WebGPU picture of a room (v.room): its cube target, baked from the room's middle. */
+export function bakeRoom(r, scene, s) {
+  const g = s.gpu ||= { rt: new CubeRenderTarget(s.size, { type: HalfFloatType }) };
+  const cc = g.cam ||= new CubeCamera(.05, s.far, g.rt);
+  cc.position.copy(s.uniforms.gsRoomAt.value); scene.add(cc); cc.updateMatrixWorld(true);
+  try { cc.update(r, scene); } finally { cc.removeFromParent(); }
+  g.rt.texture.needsPMREMUpdate = true;
+}
 export const gpuLooks = {
+  // hd3d.js v.room(): box-projected reflections
+  room(m, s) {
+    const g = s.gpu ||= { rt: new CubeRenderTarget(s.size, { type: HalfFloatType }) };
+    m.envNode = new BoxPMREM(g.rt.texture, live(s.uniforms.gsRoomAt), live(s.uniforms.gsRoomSize));
+  },
   // hd3d.js pulse(): a glowing ring at distance r from a point
   pulse(m, s) {
     const u = s.uniforms, d = distance(positionWorld, live(u.gsPulseAt)), r = live(u.gsPulseR), w = float(u.gsPulseW.value);

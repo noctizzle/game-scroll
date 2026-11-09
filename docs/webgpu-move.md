@@ -55,7 +55,7 @@ The rules for new 3D code until then:
 | Part | Where | What it needs for WebGPU |
 | --- | --- | --- |
 | Reflections | three's `SSRPass` | Three's TSL `ssr()` node |
-| Light probe baking | `hd3d.js` `bakeLight` (`WebGLCubeRenderTarget` + `CubeCamera`) | A cube target on the WebGPU renderer |
+| Light probe baking | `hd3d.js` `bakeLight` (`WebGLCubeRenderTarget` + `CubeCamera`) | A cube target on the WebGPU renderer (`v.bounce`, three's LightProbeGrid, already works on both) |
 | Game screen effects | `gs.fx3d` (EffectComposer passes) | TSL versions (three has outline, pixelate, DOF...) |
 | Classic Console | `src/kit/toon3d.js` ink pass; toon shading is already stock `MeshToonMaterial` | A TSL edge-detect pass, then Console views on WebGPU |
 | 3D text | troika-three-text (patches shaders) | Three's own text geometry or an SDF text node |

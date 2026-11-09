@@ -185,7 +185,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.math`: `rng(seed)`, `daily(salt)`, `noise2`, `noise3`, `fbm`, `vec`, `overlap`, `Grid`, `Timers`, `angleDiff`, `wrap`.
 - `gs.util`: `clamp`, `rnd`, `pix`, `disc`, `hash`, `fmt`, `flickTracker`. `gs.palettes`: `PAL`, `SHELL`, `C16`.
 - `gs.gfx` (shaded 2D shapes, glow, backdrops), `gs.bricks` (toy bricks), `gs.geo` (location maths).
-- `gs.toon` (Console 3D: `View`, `G`, `part`, `grp`, `blob`, `toon`), `gs.hd` (Next Gen: `HDView` with `decal`, `bakeLight`, `shafts`,
+- `gs.toon` (Console 3D: `View`, `G`, `part`, `grp`, `blob`, `toon`), `gs.hd` (Next Gen: `HDView` with `decal`, `bounce` (bounce light), `room` (room reflections), `bakeLight`, `shafts`,
   `pbr`, `rbox`, `surface`, `speckle`, `Particles`, `sun`, `spot`), `gs.ar` (`ARView`, `FLOOR`, `arNote`), `gs.THREE`.
 - `gs.fx3d` (lazy): `text3d()`, `Particles3D` (`fire`, `smoke`, `sparks`, `boom`, `magic`, `snow`),
   `outline`, `glitch`, `trails`, `focus`, `pixelate`.

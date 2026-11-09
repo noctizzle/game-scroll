@@ -316,6 +316,19 @@ works on instanced meshes and on WebGL and WebGPU alike.
   window or green grass. Bake once the level is built, not every frame. Several probes blend as the
   camera moves (or `v.probeAt`, such as the player). Lower the view's `amb` when using probes.
   `v.clearProbes()`.
+- `v.bounce(box, { spacing: 1.5, bounces: 1 })` adds bounce light (baked global illumination) over a
+  box (`{ min: [x, y, z], max }`, a `Box3`, or an Object3D to cover): a 3D grid of light probes, one
+  every `spacing` metres, that light every lit material by where it is. A red wall tints the floor
+  beside it, a sunlit patch lifts a dark room, a cave is lit from its mouth, and things moving through
+  the room pick it up as they go. `bounces` adds passes of light bounced around again. It bakes the first
+  frame after (on WebGL or WebGPU, three.js's LightProbeGrid); call `.bake()` on what it returns after
+  the level changes, `.remove()` or `v.clearBounce()` to drop it. Lower the view's `amb` with it.
+  Prefer it to `bakeLight` for new games (`bakeLight` keeps the view on WebGL).
+- `v.room(box, { size: 128, strength: 1, meshes })` gives the shiny things in a room reflections of
+  that room: a picture of the room from its middle, box-projected so a polished floor or a chrome ball
+  shows the walls, windows and red sofa in the right places instead of a far-off sky. Every lit
+  standard material on a mesh inside the box gets it (or only `meshes`); call it once the room is
+  built, before the first draw. `.bake()` again after the room changes, `.remove()` to drop it.
 - `v.shafts = 1` (0..2) adds sun shafts: the bright sky round the sun is smeared towards it at quarter
   size, so whatever blocks it (trees, window frames, a hill) leaves streaks of light. Set `v.sun` so
   it knows where the sun is. It's off on the lowest tier. A physical sky is far brighter round the sun;
