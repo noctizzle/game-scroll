@@ -61,6 +61,53 @@ async function pulseScene() {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend];
 }
+// an outdoor valley (gs.outdoors looks, gs.sky, gs.props): painted ground with fields, a lane and mud,
+// far hills, mossy rocks, leaf cards and their impostors, a sky with clouds and its own reflections,
+// air with cloud shadows, rain-wet surfaces, a near shadow cascade, sun shafts and depth of field.
+// ?feat=-clouds,-wet,-shafts,-focus,-casc,-env,-props,-sky,-air,-land turns pieces off (to find a difference).
+async function outdoor(tier, phys = false) {
+  window.__hd.force = tier;
+  const F = new Set((new URLSearchParams(location.search).get('feat') || '').split(',')), on = k => !F.has('-' + k);
+  const { Land, looks, groundDetail, horizon, impostor, Wind } = gs.outdoors, { Sky } = gs.sky, { Props } = gs.props;
+  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .002, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.far = 900; v.cam.updateProjectionMatrix();
+  v.cam.position.set(0, 7, 26); v.cam.lookAt(-8, 1, -20); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff0d8', 3, 30, [-.6, .45, -.9]); v.scene.add(sun, sun.target); v.sun = sun;
+  const land = new Land({ kind: (x, z) => Math.sin(x * .04) * 3 + Math.cos(z * .05) * 2 + Math.max(0, -z - 40) * .2, size: 200, segments: 80 });
+  land.masks((x, z, y, sl) => [x < -10 ? 1 : 0, x > 30 ? 1 : 0, sl > .25 ? 1 : 0, Math.abs(z + 5) < 6 ? .8 : 0]);
+  const det = groundDetail({ seed: 3 });
+  const gl = looks.ground(land.mesh.material, { detail: det.detail, roads: [[-60, 10, 0, 0], [0, 0, 50, -40]], wet: on('wet') ? .4 : 0, bank: { low: -2.6, high: -1.6 } });
+  if (on('land')) v.scene.add(land.object);
+  const hz = horizon(land, { seed: 4 }); v.scene.add(hz);
+  const rockM = gs.hd.pbr('#8a857a', { rough: .9 }); looks.rock(rockM, { detail: det.detail });
+  for (let i = 0; i < 4; i++) { const r = new T.Mesh(new T.DodecahedronGeometry(1.2 + i * .3, 1), rockM); r.position.set(-12 + i * 5, land.height(-12 + i * 5, 6) + .4, 6 - i * 2); r.castShadow = r.receiveShadow = true; v.scene.add(r); }
+  // leaf cards: a seeded blobby picture with cut-out edges, crossed planes on a trunk
+  const lc = document.createElement('canvas'); lc.width = 128; lc.height = 128; const lx = lc.getContext('2d'), R = gs.math.rng(5);
+  for (let i = 0; i < 140; i++) { lx.fillStyle = `hsl(${95 + R() * 30},${40 + R() * 20}%,${22 + R() * 18}%)`; lx.beginPath(); lx.arc(16 + R() * 96, 16 + R() * 96, 4 + R() * 7, 0, 7); lx.fill(); }
+  const lt = new T.CanvasTexture(lc); lt.colorSpace = T.SRGBColorSpace;
+  const leafM = new T.MeshStandardMaterial({ map: lt, alphaTest: .5, side: T.DoubleSide, roughness: .8 });
+  const wind = new Wind({ x: 3, z: 1 }); wind.update(0);
+  looks.leaves(leafM, { time: 1.3, wind, sun: new T.Vector3(-.6, .45, -.9).normalize(), atlas: [128, 128] });
+  const tg = []; for (let k = 0; k < 3; k++) tg.push(new T.PlaneGeometry(4, 4).rotateY(k * Math.PI / 3).translate(0, 4, 0));
+  const trunk = new T.CylinderGeometry(.15, .25, 2.5, 6).translate(0, 1.25, 0);
+  const crown = (await import('three/examples/jsm/utils/BufferGeometryUtils.js')).mergeGeometries(tg);
+  for (let i = 0; i < 5; i++) { const px = 8 + i * 4, pz = -4 - i * 3, y = land.height(px, pz); const t = new T.Mesh(trunk, gs.hd.pbr('#5a4030', { rough: 1 })); t.position.set(px, y, pz); const l = new T.Mesh(crown, leafM); l.position.set(px, y, pz); l.castShadow = t.castShadow = true; v.scene.add(t, l); }
+  if (on('props')) {
+    const imp = impostor(crown, leafM, { cards: 3, size: 64 }); if (imp) looks.leaves(imp.material, { time: 1.3, wind, atlas: [192, 64] });
+    const props = new Props(v.scene); props.kind('tree', crown, leafM, { lod: imp ? [[30, imp.geometry, imp.material]] : [] });
+    for (let i = 0; i < 24; i++) { const px = -70 + (i % 8) * 9, pz = -30 - Math.floor(i / 8) * 12; props.add('tree', px, land.height(px, pz), pz, { rot: i, scale: 1 + (i % 3) * .2 }); }
+    props.done();
+  }
+  if (on('sky')) { const sky = new Sky(v, { time: 16.5, stars: 0, sun, clouds: .45, gap: .3, env: on('env'), fog: false, physical: phys }); sky.update(0); }
+  if (on('air')) v.air({ haze: .0015, mist: .004, mistFall: .25, clouds: on('clouds') ? .5 : 0, cloudShade: .5, wet: on('wet') ? .4 : 0 });
+  v.grade = { saturation: 1.05, contrast: 1.04 }; v.glare = .4;
+  if (on('shafts')) v.shafts = .9;
+  if (on('focus')) v.focus = { at: 20, range: 4, depth: .4, blur: 6 };
+  sun.fit(v, { far: 200, near: on('casc') ? 25 : 0, ground: (x, z) => land.height(x, z) });
+  for (let i = 0; i < 3; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + (window.__hd.info.webgl ? ' (' + window.__hd.info.webgl + ')' : '')];
+}
 function consoleScene() {
   const { View, part, G } = gs.toon, v = new View(), c = document.createElement('canvas'); c.width = 192; c.height = 160; const x = c.getContext('2d');
   v.board(192, 160, .9);
@@ -75,6 +122,8 @@ try {
   [out['nextgen-wet'], backends['nextgen-wet']] = await nextgen(3, .3);
   for (const t of [0, 3]) [out['dark-tier' + t], backends['dark-tier' + t]] = await dark(t);   // rain on the air: WebGL only so far
   [out.pulse, backends.pulse] = await pulseScene();
+  for (const t of [1, 3]) [out['outdoor-tier' + t], backends['outdoor-tier' + t]] = await outdoor(t);
+  [out['outdoor-physical'], backends['outdoor-physical']] = await outdoor(3, true);
   out.console = consoleScene();
 } catch (e) { out.error = String(e && e.stack || e); }
 window.__hd.force = null;
