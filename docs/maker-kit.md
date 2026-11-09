@@ -50,6 +50,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | A fighting game | `gs.fight` | [Game kits](#game-kits) |
 | Bullet patterns (shoot-'em-ups) | `gs.bullets` | [Game kits](#game-kits) |
 | Falling sand, blastable ground | `gs.sand` | [Game kits](#game-kits) |
+| Monsters, faces, loot, towns from a seed | `gs.art` | [Game kits](#game-kits) |
 | Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
 | Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
 | Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
@@ -1266,6 +1267,13 @@ hole whose edge falls as rubble), `solid(x, y)` for heroes to stand on, `count(m
 `update(dt)` (60 steps a second), `picture()` to draw scaled up with smoothing off, `colour(m, [r, g,
 b, variation])` for your own look. It runs on the CPU in flat arrays: about 120 x 200 cells is
 comfortable on a phone.
+
+**Procedural art** (`gs.art`): the same seed always gives the same thing, drawn in code.
+`creature(seed, { hue })` (body, legs, eyes, horns, wings: read them for the rules),
+`face(seed)` (draw with a mood -1..1), `item(seed, 'sword' | 'potion' | 'gem' | 'shield' | 'key' | 'ring')`
+(with a `rarity` and `power`), `building(seed)` (draw with night 0..1 for lit windows), `sprite(seed, w,
+h, palette)` (a mirrored pixel sprite for the Pocket styles), `name(seed, 'person' | 'place' | 'thing')`.
+Each has `draw(c, x, y, size)`; `{ hue }` or `{ palette }` keeps a set in one colour family.
 
 **Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
 `Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran

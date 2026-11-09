@@ -855,6 +855,19 @@ console.log('physics ok');
   console.log('sand: falling, piles, oil on water, flowing, fire, blasts ok');
 }
 {
+  const { creature, face, item, building, sprite, name } = await import('../src/kit/art.js');
+  const strip = o => JSON.stringify(o, (k, v) => typeof v === 'function' ? undefined : v);
+  for (const f of [creature, face, item, building]) { assert.equal(strip(f(7)), strip(f(7)), f.name + ': the same seed, the same thing'); assert.notEqual(strip(f(7)), strip(f(8)), f.name + ': another seed, another'); }
+  const calls = []; const c = new Proxy({}, { get: (t, k) => k in t ? t[k] : (...a) => { calls.push(k); return { addColorStop() {} }; }, set: (t, k, v) => { t[k] = v; return true; } });
+  for (let i = 0; i < 20; i++) { creature(i).draw(c, 0, 0, 50, 1); face(i).draw(c, 0, 0, 50); item(i).draw(c, 0, 0, 40); building(i).draw(c, 0, 0, 100, 1); } assert.ok(calls.length > 500, 'they draw');
+  assert.equal(creature(3, { hue: 120 }).colour.hue, 120, 'a colour family'); assert.ok(['common', 'uncommon', 'rare', 'epic', 'legendary'].includes(item(5).rarity));
+  const rare = [...Array(400)].map((_, i) => item(i).rarity).filter(r => r === 'legendary').length; assert.ok(rare < 10, 'legendary is rare');
+  const sp = sprite(4, 10, 8); for (let y = 0; y < 8; y++) for (let x = 0; x < 10; x++) assert.equal(sp.mask[y * 10 + x], sp.mask[y * 10 + 9 - x], 'mirrored');
+  assert.ok(sp.mask.some(v => v === 1) && sp.mask.some(v => v === 2), 'a body and an outline');
+  assert.equal(name(5), name(5)); assert.match(name(9, 'place'), /^[A-Z][a-z]+$/); assert.match(name(2), /^[A-Z][a-z]+$/);
+  console.log('art: seeded creatures, faces, items, buildings, rarity, mirrored sprites, names ok');
+}
+{
   const { dungeon, cave, maze, islands, pattern, fov, loadGen, proven, reach } = await import('../src/kit/gen.js');
   await loadGen();
   const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });

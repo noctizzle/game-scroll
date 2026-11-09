@@ -977,6 +977,18 @@ export interface Sand {
   update(dt: number): Sand; step(): void; colour(m: number, rgbv: [number, number, number, number]): Sand; picture(bg?: [number, number, number, number]): HTMLCanvasElement | OffscreenCanvas;
 }
 export interface SandPart { M: SandMaterials; Sand: new (w?: number, h?: number, o?: { seed?: number }) => Sand }
+export interface ArtLook { hue?: number; palette?: string[] }
+export interface ArtColours { main: string; dark: string; light: string; accent: string; hue: number }
+export interface ArtCreature { body: 'round' | 'tall' | 'wide' | 'drop' | 'bean'; legs: number; eyes: number; horns: boolean; spots: boolean; mouth: string; wings: boolean; colour: ArtColours; draw(c: CanvasRenderingContext2D, x: number, y: number, size?: number, time?: number): void }
+export interface ArtFace { skin: string; hairCol: string; hair: string; eyes: string; mouth: string; glasses: boolean; beard: boolean; freckles: boolean; draw(c: CanvasRenderingContext2D, x: number, y: number, size?: number, mood?: number): void }
+export interface ArtItem { kind: 'sword' | 'potion' | 'gem' | 'shield' | 'key' | 'ring'; rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary'; rarityColour: string; power: number; colour: ArtColours; draw(c: CanvasRenderingContext2D, x: number, y: number, size?: number): void }
+export interface ArtBuilding { floors: number; bays: number; roof: 'flat' | 'peak' | 'dome'; draw(c: CanvasRenderingContext2D, x: number, y: number, size?: number, night?: number): void }
+export interface ArtSprite { canvas: HTMLCanvasElement | OffscreenCanvas | null; mask: Uint8Array; w: number; h: number; draw(c: CanvasRenderingContext2D, x: number, y: number, scale?: number): void }
+export interface ArtPart {
+  creature(seed: number, o?: ArtLook): ArtCreature; face(seed: number, o?: { skin?: string; hair?: string }): ArtFace;
+  item(seed: number, kind?: ArtItem['kind'] | null, o?: ArtLook): ArtItem; building(seed: number, o?: ArtLook): ArtBuilding;
+  sprite(seed: number, w?: number, h?: number, colours?: string[], o?: { fill?: number }): ArtSprite; name(seed: number, kind?: 'person' | 'place' | 'thing'): string;
+}
 export interface DragPart { Drag: new (o?: { snap?: number; accept?: (piece: DragThing, slot: DragThing) => boolean; lift?: number; speed?: number; list?: { x: number; y: number; gap?: number; axis?: 'x' | 'y' } | null; swap?: boolean }) => Drag }
 
 export interface Earner {
@@ -1501,7 +1513,7 @@ export interface GS {
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
-  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; fight: FightPart; bullets: BulletsPart; sand: SandPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
+  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; fight: FightPart; bullets: BulletsPart; sand: SandPart; art: ArtPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
