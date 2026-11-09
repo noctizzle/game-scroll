@@ -44,7 +44,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { SGSR } from './sgsr.js';
 import { SGSR2, SgsrFrame } from './sgsr2.js';
-import { lookPatch, looksOf } from './looks.js';
+import { lookPatch, looksOf, lookSpec } from './looks.js';
 import { copyFrame, webgpu, setGpuPick, prepareGPU } from './gpu.js';
 import { makeRenderer } from './renderer.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
@@ -462,6 +462,26 @@ function tileNoise(size, base, oct, seed) {
   return out;
 }
 /** The kit's shared tiling noise texture (r, g, b, a: four kinds of smooth noise, 0..1). */
+/**
+ * A glowing ring that sweeps out from a point over a lit material: sonar, a shockwave, a scanner.
+ * pulse(material, { at, radius, strength, color, width, fill }): at is a { value: Vector3 }, radius and
+ * strength { value } objects the game changes each frame (strength 0 = off); color (linear [r, g, b] or
+ * a Color), width (how thick the ring is, metres) and fill (a faint glow inside the ring) are fixed.
+ * One per material; works on WebGL and WebGPU (hd3d-gpu.js gpuLooks.pulse). Returns the material.
+ */
+export function pulse(m, { at, radius, strength, color = [.15, .95, 1], width = 1.4, fill = .22 } = {}) {
+  const col = Array.isArray(color) ? new Vector3(...color) : new Vector3(color.r, color.g, color.b);
+  const spec = {
+    uniforms: { gsPulseAt: at || { value: new Vector3() }, gsPulseR: radius || { value: 0 }, gsPulseA: strength || { value: 0 }, gsPulseCol: { value: col }, gsPulseW: { value: width }, gsPulseFill: { value: fill } },
+    vertexHead: 'varying vec3 gsPW;\n',
+    vertex: [['#include <project_vertex>', 'after', '\n  gsPW = (modelMatrix * vec4(transformed, 1.)).xyz;\n#ifdef USE_INSTANCING\n  gsPW = (modelMatrix * instanceMatrix * vec4(transformed, 1.)).xyz;\n#endif\n']],
+    fragmentHead: 'varying vec3 gsPW; uniform vec3 gsPulseAt, gsPulseCol; uniform float gsPulseR, gsPulseA, gsPulseW, gsPulseFill;\n',
+    fragment: [['#include <emissivemap_fragment>', 'after', '\n  float gsPd = distance(gsPW, gsPulseAt); float gsPb = exp(-pow((gsPd - gsPulseR) / gsPulseW, 2.)) + gsPulseFill * step(gsPd, gsPulseR) * (1. - gsPd / max(gsPulseR, .01));\n  totalEmissiveRadiance += gsPulseCol * gsPb * gsPulseA;\n']],
+  };
+  lookPatch(m, 'pulse', spec);
+  return m;
+}
+
 export function noiseTex() {
   if (noiseT) return noiseT;
   const S = 256, data = new Uint8Array(S * S * 4);
@@ -1028,7 +1048,7 @@ export class HDView {
 // contact shadows, reflections, sun shafts, light probes, a sky's own reflections, cloud shadows and
 // rain on the air, and any material with its own shader (ShaderMaterial or a shader patch that isn't
 // one of the kit's ported look effects). docs/webgpu-move.md lists what's left to port.
-const PORTED_LOOKS = new Set(['air']);
+const PORTED_LOOKS = new Set(['air', 'pulse']);
 function materialFits(m) {
   if (!m) return true;
   if (m.isShaderMaterial || m.isRawShaderMaterial) return false;
@@ -1055,7 +1075,18 @@ function gpuFor(v) {
   return v._gpuWhy ? null : G;
 }
 // swap each view's parts between their WebGL and WebGPU versions (particles: points or sprites)
+const gpuLooked = new WeakSet();
 function gpuSwap(v, G) {
+  // materials with a named look that has a WebGPU version (PORTED_LOOKS): set its nodes before
+  // three first turns the material into a node material (it copies them over)
+  if (G) v.scene.traverse(o => {
+    if (!o.isMesh) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (!m || gpuLooked.has(m)) continue;
+      gpuLooked.add(m);
+      for (const n of looksOf(m)) G.fx.gpuLooks[n]?.(m, lookSpec(m, n));
+    }
+  });
   for (const p of v.parts) {
     if (G) {
       const tw = p.gpuTwin?.r === G.r ? p.gpuTwin : (p.gpuTwin = { r: G.r, ...G.fx.gpuParticles(p) });

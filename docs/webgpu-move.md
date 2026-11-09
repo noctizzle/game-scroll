@@ -58,7 +58,7 @@ The rules for new 3D code until then:
 | 3D text | troika-three-text (patches shaders) | Three's own text geometry or an SDF text node |
 | 3D particles | three.quarks 0.17 (needs three ≥ 0.182, works on 0.186) | Check its WebGPU support; else our own node particles |
 | Outdoor looks: ground, hills, rock, leaves | `src/kit/looks.js` `looks.*` (effects 'ground', 'hills', 'rock', 'leaves' through `lookPatch`; a view using them stays on WebGL) | One TSL node per effect, same `lk...` uniforms |
-| Games with their own shaders | `deep-pressure.js` (stays on WebGL), `long-shadow.js` (sky) | Port to kit materials or TSL |
+| Games with their own shaders | `long-shadow.js` (sky). Deep Pressure's sonar is now the kit's `gs.hd.pulse` look, which has a WebGPU version | Port to kit materials or TSL |
 
 Status from `gpu-games.cjs` (2026-11-09): 18 of 20 Next Gen and AR games draw on WebGPU with no errors;
 Long Shadow (sky reflections) and Deep Pressure (its own shader) stay on WebGL.

@@ -21,6 +21,10 @@ import { noiseTex } from './hd3d.js';
 import { fbm, rng } from './math.js';
 
 const EFFECTS = new Map();   // name -> spec, for the WebGPU port and for tests
+const SPECS = new WeakMap();   // material -> { name: spec }: the WebGPU version reads each material's own settings
+
+/** The settings a material's effect was added with (for its WebGPU version). */
+export const lookSpec = (m, name) => SPECS.get(m)?.[name];
 
 /** The named effects kits have registered (name -> spec). */
 export const lookEffects = () => EFFECTS;
@@ -44,6 +48,7 @@ export function lookPatch(m, name, spec) {
   if (names.includes(name)) return false;
   EFFECTS.set(name, spec);
   names.push(name);
+  let own = SPECS.get(m); if (!own) SPECS.set(m, own = {}); own[name] = spec;
   const base = m.onBeforeCompile, baseKey = m.customProgramCacheKey;
   m.onBeforeCompile = function (sh, r) {
     base.call(this, sh, r);
