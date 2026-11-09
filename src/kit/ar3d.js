@@ -260,8 +260,25 @@ export class ARView extends HDView {
   /** No-gyro fallback: drag to look around (pixels moved). */
   drag(dx, dy) { if (this.sensor) return; this.yaw += dx * .007; this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch + dy * .006)); }
 
+  /**
+   * Fresh aim (frame generation, hd3d.js aimNow): where the phone points right now, for the frames made
+   * between real ones, so the 3D stays pinned to the room at the screen's rate. Leaves the view's own state alone.
+   */
+  freshAim(cam) {
+    if (this.nat) { if (this.nat.has) { mA.multiplyMatrices(this.nat.M, this.nat.pose).decompose(tmp, cam.quaternion, sc); } return; }
+    const o = this.sensor ? orientation() : null, d = Math.PI / 180;
+    if (o && this.yaw0 != null && this.absSeen === o.abs) {
+      eu.set(o.beta * d, o.alpha * d, -o.gamma * d, 'YXZ');
+      qd.setFromEuler(eu).multiply(Q1).multiply(q0.setFromAxisAngle(Z, -o.screen * d)).premultiply(qy.setFromAxisAngle(Y, -this.yaw0));
+      // the same smoothing look() gives it, for the time since look() ran
+      const k = 1 - Math.exp(-Math.min(.05, (performance.now() - (this.lookT || 0)) / 1000) * 28);
+      cam.quaternion.copy(this.camQ).slerp(qd, k);
+    } else if (!this.sensor) cam.quaternion.setFromEuler(eu.set(this.pitch, this.yaw, 0, 'YXZ'));
+  }
+
   /** Point the 3D camera the way the phone points. Call once per frame before draw(). */
   look(dt = 1 / 60) {
+    this.lookT = performance.now();
     if (this.nat) return this.lookNative(dt);
     const o = orientation(), d = Math.PI / 180;
     if (o) {

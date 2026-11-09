@@ -35,7 +35,7 @@ const MODES = {
   fixed: { distance: 0, height: 0, side: 0, look: 0, lag: .3, follows: false },
 };
 
-const _a = new Vector3(), _b = new Vector3(), _c = new Vector3(), _d = new Vector3(), _ray = new Raycaster();
+const _a = new Vector3(), _b = new Vector3(), _c = new Vector3(), _d = new Vector3(), _up = new Vector3(0, 1, 0), _ray = new Raycaster();
 
 export class CameraRig {
   constructor(view, { mode = 'chase', ...o } = {}) {
@@ -43,7 +43,10 @@ export class CameraRig {
     this.pos = new Vector3(); this.aim = new Vector3(); this.from = null; this.blend = 0; this.blendTime = 0; this.started = false;
     this.opts = { pitchMin: -1.2, pitchMax: 1.2, walls: [], margin: .25, lead: 0, fov: null, ...o };
     this.mode = mode; this.cfg = { ...MODES[mode], ...o };
-    this.targetYaw = 0; this.lastTarget = new Vector3(); this.vel = new Vector3();
+    this.targetYaw = 0; this.lastTarget = new Vector3(); this.vel = new Vector3(); this.yawSeen = 0; this.pitchSeen = 0;
+    // frame generation's fresh aim: a Next Gen view turns its made frames by the look the finger has
+    // already changed (unless the game set its own with view.aimNow)
+    if (view?.aimNow && !view.aimFn) view.aimNow(cam => this.fresh(cam));
   }
   get cam() { return this.view?.isCamera ? this.view : this.view.cam; }
   set(o) { Object.assign(this.opts, o); Object.assign(this.cfg, o); return this; }
@@ -100,6 +103,16 @@ export class CameraRig {
     const hit = _ray.intersectObjects(walls, true)[0];
     if (hit) pos.copy(aim).addScaledVector(_d, Math.max(.1, hit.distance - (this.opts.margin ?? .25)));
   }
+  // Fresh aim (frame generation, hd3d.js aimNow): the camera turned by however much rig.yaw and
+  // rig.pitch changed since update() (a game that turns them as the finger moves gets made frames that
+  // follow the finger at the screen's rate). A turn only: in chase and orbit the camera's swing round the
+  // target is left to the next real frame.
+  fresh(cam) {
+    if (!this.started) return;
+    const dy = this.yaw - this.yawSeen, dp = MathUtils.clamp(this.pitch, this.opts.pitchMin, this.opts.pitchMax) - this.pitchSeen;
+    if (dy) cam.rotateOnWorldAxis(_up, dy);
+    if (dp) cam.rotateX(dp);
+  }
   update(dt, target) {
     this.t += dt;
     const cam = this.cam, tp = target.position || target;
@@ -128,6 +141,7 @@ export class CameraRig {
       this.trauma = Math.max(0, this.trauma - dt * 1.4);
     }
     cam.position.copy(_a); cam.lookAt(_b);
+    this.yawSeen = this.yaw; this.pitchSeen = this.pitch;
     if (cam.isPerspectiveCamera) {
       const base = this.cfg.fov ?? this.opts.fov ?? (this.baseFov ??= cam.fov);
       let f = base;

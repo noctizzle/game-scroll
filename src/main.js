@@ -31,7 +31,7 @@ import { hearts } from './hearts.js';
 import { playstats } from './playstats.js';
 import { boards, rankHTML, openBoard } from './boards.js';
 import { perf } from './perf.js';
-import { speed, fpsFor, tick as tickHz, screenHz } from './kit/speed.js';
+import { speed, fpsFor, tick as tickHz, screenHz, frameLate } from './kit/speed.js';
 import { history } from './history.js';
 import { savesFor } from './saves.js';
 import { brainsFor, sendFun } from './brainstore.js';
@@ -558,7 +558,7 @@ function hotSwap(d){
 
 // Debug overlay for makers (src/debug.js): dev and test builds only, never in the store apps.
 const DBG=import.meta.env.MODE==='bundled'?makeDebug():null;
-let lastT=performance.now(),nextAt=0;
+let lastT=performance.now(),nextAt=0,realAt=0;
 // A 2D game on a big screen (a foldable opened up) draws twice a phone's pixels each frame. If it can't keep
 // up (two windows of 45 frames a quarter over the frame budget), its canvas drops to at most LITE_PX and the
 // screen stretches it; after ~6 s of easy frames it goes back to full sharpness (once per visit to the card, so it
@@ -582,13 +582,17 @@ function frame(now){
   // other refresh, which saves battery and heat. Frames are due on a steady beat (nextAt), not a gap
   // since the last one, so a 60 fps game on a 90 Hz screen alternates 1 and 2 refreshes and still
   // averages 60 (a gap check would wait 2 every time: 45 fps). Slack: a slightly early refresh counts.
-  const fps=s?fpsFor(s.def):60,step=1000/fps;
+  const fps=s?fpsFor(s.def):60,step=1000/fps,rf=1000/screenHz();
   if(s){
     // a refresh between two real frames: a Next Gen or AR game making frames in between (frame generation,
-    // src/kit/framegen.js) shows the one it planned for it
-    if(now<nextAt-.4*1000/screenHz()){const b=speed.between;speed.between=null;if(b)try{b()}catch(e){console.warn('frame generation',e)}return}
+    // src/kit/framegen.js) shows the moment due then (last: the next refresh draws a real frame)
+    if(now<nextAt-.4*rf){const b=speed.between;if(b)try{b(now+1.4*rf>=nextAt)}catch(e){speed.between=null;console.warn('frame generation',e)}return}
     nextAt=now-nextAt>step?now+step:nextAt+step;   // fell behind (hidden, a long frame): restart the beat
     speed.between=null;   // (the 3D kit sets it again while this frame draws)
+    // stutter shield (src/kit/speed.js): a 3D game drawing every refresh whose frame came a refresh or more late
+    const gap=now-realAt;realAt=now;
+    if(s.state==='playing'&&!s.paused&&usesHD(s.def)&&fps>=screenHz()*.9&&gap>1.5*rf&&gap<100)frameLate(now);
+    speed.inputAt=lastGameInput;
   }
   let dt=Math.min(Math.max(.033,1.25/fps),(now-lastT)/1000);lastT=now;
   if(s){
