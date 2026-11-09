@@ -1600,7 +1600,12 @@ function gpuSwap(v, G) {
   // shadow maps: each renderer keeps its own. WebGL drew into WebGPU's map when it found one on the light
   // (and the other way round), which made WebGPU remake it in the middle of a frame that still used it:
   // that frame was lost, and every frame after it while the old one stayed bound
+  // skeletons: WebGL pads a skeleton's bone matrices out to a square texture (15 bones: 16 matrices),
+  // which overflows the bone buffer WebGPU made for the real count. Back on WebGPU they're cut back to
+  // the bones (WebGL pads them again when it next needs its texture)
   v.scene.traverse(o => {
+    const sk = G && o.isSkinnedMesh && o.skeleton;
+    if (sk?.boneTexture) { const n = sk.bones.length * 16; sk.boneTexture.dispose(); sk.boneTexture = null; if (sk.boneMatrices.length !== n) sk.boneMatrices = sk.boneMatrices.slice(0, n); }
     const sh = o.isLight && o.shadow; if (!sh?.map) return;
     if (G) { if (sh.map.isWebGLRenderTarget) { sh.map.dispose(); sh.map = sh.gpuMap || null; } }
     else if (!sh.map.isWebGLRenderTarget) { sh.gpuMap = sh.map; sh.map = null; }
