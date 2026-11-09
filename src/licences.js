@@ -47,6 +47,7 @@ export const OPEN_SOURCE = [
   { name: 'Yoga', for: 'in-game menu and HUD layout (flexbox)', licence: 'MIT', spdx: 'MIT', packages: ['yoga-layout'] },
   { name: 'pokersolver', for: 'naming and ranking poker hands', licence: 'MIT', spdx: 'MIT', packages: ['pokersolver'] },
   { name: 'SCOWL word lists (wordlist-english)', for: 'the word game dictionary', licence: 'MIT (word lists: SCOWL licence)', spdx: 'MIT', packages: ['wordlist-english'], notice: '© 2000-2016 Kevin Atkinson and others (SCOWL)' },
+  { name: 'Open Trivia Database questions', for: 'the quiz question bank (only that file is under CC BY-SA)', licence: 'CC BY-SA 4.0', spdx: 'CC-BY-SA-4.0', vendored: 'src/kit/trivia-bank.js', notice: 'Questions by the contributors of the Open Trivia Database, opentdb.com (adapted: some categories, grown-up topics left out)' },
   { name: '@2toad/profanity', for: 'keeping rude words out of word games', licence: 'MIT', spdx: 'MIT', packages: ['@2toad/profanity'] },
   { name: 'Press Start 2P font', for: 'pixel text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/press-start-2p'] },
   { name: 'Rubik font', for: 'app text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/rubik'] },

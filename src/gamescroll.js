@@ -81,6 +81,7 @@
 //   gs.cards     decks, deals, hands, blackjack totals, rummy sets and runs, poker hands (pokersolver)
 //   gs.dice      dice notation ('4d6kh3'), odds, tumbling 2D dice, real 3D dice read by the top face
 //   gs.words     an English dictionary (SCOWL): check, pick, find words in letters or grids, compare guesses
+//   gs.trivia    about 2,700 quiz questions (Open Trivia Database): seeded quizzes, no repeats, streaks, climbing difficulty, 50:50
 //   gs.ui        layout with no look (Yoga flexbox): boxes, taps, holds, drags, scrolling lists, focus for pads
 //   gs.hear      hearing everyday sounds (YAMNet: dog, whistle, clapping...) and spoken words, on the phone itself
 //   gs.doodle    knows what the player drew (46 things: sword, umbrella, bridge...), a tiny model on the phone
@@ -158,6 +159,7 @@ export const HIDDEN = {
   vision: ['stopVision'],
   gen: ['loadGen'],
   words: ['loadWords'],
+  trivia: ['loadTrivia'],
   ui: ['loadUI'],
   hear: ['loadHear', 'stopHearing'],
   doodle: ['loadDoodle'],
@@ -210,7 +212,7 @@ const GROUPS = {
   ai: { parts: ['ai'], load: () => import('./kit/ai.js').then(m => ({ ai: pick('ai', m) })) },
   action: { parts: ['combat', 'tactics', 'climb', 'missions', 'cutscene', 'prompts', 'stealth', 'gadgets', 'campaign', 'arena'],
     load: () => import('./gs-action.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
-  play: { parts: ['craft', 'soft', 'cards', 'dice', 'words', 'ui'],
+  play: { parts: ['craft', 'soft', 'cards', 'dice', 'words', 'trivia', 'ui'],
     load: () => import('./gs-play.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
   smart: { parts: ['hear', 'doodle', 'phoneai'],
     load: () => import('./gs-smart.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },

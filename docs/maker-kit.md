@@ -52,6 +52,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Falling sand, blastable ground | `gs.sand` | [Game kits](#game-kits) |
 | Monsters, faces, loot, towns from a seed | `gs.art` | [Game kits](#game-kits) |
 | Team sports AI | `gs.sports` | [Game kits](#game-kits) |
+| Quiz questions (about 2,700) | `gs.trivia` (Open Trivia Database) | [Game kits](#game-kits) |
 | Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
 | Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
 | Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
@@ -1282,6 +1283,17 @@ each player (not marked `human`) to `{ do, x, y, kick }`: one chases the ball, t
 formation, find space when you have the ball or mark someone goal side when you don't; the one with
 the ball shoots at the most open corner, passes along the clearest lane, or runs on. Your game moves
 the players towards x, y and applies the kick. `home(p, ball)` is where a player belongs now.
+
+**Quiz questions** (`gs.trivia`, about 2,700 from the Open Trivia Database, CC BY-SA 4.0; loads on
+first use, so make it in `make()` or `reset()`): games can't carry data files, so the bank lives here.
+`categories()` lists `{ id, name, count }` (general, animals, geography, history, science, maths,
+computers, sports, art, myths, vehicles, books, music; grown-up topics left out). `new Quiz({ categories,
+difficulty, kind: 'choice' | 'truefalse', climb, seed })` deals them in a seeded order with no repeats
+(`gs.math.daily('quiz')` for the same quiz for everyone today). `next()` gives `{ text, answers, kind,
+difficulty, category }` with the answers shuffled (the right one isn't in it); `answer(i)` gives `{ right,
+correct, streak, score }`; `timeout()` is a miss; `fifty()` is two wrong answers to take away; with
+`climb: 3` it starts easy and steps up after three right in a row, down after a miss. `pack()` is a tiny
+save to `resume` from. Show `CREDIT` somewhere in the game: the licence asks for it.
 
 **Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
 `Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran

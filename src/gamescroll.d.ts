@@ -1450,6 +1450,17 @@ export interface WordsPart {
   score(word: string, o?: { values?: Record<string, number>; mult?: number }): number;
   Bag: new (o?: { size?: number; blanks?: number; seed?: number | string | null; letters?: Record<string, number> }) => { tiles: string[]; readonly left: number; shuffle(): Loose; draw(n?: number): string[]; put(...tiles: (string | string[])[]): Loose };
 }
+export interface TriviaQuestion { id: number; text: string; answers: string[]; kind: 'choice' | 'truefalse'; difficulty: 'easy' | 'medium' | 'hard'; category: string; categoryId: string; correct?: undefined }
+export interface TriviaPart {
+  /** A quiz from the question bank (loads on first use: make it in make() or reset()). Show CREDIT somewhere in the game. */
+  Quiz: new (o?: { categories?: string | string[] | null; difficulty?: 'easy' | 'medium' | 'hard' | ('easy' | 'medium' | 'hard')[] | null; kind?: 'choice' | 'truefalse' | null; climb?: boolean | number; seed?: number | string | (() => number) | null; resume?: { s: number; u: number } | null }) => {
+    score: number; asked: number; streak: number; best: number; readonly left: number; readonly difficulty: 'easy' | 'medium' | 'hard' | null;
+    next(): TriviaQuestion | null; answer(i: number): { right: boolean; correct: number; streak: number; score: number }; timeout(): { right: boolean; correct: number; streak: number; score: number };
+    fifty(): number[]; pack(): { s: number; u: number };
+  };
+  categories(): { id: string; name: string; count: number }[];
+  CREDIT: string;
+}
 export interface UINode {
   id?: string; kids: UINode[]; parent: UINode | null; box: { x: number; y: number; w: number; h: number }; clip: { x: number; y: number; w: number; h: number }; shown: boolean;
   pressed: boolean; focused: boolean; press: number; depth: number; sx: number; sy: number; contentW: number; contentH: number; data?: Loose; [k: string]: Loose;
@@ -1529,7 +1540,7 @@ export interface GS {
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
-  outdoors: OutdoorsPart; city: CityPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; ui: UIPart;
+  outdoors: OutdoorsPart; city: CityPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; trivia: TriviaPart; ui: UIPart;
   hear: HearPart; doodle: DoodlePart; phoneai: PhoneaiPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;

@@ -886,6 +886,27 @@ console.log('physics ok');
   console.log('sports: formation, keeper, chase, slide, shoot, pass under pressure, marking, human ok');
 }
 {
+  const { Quiz, categories, loadTrivia, CREDIT } = await import('../src/kit/trivia.js');
+  assert.throws(() => new Quiz(), /still loading/, 'loads first'); await loadTrivia();
+  const cats = categories(); assert.ok(cats.length >= 10 && cats.every(c => c.count > 0), 'categories'); assert.ok(CREDIT.includes('CC BY-SA'));
+  const a = new Quiz({ seed: 7 }), b = new Quiz({ seed: 7 }), qa = a.next(), qb = b.next();
+  assert.deepEqual(qa, qb, 'same seed, same quiz'); assert.equal(qa.correct, undefined, 'the answer is not given away');
+  const total = a.left + 1, ids = new Set([qa.id]); let q;
+  while ((q = a.next())) { assert.ok(!ids.has(q.id), 'no repeats'); ids.add(q.id); assert.ok(q.answers.length === (q.kind === 'truefalse' ? 2 : 4)); }
+  assert.equal(ids.size, total, 'asks every question once'); assert.equal(a.next(), null);
+  const s = new Quiz({ categories: 'animals', difficulty: 'easy', kind: 'choice', seed: 'day' });
+  for (let i = 0; i < 5; i++) { const x = s.next(); assert.equal(x.categoryId, 'animals'); assert.equal(x.difficulty, 'easy'); assert.equal(x.kind, 'choice'); }
+  const c = new Quiz({ climb: 2, seed: 3 }); c.next(); assert.equal(c.difficulty, 'easy');
+  const right = () => c.answer(c.q.correct); right(); assert.equal(c.answer(0).streak >= 0, true, 'a second answer to one question is ignored'); c.next(); right();
+  assert.equal(c.difficulty, 'medium', 'two right: up a level'); assert.equal(c.score, 2); assert.equal(c.streak, 2);
+  const nq = c.next(); assert.equal(nq.difficulty, 'medium'); const r = c.answer((c.q.correct + 1) % nq.answers.length);
+  assert.ok(!r.right && r.streak === 0 && c.difficulty === 'easy', 'a miss: back down'); assert.equal(c.best, 2);
+  const f = new Quiz({ kind: 'choice', seed: 1 }); f.next(); const gone = f.fifty(); assert.equal(gone.length, 2); assert.ok(!gone.includes(f.q.correct), '50:50 keeps the right one');
+  const g = new Quiz({ seed: 9 }); const first = [g.next(), g.next(), g.next()].map(x => x.id); const saved = g.pack(); assert.ok(JSON.stringify(saved).length < 40, 'small save');
+  const h = new Quiz({ seed: 1, resume: saved }), n = h.next(); assert.ok(!first.includes(n.id), 'resumes without repeats'); assert.equal(n.id, g.next().id, 'and in the same order');
+  console.log('trivia: bank, categories, seeded order, no repeats, filters, climb, 50:50, pack/resume ok');
+}
+{
   const { dungeon, cave, maze, islands, pattern, fov, loadGen, proven, reach } = await import('../src/kit/gen.js');
   await loadGen();
   const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });
