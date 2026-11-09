@@ -49,7 +49,8 @@
 //   gs.rts       strategy controls: tap and box select, formations, flow fields, build grids, tower targets
 //   gs.fight     fighting games: motion inputs with a buffer, moves in frames, hit and hurt boxes, cancels, stun
 //   gs.bullets   shoot-'em-up bullets: thousands in flat arrays, rings, spreads, spirals, homing, grazing
-//   gs.sand      falling sand and blastable ground: sand, water, oil, fire, smoke, acid; solid() for heroes
+//   gs.sand      falling sand and blastable ground: sand, water, oil, fire, smoke, acid, lava; solid() for heroes
+//   gs.flow      flowing liquids for play: river current round rocks, waterfalls, whirlpools, lava and acid that hurt (2D or 3D)
 //   gs.art       procedural art from a seed: creatures, faces, loot items, buildings, pixel sprites, names
 //   gs.sports    team sports AI from above: formations that slide, chase, mark, find space, shoot or pass
 //   gs.idle      idle maths: rising prices, affordable counts, short big numbers, Earner (and api.away())
@@ -138,6 +139,7 @@ import * as rts from './kit/rts.js';
 import * as fight from './kit/fight.js';
 import * as bullets from './kit/bullets.js';
 import * as sand from './kit/sand.js';
+import * as flow from './kit/flow.js';
 import * as art from './kit/art.js';
 import * as sports from './kit/sports.js';
 import * as party from './kit/party.js';
@@ -286,6 +288,7 @@ const core = {
   fight: pick('fight', fight),
   bullets: pick('bullets', bullets),
   sand: pick('sand', sand),
+  flow: pick('flow', flow),
   art: pick('art', art),
   sports: pick('sports', sports),
   party: pick('party', party),

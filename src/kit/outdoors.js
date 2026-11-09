@@ -27,6 +27,7 @@ import { fbm } from './math.js';
 import { bakeRenderer as renderer } from './hd3d.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 export { looks, groundDetail, horizon } from './looks.js';
+import { looks as LOOKS } from './looks.js';
 import Terrain, { TerrainNS, createSeededRandom, scatterGrass, updateGrass, updateGrassLOD } from 'three.terrain.js';
 
 const KINDS = {
@@ -190,6 +191,62 @@ export class Water {
     return this;
   }
   dispose() { this.mesh.geometry.dispose(); this.mesh.removeFromParent(); }
+}
+
+
+/**
+ * The look of a gs.flow stream or pool in 3D: a river, stream or waterfall of moving water (foam at
+ * its rocks, banks and falls), or molten lava (kind 'lava': glowing cracks, cooling crust), or acid.
+ * The mesh follows the stream's path and width, so what you see is where stream.at() says the
+ * liquid is. o: step (metres between rows), across (columns), lift (metres above the path), look
+ * (options for looks.flow or looks.lava: colours, scale...), material (your own MeshStandardMaterial,
+ * the look goes on it). update(dt) moves it on.
+ */
+export class River {
+  constructor(stream, { step = 1, across = 6, lift = .02, look = {}, material = null } = {}) {
+    this.stream = stream; const lavaK = stream.kind === 'lava';
+    const acid = stream.kind === 'acid' ? { deep: [.05, .2, .02], shallow: [.2, .45, .05], foam: [.7, .95, .4] } : stream.kind === 'mud' ? { deep: [.06, .04, .02], shallow: [.12, .08, .04], foam: [.3, .25, .18], ripple: .2 } : {};
+    const g = stream.path ? this.ribbon(stream, step, across, lift) : this.disc(stream, lift);
+    const m = material || new MeshStandardMaterial({ color: '#ffffff', roughness: .1, metalness: 0 });
+    if (!lavaK) { m.transparent = m.transparent || stream.kind !== 'mud'; m.opacity = Math.min(m.opacity, stream.kind === 'mud' ? 1 : .9); m.depthWrite = !m.transparent; }
+    this.look = lavaK ? LOOKS.lava(m, { length: stream.length || 1, ...look }) : LOOKS.flow(m, { ...acid, ...look });
+    this.mesh = new Mesh(g, m); this.mesh.receiveShadow = !lavaK; this.mesh.castShadow = false;
+  }
+  ribbon(s, step, n, lift) {
+    const L = s.length, rows = Math.max(2, Math.ceil(L / step) + 1), pos = [], fl = [], dir = [], idx = [];
+    for (let r = 0; r < rows; r++) {
+      const d = Math.min(L, r * L / (rows - 1)), a = s.path.at(d), fall = s.isFall(d), h = Math.hypot(a.dx, a.dz) || 1;
+      for (let i = 0; i <= n; i++) {
+        const e = i / n * 2 - 1, side = e * s.width / 2, p = s.path.offset(d, side);
+        let foam = fall ? .45 : Math.max(0, Math.abs(e) - .85) * 2.5;
+        for (const k of s.rocks) { const dd = Math.hypot(p.x - k.x, p.z - k.z); foam = Math.max(foam, Math.min(1, (k.r * 1.8 - dd) / k.r)); }
+        pos.push(p.x, p.y + lift, p.z); fl.push(side, d, s.speed * (1 - e * e * .75) * (fall ? 2.2 : 1), foam); dir.push(a.dx / h, a.dz / h, Math.abs(e));
+      }
+    }
+    for (let r = 0; r < rows - 1; r++) for (let i = 0; i < n; i++) { const a = r * (n + 1) + i, b = a + n + 1; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+    return this.finish(pos, fl, dir, idx);
+  }
+  disc(p, lift, seg = 40) {
+    const pos = [], fl = [], dir = [], idx = [], c = p.at, y = (c.y ?? 0) + lift, rings = 4, box = p.w != null;
+    for (let j = 0; j <= rings; j++) for (let k = 0; k < seg; k++) {
+      const t = k / seg * Math.PI * 2, f = j / rings, cx = Math.cos(t), cz = Math.sin(t);
+      const ox = box ? Math.max(-1, Math.min(1, cx * 1.42)) * p.w / 2 * f : cx * p.r * f, oz = box ? Math.max(-1, Math.min(1, cz * 1.42)) * p.h / 2 * f : cz * p.r * f;
+      pos.push(c.x + ox, y, (c.z ?? 0) + oz); fl.push(ox, oz, p.spin ? Math.abs(p.spin) * .3 : .15, f > .9 ? .3 : 0); dir.push(0, 1, f);
+    }
+    for (let j = 0; j < rings; j++) for (let k = 0; k < seg; k++) { const a = j * seg + k, b = j * seg + (k + 1) % seg; idx.push(a, b, a + seg, b, b + seg, a + seg); }
+    return this.finish(pos, fl, dir, idx);
+  }
+  finish(pos, fl, dir, idx) {
+    const g = new BufferGeometry(); g.setAttribute('position', new Float32BufferAttribute(pos, 3)); g.setAttribute('lkFlow', new Float32BufferAttribute(fl, 4));
+    g.setAttribute('lkDir', new Float32BufferAttribute(dir, 3)); g.setIndex(idx); g.computeVertexNormals();
+    // faces up: the ribbon is wound so its normals point to the sky (flip if the path made them point down)
+    const nrm = g.attributes.normal; let up = 0; for (let i = 1; i < nrm.count * 3; i += 3) up += nrm.array[i];
+    if (up < 0) { for (let i = 0; i < idx.length; i += 3) [idx[i + 1], idx[i + 2]] = [idx[i + 2], idx[i + 1]]; g.setIndex(idx); g.computeVertexNormals(); }
+    return g;
+  }
+  /** Each frame: moves the water (or lava) on. */
+  update(dt) { this.look.uniforms.lkFlowT.value += dt; return this; }
+  dispose() { this.mesh.geometry.dispose(); this.mesh.material.dispose(); this.mesh.removeFromParent(); }
 }
 
 /**

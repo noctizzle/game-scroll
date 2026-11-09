@@ -311,8 +311,80 @@ function leaves(m, { time = 0, wind = .6, sun = new Vector3(0, 1, 0), sway = .01
   return { uniforms: U };
 }
 
-/** The outdoor looks: ground, hills, rock, leaves (each returns its uniforms). */
-export const looks = Object.freeze({ ground, hills, rock, leaves });
+
+/**
+ * looks.flow(material, o): moving water for a river or waterfall mesh made by gs.outdoors River (its
+ * lkFlow attribute: metres across, metres along, speed, foam; lkDir: which way it runs). Ripples and
+ * colour slide downstream at each point's own speed (two crossfaded layers, so faster middles never
+ * smear), deeper in the middle, foam at rocks, banks and falls. o: deep, shallow, foam (colours),
+ * scale (ripple size), ripple (normal strength), froth (how much foam), time ({ value } or a number).
+ */
+function flow(m, { deep = [.02, .07, .09], shallow = [.09, .2, .2], foam = [.6, .66, .68], scale = .35, ripple = .45, froth = 1, time = 0 } = {}) {
+  const U = { lkNoise: uni(noiseTex()), lkFlowT: uni(time), lkDeep: col(deep), lkShallow: col(shallow), lkFoamC: col(foam), lkFlowK: uni(new Vector4(scale, ripple, froth, 0)) };
+  lookPatch(m, 'flow', spec('flow', {
+    uniforms: U,
+    vertex: {
+      head: 'attribute vec4 lkFlow; attribute vec3 lkDir; varying vec4 vLkF; varying vec3 vLkD;',
+      after: { begin_vertex: '  vLkF = lkFlow; vLkD = lkDir;' },
+    },
+    fragment: {
+      head: `uniform sampler2D lkNoise; uniform float lkFlowT; uniform vec3 lkDeep, lkShallow, lkFoamC; uniform vec4 lkFlowK; varying vec4 vLkF; varying vec3 vLkD;
+vec4 lkFlowN(float sc, vec2 st) {   // noise sliding along at this point's speed, two layers crossfaded
+  float p0 = fract(lkFlowT * .5), p1 = fract(lkFlowT * .5 + .5), w = abs(2. * p0 - 1.);
+  vec4 a = texture2D(lkNoise, vec2(vLkF.x * st.x, vLkF.y * st.y - vLkF.z * p0 * 2.) * sc);
+  vec4 b = texture2D(lkNoise, vec2(vLkF.x * st.x, vLkF.y * st.y - vLkF.z * p1 * 2.) * sc + .37);
+  return mix(a, b, w);
+}`,
+      after: {
+        color_fragment: `  vec4 lkN = lkFlowN(lkFlowK.x, vec2(1., .6)), lkS = lkFlowN(lkFlowK.x * 1.7, vec2(2.5, .25));
+  float lkFoam = clamp(smoothstep(.55, .85, lkS.g * .55 + vLkF.w * .8 + lkN.r * .25) * lkFlowK.z, 0., 1.);
+  diffuseColor.rgb = mix(mix(lkDeep, lkShallow, clamp(vLkD.z * vLkD.z + (lkN.a - .5) * .4, 0., 1.)) * (.85 + .3 * lkN.r), lkFoamC, lkFoam);`,
+        roughnessmap_fragment: '  roughnessFactor = mix(.06, .75, lkFoam);',
+        normal_fragment_maps: `  { vec2 g = (vec2(lkN.b, lkN.g) - .5) * lkFlowK.y * (1. - lkFoam); vec2 dd = vLkD.xy, pp = vec2(-dd.y, dd.x);
+    vec2 gw = dd * g.y + pp * g.x; normal = normalize(normal + (viewMatrix * vec4(gw.x, 0., gw.y, 0.)).xyz); }`,
+      },
+    },
+  }));
+  return { uniforms: U };
+}
+
+/**
+ * looks.lava(material, o): molten rock for a River or pool mesh (same lkFlow attribute): glowing
+ * cracks between plates of crust that drift downstream, cooling darker away from the source, a slow
+ * throb. o: glow, crust (colours), heat (how bright), cool (0 stays hot all the way, 1 crusts over by
+ * the end), scale, time. The glow is emissive, so bloom picks it up.
+ */
+function lava(m, { glow = [3, .7, .08], crust = [.05, .035, .03], heat = 1, cool = .6, scale = .22, time = 0, length = 100 } = {}) {
+  const U = { lkNoise: uni(noiseTex()), lkFlowT: uni(time), lkGlowC: col(glow), lkCrust: col(crust), lkLavaK: uni(new Vector4(scale, heat, cool, length)) };
+  lookPatch(m, 'lava', spec('lava', {
+    uniforms: U,
+    vertex: {
+      head: 'attribute vec4 lkFlow; varying vec4 vLkL;',
+      after: { begin_vertex: '  vLkL = lkFlow;' },
+    },
+    fragment: {
+      head: `uniform sampler2D lkNoise; uniform float lkFlowT; uniform vec3 lkGlowC, lkCrust; uniform vec4 lkLavaK; varying vec4 vLkL;
+vec4 lkLavaN(float sc) {
+  float p0 = fract(lkFlowT * .1), p1 = fract(lkFlowT * .1 + .5), w = abs(2. * p0 - 1.);
+  vec4 a = texture2D(lkNoise, vec2(vLkL.x, vLkL.y - vLkL.z * p0 * 10.) * sc), b = texture2D(lkNoise, vec2(vLkL.x, vLkL.y - vLkL.z * p1 * 10.) * sc + .53);
+  return mix(a, b, w);
+}`,
+      after: {
+        color_fragment: `  vec4 lkN = lkLavaN(lkLavaK.x), lkM = lkLavaN(lkLavaK.x * 3.1);
+  float lkHeat = clamp(1. - lkLavaK.z * vLkL.y / max(lkLavaK.w, 1.), 0., 1.) * (.9 + .1 * sin(lkFlowT * 1.3 + lkN.g * 6.));
+  float lkCr = abs(lkN.r - .5) * 2. + (lkM.b - .5) * .25, lkCrack = 1. - smoothstep(.02, .05 + lkHeat * .1, lkCr);
+  float lkHot = clamp(lkCrack + lkHeat * .2 * smoothstep(.55, .9, lkM.g) + vLkL.w * .5, 0., 1.);
+  diffuseColor.rgb = mix(lkCrust * (.6 + .6 * lkM.r), lkGlowC * .05, lkHot);`,
+        roughnessmap_fragment: '  roughnessFactor = mix(.9, .5, lkHot);',
+        emissivemap_fragment: '  totalEmissiveRadiance += lkGlowC * lkHot * lkHeat * lkLavaK.y;',
+      },
+    },
+  }));
+  return { uniforms: U };
+}
+
+/** The outdoor looks: ground, hills, rock, leaves, flow, lava (each returns its uniforms). */
+export const looks = Object.freeze({ ground, hills, rock, leaves, flow, lava });
 
 /**
  * horizon(land, o): a ring of far hills and mountains round the land (they only need light and haze),
