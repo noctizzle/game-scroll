@@ -6,42 +6,55 @@
 // within the last real step of the frame it was made from.
 // Uses SwiftShader's Vulkan driver, so it runs without a GPU; the headless screen is 60 Hz, so here
 // the games draw 30 real frames a second and frame generation makes the other 30.
-//   npm run build:bundled && node scripts/framegen-games.cjs [id ...] [--mode blend|ahead] [--shots dir] [--feed]
-// Without ids it plays every Next Gen and AR game that draws on WebGPU.
+//   npm run build:bundled && node scripts/framegen-games.cjs [id ...] [--mode blend|ahead] [--shots dir] [--feed] [--jobs n] [--play s]
+// Without ids it plays every Next Gen and AR game that draws on WebGPU. --jobs: browsers playing at
+// once (default: half the CPUs; each SwiftShader uses several); --play: seconds of play per game (5).
 const { chromium, devices } = require('playwright');
-const fs = require('fs'), path = require('path');
+const fs = require('fs'), path = require('path'), os = require('os');
 (async () => {
   const argv = process.argv.slice(2), take = k => { const i = argv.indexOf(k); return i >= 0 ? argv.splice(i, 2)[1] : null; };
   const shots = take('--shots'), only = take('--mode'), modes = only ? [only] : ['blend', 'ahead'];
+  const jobs = Math.max(1, +(take('--jobs') || Math.floor(os.cpus().length / 2))), play = 1000 * +(take('--play') || 5);
   // --feed: leave the refreshes between to the feed's own loop (only light games keep up on SwiftShader)
   const feedLoop = argv.includes('--feed'); if (feedLoop) argv.splice(argv.indexOf('--feed'), 1);
   if (shots) fs.mkdirSync(shots, { recursive: true });
   const server = await (await import('vite')).preview({ preview: { port: 4186 } });
   const icd = path.join(path.dirname(chromium.executablePath()), 'vk_swiftshader_icd.json');
-  const b = await chromium.launch({ args: ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--use-angle=vulkan', '--enable-features=Vulkan'], env: { ...process.env, VK_ICD_FILENAMES: icd } });
-  const ctx = await b.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 1 });
-  const p = await ctx.newPage(); let errs = [];
-  p.on('pageerror', e => errs.push(e.message)); let offs = 0;
-  p.on('console', m => {
-    const t = m.text();
-    // (the kit turning frame generation off for a game whose refreshes between keep not coming: expected here, as SwiftShader is slow)
-    if (/^Frame generation off/.test(t)) { offs++; return; }
-    if ((m.type() === 'error' && !/^Failed to load resource/.test(t)) || /WebGPU did not start|WebGPU:/.test(t) || (m.type() === 'warning' && /frame generation/i.test(t))) errs.push(t);
-  });
-  await p.goto('http://localhost:4186/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(400);
-  let ids = argv.length ? argv : await p.evaluate(() => __gs.GAMES.filter(g => (g.era === 'nextgen' || g.era === 'ar') && g.frameGen !== false).map(g => g.id));
-  await p.evaluate(id => __gs.only(id), ids[0]); await p.waitForTimeout(1500);
-  const ok = await p.evaluate(async () => { while (!window.__gpu) await new Promise(r => setTimeout(r, 50)); window.__gpu.pick('webgpu'); return !!(await window.__gpu.ready()); });
-  if (!ok) { console.log('FAIL WebGPU did not start in this browser'); process.exit(1); }
-  // the lowest tier at a small size, so SwiftShader keeps up with the refreshes in between
-  await p.evaluate(() => { __hd.force = 0; __hd.scale = .45; __hd.direct = true; });
+  // one browser per job (each has its own GPU process, so they really run side by side)
+  const open = async () => {
+    const b = await chromium.launch({ args: ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--use-angle=vulkan', '--enable-features=Vulkan'], env: { ...process.env, VK_ICD_FILENAMES: icd } });
+    const ctx = await b.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 1 });
+    const p = await ctx.newPage(), w = { b, p, errs: [], offs: 0 };
+    p.on('pageerror', e => w.errs.push(e.message));
+    p.on('console', m => {
+      const t = m.text();
+      // (the kit turning frame generation off for a game whose refreshes between keep not coming: expected here, as SwiftShader is slow)
+      if (/^Frame generation off/.test(t)) { w.offs++; return; }
+      if ((m.type() === 'error' && !/^Failed to load resource/.test(t)) || /WebGPU did not start|WebGPU:/.test(t) || (m.type() === 'warning' && /frame generation/i.test(t))) w.errs.push(t);
+    });
+    await p.goto('http://localhost:4186/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(400);
+    // a 3D game first: the 3D kit (and its WebGPU switch) loads with it
+    await p.evaluate(() => __gs.only(__gs.GAMES.find(g => g.era === 'nextgen' || g.era === 'ar').id)); await p.waitForTimeout(1500);
+    const ok = await p.evaluate(async () => { while (!window.__gpu) await new Promise(r => setTimeout(r, 50)); window.__gpu.pick('webgpu'); return !!(await window.__gpu.ready()); });
+    if (!ok) { console.log('FAIL WebGPU did not start in this browser'); process.exit(1); }
+    // the lowest tier at a small size, so SwiftShader keeps up with the refreshes in between
+    await p.evaluate(() => { __hd.force = 0; __hd.scale = .45; __hd.direct = true; });
+    return w;
+  };
+  const first = await open();
+  const ids = argv.length ? argv : await first.p.evaluate(() => __gs.GAMES.filter(g => (g.era === 'nextgen' || g.era === 'ar') && g.frameGen !== false).map(g => g.id));
+  const queue = ids.flatMap(id => modes.map(mode => ({ id, mode }))), stays = new Set();
   let failed = 0;
-  for (const id of ids) for (const mode of modes) {
-    errs = []; offs = 0;
-    await p.evaluate(m => { __hd.frameGen = m; }, mode);
-    await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(800); await p.evaluate(() => __gs.start()); await p.waitForTimeout(4000);   // (SwiftShader takes seconds to compile the shaders)
+  const run = async (w, { id, mode }) => {
+    const { p } = w;
+    if (stays.has(id)) return;
+    w.errs = []; w.offs = 0;
+    await p.evaluate(m => { __hd.frameGen = m; __hd.info.framegen = false; __hd.info.backend = ''; }, mode);
+    await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(600); await p.evaluate(() => __gs.start());
+    // until it draws with frame generation on (SwiftShader takes seconds to compile the shaders), not a fixed wait
+    await p.waitForFunction(m => __hd.info.framegen === m || (__hd.info.backend === 'webgl' && __hd.info.webgl), mode, { timeout: 30000, polling: 100 }).catch(() => {});
     const backend = await p.evaluate(() => __hd.info.backend);
-    if (backend !== 'webgpu') { console.log(`skip ${id.padEnd(16)} stays on WebGL (${await p.evaluate(() => __hd.info.webgl)})`); break; }
+    if (backend !== 'webgpu') { stays.add(id); console.log(`skip ${id.padEnd(16)} stays on WebGL (${await p.evaluate(() => __hd.info.webgl)})`); return; }
     // record what each refresh shows (small copies), while playing with random input
     await p.evaluate(slow => {
       const T = window.__fg = { seq: [], n: { frame: 0, between: 0, made: 0, real: 0 } };
@@ -61,7 +74,7 @@ const fs = require('fs'), path = require('path');
     }, !feedLoop);
     const r = await p.evaluate(() => { const c = __gs.active.canvas.getBoundingClientRect(); return { x: c.x, y: c.y, w: c.width, h: c.height }; });
     const t0 = Date.now();
-    while (Date.now() - t0 < 6000) {
+    while (Date.now() - t0 < play) {
       if (await p.evaluate(() => __gs.active.state) !== 'playing') await p.evaluate(() => __gs.start());
       await p.mouse.move(r.x + Math.random() * r.w, r.y + Math.random() * r.h); await p.mouse.down();
       await p.mouse.move(r.x + Math.random() * r.w, r.y + Math.random() * r.h, { steps: 4 });
@@ -95,13 +108,15 @@ const fs = require('fs'), path = require('path');
       }
       return { n: T.n, trips: trips.length, worse, ratio, info: __hd.info.framegen, strip };
     }, { shots: !!shots, ahead: mode === 'ahead' });
+    const errs = w.errs, offs = w.offs;
     const bad = errs.length || !res.n.made || res.worse > Math.max(1, res.trips * .15) || res.info !== mode;
     if (bad) failed++;
     console.log(`${bad ? 'FAIL' : 'PASS'} ${id.padEnd(16)} ${mode.padEnd(5)}  ${res.n.frame} real refreshes, ${res.n.between} between (${res.n.made} made frames shown)` +
       `  made vs neighbours ${res.ratio.toFixed(2)} (under 1 is in between; ${res.worse}/${res.trips} not)${res.info !== mode ? `  framegen=${res.info}` : ''}${offs ? '  (too slow here for every refresh between)' : ''}${errs.length ? '\n   ' + [...new Set(errs)].slice(0, 6).join('\n   ') : ''}`);
     if (shots && res.strip) fs.writeFileSync(path.join(shots, `${id}.${mode}.png`), Buffer.from(res.strip.split(',')[1], 'base64'));
-  }
-  await p.evaluate(() => { __hd.frameGen = null; });
-  await b.close(); server.httpServer.close();
+  };
+  const workers = [first, ...await Promise.all(Array.from({ length: Math.min(jobs, queue.length) - 1 }, open))];
+  await Promise.all(workers.map(async w => { for (let job; (job = queue.shift());) await run(w, job); }));
+  await Promise.all(workers.map(w => w.b.close())); server.httpServer.close();
   process.exit(failed ? 1 : 0);
 })();
