@@ -324,6 +324,17 @@ jitter back out of the motion, and costs a few milliseconds of compute instead o
   number of refreshes each real frame covers, so it isn't doubled.
 - **The HUD** is drawn on the card's own canvas over the 3D, so it is never warped. Vignette, grain
   and the hurt flash go on as each refresh is shown, so they stay put and the grain stays even.
+- **Motion comes from what three drew last frame**, so it has to be the same thing in the same place:
+  - Instances that move every frame keep each thing in the same slot (instance index) from frame to
+    frame; packing a list afresh (a splice, a filter, the visible ones first) gives things each
+    other's motion, and they break up in made frames. Hide a slot with a zero scale instead.
+    gs.props and gs.city's traffic do this.
+  - A material that moves its own points (`positionNode`: sway, waves) also moves `positionPrevious`
+    by where they were last frame, as `looks.leaves` does on WebGPU (hd3d-gpu.js `lastFrame()`).
+  - A thing that jumps somewhere new (a respawn) shows wrong motion for one frame: do it off screen.
+- **Size changes are cheap:** the frame generator's shaders take every size as a uniform, so a
+  resolution step mid-round reuses them instead of stalling to build new ones; the stutter shield
+  never changes the resolution.
 - **Cuts:** after a cut nothing is made until two new real frames. Another view drawing, a pause and
   big camera jumps (turning more than 20 degrees, moving 8 metres or zooming by a quarter in one frame) are found by themselves;
   call `v.cut()` when the camera switches somewhere new in a smaller step (it also restarts SGSR 2).

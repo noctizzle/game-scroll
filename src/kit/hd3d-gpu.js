@@ -14,7 +14,7 @@ import {
   pass, mrt, output, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
   positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min, materialEmissive, distance,
-  attribute, vertexColor, normalWorld, normalViewGeometry, positionLocal, positionGeometry, modelWorldMatrix, modelWorldMatrixInverse,
+  attribute, vertexColor, normalWorld, normalViewGeometry, positionLocal, positionGeometry, positionPrevious, modelWorldMatrix, modelWorldMatrixInverse,
   materialColor, materialOpacity, materialRoughness, cos, floor, step, fwidth, dFdx, dFdy, normalize, uniformArray, Loop, int, If, sqrt,
   modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix,
 } from 'three/tsl';
@@ -125,6 +125,20 @@ export function airNodes(AIR) {
 // Named looks (looks.js lookPatch) as nodes on the material, which three copies onto the node material
 // it makes from it. 'air' is the scene's fog node instead (airNodes).
 const live = o => uniform(o.value).onRenderUpdate(() => o.value);   // follows the { value } the game changes
+// Frames drawn (GpuChain.draw counts them), and a { value } as it was at the frame before this one: for
+// motion that a shader makes itself (three only knows a mesh's matrices and bones from the frame before)
+const DRAWN = { n: 0 };
+const lastFrame = o => {
+  const obj = typeof o.value === 'object', prev = obj ? o.value.clone() : null, cur = obj ? o.value.clone() : null;
+  let seen = -1, p = o.value, c = o.value;
+  return uniform(obj ? prev : o.value).onRenderUpdate(() => {
+    if (seen !== DRAWN.n) {
+      if (obj) { if (seen < 0) cur.copy(o.value); prev.copy(cur); cur.copy(o.value); } else { p = seen < 0 ? o.value : c; c = o.value; }
+      seen = DRAWN.n;
+    }
+    return obj ? prev : p;
+  });
+};
 // A look that changes the colour after the material's own (map, then vertex colours, as WebGL's
 // color_fragment leaves it): fn(rgb) => rgb. Node materials multiply vertex colours in after colorNode,
 // so the result is divided by them here; looks stack (each starts from the one before).
@@ -273,10 +287,15 @@ export const gpuLooks = {
   leaves(m, s, o) {
     const u = s.uniforms, t = live(u.lkTime), sw = live(u.lkSway), dir = live(u.lkWindDir);
     const wp = modelWorldMatrix.mul(vec4(positionLocal, 1)).xyz, hh = max(positionGeometry.y.sub(sw.y), 0), ph = wp.x.mul(.19).add(wp.z.mul(.23));
-    const k = live(u.lkWind).mul(hh).mul(sw.x);
-    const swing = vec3(sin(t.mul(1.7).add(ph)).add(sin(t.mul(3.1).add(ph.mul(2.3))).mul(.3)), 0, cos(t.mul(1.3).add(ph.mul(1.4)))).mul(k);
-    const lean = dir.mul(k).mul(sin(t.mul(.9).add(ph.mul(.5))).mul(.6).add(1.2));
-    m.positionNode = positionLocal.add(modelWorldMatrixInverse.mul(vec4(swing.add(vec3(lean.x, 0, lean.y)), 0)).xyz);
+    const k = live(u.lkWind).mul(hh).mul(sw.x), kWas = lastFrame(u.lkWind).mul(hh).mul(sw.x), dWas = lastFrame(u.lkWindDir);
+    const sway = (t, k, dir) => {
+      const swing = vec3(sin(t.mul(1.7).add(ph)).add(sin(t.mul(3.1).add(ph.mul(2.3))).mul(.3)), 0, cos(t.mul(1.3).add(ph.mul(1.4)))).mul(k);
+      const lean = dir.mul(k).mul(sin(t.mul(.9).add(ph.mul(.5))).mul(.6).add(1.2));
+      return modelWorldMatrixInverse.mul(vec4(swing.add(vec3(lean.x, 0, lean.y)), 0)).xyz;
+    };
+    // the leaves where they swayed to last frame as well, for the motion three works out (frame generation,
+    // SGSR 2): without it every leaf seemed to move by its whole sway each frame, and broke up in made frames
+    m.positionNode = Fn(builder => { if (builder.needsPreviousData()) positionPrevious.assign(positionPrevious.add(sway(lastFrame(u.lkTime), kWas, dWas))); return positionLocal.add(sway(t, k, dir)); })();
     const lq = uv().mul(live(u.lkAtlas)), dx = dFdx(lq), dy = dFdy(lq);
     m.opacityNode = (m.opacityNode ? float(m.opacityNode) : materialOpacity).mul(float(1).add(max(0, log2(max(dot(dx, dx), dot(dy, dy))).mul(.5)).mul(.35)));
     afterColor(m, o, c => c.mul(float(1).add(live(u.lkGlow).mul(pow(max(dot(normalize(positionWorld.sub(cameraPosition)), live(u.lkSun)), 0), 4)))));
@@ -342,14 +361,22 @@ export function noAO(m) { m.mrtNode = new SoftMRT({ output, normal: vec4(normalV
 // texture through a WebGL shader patch. Here each of its detail levels is a plain InstancedMesh instead,
 // filled each frame with the copies in view (a little wider, for their shadows) at that level's distance,
 // from the same matrices, visibility and colours.
+// Each copy keeps its place (slot) in a level's list while it stays in view: three works out motion
+// (frame generation, SGSR 2) from what each slot held last frame, so a list packed afresh every frame gave
+// a tree another tree's motion whenever one came into or left the view (trees and lamps broke up in made
+// frames). A copy that leaves keeps its slot for a few frames (it is off screen or behind a wall, so
+// drawing it costs a little and shows nothing), so one coming straight back still has its true motion;
+// a new one takes a free slot while it is still in the margin round the view, so its first, wrong motion is off screen.
 const PF = new Frustum(), PS = new Sphere(), PM = new Matrix4(), PV = new Vector3(), SF = [];
+const PROP_LINGER = 20;   // frames a copy that left the view keeps its slot
 export function gpuProps(im) {
   const levels = im.LODinfo ? im.LODinfo.render.levels.map(l => ({ obj: l.object, dist: l.distance * (1 - (l.hysteresis || 0)) })) : [{ obj: im, dist: 0 }];   // (the library keeps distances squared)
   const group = new Group(); group.name = im.name + ':webgpu';
-  let cap = 0, tw = [];
+  let cap = 0, tw = [], want = null;
   const make = () => {
     for (const t of tw) { t.removeFromParent(); t.dispose(); }
     cap = Math.max(16, im._capacity || im._instancesArrayCount || 16);
+    want = new Int8Array(cap);
     tw = levels.map(({ obj }) => {
       const src = obj.geometry, g = new BufferGeometry();   // the same buffers, without the library's index attribute
       for (const k in src.attributes) if (k !== 'instanceIndex') g.setAttribute(k, src.attributes[k]);
@@ -358,21 +385,26 @@ export function gpuProps(im) {
       const m = new InstancedMesh(g, obj.material, cap); m.count = 0; m.frustumCulled = false;
       m.castShadow = im.castShadow; m.receiveShadow = im.receiveShadow;
       if (im.colorsTexture) m.instanceColor = new IBA(new Float32Array(cap * 3), 3);
+      // slotOf: copy -> slot + 1 (0: none); owner: slot -> copy + 1; idle: frames since its copy left the view
+      m.userData.slots = { slotOf: new Int32Array(cap), owner: new Int32Array(cap), idle: new Uint16Array(cap), top: 0 };
       group.add(m); return m;
     });
   };
   make();
+  // a slot drawn as nothing: every point at the copy's own place
+  const hide = (M, m0) => { const x = M[m0 + 12], y = M[m0 + 13], z = M[m0 + 14]; M.fill(0, m0, m0 + 16); M[m0 + 12] = x; M[m0 + 13] = y; M[m0 + 14] = z; M[m0 + 15] = 1; };
   return {
     group,
     sync(cam, occ = null, shadowCams = null) {   // occ: hd3d.js occlusion culling (only for props without shadows: one list feeds both here); shadowCams: the lights' shadow cameras (a copy off screen that casts into view is kept)
       if ((im._capacity || 0) > cap) make();
-      const n = im._instancesArrayCount || 0, D = im.matricesTexture?._data, C = im.colorsTexture?._data, wm = im.matrixWorld;
-      for (const t of tw) t.count = 0;
-      if (!D) return;
+      const n = Math.min(cap, im._instancesArrayCount || 0), D = im.matricesTexture?._data, C = im.colorsTexture?._data, wm = im.matrixWorld;
+      if (!D) { for (const t of tw) { t.count = 0; t.userData.slots.top = 0; t.userData.slots.slotOf.fill(0); t.userData.slots.owner.fill(0); } return; }
       cam.updateMatrixWorld(); PM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); PF.setFromProjectionMatrix(PM, cam.coordinateSystem);
       const nsf = im.castShadow && shadowCams ? shadowCams.length : 0;
       for (let j = 0; j < nsf; j++) { const c = shadowCams[j]; (SF[j] ||= new Frustum()).setFromProjectionMatrix(PM.multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse), c.coordinateSystem); }
       const cp = cam.getWorldPosition(PV), cx = cp.x, cy = cp.y, cz = cp.z, R0 = levels[0].obj.geometry.boundingSphere?.radius ?? 1;
+      // which level each copy is drawn at this frame (-1: not drawn)
+      want.fill(-1, 0, n);
       for (let i = 0; i < n; i++) {
         if (!im.getActiveAndVisibilityAt(i)) continue;
         const o = i * 16, sx = Math.sqrt(D[o] * D[o] + D[o + 1] * D[o + 1] + D[o + 2] * D[o + 2]), sy = Math.sqrt(D[o + 4] * D[o + 4] + D[o + 5] * D[o + 5] + D[o + 6] * D[o + 6]), sz = Math.sqrt(D[o + 8] * D[o + 8] + D[o + 9] * D[o + 9] + D[o + 10] * D[o + 10]);   // (Math.hypot made garbage for each copy)
@@ -381,12 +413,32 @@ export function gpuProps(im) {
         if (occ && !im.castShadow && occ.hidden(PS.center, PS.radius - 8)) continue;
         const d = (PS.center.x - cx) ** 2 + (PS.center.y - cy) ** 2 + (PS.center.z - cz) ** 2;   // squared, like the levels
         let L = 0; while (L + 1 < levels.length && d >= levels[L + 1].dist) L++;
-        const t = tw[L], k = t.count++;
-        // (copied number by number: a subarray view per copy per frame was garbage for the collector)
-        const M = t.instanceMatrix.array, m0 = k * 16; for (let j = 0; j < 16; j++) M[m0 + j] = D[o + j];
-        if (C) { const A = t.instanceColor.array, a0 = k * 3, c0 = i * 4; A[a0] = C[c0]; A[a0 + 1] = C[c0 + 1]; A[a0 + 2] = C[c0 + 2]; }
+        want[i] = L;
       }
-      for (const t of tw) { if (t.count) { t.instanceMatrix.needsUpdate = true; if (t.instanceColor) t.instanceColor.needsUpdate = true; } t.visible = t.count > 0; }
+      for (let L = 0; L < tw.length; L++) {
+        const t = tw[L], S = t.userData.slots, M = t.instanceMatrix.array, A = t.instanceColor?.array;
+        // (copied number by number: a subarray view per copy per frame was garbage for the collector)
+        const put = (s, i) => { const m0 = s * 16, o = i * 16; for (let j = 0; j < 16; j++) M[m0 + j] = D[o + j]; if (C && A) { const a0 = s * 3, c0 = i * 4; A[a0] = C[c0]; A[a0 + 1] = C[c0 + 1]; A[a0 + 2] = C[c0 + 2]; } };
+        // the copies already here: stay put; gone: linger a while (unless now drawn at another level), then free the slot
+        for (let s = 0; s < S.top; s++) {
+          const i = S.owner[s] - 1; if (i < 0) continue;
+          if (i < n && want[i] === L) { put(s, i); S.idle[s] = 0; continue; }
+          if (i < n && want[i] < 0 && im.getActiveAndVisibilityAt(i) && ++S.idle[s] <= PROP_LINGER) continue;
+          hide(M, s * 16); S.owner[s] = 0; S.slotOf[i] = 0;
+        }
+        // the copies new to this level: the lowest free slots
+        let free = 0;
+        for (let i = 0; i < n; i++) {
+          if (want[i] !== L || S.slotOf[i]) continue;
+          while (free < S.top && S.owner[free]) free++;
+          const s = free < S.top ? free : S.top++;
+          S.owner[s] = i + 1; S.slotOf[i] = s + 1; S.idle[s] = 0; put(s, i);
+        }
+        while (S.top && !S.owner[S.top - 1]) S.top--;
+        t.count = S.top;
+        if (t.count) { t.instanceMatrix.needsUpdate = true; if (t.instanceColor) t.instanceColor.needsUpdate = true; }
+        t.visible = t.count > 0;
+      }
     },
     dispose() { for (const t of tw) t.dispose(); },
   };
@@ -843,6 +895,7 @@ export class GpuChain {
     // o.s1: the same sizes, upscaled by SGSR 1. o.live: the game on screen (drawn into a picture and shown);
     // o.mrt: the scene's pass also writes motion and the see-through mask (frame generation, SGSR 2)
     const f = !this.clear && o.s2 ? o.s2 : null, s1 = !f && !!o.s1, live = !!o.live;
+    DRAWN.n++;
     this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt);
     if (this.s1) this.s1.size(o.w, o.h);
     // the passes size themselves from the canvas: upscaled, the canvas is the screen's size, so scale them down

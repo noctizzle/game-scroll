@@ -134,7 +134,7 @@ export class FrameGen {
     this.r = r; this.key = ''; this.frames = 0; this.ready = false;
     this.U = {
       rs: uniform(new Vector2(1, 1)), os: uniform(new Vector2(1, 1)), t: uniform(.5), jd: uniform(new Vector2()),
-      tol: uniform(tolerance), interp: uniform(1), near: uniform(.1), far: uniform(1000),
+      tol: uniform(tolerance), interp: uniform(1), near: uniform(.1), far: uniform(1000), up: uniform(0),
       // the camera's turn: newest -> last frame, last -> the one before, newest -> the moment made; 1 once three frames are in
       Hb: uniform(new Matrix3()), Hb2: uniform(new Matrix3()), Ht: uniform(new Matrix3()), hist: uniform(0),
     };
@@ -166,7 +166,10 @@ export class FrameGen {
     const rea = this.reaN = texture(NO_REACTIVE);
     const pcol = texture(this.prevColor), pdep = texture(this.prevDepth), mm = texture(this.midMotion), mb = texture(this.midBend);
     const fm = texture(this.filled), fb = texture(this.filledBend);
-    const W = int(rw), H = int(rh), hi = ivec2(W.sub(1), H.sub(1));
+    // (the sizes are uniforms, never numbers written into the shaders: a new size, which the resolution steps
+    // make mid-round, then reuses the shaders already built instead of stalling to build new ones)
+    U.up.value = upscaled ? 1 : 0;
+    const W = int(U.rs.x), H = int(U.rs.y), hi = ivec2(W.sub(1), H.sub(1));
     const xy = i => ivec2(int(i).mod(W), int(i).div(W));
     // velocity (NDC, y up) as a uv displacement from this frame back to the last (uv y down), without the
     // change in SGSR 2's jitter (else still pictures would shimmer by a pixel)
@@ -266,12 +269,12 @@ export class FrameGen {
     // 5 compose, at the screen's size: the newest frame from where each pixel was at t = 1 and the last
     // frame from where it was at t = 0, each kept only if it sees the same surface (its depth isn't in
     // front of it), blended by time. Ahead of the newest frame (t > 1) there is only the newest to take from.
-    const OW = int(ow);
+    const OW = int(U.os.x);
     const fromN = (u, m, e) => u.sub(m.xy.mul(float(1).sub(U.t))).sub(e), fromP = (u, m, e) => u.add(m.xy.mul(U.t)).sub(e);
     this.cCompose = Fn(() => {
       const i = int(instanceIndex), q = ivec2(i.mod(OW), i.div(OW)), u = vec2(q).add(.5).div(U.os);
       const pc = pixOf(u), m = fm.load(pc).toVar(), e = fb.load(pc).xy.toVar();   // nearest: motion never blends across an edge
-      if (upscaled) {
+      If(U.up.greaterThan(.5), () => {
         // drawn smaller than the screen, the motion is in blocks of several screen pixels: at a moving edge,
         // of the four motions round this pixel take the one whose two frames agree (the same surface at both moments)
         const f = u.mul(U.rs).sub(.5), b0 = ivec2(floor(f)), C = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => clamp(b0.add(ivec2(x, y)), ivec2(0, 0), hi));
@@ -284,7 +287,7 @@ export class FrameGen {
             If(cost.lessThan(best), () => { best.assign(cost); m.assign(ms[k]); e.assign(ek); });
           });
         });
-      }
+      });
       const d = m.xy, z = m.z, isPart = m.w.greaterThan(1.5);
       const uN = fromN(u, m, e), uP = fromP(u, m, e);
       const cN = col.sample(clamp(uN, 0, 1)).level(0), cP = pcol.sample(clamp(uP, 0, 1)).level(0);
@@ -390,7 +393,7 @@ export class StillCheck {
     this.lumA = new StorageBufferAttribute(new Float32Array(this.n), 1);
     this.cntA = new StorageBufferAttribute(new Uint32Array(1), 1);
     const lum = storage(this.lumA, 'float', this.n), cnt = storage(this.cntA, 'uint', 1).toAtomic();
-    const col = this.colN = texture(NO_REACTIVE), SW = int(sw), sz = this.sz = uniform(new Vector2(1, 1));
+    const col = this.colN = texture(NO_REACTIVE), sz = this.sz = uniform(new Vector2(1, 1)), SW = max(int(sz.x).shiftRight(2), int(1));   // (the size as a uniform: see FrameGen.build)
     this.cZero = Fn(() => { atomicStore(cnt.element(0), uint(0)); })().compute(1, [1]);
     this.cCmp = Fn(() => {
       const i = int(instanceIndex), q = vec2(ivec2(i.mod(SW), i.div(SW))).mul(4).add(2).div(sz);

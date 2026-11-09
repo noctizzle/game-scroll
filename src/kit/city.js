@@ -492,7 +492,7 @@ const carGeo = () => mergeGeometries([coloured(at(new BoxGeometry(1.8, .62, 4.4)
 const vanGeo = () => mergeGeometries([coloured(at(new BoxGeometry(1.9, 1.75, 4.6), 0, 1.12, -.1), '#ffffff'), coloured(at(new BoxGeometry(1.92, .62, .7), 0, 1.6, 1.86), '#2a3038'),
   ...[[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, z]) => coloured(at(new BoxGeometry(.28, .6, .66), x * .86, .3, z * 1.45), '#141414'))]);
 const lightGeo = z => mergeGeometries([at(new BoxGeometry(.36, .18, .06), -.62, .64, z), at(new BoxGeometry(.36, .18, .06), .62, .64, z)]);
-const _m = new Matrix4(), _q = new Quaternion(), _s = new Vector3(1, 1, 1), _p = new Vector3(), _up = new Vector3(0, 1, 0), _c = new Color();
+const _m = new Matrix4(), _none = new Matrix4(), _q = new Quaternion(), _s = new Vector3(1, 1, 1), _p = new Vector3(), _up = new Vector3(0, 1, 0), _c = new Color();
 
 /** The cars of a city: they keep to their lanes, stop at red lights and for whatever the game asks them to avoid. */
 class Traffic {
@@ -607,15 +607,21 @@ class Traffic {
     this.noise = noisy;
   }
   draw(night) {
-    const counts = { car: 0, van: 0 };
+    // each car keeps its own slot (its place in the list) in both the car and the van mesh, drawn as
+    // nothing in the one it isn't: three works out motion (frame generation, SGSR 2) from what each slot
+    // held last frame, so packing the cars of a kind together gave every car after one that came back
+    // as the other kind its neighbour's motion
+    const n = this.list.length;
     this.list.forEach((c, i) => {
-      const m = this.meshes[c.kind], j = counts[c.kind]++;
       _q.setFromAxisAngle(_up, c.heading); _m.compose(_p.set(c.x, 0, c.z), _q, _s);
-      m.setMatrixAt(j, _m); m.setColorAt(j, _c.set(c.colour));
+      for (const k in this.meshes) {
+        const m = this.meshes[k];
+        if (k === c.kind) { m.setMatrixAt(i, _m); m.setColorAt(i, _c.set(c.colour)); } else m.setMatrixAt(i, _none.makeScale(0, 0, 0).setPosition(c.x, 0, c.z));
+      }
       this.head.setMatrixAt(i, _m); this.tail.setMatrixAt(i, _m);
       this.tail.setColorAt(i, _c.setScalar(c.braking ? 2.4 : 1));
     });
-    for (const k in this.meshes) { const m = this.meshes[k]; m.count = counts[k]; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+    for (const k in this.meshes) { const m = this.meshes[k]; m.count = n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     for (const m of [this.head, this.tail]) { m.count = this.list.length; m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; }
     // vans use the car's light spots (close enough at this size)
     this.head.material.color.set('#fff3d6').multiplyScalar(.35 + night * 3.2); this.tail.material.color.set('#ff2c1c').multiplyScalar(.5 + night * 1.6);

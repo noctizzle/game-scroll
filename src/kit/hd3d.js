@@ -52,7 +52,7 @@ import { Occlusion } from './occlusion.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { speed, phoneClass, fpsFor, stepDown, stepUp, settle, settledFor, frameGenFor, frameGenFailed, frameGenReady, frameGenPace, frameGenSteps, fgSaving, screenHz } from './speed.js';
+import { speed, phoneClass, fpsFor, stepDown, stepUp, settle, settledFor, frameGenFor, frameGenFailed, frameGenReady, frameGenPace, frameGenSteps, frameGenSteady, fgSaving, screenHz } from './speed.js';
 
 export * as THREE from 'three';
 
@@ -1649,9 +1649,10 @@ export class HDView {
     let fw = c.canvas.width, fh = c.canvas.height;
     if (!baking && !off && HD.scale == null && Q.force == null && Q.lvl >= 1 && fw * fh > OUT_PX) { const k = Math.sqrt(OUT_PX / (fw * fh)); fw = Math.round(fw * k); fh = Math.round(fh * k); }
     // With frame generation on, each real frame has two (or more) refreshes' time, so the 3D is drawn with
-    // more pixels (SGSR 2 has less to make up). Not while it's on to save power or to ride out a busy spell;
-    // the resolution steps still take them back if the phone can't keep up.
-    const fgMore = !baking && !off && G && !speed.shield && !fgSaving() && frameGenFor(speed.game) ? FG_PX : 1;
+    // more pixels (SGSR 2 has less to make up). Not while it's on to save power; the stutter shield's
+    // short spells neither add nor take away pixels (a change of size costs a frame of its own). The
+    // resolution steps still take them back if the phone can't keep up.
+    const fgMore = !baking && !off && G && !fgSaving() && frameGenSteady(speed.game) ? FG_PX : 1;
     let pw = fw, ph = fh; const px = baking === 'small' ? Math.min(T.px, PIC_PX) : T.px * fgMore, q = HD.scale ?? Math.min(1, Math.sqrt(px / (pw * ph))) * HD.res;
     pw = Math.max(16, Math.round(pw * q)); ph = Math.max(16, Math.round(ph * q));
     // The 3D is drawn at pw x ph (fewer pixels on big screens and when the phone struggles). Below the

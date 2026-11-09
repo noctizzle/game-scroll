@@ -125,12 +125,12 @@ export function frameLate(now) {
   if (late.length >= 2) shieldUntil = now + 2000;
 }
 const shieldOn = () => typeof performance !== 'undefined' && performance.now() < shieldUntil;
-// the real frame rate with frame generation on (0: it isn't)
-function fgRate(def) {
+// the real frame rate with frame generation on (0: it isn't); steady: leaving out the short spells (saving power, the stutter shield)
+function fgRate(def, steady = false) {
   const f = realFps(def);
   // Auto: a game that can't reach the screen's rate (it settled lower); Always, saving power or riding
   // out a busy spell: half the screen's rate (or the game's own, if lower)
-  const real = fgPick === 'always' || fgSaving() || shieldOn() ? Math.min(f, hz / 2) : f < hz * .9 ? f : 0;
+  const real = fgPick === 'always' || (!steady && (fgSaving() || shieldOn())) ? Math.min(f, hz / 2) : f < hz * .9 ? f : 0;
   // at least 25 real frames a second, and at least half a refresh between them to fill
   return real >= 25 && hz / real >= 1.4 ? real : 0;
 }
@@ -150,6 +150,18 @@ export function frameGenFor(def) {
   if (speed.forceFrameGen) return speed.forceFrameGen === true ? how : speed.forceFrameGen;
   if (fgPick === 'off' || !speed.gpu || hz < FG_HZ || fgFailed.has(def.id) || pick !== 'auto') return false;   // a pinned rate is what the screen shows
   return fgRate(def) ? how : false;
+}
+/**
+ * Whether frame generation is on for this game for a lasting reason (Always, or in Auto a game that runs
+ * below the screen's rate), leaving out the stutter shield's and power saving's spells. The 3D kit gives
+ * the picture more pixels by this, so those spells never change its size (each change of size was a
+ * stutter of its own, which kept the shield coming back).
+ */
+export function frameGenSteady(def) {
+  if (!is3D(def) || def.frameGen === false) return false;
+  if (speed.forceFrameGen) return true;
+  if (fgPick === 'off' || !speed.gpu || hz < FG_HZ || fgFailed.has(def.id) || pick !== 'auto') return false;
+  return !!fgRate(def, true);
 }
 /**
  * The 3D kit found blend's refreshes too full for this game on this phone (the made frame shares the
