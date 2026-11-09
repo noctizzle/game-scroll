@@ -4,7 +4,7 @@ import { fmt } from './util.js';
 import { playstats } from './playstats.js';
 import { HEARTS_URL } from './hearts.js';
 import { nativeARSupported } from './kit/native-ar.js';
-import { fpsPick, setFpsPick, autoFps, phoneClass, screenHz, frameGenPick, setFrameGenPick, frameGenHow, setFrameGenHow } from './kit/speed.js';
+import { fpsPick, setFpsPick, autoFps, phoneClass, screenHz, frameGenPick, setFrameGenPick, frameGenHow, setFrameGenHow, frameGenStatus, speed } from './kit/speed.js';
 import { geoSettings } from './geo.js';
 import { hasWebGPU } from './kit/gpu.js';
 import { OPEN_SOURCE, OTHER_PARTS } from './licences.js';
@@ -39,10 +39,11 @@ export function openSettings({ stream, cached, clear, arTest }) {
       </section>
       ${webgpuHere ? `<section class="set-row">
         <h3>Frame generation</h3>
-        <p class="qa-help">When a 3D game draws 60 frames a second on a fast screen, make a frame between each pair so it moves at the screen's rate. Auto does it for games that can't reach the screen's rate; Always draws half the frames of every 3D game and makes the rest (cooler, more detail). Needs Frame rate on Auto.${screenHz() < 100 ? ` This screen runs at ${screenHz()} Hz, so there are no refreshes in between to fill.` : ''}</p>
-        <div class="qa-actions set-fg">${[['auto', 'Auto'], ['always', 'Always'], ['off', 'Off']].map(([v, n]) => `<button data-fg="${v}"${frameGenPick() === v ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}>${n}</button>`).join('')}</div>
+        <p class="qa-help">When a 3D game draws 60 frames a second on a fast screen, make a frame between each pair so it moves at the screen's rate. Auto does it for games that can't reach the screen's rate; Always draws half the frames of every 3D game and makes the rest (cooler, more detail). Needs Frame rate on Auto.</p>
+        <div class="qa-actions set-fps set-fg" role="group" aria-label="Frame generation">${[['auto', 'Auto'], ['always', 'Always'], ['off', 'Off']].map(([v, n]) => `<button data-fg="${v}"${frameGenPick() === v ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}>${n}</button>`).join('')}</div>
         <p class="qa-help">Blend makes the frame halfway between the last two (the fewest flaws; each real frame shows a moment later). Ahead guesses half a frame past the newest (no delay; edges a little softer when things move fast). Game's choice is blend unless a game asks for ahead.</p>
-        <div class="qa-actions set-fg-how">${[['game', 'Game’s choice'], ['blend', 'Blend'], ['ahead', 'Ahead']].map(([v, n]) => `<button data-how="${v}"${frameGenHow() === v ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}>${n}</button>`).join('')}</div>
+        <div class="qa-actions set-fps set-fg-how" role="group" aria-label="How frames are made">${[['game', 'Game’s choice'], ['blend', 'Blend'], ['ahead', 'Ahead']].map(([v, n]) => `<button data-how="${v}"${frameGenHow() === v ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}>${n}</button>`).join('')}</div>
+        <p class="qa-help set-fg-now"><b>Now:</b> ${frameGenStatus(speed.game)}</p>
       </section>` : ''}
       ${arTest ? `<section class="set-row">
         <h3>AR test</h3>
@@ -79,7 +80,7 @@ export function openSettings({ stream, cached, clear, arTest }) {
       <footer class="set-made">Made by <b>Rob</b></footer>`;
     el.querySelector('.qa-x').onclick = () => el.close();
     el.querySelector('.set-ar')?.addEventListener('click', () => { el.close(); arTest(); });
-    el.querySelectorAll('.set-fps button').forEach(b => b.addEventListener('click', () => { setFpsPick(b.dataset.fps); render(); }));
+    el.querySelectorAll('.set-fps button[data-fps]').forEach(b => b.addEventListener('click', () => { setFpsPick(b.dataset.fps); render(); }));   // (the frame generation rows share the look)
     el.querySelectorAll('.set-fg button').forEach(b => b.addEventListener('click', () => { setFrameGenPick(b.dataset.fg); render(); }));
     el.querySelectorAll('.set-fg-how button').forEach(b => b.addEventListener('click', () => { setFrameGenHow(b.dataset.how); render(); }));
     el.querySelector('.set-loc').addEventListener('change', e => { geoSettings.enabled = e.target.checked; });
