@@ -16,8 +16,8 @@ const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
 const { fbm, rng, noise3 } = gs.math;
 const { Juice } = gs.juice;
-const { HDView, Particles, pbr, rbox, sun, surface, speckle, noiseTex, THREE } = gs.hd;
-const { Land, Water } = gs.outdoors;
+const { HDView, Particles, pbr, rbox, sun, surface, speckle, THREE } = gs.hd;
+const { Land, Water, looks, groundDetail, horizon } = gs.outdoors;
 const { Props } = gs.props;
 const { Sky, Weather } = gs.sky;
 const { Rig } = gs.poses;
@@ -114,172 +114,28 @@ const CELL = 4, GX0 = -200, GZ0 = -180, GC = 110, GR = 90;
 // ground (patchwork fields, hedges, rutted lanes, mud by the river, puddles in the rain), grows the
 // trees (cards of painted leaves that sway in the wind) and builds the village.
 const GU = { uTime: { value: 0 }, uWet: { value: 0 }, uWind: { value: .6 }, uSun: { value: new Vector3(0, 1, 0) } };
-// smooth noise that tiles: size x size values in 0..1
-function pfbm(size, base, oct, seed) {
-  const out = new Float32Array(size * size); let amp = 1;
-  for (let o = 0; o < oct; o++, amp *= .5) {
-    const p = base << o, L = new Float32Array(p * p), R = rng(seed * 131 + o * 17);
-    for (let i = 0; i < L.length; i++) L[i] = R();
-    for (let y = 0; y < size; y++) {
-      const fy = y / size * p, yi = Math.floor(fy), ty = fy - yi, sy = ty * ty * (3 - 2 * ty), r0 = (yi % p) * p, r1 = ((yi + 1) % p) * p;
-      for (let x = 0; x < size; x++) {
-        const fx = x / size * p, xi = Math.floor(fx), tx = fx - xi, sx = tx * tx * (3 - 2 * tx), x0 = xi % p, x1 = (xi + 1) % p;
-        const a = L[r0 + x0], b = L[r0 + x1], c = L[r1 + x0], d = L[r1 + x1];
-        out[y * size + x] += (a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy) * amp;
-      }
-    }
-  }
-  let lo = 1e9, hi = -1e9; for (const v of out) { if (v < lo) lo = v; if (v > hi) hi = v; }
-  for (let i = 0; i < out.length; i++) out[i] = (out[i] - lo) / (hi - lo || 1);
-  return out;
-}
 function dataTex(data, w, h = w, { srgb = false, clampEdge = false } = {}) {
   const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
   t.wrapS = t.wrapT = clampEdge ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
   t.generateMipmaps = true; t.anisotropy = 4; if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t;
 }
-const pack4 = (size, ...ch) => { const o = new Uint8Array(size * size * 4); for (let i = 0; i < size * size; i++) for (let k = 0; k < 4; k++) o[i * 4 + k] = clamp(ch[k][i], 0, 1) * 255; return o; };
-// a normal map from a height field that wraps
-function normalsOf(h, size, k = 3) {
-  const out = new Uint8Array(size * size * 4), at = (x, y) => h[((y + size) % size) * size + (x + size) % size];
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const dx = (at(x + 1, y) - at(x - 1, y)) * k, dy = (at(x, y + 1) - at(x, y - 1)) * k, l = Math.hypot(dx, dy, 1), i = (y * size + x) * 4;
-    out[i] = (-dx / l * .5 + .5) * 255; out[i + 1] = (-dy / l * .5 + .5) * 255; out[i + 2] = (1 / l * .5 + .5) * 255; out[i + 3] = 255;
-  }
-  return dataTex(out, size);
-}
-// ground detail: r grass blades and clumps, g pebbles and dirt, b cracks for rock, a broad clumps
-function groundTextures() {
-  const S = 256, n = S * S, R = rng(21);
-  const clump = pfbm(S, 8, 4, 5), fine = pfbm(S, 64, 2, 6), mid = pfbm(S, 24, 3, 7);
-  const blades = new Float32Array(n), peb = new Float32Array(n), crack = new Float32Array(n);
-  const put = (a, x, y, v) => { const i = ((y % S + S) % S) * S + ((x % S + S) % S); if (v > a[i]) a[i] = v; };
-  for (let i = 0; i < 3400; i++) { let x = R() * S, y = R() * S; const a = R() * TAU, len = 2 + R() * 5, v = .35 + R() * .65; for (let k = 0; k < len; k++) { put(blades, x | 0, y | 0, v * (1 - k / len * .6)); x += Math.cos(a); y += Math.sin(a); } }
-  for (let i = 0; i < 800; i++) { const cx = R() * S, cy = R() * S, r = .8 + R() * 2.4, v = .3 + R() * .7; for (let yy = -3; yy <= 3; yy++) for (let xx = -3; xx <= 3; xx++) { const d = Math.hypot(xx, yy) / r; if (d < 1) put(peb, (cx + xx) | 0, (cy + yy) | 0, v * (1 - d * d)); } }
-  const G = 8, pts = []; for (let gy = 0; gy < G; gy++) for (let gx = 0; gx < G; gx++) pts.push([(gx + R()) * S / G, (gy + R()) * S / G]);
-  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    const cx = Math.floor(x / S * G), cy = Math.floor(y / S * G); let f1 = 1e9, f2 = 1e9;
-    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const gx = (cx + i + G) % G, gy = (cy + j + G) % G, [px, py] = pts[gy * G + gx], ox = (cx + i - gx) * S / G, oy = (cy + j - gy) * S / G, d = Math.hypot(x - px - ox, y - py - oy); if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) f2 = d; }
-    crack[y * S + x] = Math.min(1, (f2 - f1) / 5);
-  }
-  const det = [new Float32Array(n), new Float32Array(n), new Float32Array(n), clump], h = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    det[0][i] = clump[i] * .45 + blades[i] * .4 + fine[i] * .15; det[1][i] = mid[i] * .5 + peb[i] * .5; det[2][i] = crack[i] * .65 + mid[i] * .35;
-    h[i] = clump[i] * .7 + blades[i] * .35 + peb[i] * .6 + mid[i] * .4;
-  }
-  return { detail: dataTex(pack4(S, ...det), S), normal: normalsOf(h, S, 2.2), ripple: normalsOf(pfbm(S, 16, 3, 31), S, 1.2) };
-}
-// the ground: meadow, patchwork fields with hedges, rutted lanes, forest floor, rock, mud by the river
+// the ground (gs.outdoors looks.ground): meadow, patchwork fields with hedges, rutted lanes, forest
+// floor, rock, mud by the river, puddles in the rain. Masks say which ground goes where: x fields,
+// y forest floor, z rock, w trodden earth
 const ROADSEGS = ROADS.flatMap(r => r.slice(0, -1).map((p, i) => [p[0], p[1], r[i + 1][0], r[i + 1][1]]));
-const GROUND_FRAG = `
-uniform sampler2D uDetail, uNoise; uniform vec4 uRoads[${ROADSEGS.length}]; uniform float uWet;
-uniform vec3 uGrassA, uGrassB, uDry, uDirt, uMud, uRock, uForest, uWheat, uPlow, uStraw, uHedge;
-varying vec4 vMask; varying vec3 vWP;
-float lsHash(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }`;
-const GROUND_COLOUR = `
-  vec4 dt = texture2D(uDetail, vWP.xz * .26), dt2 = texture2D(uDetail, vWP.xz * .047 + .37), nz = texture2D(uNoise, vWP.xz * .0041);
-  vec3 grass = mix(uGrassA, uGrassB, smoothstep(.25, .75, nz.r));
-  grass = mix(grass, uDry, smoothstep(.55, .85, nz.g) * .65) * (.74 + .5 * dt.r * (.7 + .6 * dt2.a));
-  vec3 col = grass; float rough = .95;
-  float farm = vMask.x * smoothstep(.3, .5, nz.b + .25);
-  if (farm > .01) {
-    const float A = .33;
-    vec2 fp = vec2(cos(A) * vWP.x - sin(A) * vWP.z, sin(A) * vWP.x + cos(A) * vWP.z);
-    fp.x += lsHash(vec2(floor(fp.y / 34.), 3.1)) * 60.;
-    vec2 cell = floor(fp / vec2(56., 34.)), f = fract(fp / vec2(56., 34.));
-    float ns = 1. + floor(lsHash(cell) * 3.), si = floor(f.y * ns), sf = fract(f.y * ns);
-    float kind = lsHash(cell * 1.7 + si * 13.3 + 2.);
-    float edge = min(min(f.x, 1. - f.x) * 56., min(sf, 1. - sf) * 34. / ns);
-    float fz = fp.y * 7.;
-    float fur = mix(.5, .5 + .5 * sin(fz), clamp(1. - fwidth(fz) * .35, 0., 1.));
-    vec3 c;
-    if (kind < .34) c = mix(uGrassA, uGrassB, lsHash(cell + 9.)) * (.8 + .4 * dt.r);
-    else if (kind < .58) c = uWheat * (.84 + .26 * fur + .25 * (dt.r - .5)) * (.92 + .16 * lsHash(cell + 2.));
-    else if (kind < .72) c = uPlow * (.66 + .55 * fur) * (.88 + .24 * dt.g);
-    else if (kind < .86) c = mix(uPlow, uGrassB * 1.1, fur * .85) * (.9 + .2 * dt.r);
-    else c = uStraw * (.84 + .2 * fur + .2 * (dt.g - .5));
-    float hw = (1.2 + .7 * dt2.a) * step(.22, lsHash(cell + 4.4));
-    float hedge = 1. - smoothstep(hw - .4, hw + .3, edge);
-    c = mix(c, grass, (1. - smoothstep(hw + .3, hw + 1.7, edge)) * .85);
-    c = mix(c, uHedge * (.55 + .8 * dt.r), hedge);
-    col = mix(col, c, farm);
-  }
-  col = mix(col, uForest * (.65 + .55 * dt.a) * (.85 + .3 * dt.g), vMask.y);
-  float rockK = smoothstep(.35, .7, vMask.z + (dt2.b - .5) * .5);
-  col = mix(col, uRock * (.6 + .65 * dt.b), rockK); rough = mix(rough, .8, rockK);
-  col = mix(col, mix(grass, uDirt, .75) * (.8 + .4 * dt.g), vMask.w * smoothstep(.25, .6, dt2.r + nz.a * .4));
-  float bank = 1. - smoothstep(-1.1, .8, vWP.y + (dt2.r - .5) * 1.2);
-  col = mix(col, uMud * (.65 + .6 * dt.g), bank); rough = mix(rough, .45, bank * smoothstep(-.6, -1.3, vWP.y));
-  float rd = 1e4;
-  for (int i = 0; i < ${ROADSEGS.length}; i++) { vec4 s = uRoads[i]; vec2 pa = vWP.xz - s.xy, ba = s.zw - s.xy; float hh = clamp(dot(pa, ba) / dot(ba, ba), 0., 1.); rd = min(rd, length(pa - ba * hh)); }
-  rd += (dt2.g - .5) * .9;
-  float road = 1. - smoothstep(2.3, 3.1, rd), ruts = smoothstep(.42, .06, abs(rd - 1.05)), crown = 1. - smoothstep(.2, .55, rd);
-  vec3 rc = uDirt * (.8 + .38 * dt.g) * (1. - ruts * .3);
-  rc = mix(rc, grass * .85, crown * .6);
-  col = mix(col, rc, road); rough = mix(rough, .88, road);
-  float pud = uWet * smoothstep(.62, .7, dt2.a * .6 + ruts * road * .5 + nz.g * .3);
-  col *= 1. - pud * .45; rough = mix(rough, .04, pud);
-  diffuseColor.rgb = col;`;
 function groundMat(tex) {
-  const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: .95, normalMap: tex.normal, normalScale: new THREE.Vector2(.9, .9) });
-  tex.normal.repeat.set(170, 170);
-  const C = c => ({ value: new Color(c) });
-  const uniforms = {
-    uDetail: { value: tex.detail }, uNoise: { value: noiseTex() }, uRoads: { value: ROADSEGS.map(s => new THREE.Vector4(...s)) }, uWet: GU.uWet,
-    uGrassA: C('#55702f'), uGrassB: C('#7d8a3c'), uDry: C('#a59a5a'), uDirt: C('#8a7556'), uMud: C('#4a3f30'), uRock: C('#8b877c'),
-    uForest: C('#3e3a26'), uWheat: C('#c2a052'), uPlow: C('#6a5136'), uStraw: C('#b9a676'), uHedge: C('#2f4422'),
-  };
-  m.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, uniforms);
-    sh.vertexShader = 'attribute vec4 aMask; varying vec4 vMask; varying vec3 vWP;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vMask = aMask; vWP = (modelMatrix * vec4(transformed, 1.)).xyz;');
-    sh.fragmentShader = sh.fragmentShader.replace('void main() {', GROUND_FRAG + '\nvoid main() {').replace('#include <color_fragment>', GROUND_COLOUR).replace('#include <roughnessmap_fragment>', 'float roughnessFactor = rough;');
-  };
-  m.customProgramCacheKey = () => 'ls-ground';
+  const normal = tex.normal.clone(); normal.repeat.set(170, 170); normal.needsUpdate = true;
+  const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: .95, normalMap: normal, normalScale: new THREE.Vector2(.9, .9) });
+  looks.ground(m, { detail: tex.detail, roads: ROADSEGS, wet: GU.uWet });
   return m;
 }
-// which ground goes where: x fields, y forest floor, z rock, w trodden earth
-function landMasks(land) {
-  const g = land.mesh.geometry, n = g.attributes.position.count, S = land.size, seg = land.segments, a = new Float32Array(n * 4);
-  for (let i = 0; i < n; i++) {
-    const cc = i % (seg + 1), rr = Math.floor(i / (seg + 1)), x = -S / 2 + cc * S / seg, z = -S / 2 + rr * S / seg, y = land.height(x, z), sl = land.slope(x, z);
-    const town = Math.hypot(x + 15, z + 108), river = Math.abs(z - RIVER(x));
-    let farm = sm(.2, .08, sl) * sm(70, 95, town) * sm(16, 26, river) * sm(8, 16, Math.abs(z - RAILZ)) * sm(30, 22, y) * sm(-170, -150, z) * sm(18, 30, Math.hypot(x - MILL.x, z - MILL.z));
-    let trod = Math.max(1 - sm(30, 62, town), 1 - sm(9, 20, Math.hypot(x - MILL.x, z - MILL.z)));
-    for (const nn of Object.values(NESTS)) { const d = Math.hypot(x - nn.x, z - nn.z); farm *= sm(10, 22, d); trod = Math.max(trod, 1 - sm(3, 8, d)); }
-    a[i * 4] = farm; a[i * 4 + 1] = sm(-140, -175, z) * (1 - farm); a[i * 4 + 2] = clamp(sm(.28, .5, sl) + sm(40, 60, y), 0, 1); a[i * 4 + 3] = trod;
-  }
-  g.setAttribute('aMask', new THREE.BufferAttribute(a, 4));
-}
-// far hills and mountains all round the valley (they only need light and haze)
-function farHills(land) {
-  const segs = 72, rings = 12, pos = [], col = [], idx = [], R0 = 300, R1 = 1300, c = new Color(), forest = new Color('#3d4a2c'), rockC = new Color('#7d7f78'), meadow = new Color('#6a7240');
-  for (let j = 0; j <= rings; j++) for (let i = 0; i <= segs; i++) {
-    const a = i / segs * TAU, f = j / rings, r = R0 + (R1 - R0) * f * f, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    const inside = Math.abs(x) < 318 && Math.abs(z) < 318;
-    const ridge = (fbm(Math.cos(a) * 2.2 + 9, Math.sin(a) * 2.2 + f * 3, 4) * .6 + .4) * (60 + 260 * sm(.15, 1, f)) * sm(.02, .35, f);
-    const edge = inside ? land.height(x, z) - 4 : land.height(clamp(x, -318, 318), clamp(z, -318, 318));
-    const y = inside ? edge : edge + ridge * (z > 0 && Math.abs(x) < 400 ? .45 : 1);
-    pos.push(x, y, z);
-    c.copy(meadow).lerp(forest, sm(10, 60, y - edge)).lerp(rockC, sm(140, 260, y)); col.push(c.r, c.g, c.b);
-  }
-  for (let j = 0; j < rings; j++) for (let i = 0; i < segs; i++) { const a = j * (segs + 1) + i, b = a + segs + 1; idx.push(a, a + 1, b, a + 1, b + 1, b); }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals();
-  // woods, clearings and scree drawn from noise, so they hold up through the scope
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
-  mat.onBeforeCompile = sh => {
-    sh.uniforms.uNoise = { value: noiseTex() };
-    sh.vertexShader = 'varying vec3 vHW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vHW = (modelMatrix * vec4(transformed, 1.)).xyz;');
-    sh.fragmentShader = 'uniform sampler2D uNoise; varying vec3 vHW;\n' + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-  { vec4 n = texture2D(uNoise, vHW.xz * .0019), m = texture2D(uNoise, vHW.xz * .011 + .31), q = texture2D(uNoise, vHW.xz * .07 + .7);
-    float bare = smoothstep(.62, .85, diffuseColor.b / max(diffuseColor.r, 1e-3)), wood = smoothstep(.5, .6, n.g * .75 + m.r * .4) * (1. - bare);
-    diffuseColor.rgb *= .78 + .4 * m.b;
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.035, .05, .022) * (.55 + .9 * q.r), wood);
-    diffuseColor.rgb *= 1. - bare * .35 * smoothstep(.4, .7, q.g); }`);
-  };
-  mat.customProgramCacheKey = () => 'ls-hills';
-  const m = new Mesh(g, mat); m.receiveShadow = false; m.userData.noAO = true;
-  return m;
-}
+const groundMasks = (x, z, y, sl) => {
+  const town = Math.hypot(x + 15, z + 108), river = Math.abs(z - RIVER(x));
+  let farm = sm(.2, .08, sl) * sm(70, 95, town) * sm(16, 26, river) * sm(8, 16, Math.abs(z - RAILZ)) * sm(30, 22, y) * sm(-170, -150, z) * sm(18, 30, Math.hypot(x - MILL.x, z - MILL.z));
+  let trod = Math.max(1 - sm(30, 62, town), 1 - sm(9, 20, Math.hypot(x - MILL.x, z - MILL.z)));
+  for (const nn of Object.values(NESTS)) { const d = Math.hypot(x - nn.x, z - nn.z); farm *= sm(10, 22, d); trod = Math.max(trod, 1 - sm(3, 8, d)); }
+  return [farm, sm(-140, -175, z) * (1 - farm), clamp(sm(.28, .5, sl) + sm(40, 60, y), 0, 1), trod];
+};
 // a weathered boulder: a squashed ball pushed in and out by noise, flat underneath, smooth shading
 function boulder(size, seed, colour = '#958f84', seg = 20) {
   const g = new SphereGeometry(1, seg, Math.round(seg * .65)), p = g.attributes.position, c = new Color(colour), col = [], R = rng(seed), o = R() * 40, sq = .55 + R() * .2;
@@ -291,24 +147,8 @@ function boulder(size, seed, colour = '#958f84', seg = 20) {
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals(); return g;
 }
-// rock: the shape's own colour, cracks and grit from the ground detail (mapped three ways so it doesn't
-// stretch on the sides) and moss where the top faces the sky
-function rockMat(tex) {
-  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .9 });
-  m.onBeforeCompile = sh => {
-    sh.uniforms.uDetail = { value: tex.detail };
-    sh.vertexShader = 'varying vec3 vRW;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n  vRW = transpose(mat3(viewMatrix)) * (mvPosition.xyz - viewMatrix[3].xyz);');
-    sh.fragmentShader = 'uniform sampler2D uDetail; varying vec3 vRW;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', `{ vec3 wn = transpose(mat3(viewMatrix)) * normal, w = pow(abs(wn), vec3(4.)); w /= w.x + w.y + w.z;
-    vec4 d = texture2D(uDetail, vRW.zy * .7) * w.x + texture2D(uDetail, vRW.xz * .7) * w.y + texture2D(uDetail, vRW.xy * .7) * w.z;
-    vec4 e = texture2D(uDetail, vRW.xz * .09 + .2);
-    diffuseColor.rgb *= (.66 + .5 * (d.b * .3 + d.g * .4 + d.a * .3)) * (.85 + .3 * e.a);
-    float moss = smoothstep(.55, .85, wn.y + (e.r - .5) * .6);
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.07, .09, .03) * (.7 + .6 * d.r), moss * .85); }
-  #include <emissivemap_fragment>`);
-  };
-  m.customProgramCacheKey = () => 'ls-rock';
-  return m;
-}
+// rock (gs.outdoors looks.rock): the shape's own colour, cracks and grit, moss where the top faces the sky
+function rockMat(tex) { const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .9 }); looks.rock(m, { detail: tex.detail }); return m; }
 
 // ---- trees: crowns of painted leaf cards with soft round normals (so a crown lights like one shape),
 // trunks and limbs; three crossed cards painted with the whole tree far away
@@ -471,24 +311,11 @@ function firGeo(lod, seed = 7) {
   }
   return b.geo();
 }
-// leaves: cut out of the atlas, sway with the wind, light up when you look towards the sun through them
+// leaves (gs.outdoors looks.leaves): cut out of the atlas, sway with the wind, light up when you look
+// towards the sun through them
 function leafMat(atlas) {
   const m = new THREE.MeshStandardMaterial({ map: atlas, vertexColors: true, roughness: .82, alphaTest: .5, side: THREE.DoubleSide });
-  m.onBeforeCompile = sh => {
-    Object.assign(sh.uniforms, GU);
-    sh.vertexShader = 'uniform float uTime, uWind; varying vec3 vLW;\n' + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
-  { vec3 wp = transpose(mat3(viewMatrix)) * (mvPosition.xyz - viewMatrix[3].xyz); vLW = wp;
-    float hh = max(position.y - 2., 0.), ph = wp.x * .19 + wp.z * .23;
-    vec3 sw = vec3(sin(uTime * 1.7 + ph) + sin(uTime * 3.1 + ph * 2.3) * .3, 0., cos(uTime * 1.3 + ph * 1.4)) * uWind * hh * .012;
-    mvPosition.xyz += mat3(viewMatrix) * sw; gl_Position = projectionMatrix * mvPosition; }`);
-    sh.fragmentShader = 'uniform vec3 uSun; varying vec3 vLW;\n' + sh.fragmentShader
-      .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''))
-      .replace('#include <alphatest_fragment>', `{ vec2 lq = vMapUv * vec2(1024., 512.); vec2 dx = dFdx(lq), dy = dFdy(lq); diffuseColor.a *= 1. + max(0., .5 * log2(max(dot(dx, dx), dot(dy, dy)))) * .35; }
-  #include <alphatest_fragment>`)
-      .replace('#include <emissivemap_fragment>', `{ vec3 vd = normalize(vLW - cameraPosition); diffuseColor.rgb *= 1. + .6 * pow(max(dot(vd, uSun), 0.), 4.); }
-  #include <emissivemap_fragment>`);
-  };
-  m.customProgramCacheKey = () => 'ls-leaf';
+  looks.leaves(m, { time: GU.uTime, wind: GU.uWind, sun: GU.uSun, atlas: [1024, 512] });
   return m;
 }
 
@@ -590,15 +417,15 @@ function world() {
   v.air(MOODS.m1.air);
 
   // ---- land, with the nests and the village levelled, painted by the ground shader
-  const tex = groundTextures();
+  const tex = groundDetail();
   const land = new Land({ kind: shape, size: 640, segments: 128, material: groundMat(tex) });
   land.flatten(-15, -108, 58, 6.4, 30);
   for (const n of Object.values(NESTS)) land.flatten(n.x, n.z, 5, undefined, 6);
   land.flatten(MILL.x, MILL.z - 3, 9, 4.2, 6);
-  landMasks(land);
+  land.masks(groundMasks);
   v.scene.add(land.object);
   land.grass({ count: 9000, colour: '#6c8638', tint: ['#4f6a2a', '#9a9850'], above: 14, steep: .35, far: 42, height: .8, wind: .6 });
-  v.scene.add(farHills(land));
+  v.scene.add(horizon(land, { inner: 300, outer: 1300, lower: (x, z) => z > 0 && Math.abs(x) < 400 ? .55 : 0 }));   // far hills, lower to the south
 
   // the river and the lake: dark water with ripples that catch the sky
   const waterMat = (col, rep) => {
