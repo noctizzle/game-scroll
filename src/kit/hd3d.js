@@ -81,36 +81,53 @@ export const TIERS = [
 const START = { top: 3, mid: 2, low: 1 };
 // Resolution moves in a few fixed steps (each step reallocates the render targets, so it must be
 // rare): drop a step after two slow windows of ~45 frames, climb back after ~6 s at full speed, and
-// never climb back above a step that already proved too slow (for 30 s). Tiers change the same way.
+// never climb back above a step that already proved too slow (for 30 s, longer each time a climb fails).
+// A game starts at the tier and step it settled on last time. Tiers change the same way, but only
+// between rounds (applyTier).
 // The frame budget follows the game's frame rate (8.3 ms at 120 fps, 16.7 at 60, 33 at 30). At 120
 // fps a struggling game first gives up a little resolution, then drops to 60 fps at full resolution
 // (keeping the picture); at the lowest tier and resolution it can drop to 30.
 const LEVELS = [1, .85, .7, .55];
-const Q = { tier: 2, lvl: 0, sum: 0, cnt: 0, slow: 0, fast: 0, lastT: 0, ceil: 0, ceilT: 0, tierCeil: 3, force: null, game: undefined, easy: 0, fpsT: 0 };
+// A climb that turns out too slow again soon after doubles how long the step it fell back to holds
+// (30 s, 1, 2, 4 min), so a game that's on the edge doesn't keep stuttering every half a minute.
+const HOLD = 30000, HOLD_MAX = 240000;
+const Q = { tier: 2, lvl: 0, sum: 0, cnt: 0, slow: 0, fast: 0, lastT: 0, ceil: 0, ceilT: 0, tierCeil: 3, force: null, game: undefined, easy: 0, fpsT: 0, hold: HOLD, upT: -1e9, fpsHold: 60000, fpsUpT: -1e9 };
 // a new game is on screen: start from where it settled last time, or from the phone's class
+// (and the resolution step it settled on, so a round doesn't start too sharp, stutter and step down again)
 function startGame(def) {
   Q.game = def; const s = settledFor(def?.id);
-  Q.tier = s?.tier ?? START[phoneClass()] ?? 2; Q.lvl = 0; Q.ceil = 0; Q.tierCeil = 3; Q.sum = Q.cnt = Q.slow = Q.fast = Q.easy = 0; Q.lastT = 0;
+  Q.tier = s?.tier ?? START[phoneClass()] ?? 2; Q.lvl = Math.min(LEVELS.length - 1, s?.lvl ?? 0); Q.ceil = Q.lvl; Q.ceilT = performance.now(); Q.tierCeil = 3;
+  Q.sum = Q.cnt = Q.slow = Q.fast = Q.easy = 0; Q.lastT = 0; Q.want = null; Q.hold = HOLD; Q.upT = -1e9; Q.fpsHold = 60000;
 }
 function adapt(gap) {
   if (Q.force != null || !(gap > 0 && gap < 100)) return;
   Q.sum += gap; if (++Q.cnt < 45) return;
   const a = Q.sum / Q.cnt, now = performance.now(), fps = Q.game ? fpsFor(Q.game) : 60, budget = 1000 / fps; Q.sum = Q.cnt = 0;
-  if (now - Q.ceilT > 30000) { Q.ceil = 0; Q.tierCeil = 3; }
-  const tier0 = Q.tier;
+  if (now - Q.ceilT > Q.hold) { Q.ceil = 0; Q.tierCeil = 3; }
+  const tier0 = Q.tier, lvl0 = Q.lvl;
   if (a > budget * 1.26) {
     Q.fast = 0; Q.easy = 0; if (++Q.slow < 2) return; Q.slow = 0; Q.ceilT = now;
-    if (fps > 60 && Q.lvl >= 1 && stepDown(Q.game)) { Q.lvl = 0; Q.ceil = 0; Q.fpsT = now; }
+    if (now - Q.upT < 20000) Q.hold = Math.min(HOLD_MAX, Q.hold * 2);   // the last climb didn't hold
+    if (fps > 60 && Q.lvl >= 1 && stepDown(Q.game)) { Q.lvl = 0; Q.ceil = 0; Q.fpsT = now; if (now - Q.fpsUpT < 20000) Q.fpsHold = Math.min(8 * 60000, Q.fpsHold * 2); }
     else if (Q.lvl < LEVELS.length - 1) { Q.lvl++; Q.ceil = Q.lvl; }
-    else if (Q.tier > 0) { Q.tierCeil = Q.tier - 1; Q.tier--; Q.lvl = 1; Q.ceil = 1; }
+    else if (Q.tier > 0) { if (Q.want == null) { Q.tierCeil = Q.tier - 1; Q.want = Q.tier - 1; } }
     else if (stepDown(Q.game)) { Q.lvl = 1; Q.fpsT = now; }
   } else if (a < budget * 1.044) {
     Q.slow = 0; if (++Q.fast < 8) return; Q.fast = 0;
-    if (Q.lvl > Q.ceil) Q.lvl--; else if (Q.lvl === 0 && Q.tier < Math.min(Q.tierCeil, TIERS.length - 1)) { Q.tier++; Q.lvl = 1; }
+    if (Q.lvl > Q.ceil) { Q.lvl--; Q.upT = now; }
+    else if (Q.lvl === 0 && Q.want == null && Q.tier < Math.min(Q.tierCeil, TIERS.length - 1)) { Q.want = Q.tier + 1; Q.upT = now; }
     // a long spell of easy frames at the top tier, a while after stepping the frame rate down: try one notch up
-    else if (Q.lvl === 0 && Q.tier === TIERS.length - 1 && ++Q.easy >= 3 && now - Q.fpsT > 60000 && stepUp(Q.game)) { Q.easy = 0; Q.fpsT = now; }
+    else if (Q.lvl === 0 && Q.tier === TIERS.length - 1 && ++Q.easy >= 3 && now - Q.fpsT > Q.fpsHold && stepUp(Q.game)) { Q.easy = 0; Q.fpsT = now; Q.fpsUpT = now; }
   } else { Q.slow = 0; Q.fast = 0; }
-  if (Q.tier !== tier0) settle(Q.game?.id, { tier: Q.tier });
+  if (Q.tier !== tier0 || Q.lvl !== lvl0) settle(Q.game?.id, { tier: Q.tier, lvl: Q.lvl });
+}
+// A new tier changes which shaders every material needs (shadows, lights, edge smoothing), so three.js
+// rebuilds them all: a long stall. So a tier change waits until no round is being played (the
+// game-over screen, the next card) and the round carries on at its lowest resolution until then.
+function applyTier() {
+  if (Q.want == null || speed.playing()) return;
+  const down = Q.want < Q.tier; Q.tier = Q.want; Q.want = null; Q.lvl = 1; Q.ceil = down ? 1 : 0; Q.sum = Q.cnt = Q.slow = Q.fast = 0;
+  settle(Q.game?.id, { tier: Q.tier, lvl: Q.lvl });
 }
 /** Current quality: { tier, name, res }. Set HD.force = 0..3 to pin a tier (tests, screenshots). */
 export const HD = {
@@ -1193,10 +1210,19 @@ export class HDView {
    */
   prepare() {
     if (this.preparing) return this.preparing;
+    return this.preparing = this.precompile();
+  }
+  /**
+   * Compile every shader the scene can need now and upload its textures, in the background (no
+   * stall), like prepare() but every time it's called: after building a new level, call it while the
+   * screen is faded out and fade back in when it resolves, instead of v.warmed = false (which compiles
+   * everything on the next frame, all at once).
+   */
+  precompile() {
     const G = gpuFor(this);
     if (G) {
       gpuSwap(this, G); this.scene.environment = this.envFor(G); this.warmed = true;
-      return this.preparing = G.r.compileAsync(this.scene, this.cam).catch(() => {}).then(() => { this.ready = true; });
+      return G.r.compileAsync(this.scene, this.cam).catch(() => {}).then(() => { this.ready = true; });
     }
     const r = renderer(); if (!r) return Promise.resolve();
     gpuSwap(this, null);
@@ -1210,7 +1236,7 @@ export class HDView {
     this.warmed = true;
     const texs = new Set();
     this.scene.traverse(o => { for (const m of [o.material].flat()) if (m) for (const k in m) if (m[k]?.isTexture) texs.add(m[k]); });
-    return this.preparing = Promise.all(jobs).catch(() => {}).then(async () => {
+    return Promise.all(jobs).catch(() => {}).then(async () => {
       for (const t of texs) { try { r.initTexture(t); } catch (_) { /* uploads on first use instead */ } await idle(); }
       this.ready = true;
     });
@@ -1327,9 +1353,9 @@ export class HDView {
    * The 3D canvas belongs to another card now: draw this view's last frame under the HUD already on
    * its canvas (and the camera picture under that, for AR), so the card keeps its picture.
    */
-  bake(c) {
+  bake(c, small = false) {
     const r = renderer(); if (!r) return;
-    this.render(c, this.W, this.H, true);
+    this.render(c, this.W, this.H, small ? 'small' : true);
     const u = this.under;
     c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'destination-over';
     const W = c.canvas.width, H = c.canvas.height;
@@ -1367,16 +1393,17 @@ export class HDView {
       c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, c.canvas.width, c.canvas.height); c.restore();
       return;
     }
-    if (!baking && !off) { this.drawnAt = now; for (const [v, bc] of bakes.splice(0)) if (bc.canvas.isConnected && host?.canvas !== bc.canvas) try { v.bake(bc); } catch (_) { /* best effort */ } }
+    // (each is a whole frame of another card plus a copy: never while a round is played or the feed moves)
+    if (!baking && !off) { this.drawnAt = now; if (bakes.length && !speed.playing() && !speed.busy()) for (const [v, bc] of bakes.splice(0)) if (bc.canvas.isConnected && host?.canvas !== bc.canvas) try { v.bake(bc, true); } catch (_) { /* best effort */ } }
     const direct = HD.direct && !baking && !off && !!c.canvas.parentNode && mount(r.domElement, c, this);
     if (!baking && !off) {
       if (Q.game !== speed.game) startGame(speed.game);
       // adaptive quality: first resolution, then tier (and frame rate)
-      const gap = now - (Q.lastT || now); Q.lastT = now; adapt(gap);
+      const gap = now - (Q.lastT || now); Q.lastT = now; adapt(gap); applyTier();
     }
     const T = tier();
     if (this.tierSeen !== HD.tier) { this.tierSeen = HD.tier; this.tierFn?.(T); }
-    const fw = c.canvas.width, fh = c.canvas.height; let pw = fw, ph = fh; const q = HD.scale ?? Math.min(1, Math.sqrt(T.px / (pw * ph))) * HD.res;
+    const fw = c.canvas.width, fh = c.canvas.height; let pw = fw, ph = fh; const px = baking === 'small' ? Math.min(T.px, PIC_PX) : T.px, q = HD.scale ?? Math.min(1, Math.sqrt(px / (pw * ph))) * HD.res;
     pw = Math.max(16, Math.round(pw * q)); ph = Math.max(16, Math.round(ph * q));
     // The 3D is drawn at pw x ph (fewer pixels on big screens and when the phone struggles). Below the
     // screen's size, Snapdragon GSR 2 (sgsr2.js, temporal: jitters the camera and builds on the frames
@@ -1577,21 +1604,28 @@ let host = null, lastView = null, GS2 = null;   // GS2: SGSR 2's frame numbers o
 // Pictures of cards that finished getting ready (prepare) wait here and are drawn into their cards
 // just before the playing card's next frame, which then redraws the shared 3D canvas.
 const bakes = [];
+// A card's picture before it's played is drawn with fewer pixels (it's copied off the graphics chip,
+// which costs in proportion): its first live frame, once it's on screen and still, is full quality.
+const PIC_PX = .6e6;
 const idle = () => new Promise(res => (typeof requestIdleCallback === 'function' ? requestIdleCallback(() => res(), { timeout: 200 }) : setTimeout(res, 16)));
+// A card's shaders finish compiling whenever they do, often while the next swipe is under way or a
+// round has started: its picture waits until the feed is still and no round is being played.
 function bakeLater(view, c) {
+  if (speed.busy() || speed.playing()) { setTimeout(() => { if (c.canvas.isConnected && host?.canvas !== c.canvas) bakeLater(view, c); }, 250); return; }
   if (host && host.canvas.isConnected && performance.now() - (host.view.drawnAt || 0) < 300) { bakes.push([view, c]); return; }
   // no 3D game is being played: give the card that holds the 3D canvas its own last picture, take the
   // canvas off it, and draw this card's picture
   const r = renderer(); if (!r) return;
   if (host) { const old = host; host = null; if (old.canvas.isConnected) try { old.view.bake(old.ctx); } catch (_) { /* best effort */ } old.canvas.classList.remove('hd-host'); old.under?.remove(); }
   r.domElement.remove(); webgpu()?.r.domElement.remove();
-  try { view.bake(c); } catch (_) { /* best effort */ }
+  try { view.bake(c, true); } catch (_) { /* best effort */ }
 }
 function mount(cv, c, view) {
   const hc = c.canvas, par = hc.parentNode, prevUnder = host?.under;
   if (host && host.canvas !== hc) {
     const old = host; host = null;
-    if (old.canvas.isConnected) try { old.view.bake(old.ctx); } catch (_) { /* best effort */ }
+    // (the card it leaves has just gone off screen: a lighter picture, until it's played again)
+    if (old.canvas.isConnected) try { old.view.bake(old.ctx, true); } catch (_) { /* best effort */ }
     old.canvas.classList.remove('hd-host');
   }
   // a view that moved between WebGL and WebGPU: take the other renderer's canvas off this card

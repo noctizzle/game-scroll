@@ -3,6 +3,8 @@
 Copy each field into Play Console → Grow → Store presence → Main store listing, and the policy
 answers into Policy → App content. Character counts are checked by `node scripts/check-listings.mjs`.
 
+Test builds go to Play by themselves once set up: see `docs/google-play.md`.
+
 ## Main store listing
 
 | Field | Value |

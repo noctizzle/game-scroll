@@ -23,6 +23,7 @@ The human-facing guide is [CONTRIBUTING.md](CONTRIBUTING.md); the kit reference 
    ```
    For Console and Next Gen games also run `node scripts/sweep.cjs <id>`. `node scripts/budget.cjs <id>`
    checks frame time and memory on a slowed CPU (the PR check runs it too).
+   Which check fits which change, and how to keep testing fast (`--jobs`, software 3D): [docs/testing.md](docs/testing.md).
 5. Only change files in `src/games/` (and optionally tick the idea in `docs/game-ideas.md`). Shared
    code (`src/kit/`, `src/gamescroll.js`, `src/main.js`...) ships inside the app: change it only when
    asked to, in a separate PR.

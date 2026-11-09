@@ -1,0 +1,165 @@
+# Builds the Google Play version of the app (a signed, shrunk release .aab) and uploads it to a Play
+# testing track. Setup, and the parts only Rob can do in Play Console: docs/google-play.md.
+#
+# - Pull requests build the bundle unsigned, so a broken store build (R8 shrinking, native libraries)
+#   shows up before merging. The upload key never goes near pull request code.
+# - Pushes to main build it signed with the upload key and send it to the internal testing track.
+# - "Run workflow" (Actions tab) does the same on demand, with a choice of track and status.
+#   Run on any other branch, it builds the signed bundle to download but doesn't upload it.
+# Until the secrets are in, it still builds and simply skips the signing and the upload.
+name: Google Play
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md', 'site/**', 'workers/**', 'store/**', '.github/ISSUE_TEMPLATE/**']  # not in the app
+  pull_request:
+    paths-ignore: ['docs/**', '**/*.md', 'site/**', 'workers/**', 'store/**', '.github/ISSUE_TEMPLATE/**']
+  workflow_dispatch:
+    inputs:
+      track:
+        description: Play track (internal = internal testing, alpha = closed testing, beta = open testing)
+        type: choice
+        options: [internal, alpha, beta]
+        default: internal
+      status:
+        description: completed = testers get it straight away; draft = waits in Play Console for you to roll it out
+        type: choice
+        options: [completed, draft]
+        default: completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-play-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}  # never cut off an upload to Play halfway
+
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04  # pinned: move to a newer image on purpose, not when ubuntu-latest flips
+    timeout-minutes: 40
+    outputs:
+      signed: ${{ steps.key.outputs.signed }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install
+        run: npm ci
+
+      - name: Qualcomm NPU files pinned for this ONNX Runtime
+        run: node scripts/qnn-pin.mjs --check
+
+      - name: Build the web app
+        run: npm run build
+
+      - name: Copy it into the Android project
+        run: npx cap sync android
+
+      # Play's version code must go up with every upload: it is this workflow's run number, which
+      # GitHub counts up by one each run (pull request runs included, so numbers get skipped; that's fine).
+      - name: Upload key
+        id: key
+        env:
+          KEYSTORE_BASE64: ${{ github.event_name != 'pull_request' && secrets.PLAY_UPLOAD_KEYSTORE_BASE64 || '' }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            [ "$GITHUB_EVENT_NAME" = pull_request ] || echo "::notice::No upload key in the repository secrets yet, so this bundle is unsigned and won't be uploaded. Setup: docs/google-play.md"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          echo "PLAY_UPLOAD_KEYSTORE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build the app bundle
+        working-directory: android
+        env:
+          PLAY_UPLOAD_STORE_PASSWORD: ${{ steps.key.outputs.signed == 'true' && secrets.PLAY_UPLOAD_STORE_PASSWORD || '' }}
+          PLAY_UPLOAD_KEY_PASSWORD: ${{ steps.key.outputs.signed == 'true' && secrets.PLAY_UPLOAD_KEY_PASSWORD || '' }}
+          PLAY_UPLOAD_KEY_ALIAS: ${{ steps.key.outputs.signed == 'true' && (secrets.PLAY_UPLOAD_KEY_ALIAS || 'upload') || '' }}
+        run: ./gradlew bundleRelease --no-daemon --stacktrace
+
+      - name: Remove the upload key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.jks"
+
+      - name: Name the bundle
+        run: |
+          cp android/app/build/outputs/bundle/release/app-release.aab game-scroll.aab
+          cp android/app/build/outputs/mapping/release/mapping.txt mapping.txt
+          ls -l game-scroll.aab
+          echo "### App bundle" >> "$GITHUB_STEP_SUMMARY"
+          echo "Version code **${GITHUB_RUN_NUMBER}**, $(du -m game-scroll.aab | cut -f1) MB, signed: **${{ steps.key.outputs.signed }}**" >> "$GITHUB_STEP_SUMMARY"
+
+      # Google Play turns away apps for Android 15+ whose 64-bit native libraries can't run on phones
+      # with 16 KB memory pages. Every LOAD segment must be aligned to at least 16 KB (0x4000).
+      - name: Native libraries work with 16 KB pages
+        run: |
+          rm -rf "$RUNNER_TEMP/aab" && mkdir -p "$RUNNER_TEMP/aab"
+          unzip -q game-scroll.aab 'base/lib/*' -d "$RUNNER_TEMP/aab" || true
+          bad=0; n=0
+          while IFS= read -r so; do
+            # Only 64-bit ARM/x86 code runs on the phone's CPU. Qualcomm's *Skel.so files sit in
+            # lib/arm64-v8a but are 32-bit programs for the NPU itself (Hexagon), so they're skipped.
+            readelf -hW "$so" | grep -Eq 'Machine:[[:space:]]+(AArch64|Advanced Micro Devices X86-64)' || continue
+            readelf -hW "$so" | grep -q 'Class:[[:space:]]*ELF64' || continue
+            n=$((n+1))
+            for a in $(readelf -lW "$so" | awk '$1=="LOAD"{print $NF}'); do
+              if [ $((a)) -lt 16384 ]; then echo "::error::${so#$RUNNER_TEMP/aab/} is aligned to $a, not 16 KB"; bad=1; break; fi
+            done
+          done < <(find "$RUNNER_TEMP/aab" -name '*.so' \( -path '*arm64-v8a*' -o -path '*x86_64*' \))
+          echo "Checked $n 64-bit native libraries"
+          exit $bad
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: game-scroll-aab
+          path: |
+            game-scroll.aab
+            mapping.txt
+          retention-days: 30
+
+  upload:
+    needs: bundle
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts/play-upload.mjs
+            .nvmrc
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: game-scroll-aab
+
+      - name: Upload to Google Play
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          SIGNED: ${{ needs.bundle.outputs.signed }}
+          TRACK: ${{ inputs.track || 'internal' }}
+          STATUS: ${{ inputs.status || 'completed' }}
+        run: |
+          if [ "$SIGNED" != true ]; then echo "::notice::Bundle is unsigned (no upload key yet): not uploading. Setup: docs/google-play.md"; exit 0; fi
+          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then echo "::notice::No PLAY_SERVICE_ACCOUNT_JSON secret yet: download game-scroll.aab from this run and upload it by hand. Setup: docs/google-play.md"; exit 0; fi
+          node scripts/play-upload.mjs game-scroll.aab --track "$TRACK" --status "$STATUS" \
+            --mapping mapping.txt --name "1.0.${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})"

@@ -1168,3 +1168,6 @@ console.log('physics ok');
   assert.ok(oc.hiddenObject(m), 'a mesh by its bounding sphere');
   console.log('occlusion culling: behind, front, beside, over the top, camera in a box ok');
 }
+
+// every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
+process.exit(0);
