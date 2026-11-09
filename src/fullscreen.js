@@ -59,6 +59,16 @@ document.addEventListener('fullscreenchange', () => { if (!native && !document.f
 // Coming back to the app (or from a dialog, the share sheet...) can bring the bars back: hide them again.
 document.addEventListener('visibilitychange', () => { if (!document.hidden) hideSystemBars(); });
 addEventListener('focus', hideSystemBars);
+// Back-up for bars that come back after a swipe from the edge and stay (on some phones): hide them
+// again 3 seconds after the last touch. The system's own edge swipe often never reaches the page,
+// so this listens to every touch, not only touches near an edge.
+if (native) {
+  let edgeT = 0;
+  addEventListener('pointerdown', () => {
+    clearTimeout(edgeT);
+    edgeT = setTimeout(hideSystemBars, 3000);
+  }, { capture: true, passive: true });
+}
 
 // Android back: leave full screen first. With a listener Capacitor no longer does its own back,
 // so do what it did before (go back in the web view, otherwise close the app).
@@ -89,7 +99,7 @@ function pill(ms) {
 function hidePill() { clearTimeout(pillT); pillEl?.classList.remove('show'); }
 {
   let edge = null;
-  addEventListener('pointerdown', e => { edge = cur && e.clientY < 32 ? { id: e.pointerId, y: e.clientY } : null; }, { capture: true, passive: true });
+  addEventListener('pointerdown', () => { edge = cur && e.clientY < 32 ? { id: e.pointerId, y: e.clientY } : null; }, { capture: true, passive: true });
   addEventListener('pointermove', e => {
     if (!edge || e.pointerId !== edge.id) return;
     if (e.clientY - edge.y > 36) { edge = null; pill(3000); }
