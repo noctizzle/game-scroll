@@ -42,6 +42,9 @@ export const history = {
     listeners.forEach(f => { try { f(id, w); } catch (_) {} });
   },
 
+  /** Forgets this phone's history (Settings › Reset recommendations). */
+  forget() { db = {}; session.length = 0; store.set(KEY, {}); },
+
   /** For tests and the QA panel. */
   _reset(d = {}) { db = d; session.length = 0; },
 };
