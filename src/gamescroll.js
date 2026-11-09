@@ -47,6 +47,7 @@
 //   gs.adventure point-and-click: rooms, hotspots, take, use X on Y, exits, flags, a map of rooms seen
 //   gs.hex       hex maps (honeycomb-grid): taps, neighbours, ranges, movement reach, paths, sight; Iso views
 //   gs.rts       strategy controls: tap and box select, formations, flow fields, build grids, tower targets
+//   gs.fight     fighting games: motion inputs with a buffer, moves in frames, hit and hurt boxes, cancels, stun
 //   gs.idle      idle maths: rising prices, affordable counts, short big numbers, Earner (and api.away())
 //   gs.party     pass-and-play turns with a hand-over screen, and split-screen halves for two to four
 //   gs.rhythm    a beat clock in step with the music, note charts, Perfect/Good/Miss, tap-lag calibration
@@ -129,6 +130,7 @@ import * as items from './kit/items.js';
 import * as adventure from './kit/adventure.js';
 import * as hex from './kit/hex.js';
 import * as rts from './kit/rts.js';
+import * as fight from './kit/fight.js';
 import * as party from './kit/party.js';
 import * as rhythm from './kit/rhythm.js';
 import * as strokes from './kit/strokes.js';
@@ -271,6 +273,7 @@ const core = {
   adventure: pick('adventure', adventure),
   hex: pick('hex', hex),
   rts: pick('rts', rts),
+  fight: pick('fight', fight),
   party: pick('party', party),
   rhythm: pick('rhythm', rhythm),
   strokes: pick('strokes', strokes),

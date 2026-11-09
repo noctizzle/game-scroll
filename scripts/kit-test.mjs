@@ -804,6 +804,26 @@ console.log('physics ok');
   console.log('rts: box, tap, double tap, orders, formations, build grid, flow field, targets ok');
 }
 {
+  const { Reader, Fighter, clash } = await import('../src/kit/fight.js');
+  const F = 1 / 60, r = new Reader(), step = (x, y, b = {}, n = 2, facing = 1) => { for (let i = 0; i < n; i++) r.feed(x, y, b, F, facing); };
+  step(0, -1); step(1, -1); step(1, 0); step(1, 0, { P: true }); assert.ok(r.did('236P'), 'quarter circle forward');
+  step(0, 0, { P: false }, 2); assert.equal(r.did('236P'), false, 'the press was taken');
+  step(0, 0, {}, 40); step(0, -1); step(-1, -1); step(-1, 0, {}, 2, 1); step(-1, 0, { P: true }, 1, 1); assert.equal(r.did('236P'), false, 'the wrong way round');
+  step(0, 0, { P: false }, 40); step(1, 0); step(0, 0); step(1, 0); assert.ok(r.did('66'), 'dash'); step(0, 0, {}, 60); step(1, 0); assert.equal(r.did('66'), false, 'too slow is not a dash');
+  step(0, -1, {}, 2, -1); step(-1, -1, {}, 2, -1); step(-1, 0, { K: true }, 2, -1); assert.ok(r.did('236K'), 'forward follows facing');
+  step(0, 0, { P: true }, 1); step(0, 0, { P: false }, 5); assert.ok(r.take('P'), 'a press is kept in the buffer'); step(0, 0, { P: true }, 1); step(0, 0, { P: false }, 20); assert.equal(r.take('P'), false, 'and lets go after it');
+  const M = { jab: { start: 3, active: 2, recover: 6, hit: [[10, -50, 30, 14]], damage: 4, stun: 12, cancel: ['fb'] }, fb: { start: 10, active: 1, recover: 20, input: '236P' }, low: { start: 2, active: 2, recover: 4, hit: [[10, -10, 30, 10]], low: true } };
+  step(0, 0, {}, 30); step(0, -1); step(1, -1); step(1, 0, { P: true }); assert.equal(r.special(M), 'fb');
+  const a = new Fighter(M, { x: 0 }), b = new Fighter(M, { x: 40, facing: -1 }); let hits = 0; a.on('hit', () => hits++);
+  assert.ok(a.start('jab')); assert.equal(a.start('jab'), false, 'busy'); a.update(F * 2); assert.equal(a.phase, 'start'); assert.equal(clash(a, b), null);
+  a.update(F * 1.5); assert.equal(a.phase, 'active'); const h = clash(a, b); assert.ok(h && !h.blocked && b.stun === 12 && hits === 1); assert.equal(clash(a, b), null, 'one hit per move');
+  assert.ok(a.stop > 0); a.update(.2); assert.ok(a.canCancel('fb') && a.start('fb'), 'cancel after a hit');
+  const e = new Fighter(M, { x: 0 }), g = new Fighter(M, { x: 40, facing: -1 }); g.blocking = true; e.start('jab'); e.update(F * 3.5); assert.ok(clash(e, g).blocked, 'blocked high'); assert.equal(g.stun, 6, 'block stun is half');
+  const i = new Fighter(M, { x: 0 }), j = new Fighter(M, { x: 40, facing: -1 }); j.blocking = true; i.start('low'); i.update(F * 2.5); assert.equal(clash(i, j).blocked, false, 'a low hits a standing block');
+  for (let k = 0; k < 60; k++) i.update(F); assert.equal(i.phase, 'idle', 'the move ends');
+  console.log('fight: motions, dash, facing, buffer, specials, frames, boxes, one hit, hit stop, cancels, block, low ok');
+}
+{
   const { dungeon, cave, maze, islands, pattern, fov, loadGen, proven, reach } = await import('../src/kit/gen.js');
   await loadGen();
   const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });

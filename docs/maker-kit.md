@@ -47,6 +47,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | A point-and-click adventure | `gs.adventure` | [Game kits](#game-kits) |
 | Hex maps, isometric views | `gs.hex` | [Game kits](#game-kits) |
 | Strategy controls, tower defence | `gs.rts` | [Game kits](#game-kits) |
+| A fighting game | `gs.fight` | [Game kits](#game-kits) |
 | Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
 | Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
 | Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
@@ -1238,6 +1239,15 @@ false for a tap on nothing (that's an order). `formation(units, x, y, { shape: '
 steers any number of units round walls. `BuildGrid(w, h, size)`: `snap` a dragged building to tiles,
 `fits`, `place`, `remove`, `at`. `target(tower, enemies, { range, by: 'first' | 'last' | 'near' |
 'strong' | 'weak' })` picks who a tower shoots.
+
+**Fighting games** (`gs.fight`): `Reader({ window, buffer })` gets `feed(stickX, stickY, { P, K }, dt,
+facing)` each frame (a `gs.controls.Stick` on touch) and keeps the last moments: `did('236P')` for
+motions in numpad notation (forward follows `facing`), `special(moves)` for the first move whose
+`input` was done, `take('P')` for a press up to `buffer` seconds old. `Fighter(moves, { x, facing, hurt
+})`: moves are `{ start, active, recover }` in 60ths of a second with `hit` boxes `[x, y, w, h]` from the
+feet (facing right), `stun`, `blockStun`, `stop`, `low`/`high`, `cancel: [names]` (once it has hit);
+`start(name)`, `update(dt)`, `phase`. `clash(a, b)` checks a's hit boxes against b's hurt boxes once per
+move, sets stun, block stun (b.blocking, b.blockLow) and hit stop, and returns `{ move, blocked, x, y }`.
 
 **Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
 `Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran

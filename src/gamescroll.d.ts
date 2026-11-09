@@ -934,6 +934,20 @@ export interface RtsPart {
   BuildGrid: new (w: number, h: number, size: number, o?: { blocked?: (tx: number, ty: number) => boolean }) => BuildGrid;
   target<T extends XY>(from: XY, things: Iterable<T>, o?: { range?: number; by?: 'first' | 'last' | 'near' | 'far' | 'strong' | 'weak'; progress?: (t: T) => number; hp?: (t: T) => number }): T | null;
 }
+export type FBox = [number, number, number, number];
+export interface FightMove { start: number; active: number; recover: number; hit?: FBox[] | FBox[][]; hurt?: FBox[]; input?: string; damage?: number; stun?: number; blockStun?: number; stop?: number; low?: boolean; high?: boolean; cancel?: string[]; cancelAny?: boolean; [k: string]: Loose }
+export interface FightReader { window: number; buffer: number; dead: number; readonly dir: number; feed(x: number, y: number, buttons?: Record<string, boolean>, dt?: number, facing?: number): FightReader; take(b: string): boolean; holding(b: string): boolean; did(cmd: string): boolean; special(moves: Record<string, FightMove>): string | null; clear(): void }
+export interface Fighter {
+  moves: Record<string, FightMove>; x: number; y: number; facing: number; hp: number; maxHp: number; move: string | null; frame: number; stun: number; stop: number; blocking: boolean; blockLow?: boolean;
+  readonly phase: 'start' | 'active' | 'recover' | 'stun' | 'idle'; readonly busy: boolean;
+  on(ev: 'start' | 'active' | 'end' | 'hit' | 'blocked' | 'hurt' | 'block', fn: (...a: Loose[]) => void): Fighter;
+  canCancel(name: string): boolean; start(name: string): boolean; update(dt: number): Fighter; hitboxes(): { x: number; y: number; w: number; h: number }[]; hurtboxes(): { x: number; y: number; w: number; h: number }[];
+}
+export interface FightPart {
+  Reader: new (o?: { window?: number; buffer?: number; dead?: number }) => FightReader;
+  Fighter: new (moves: Record<string, FightMove>, o?: { x?: number; y?: number; facing?: number; hurt?: FBox[]; hp?: number }) => Fighter;
+  clash(a: Fighter, b: Fighter): { move: FightMove; name: string; blocked: boolean; x: number; y: number } | null;
+}
 export interface DragPart { Drag: new (o?: { snap?: number; accept?: (piece: DragThing, slot: DragThing) => boolean; lift?: number; speed?: number; list?: { x: number; y: number; gap?: number; axis?: 'x' | 'y' } | null; swap?: boolean }) => Drag }
 
 export interface Earner {
@@ -1458,7 +1472,7 @@ export interface GS {
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
-  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
+  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; fight: FightPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
