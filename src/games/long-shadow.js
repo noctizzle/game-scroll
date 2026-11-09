@@ -12,7 +12,7 @@
 // gs.destruction (the watchtower) and gs.campaign (stars and saves).
 import gs from '../gamescroll.js';
 const { sounds, noise, tone, space, bed, Ears } = gs.sound;
-const { haptic } = gs.device;
+const { haptic, hapticPattern } = gs.device;
 const { clamp, rnd } = gs.util;
 const { fbm, rng, noise3 } = gs.math;
 const { Juice } = gs.juice;
@@ -53,7 +53,7 @@ const driftAt = (d, w) => .5 * WIND_K * w * (d / V0) ** 2 / d; // radians to aim
 // x runs west to east, z south (+) to north (-), y up. The river winds along x; the Ashvale ridge is
 // south (your side), the village of Larkford and the rail line north, a stream and dam north-east.
 const RIVER = x => 6 * Math.sin(x * .011);
-const RAILZ = -42, RAILH = 4.6, STREAMX = 140;
+const RAILZ = -42, RAILH = 4.6, STREAMX = 140, ROADBANK = 7.1;
 function shape(x, z) {
   // the ridge rises concave (steeper near the top) so the nests up there see down into the valley
   let h = 2 + 30 * clamp((z - 20) / 150, 0, 1) ** 1.6 - sm(190, 300, z) * 14 + sm(-38, -62, z) * 4 + sm(-165, -300, z) * 40;
@@ -62,6 +62,9 @@ function shape(x, z) {
   h += Math.max(0, x - 200) * .12 + Math.max(0, -x - 230) * .1;
   const sx = Math.abs(x - STREAMX), stream = (1 - sm(5, 22, sx)) * sm(-30, -60, z);
   h -= stream * 9;
+  // the east road crosses the stream on a built-up bank with a stone culvert under it (no fording)
+  const emb = (1 - sm(4.5, 10, Math.abs(z - roadZ(x)))) * (1 - sm(24, 34, sx)) * sm(-30, -60, z);
+  h = lerp(h, ROADBANK, emb);
   const rz = Math.abs(z - RIVER(x)); h -= 6.5 * (1 - sm(5, 15, rz));
   const rk = (1 - sm(5, 12, Math.abs(z - RAILZ))) * sm(10, 24, sx);
   h = lerp(h, RAILH - .4, rk);
@@ -631,6 +634,17 @@ function world() {
   for (const s of [-.72, .72]) mesh(new BoxGeometry(636, .14, .1), M.rail, 0, RAILH + .16, RAILZ + s).castShadow = false;
   for (const s of [-1, 1]) { mesh(new BoxGeometry(34, .4, .4), M.iron, STREAMX, RAILH + 3.2, RAILZ + s * 2); for (let i = -4; i <= 4; i++) mesh(new BoxGeometry(.3, 3.2, .3), M.iron, STREAMX + i * 4, RAILH + 1.6, RAILZ + s * 2).rotation.z = i % 2 ? .6 : -.6; }
   mesh(new BoxGeometry(34, .5, 4.4), M.iron, STREAMX, RAILH - .3, RAILZ);
+  // the culvert where the east road crosses the stream: a stone face each side with the arch the water runs through
+  {
+    const cz = roadZ(STREAMX), bed = ground(STREAMX, cz + 12), hgt = ROADBANK - bed + .9;
+    for (const sd of [-1, 1]) {
+      const z = cz + sd * 7.6;
+      mesh(rbox(18, hgt, 1.1, .15), M.stone, STREAMX, bed + hgt / 2 - .6, z);
+      mesh(rbox(19, .35, 1.4, .1), M.stone, STREAMX, ROADBANK + .45, z);                                 // coping
+      const arch = mesh(new CylinderGeometry(2.6, 2.6, 1.2, 18, 1, false, 0, Math.PI), M.dark, STREAMX, Math.max(bed, -1.4) - .5, z + sd * .02); arch.rotation.set(Math.PI / 2, 0, Math.PI / 2); arch.castShadow = false;
+      for (const k of [-1, 1]) mesh(rbox(1.2, hgt * .8, 3.4, .1), M.stone, STREAMX + k * 9.6, bed + hgt * .4 - .6, z + sd * 1.1).rotation.y = k * sd * .5;   // wing walls
+    }
+  }
   // the water tower (M1's second nest)
   const tw = { x: NESTS.tower.x, z: NESTS.tower.z + 2.2 }, ty = ground(NESTS.tower.x, NESTS.tower.z);
   for (const [dx, dz] of [[-1.8, -1.8], [1.8, -1.8], [-1.8, 1.8], [1.8, 1.8]]) mesh(new CylinderGeometry(.18, .22, 10, 6), M.iron, tw.x + dx, ty + 5, tw.z + dz);
@@ -957,12 +971,12 @@ const MOODS = {
   m1: {
     time: 7.4, tilt: -.3, day: DAY_CLEAR, clouds: .3, gap: .55, cloudLight: null, cloudDark: null,
     air: { haze: .00062, mist: .0035, mistFall: .13, mistY: -1.5, patchy: .9, cloudShade: .38, wind: [5, -1.5], wet: 0, colour: '#b4c0cc', sunColour: '#f2d4a4' },
-    grade: { saturation: 1.12, contrast: 1.16, shadows: '#e2e8f4', highlights: '#fff4e4' }, glare: .85, exposure: 1.08, bloom: .3, env: .6, windows: 0,
+    grade: { saturation: 1.12, contrast: 1.16, shadows: '#e2e8f4', highlights: '#fff4e4' }, glare: .85, shafts: .9, exposure: 1.08, bloom: .3, env: .6, windows: 0,
   },
   m2: {
     time: 17.75, tilt: .12, day: DAY_STORM, clouds: .86, gap: .4, cloudLight: '#8c8a8a', cloudDark: '#2a2e36',
     air: { haze: .0014, mist: .005, mistFall: .1, mistY: -1, patchy: .7, cloudShade: .5, wind: [-8, 1], wet: .85, colour: '#5f646c', sunColour: '#a8785a' },
-    grade: { saturation: .82, contrast: 1.1, shadows: '#d2dcee', highlights: '#ffeedc' }, glare: .4, exposure: 1.02, bloom: .45, env: .65, windows: 1.8,
+    grade: { saturation: .82, contrast: 1.1, shadows: '#d2dcee', highlights: '#ffeedc' }, glare: .4, shafts: .25, exposure: 1.02, bloom: .45, env: .65, windows: 1.8,
   },
 };
 // trees swap to fewer leaves past these distances (further when you look through the scope)
@@ -1110,7 +1124,7 @@ function make(api) {
     const s = gun.pull({ x: eye.x, y: eye.y, z: eye.z }, d, true); gun.pull(eye, d, false);
     if (!s.length) { if (gun.reloading) tone(220, { len: .05, wave: 'square', vol: .03 }); return; }
     lastShotT = t; if (cs && !cs.ko) gun.shotsAtCs++;
-    const b = { x: eye.x, y: eye.y - .05, z: eye.z, vx: d.x * V0, vy: d.y * V0, vz: d.z * V0, life: 2.2, dist: 0, masked: masked() };
+    const b = { x: eye.x, y: eye.y - .05, z: eye.z, x0: eye.x, y0: eye.y - .05, z0: eye.z, vx: d.x * V0, vy: d.y * V0, vz: d.z * V0, life: 2.2, dist: 0, masked: masked() };
     shots.push(b);
     // loud unless something covers it
     heat = clamp(heat + (b.masked ? .04 : .3), 0, 1.2);
@@ -1125,7 +1139,7 @@ function make(api) {
     // bullet cam for good long shots (worked out ahead from where things are heading)
     if (!gs.prefs.reduceMotion) {
       const p = predict(b);
-      if (p && (p.d > 150 || (p.head && p.d > 90))) { bulletCam = { b, t: 0, target: p.s, scale: clamp(p.time / 1.9, .02, .4), hold: 0, from: { x: eye.x, y: eye.y, z: eye.z } }; WD.bullet.visible = true; tone(880, { len: .5, wave: 'sine', vol: .04, slide: -500 }); }
+      if (p && (p.d > 150 || (p.head && p.d > 90))) { b.cam = p; bulletCam = { b, t: 0, target: p.s, scale: clamp(p.time / 1.9, .02, .4), hold: 0, from: { x: eye.x, y: eye.y, z: eye.z } }; WD.bullet.visible = true; tone(880, { len: .5, wave: 'sine', vol: .04, slide: -500 }); }
     }
     boltT = 1.1;
   }
@@ -1134,13 +1148,19 @@ function make(api) {
   function impactMark() {
     if (frame - markAt < 3 && markV) return markV;
     markAt = frame; markV = null;
-    const eye = WD.v.cam.position, [sy, sp] = sway(), sight = dirOf(look.yaw + sy, look.pitch + sp, tmpB).clone();
-    const h = hitTest(eye.x, eye.y, eye.z, eye.x + sight.x * 600, eye.y + sight.y * 600, eye.z + sight.z * 600);
-    const D = h ? h.d : 600; if (D < 15) return null;
-    const d = dirOf(look.yaw + sy, look.pitch + sp + BORE, tmpB), b = { x: eye.x, y: eye.y - .05, z: eye.z, vx: d.x * V0, vy: d.y * V0, vz: d.z * V0, life: 9 };
-    for (let i = 0; i < 400 && Math.hypot(b.x - eye.x, b.y - eye.y, b.z - eye.z) < D; i++) stepBullet(b, 1 / 240);
-    const [x, y, z] = WD.v.toScreen(b.x, b.y, b.z); if (z >= 1) return null;
-    return markV = [x, y, D];
+    // the same path as a real round (drop, wind, the sway now), stepped until it hits something
+    const eye = WD.v.cam.position, [sy, sp] = sway();
+    const d = dirOf(look.yaw + sy, look.pitch + sp + BORE, tmpB), b = { x: eye.x, y: eye.y - .05, z: eye.z, vx: d.x * V0, vy: d.y * V0, vz: d.z * V0, life: 9 }, dt = 1 / 120;
+    for (let i = 0; i < 160; i += 2) {
+      const x0 = b.x, y0 = b.y, z0 = b.z; stepBullet(b, dt); stepBullet(b, dt);
+      const h = hitTest(x0, y0, z0, b.x, b.y, b.z, i * dt);
+      if (!h) continue;
+      const hx = x0 + (b.x - x0) * h.t, hy = y0 + (b.y - y0) * h.t, hz = z0 + (b.z - z0) * h.t, D = Math.hypot(hx - eye.x, hz - eye.z);
+      if (D < 8) return null;
+      const [x, y, z] = WD.v.toScreen(hx, hy, hz); if (z >= 1) return null;
+      return markV = [x, y, D, !!h.s];
+    }
+    return null;
   }
   function sway() {
     if (!scoped) return [0, 0];
@@ -1194,7 +1214,16 @@ function make(api) {
       const steps = Math.max(1, Math.ceil(dt * V0 / 4));
       for (let i = 0; i < steps && !b.dead; i++) {
         const x0 = b.x, y0 = b.y, z0 = b.z; stepBullet(b, dt / steps);
-        const h = hitTest(x0, y0, z0, b.x, b.y, b.z);
+        let h = hitTest(x0, y0, z0, b.x, b.y, b.z);
+        // a shot shown in the bullet cam was worked out as a hit when it left the barrel: it stays one
+        // even if he took a step since (no slow motion that ends in a miss)
+        if (b.cam && !b.cam.s.ko) {
+          const gone = Math.hypot(b.x - b.x0, b.y - b.y0, b.z - b.z0);
+          if ((h && h.s !== b.cam.s) || gone >= b.cam.d - .3 || b.life <= 0) {
+            const s = b.cam.s, k = b.cam.head ? 1.62 : 1.2; h = { t: 1, s, head: b.cam.head, d: b.cam.d };
+            b.x = s.x; b.y = s.gy + k; b.z = s.y; b.dead = true; impact(b, h, b.x, b.y, b.z); break;
+          }
+        }
         if (h) { b.dead = true; const hx = x0 + (b.x - x0) * h.t, hy = y0 + (b.y - y0) * h.t, hz = z0 + (b.z - z0) * h.t; impact(b, h, hx, hy, hz); }
         else if (b.life <= 0) b.dead = true;
       }
@@ -1219,11 +1248,36 @@ function make(api) {
       for (let i = 0; i < 12; i++) WD.dust.emit({ x, y: y + .1, z, vx: rnd(-1.5, 1.5) + bx * 1.5, vy: rnd(.5, 3.5), vz: rnd(-1.5, 1.5) + bz * 1.5, life: rnd(1, 1.6), size: .4, grow: 2.2, col, a: .8, drag: 2.5, grav: 3, fadeIn: true });
       for (let i = 0; i < 4; i++) WD.dust.emit({ x: x + rnd(-.4, .4), y: y + .4, z: z + rnd(-.4, .4), vx: wind.x * .3, vy: rnd(.2, .5), vz: wind.z * .3, life: rnd(2.5, 3.5), size: 1, grow: 2, col, a: .25, drag: .8, fadeIn: true, ease: 2 });
       for (let i = 0; i < 8; i++) WD.dust.emit({ x, y: y + .05, z, vx: rnd(-2.5, 2.5) + bx * 2, vy: rnd(2, 6), vz: rnd(-2.5, 2.5) + bz * 2, life: 1.2, size: .07, col: col.map(c => c * .55), a: 1, grav: 12, floor: h.ground ? WD.land.height(x, z) : y - 3 });
+      holeAt(h, x, y, z, stoneHit, wet);
       if (stoneHit) for (let i = 0; i < 6; i++) WD.sparks.emit({ x, y, z, vx: rnd(-3, 3), vy: rnd(0, 3), vz: rnd(-3, 3), life: .25, size: .08, col: [4, 3, 1.4], drag: 1 });
       // a near miss makes them jumpy
       for (const s of men) if (!s.ko && Math.hypot(s.x - x, s.y - z) < 8) { s.sus = 1; s.shaken = 1; if (!b.masked || Math.hypot(s.x - x, s.y - z) < 3) wakeUp(s, 'miss'); }
     }
     if (h.drum) drumHit(h.drum);
+  }
+
+  // a bullet mark where a shot lands: a chipped hole in stone and plaster, a dark scuff in the dirt.
+  // The decal is cut from a small card laid on the face that was hit (walls are boxes, the ground's
+  // slope comes from its height), so it never has to clip the whole village or valley mesh.
+  const card = new Mesh(new PlaneGeometry(2, 2)), N_ = new Vector3(), P_ = new Vector3();
+  const paintHole = (c, s, k) => {
+    const m = s / 2, g = c.createRadialGradient(m, m, 0, m, m, m);
+    if (k === 'stone') { g.addColorStop(0, 'rgba(18,14,12,1)'); g.addColorStop(.16, 'rgba(30,26,22,.95)'); g.addColorStop(.3, 'rgba(250,244,232,.55)'); g.addColorStop(.6, 'rgba(120,110,96,.25)'); g.addColorStop(1, 'rgba(0,0,0,0)'); }
+    else { g.addColorStop(0, 'rgba(26,18,10,.95)'); g.addColorStop(.35, 'rgba(48,34,20,.6)'); g.addColorStop(1, 'rgba(0,0,0,0)'); }
+    c.fillStyle = g; c.fillRect(0, 0, s, s);
+    if (k === 'stone') { c.strokeStyle = 'rgba(30,24,20,.6)'; c.lineWidth = s / 64; for (let i = 0; i < 5; i++) { const a = i * 1.3 + .4, r = m * (.35 + (i % 3) * .12); c.beginPath(); c.moveTo(m + Math.cos(a) * m * .14, m + Math.sin(a) * m * .14); c.lineTo(m + Math.cos(a + .2) * r, m + Math.sin(a + .2) * r); c.stroke(); } }
+  };
+  function holeAt(h, x, y, z, stone, wet) {
+    if (!h.box && !h.ground) return;
+    if (h.box) {   // the face of the box nearest the hit
+      const b = h.box, f = [[x - b.x0, -1, 0, 0], [b.x1 - x, 1, 0, 0], [y - b.y0, 0, -1, 0], [b.y1 - y, 0, 1, 0], [z - b.z0, 0, 0, -1], [b.z1 - z, 0, 0, 1]].sort((a, c) => a[0] - c[0])[0];
+      N_.set(f[1], f[2], f[3]); P_.set(x, y, z);
+    } else {
+      const e = .6, L = WD.land; N_.set(L.height(x - e, z) - L.height(x + e, z), 2 * e, L.height(x, z - e) - L.height(x, z + e)).normalize(); P_.set(x, L.height(x, z), z);
+    }
+    card.position.copy(P_); card.lookAt(P_.x + N_.x, P_.y + N_.y, P_.z + N_.z);
+    const k = stone || h.box ? 'stone' : 'dirt';
+    WD.v.decal(card, P_, N_, { size: k === 'stone' ? .32 : wet ? .7 : .55, paint: (c, s) => paintHole(c, s, k), key: 'ls-hole-' + k, life: 60, max: 24, rough: k === 'stone' ? .8 : 1 });
   }
 
   // ---- enemies' shots at you (and at Hale's squad)
@@ -1338,12 +1392,35 @@ function make(api) {
     } else {
       // the last 24 m of the run, from the side of the old nest, then in at the door or up the ladder
       const climb = to === 'chapel', foot = climb ? { x: WD.ladder.x + .3, z: WD.ladder.z } : { x: dest.x, z: dest.z + 3.4 + 3.7 }, from = nest && kind !== 'climb' ? nest : { x: foot.x + 16, z: foot.z + 22 };
-      const dx = foot.x - from.x, dz = foot.z - from.z, l = Math.hypot(dx, dz) || 1, run = kind === 'climb' ? 12 : 24;
-      const start = { x: foot.x - dx / l * run, z: foot.z - dz / l * run };
-      const runT = run / 5.6, climbT_ = climb ? 3 : 0, inT = climb ? 0 : .9;
-      move = { to, kind: kind || 'run', t: 0, start, foot, runT, climbT: climbT_, inT, dur: runT + climbT_ + inT + .5, side: Math.random() < .5 ? -1 : 1, fade: 1 };
+      // her way there goes round walls and houses (the same paths as the soldiers), and we see the end of it
+      const pts = runRoute(from, foot, kind === 'climb' ? 14 : 26), len = pts.reduce((a, p, i) => i ? a + Math.hypot(p.x - pts[i - 1].x, p.z - pts[i - 1].z) : 0, 0);
+      const runT = Math.max(.6, len / 5.6), climbT_ = climb ? 3 : 0, inT = climb ? 0 : .9;
+      move = { to, kind: kind || 'run', t: 0, start: pts[0], foot, pts, len, runT, climbT: climbT_, inT, dur: runT + climbT_ + inT + .5, side: Math.random() < .5 ? -1 : 1, fade: 1, yaw: null };
     }
     haptic('medium');
+  }
+  // the last `run` metres of a walkable way from a to b (round houses and walls), as points
+  function runRoute(a, b, run) {
+    const sa = openNear(a.x, a.z), sb = openNear(b.x, b.z), p = sa && sb ? WD.nav.path(sa.x - GX0, sa.z - GZ0, sb.x - GX0, sb.z - GZ0) : null;
+    let pts = p ? p.map(q => ({ x: q.x + GX0, z: q.y + GZ0 })) : [{ x: a.x, z: a.z }];
+    pts.push({ x: b.x, z: b.z });
+    // keep only the end of it
+    let left = run; const out = [pts[pts.length - 1]];
+    for (let i = pts.length - 1; i > 0 && left > 0; i--) {
+      const q = pts[i - 1], r = pts[i], d = Math.hypot(r.x - q.x, r.z - q.z);
+      if (d >= left) { const k = left / d; out.unshift({ x: r.x + (q.x - r.x) * k, z: r.z + (q.z - r.z) * k }); left = 0; } else { out.unshift(q); left -= d; }
+    }
+    if (out.length < 2) out.unshift({ x: b.x + 6, z: b.z + 6 });
+    return out;
+  }
+  // the point (and heading) d metres along a run of points
+  function along(pts, d) {
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], l = Math.hypot(b.x - a.x, b.z - a.z);
+      if (d <= l || i === pts.length - 1) { const k = clamp(d / (l || 1), 0, 1); return { x: a.x + (b.x - a.x) * k, z: a.z + (b.z - a.z) * k, yaw: Math.atan2(b.x - a.x, b.z - a.z) }; }
+      d -= l;
+    }
+    return { x: pts[0].x, z: pts[0].z, yaw: 0 };
   }
   // where Wren is and how she moves at time t of the trip, and where the camera is
   function tripAt(m) {
@@ -1352,13 +1429,17 @@ function make(api) {
       const h = zip.hands, d = zip.dir, yaw = Math.atan2(d.x, d.z), sx = Math.cos(yaw), sz = -Math.sin(yaw), k = Math.min(1, t / 1.5);
       return { fig: { x: h.x, y: h.y - 2.02, z: h.z, yaw, pose: 'hang', speed: 0 }, cam: { p: [h.x - d.x * (4 + k) + sx * 2.2, h.y - d.y * 4 + .4, h.z - d.z * (4 + k) + sz * 2.2], l: [h.x + d.x * 9, h.y + d.y * 9 - 2, h.z + d.z * 9] } };
     }
-    const { start: a, foot: f } = m, yawRun = Math.atan2(f.x - a.x, f.z - a.z);
-    let fig, cam;
+    const { foot: f } = m;
+    let fig, cam, yawRun = m.camYaw ?? 0;
     if (t < m.runT) {
-      const k = t / m.runT, x = lerp(a.x, f.x, k), z = lerp(a.z, f.z, k);
-      fig = { x, y: groundAt(x, z), z, yaw: yawRun, pose: 'run', speed: 5.6 };
+      const k = t / m.runT, { x, z, yaw } = along(m.pts, k * m.len), look = along(m.pts, Math.min(m.len, k * m.len + 4));
+      yawRun = Math.atan2(look.x - x, look.z - z) || yaw;
+      // the camera turns smoothly as she rounds a corner
+      m.camYaw = m.camYaw == null ? yawRun : m.camYaw + angDiff(yawRun, m.camYaw) * Math.min(1, (t - (m.lastT ?? t)) * 3 + .02); m.lastT = t; yawRun = m.camYaw;
+      fig = { x, y: groundAt(x, z), z, yaw, pose: 'run', speed: 5.6 };
       const sx = Math.cos(yawRun) * m.side, sz = -Math.sin(yawRun) * m.side, back = lerp(5, 1.5, k);
-      cam = { p: [x + sx * 6 - Math.sin(yawRun) * back, fig.y + 2.1, z + sz * 6 - Math.cos(yawRun) * back], l: [x + Math.sin(yawRun) * 2, fig.y + 1.1, z + Math.cos(yawRun) * 2] };
+      let off = 6; while (off > 1.5 && solidAt(x + sx * off - Math.sin(yawRun) * back, z + sz * off - Math.cos(yawRun) * back, WD.solids)) off -= .75;   // not inside a wall
+      cam = { p: [x + sx * off - Math.sin(yawRun) * back, fig.y + 2.1, z + sz * off - Math.cos(yawRun) * back], l: [x + Math.sin(yawRun) * 2, fig.y + 1.1, z + Math.cos(yawRun) * 2] };
     } else if (t < m.runT + m.climbT) {
       // up the ladder, facing the wall (-x)
       const k = sm(0, 1, (t - m.runT) / m.climbT), L = WD.ladder, y = lerp(L.y0, L.y1, k);
@@ -1570,16 +1651,26 @@ function make(api) {
   function walk(s, tx, tz, speed, dt) {
     if ((s.pathTo?.x !== tx || s.pathTo?.z !== tz) && pathBudget > 0) {
       pathBudget--; s.pathTo = { x: tx, z: tz };
-      const p = WD.nav.path(s.x - GX0, s.y - GZ0, tx - GX0, tz - GZ0);
-      s.path = p ? p.map(q => ({ x: q.x + GX0, z: q.y + GZ0 })) : [{ x: tx, z: tz }]; s.pi = 1;
-      if (s.path.length < 2) s.pi = 0;
+      const a = openNear(s.x, s.y), b = openNear(tx, tz), p = a && b ? WD.nav.path(a.x - GX0, a.z - GZ0, b.x - GX0, b.z - GZ0) : null;
+      if (p) { s.path = p.map(q => ({ x: q.x + GX0, z: q.y + GZ0 })); if (b.x !== tx || b.z !== tz) s.path.push({ x: tx, z: tz }); s.pi = s.path.length > 1 ? 1 : 0; }
+      else s.path = null;   // no way there on foot: wait for a new order rather than wade across
     }
-    if (!s.path || s.pathTo?.x !== tx || s.pathTo?.z !== tz) s.path = [{ x: tx, z: tz }], s.pi = 0;
+    if (!s.path || s.pathTo?.x !== tx || s.pathTo?.z !== tz) { s.vx = s.vy = 0; return false; }
     const q = s.path[Math.min(s.pi, s.path.length - 1)], dx = q.x - s.x, dz = q.z - s.y, d = Math.hypot(dx, dz);
     if (d < .4) { if (s.pi < s.path.length - 1) s.pi++; else { s.vx = s.vy = 0; return true; } }
     const k = Math.min(1, speed * dt / (d || 1)); s.vx = dx / (d || 1) * speed; s.vy = dz / (d || 1) * speed;
     s.x += dx * k; s.y += dz * k; s.yaw = turnTo(s.yaw, Math.atan2(dx, dz), dt * 6);
     return false;
+  }
+  // the nearest walkable spot (a goal inside a wall or the river moves to the bank)
+  function openNear(x, z) {
+    const c0 = Math.floor((x - GX0) / CELL), r0 = Math.floor((z - GZ0) / CELL);
+    if (WD.nav.open(c0, r0)) return { x, z };
+    for (let rad = 1; rad <= 4; rad++) for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++) {
+      if (Math.max(Math.abs(dc), Math.abs(dr)) !== rad || !WD.nav.open(c0 + dc, r0 + dr)) continue;
+      return { x: GX0 + (c0 + dc + .5) * CELL, z: GZ0 + (r0 + dr + .5) * CELL };
+    }
+    return null;
   }
   const turnTo = (a, b, k) => a + clamp(angDiff(b, a), -k, k);
   // is your scope (or the glasses) on him? He can tell, and keeps his head down if he's in cover
@@ -1821,7 +1912,7 @@ function make(api) {
     squad = new Squad([], { cover: WD.cover, sees: (a, b) => WD.nav.sees(a.x - GX0, a.y - GZ0, b.x - GX0, b.y - GZ0), range: 110, grenades: 2, camp: 10, aggression: .5 });
     squad.on('call', callout); lastCall = -99;
     squadTarget = null; foeAim = null; allyGo = 0; mgOn = false;
-    mood(id);
+    mood(id); WD.v.clearDecals();
     rain.set(def.weather === 'rain' ? 'storm' : 'clear', def.weather === 'rain' ? .75 : 0);
     def.setup();
     for (const [i, l] of WD.letters.entries()) { const p = WD.letterSpots[id][i]; l.position.set(p.x, p.y, p.z); l.rotation.set(p.tilt, p.ry, 0); l.visible = !camp.picked(id, i); }
@@ -1843,7 +1934,7 @@ function make(api) {
   function mood(id) {
     const md = MOODS[id], v = WD.v;
     Object.assign(sky, { time: md.time, tilt: md.tilt, day: md.day, clouds: md.clouds, gap: md.gap, cloudLight: md.cloudLight ? new Color(md.cloudLight) : null, cloudDark: md.cloudDark ? new Color(md.cloudDark) : null });
-    v.air(md.air); v.grade = md.grade; v.glare = md.glare; v.exposure = md.exposure; v.bloom = md.bloom; v.envI = md.env;
+    v.air(md.air); v.grade = md.grade; v.glare = md.glare; v.shafts = md.shafts; v.exposure = md.exposure; v.bloom = md.bloom; v.envI = md.env;
     GU.uWet.value = md.air.wet; WD.wins.material.emissiveIntensity = md.windows;
     // the sky's reflections are redone once, just after the next frame is drawn (heavy GPU work, so it
     // stays out of update(); until then the last ones carry on)
@@ -2180,7 +2271,7 @@ function make(api) {
     if (scoped && ((breath.held && breath.v > 0) || gasp > 0) && state === 'play') {
       if ((beatT -= dt) <= 0) {
         beatT = gasp > 0 ? .42 : .95 - (1 - breath.v) * .4; beat = 1;
-        tone(52, { len: .1, wave: 'sine', vol: .14 }); tone(46, { len: .12, wave: 'sine', vol: .1, at: .17 }); haptic('tick');
+        tone(52, { len: .1, wave: 'sine', vol: .14 }); tone(46, { len: .12, wave: 'sine', vol: .1, at: .17 }); hapticPattern('heartbeat', { strength: gasp > 0 ? .8 : .45 });
       }
     } else beatT = .2;
     if (breath.held && scoped && breath.v > 0) { breath.v -= dt / 4.5; if (breath.v <= 0) { breath.v = 0; gasp = 2; tone(180, { len: .3, wave: 'triangle', vol: .04 }); } }
@@ -2366,22 +2457,21 @@ function make(api) {
     for (const d of [200, 300, 400]) { const yy = cy + holdAt(d) * px; if (yy > cy + R * .6) break; c.beginPath(); c.moveTo(cx - 6, yy - 3); c.lineTo(cx, yy); c.lineTo(cx + 6, yy - 3); c.stroke(); c.fillText(String(d / 100), cx + 8, yy + 3); }
     c.beginPath(); c.moveTo(cx, cy + 6); c.lineTo(cx, cy + R * .62); c.stroke();
     for (let i = 1; i <= 4; i++) for (const s of [-1, 1]) { c.beginPath(); c.arc(cx + s * i * .0015 * px, cy, 1.4, 0, TAU); c.fill(); }
-    // holding your breath steadies the rifle and shows where the round will land (a red dot: drop,
-    // wind and the sway now, worked out along the real path to whatever is under the crosshair)
-    const mk = breath.held && breath.v > 0 ? impactMark() : null;
+    // where the round will land: a small red circle, always on while scoped (drop, wind and the sway
+    // now, along the real path to whatever it hits first). Put it on him and squeeze. It fills in
+    // when it's on a man.
+    const mk = impactMark();
     if (mk) {
-      c.fillStyle = '#0d0d0c'; c.beginPath(); c.arc(mk[0], mk[1], 3.4, 0, TAU); c.fill();
-      c.fillStyle = '#e03a24'; c.beginPath(); c.arc(mk[0], mk[1], 2.2, 0, TAU); c.fill();
+      c.strokeStyle = '#0d0d0c'; c.lineWidth = 3; c.beginPath(); c.arc(mk[0], mk[1], 4, 0, TAU); c.stroke();
+      c.strokeStyle = '#ff3b22'; c.lineWidth = 1.6; c.beginPath(); c.arc(mk[0], mk[1], 4, 0, TAU); c.stroke();
+      if (mk[3]) { c.fillStyle = '#ff3b22'; c.beginPath(); c.arc(mk[0], mk[1], 1.6, 0, TAU); c.fill(); }
       c.fillStyle = '#f2ead6'; c.textAlign = 'center'; c.font = '700 9px "Courier New", monospace'; c.fillText(Math.round(mk[2]) + ' m', cx, cy + R * .78);
     }
-    // tagged target help: range and how far to hold over
-    const tg = !mk && nearTagged();
-    if (tg) {
-      const { d, s } = tg, cross = Math.cos(Math.atan2(wind.z, wind.x) + look.yaw) * Math.hypot(wind.x, wind.z);
-      const hold = holdAt(d) * px, drift = driftAt(d, cross) * px;
-      c.strokeStyle = red; c.lineWidth = 1.2; c.beginPath(); c.arc(cx + drift, cy + hold, 4, 0, TAU); c.stroke();
+    // a tagged man in view: who he is (the range is under the reticle)
+    const tg = nearTagged();
+    if (tg && tg.s.kind !== 'rifle') {
       c.fillStyle = '#f2ead6'; c.textAlign = 'center'; c.font = '700 9px "Courier New", monospace';
-      c.fillText(Math.round(d) + ' m' + (s.kind === 'radio' ? ' · OPERATOR' : s.kind === 'officer' ? ' · OFFICER' : ''), cx, cy - R * .8);
+      c.fillText({ radio: 'OPERATOR', officer: 'OFFICER', cs: 'MARKSMAN', mg: 'MACHINE GUN' }[tg.s.kind] || '', cx, cy - R * .8);
     }
     // zoom (a slider along the right of the ring) and breath on the ring
     c.fillStyle = brass; c.font = '700 10px "Courier New", monospace'; c.textAlign = 'center'; c.fillText(zoom.toFixed(0) + '×', cx, cy + R + 14 > H - 8 ? cy + R - 10 : cy + R + 14);
