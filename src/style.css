@@ -400,3 +400,28 @@ html.ar-live .slide.ar.playing .bezel-top .era{color:#8affdc}
 .board-list li{display:grid;grid-template-columns:3.2em 1fr auto;gap:8px;padding:7px 4px;border-bottom:1px solid #ffffff14}
 .board-list li.me{color:#ffd84a;font-weight:700}
 .board-list li.gap{border-top:1px dashed #ffffff30}
+
+/* Next Gen full screen (src/fullscreen.js): no bezel, caption, buttons or top bar, just the game.
+   Kept clear of notches and camera holes with the safe-area insets. */
+.fsbtn{margin-left:auto;display:grid;place-items:center;width:26px;height:20px;margin-block:-6px;padding:0;border:0;border-radius:6px;background:transparent;color:#5b6274;cursor:pointer}
+.fsbtn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.fsbtn:hover,.fsbtn:focus-visible{color:#11151d;background:#0000000f;outline:none}
+body.fullscreen .top{display:none}
+/* the slide stays where it is in the feed (already the full height; html keeps the safe-area padding), so
+   the feed's scroll position and the active game never change */
+.slide.full{gap:0;background:#000;grid-template-rows:minmax(0,1fr)!important;grid-template-columns:minmax(0,1fr)!important;
+  padding:0 env(safe-area-inset-right,0px) 0 env(safe-area-inset-left,0px)!important}
+html:has(body.fullscreen){background:#000}
+.slide.full .meta,.slide.full .bezel-top,.slide.full .bezel-bottom{display:none!important}
+.slide.full .stage{grid-row:1;grid-column:1}
+.retro.nextgen.full .device{padding:0;background:none;border-radius:0;box-shadow:none}
+.retro.nextgen.full .screen{border:0;border-radius:0;box-shadow:none}
+.retro.nextgen.full .screen::after{display:none}
+.fs-exit{font:600 12px/1 var(--f-body);letter-spacing:.08em;color:#c9d6ee;background:#ffffff14;border:1px solid #ffffff26;border-radius:999px;padding:9px 16px;cursor:pointer}
+.fs-pill{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));left:50%;z-index:60;transform:translate(-50%,-160%);opacity:0;pointer-events:none;
+  display:flex;align-items:center;gap:8px;font:600 13px/1 var(--f-body);color:#f2f5fb;background:#0b0f18e6;border:1px solid #2a8cff66;border-radius:999px;padding:9px 15px;
+  box-shadow:0 6px 20px #0008;backdrop-filter:blur(6px);transition:transform .2s ease-out,opacity .2s;cursor:pointer}
+.fs-pill.show{transform:translate(-50%,0);opacity:1;pointer-events:auto}
+body:not(.fullscreen) .fs-pill{display:none}
+@media (prefers-reduced-motion:reduce){.fs-pill{transition:opacity .2s}}
+.slide.full .swipe-cue{display:none}

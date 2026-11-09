@@ -145,6 +145,11 @@ export default {
 Check it with `node scripts/sweep.cjs my-game` (long random play at odd sizes) as well as the
 usual smoke and fold tests.
 
+**Full screen.** Every Next Gen card has a full screen button on its bezel. In full screen the
+frame, caption and buttons go away and `maxW` / `maxH` no longer cap the size, so `resize(w, h)`
+can hand you anything up to 2.4 : 1 either way (about 300 × 666 on a tall phone, 666 × 300 on its
+side). Keep the HUD anchored to the edges of `W` × `H` and it just works.
+
 ## Reflections and contact shadows
 
 - `v.reflect(floor, carBody)` marks shiny surfaces for screen-space reflections. They're drawn on the

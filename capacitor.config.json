@@ -2,5 +2,10 @@
   "appId": "com.gamescroll.app",
   "appName": "Game Scroll",
   "webDir": "dist",
-  "backgroundColor": "#0c0e12"
+  "backgroundColor": "#0c0e12",
+  "plugins": {
+    "SystemBars": {
+      "hidden": true
+    }
+  }
 }

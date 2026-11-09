@@ -41,6 +41,7 @@ import { geoFor, roundStarted, roundEnded } from './geo.js';
 import { makeDebug } from './debug.js';
 import { show as showTweaks } from './kit/tweak.js';
 import { shareGame, onSharedGame } from './share.js';
+import { canFull, isFull, anyFull, enterFull, leaveFull, toggleFull, onFullChange } from './fullscreen.js';
 import BUNDLED from 'virtual:bundled-games';
 
 /* ---------- catalogue ---------- */
@@ -76,7 +77,7 @@ function bootGame(s){
   }
 }
 function gameFault(s,e){console.error(s.def.id,e);perf.error(e,s.def.id);broken(s,'This game hit a problem.')}
-function broken(s,why){if(s.state==='playing')try{gameOver(s)}catch(_){}try{s.game?.dispose?.()}catch(_){}release(s);s.loading=true;s.failed=why;s.game=stubGame(s,'Tap to try again');s.dirty=true;if(s.state!=='ready'){s.state='ready';s.el.classList.remove('playing','over');feed.classList.remove('locked')}renderOverlay(s)}
+function broken(s,why){if(isFull(s))leaveFull();if(s.state==='playing')try{gameOver(s)}catch(_){}try{s.game?.dispose?.()}catch(_){}release(s);s.loading=true;s.failed=why;s.game=stubGame(s,'Tap to try again');s.dirty=true;if(s.state!=='ready'){s.state='ready';s.el.classList.remove('playing','over');feed.classList.remove('locked')}renderOverlay(s)}
 // A new round: false (and the card shows the problem) if the game threw.
 function resetGame(s){try{ownedBy(s,()=>s.game.reset());return true}catch(e){gameFault(s,e);return false}}
 function makeSlide(def){
@@ -84,7 +85,7 @@ function makeSlide(def){
   if(def.retro){const p=PAL[def.pal||'moss'];p.forEach((c,i)=>el.style.setProperty('--lcd'+i,c));el.style.setProperty('--shell',SHELL[def.pal||'moss']);}el.setAttribute('aria-label',def.title);
   el.innerHTML=`
     <div class="stage"><div class="device">
-      ${def.retro?`<div class="bezel-top${def.era?' dark':''}"><span class="led"></span>${def.era==='console'?'<b class="era">CLASSIC</b> · CONSOLE':def.era==='nextgen'?'<b class="era">NEXT GEN</b> · CONSOLE':def.era==='ar'?'<b class="era">AR</b> · 3D':def.era==='advance'?'<b class="era">ADVANCE</b> · POCKET':def.era==='color'?'<b class="era rainbow">COLOR</b> · POCKET':'DOT MATRIX · POCKET'}</div>`:''}
+      ${def.retro?`<div class="bezel-top${def.era?' dark':''}"><span class="led"></span>${def.era==='console'?'<b class="era">CLASSIC</b> · CONSOLE':def.era==='nextgen'?'<b class="era">NEXT GEN</b> · CONSOLE<button class="fsbtn" aria-label="Full screen" title="Full screen"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4"/></svg></button>':def.era==='ar'?'<b class="era">AR</b> · 3D':def.era==='advance'?'<b class="era">ADVANCE</b> · POCKET':def.era==='color'?'<b class="era rainbow">COLOR</b> · POCKET':'DOT MATRIX · POCKET'}</div>`:''}
       <div class="screen"><canvas></canvas><div class="hud"><span class="score">0</span></div><div class="overlay"></div></div>
       ${def.era==='console'||def.era==='nextgen'||def.era==='ar'?'<div class="bezel-bottom"><span class="slot"></span><span class="pads"><i></i><i></i><i></i></span></div>':def.retro?'<div class="bezel-bottom"><span class="dpad"></span><span class="ab"><i></i><i></i></span></div>':''}
     </div></div>
@@ -135,6 +136,7 @@ function makeSlide(def){
   s.canvas.addEventListener('contextmenu',e=>e.preventDefault());
   el._s=s;
   el.querySelector('.caption').onclick=()=>openInfo(s);
+  if(canFull(def))el.querySelector('.fsbtn').onclick=e=>{e.stopPropagation();haptic('light');toggleFull(s)};
   renderOverlay(s);updateBest(s);
   return s;
 }
@@ -210,7 +212,8 @@ function pauseOv(s){
     let el=s.screen.querySelector('.pause-ov');
     if(!el){el=document.createElement('div');el.className='overlay pause-ov';s.screen.appendChild(el)}
     el.onclick=e=>{e.stopPropagation();resumeGame(s)};
-    el.innerHTML=`<div class="ov-k">Paused</div><div class="ov-title">${s.def.title}</div><button class="play">${s.def.retro?'CONTINUE':'Carry on'}</button>`;
+    el.innerHTML=`<div class="ov-k">Paused</div><div class="ov-title">${s.def.title}</div><button class="play">${s.def.retro?'CONTINUE':'Carry on'}</button>${isFull(s)?'<button class="fs-exit">Exit full screen</button>':''}`;
+    const fx=el.querySelector('.fs-exit');if(fx)fx.onclick=e=>{e.stopPropagation();leaveFull()};
     el.hidden=false;
   }
 }
@@ -267,7 +270,7 @@ function awardTrophies(s){
   for(const t of checkTrophies()){toast(s.el,`🏆 ${t.name}`,'trophy');services.unlock(t.id);(s.trophies||=[]).push(t)}
 }
 function gameOver(s){
-  if(s.state!=='playing')return;clearPause(s);
+  if(s.state!=='playing')return;clearPause(s);if(isFull(s))leaveFull();
   s.state='over';s.overAt=Date.now();s.funAt=s.overAt;s.funSent=false;stopKits();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(progress.score(s.def.id,s.score))s.newBest=true;
   awardTrophies(s);services.reportRun(s.def);
@@ -275,7 +278,7 @@ function gameOver(s){
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
-function resetSlide(s){stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.score=0;s.scoreEl.textContent='0';if(resetGame(s))renderOverlay(s);s.dirty=true}
+function resetSlide(s){if(isFull(s))leaveFull();stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.score=0;s.scoreEl.textContent='0';if(resetGame(s))renderOverlay(s);s.dirty=true}
 function goPrev(s){
   const i=slides.indexOf(s);if(i<=0)return;
   if(s.state==='playing')resetSlide(s);feed.classList.remove('locked');
@@ -292,7 +295,7 @@ let lastGameInput=0;
 {
   let sw=null;
   addEventListener('pointerdown',e=>{
-    if(!feed.classList.contains('locked')||!active||e.target.closest('.screen,dialog'))return;
+    if(!feed.classList.contains('locked')||!active||anyFull()||e.target.closest('.screen,dialog'))return;
     sw={x:e.clientX,y:e.clientY,t:performance.now(),id:e.pointerId};
   },{passive:true});
   addEventListener('pointerup',e=>{
@@ -324,7 +327,9 @@ function fit(s,again){
   let sc=Math.min(aw/d.w,ah/d.h);
   if(d.retro){if(sc>=2)sc=Math.floor(sc*4)/4;sc=Math.max(1,sc)}else sc=Math.max(.3,sc);
   const st2=d.step||1,grow=(b,m,a)=>b+Math.floor(Math.max(0,Math.min(m||b,Math.floor(a/sc))-b)/st2)*st2;
-  const w=grow(d.w,d.maxW,aw),h=grow(d.h,d.maxH,ah);
+  // full screen (Next Gen): no maxW / maxH cap, so the whole display is filled; still no wider or taller than 2.4 : 1
+  const full=isFull(s);let w=grow(d.w,full?9999:d.maxW,aw),h=grow(d.h,full?9999:d.maxH,ah);
+  if(full){w=Math.min(w,Math.max(d.w,Math.round(h*2.4)));h=Math.min(h,Math.max(d.h,Math.round(w*2.4)))}
   if(w!==s.w||h!==s.h){s.w=w;s.h=h;s.game.resize&&s.game.resize(w,h)}
   s.screen.style.width=Math.round(w*sc)+'px';s.screen.style.height=Math.round(h*sc)+'px';
   // Pocket games draw chunky pixels; Console games render at full device resolution, smoothed and lit.
@@ -583,6 +588,9 @@ function onResize(){
 addEventListener('resize',()=>{resizeAt=performance.now();clearTimeout(rt);rt=setTimeout(onResize,80)});
 if(window.visualViewport)visualViewport.addEventListener('resize',()=>{resizeAt=performance.now();clearTimeout(rt);rt=setTimeout(onResize,80)});
 screen.orientation?.addEventListener?.('change',()=>setTimeout(onResize,150));
+// Full screen on / off changes the layout without a window resize (and the system bars may resize it again later).
+// While it's on the feed stays locked, so a mouse wheel can't scroll the game away underneath.
+onFullChange((s,on)=>{if(on)feed.classList.add('locked');else if(s.state!=='playing')feed.classList.remove('locked');if(s.paused&&s.pauseWhy!=='info')pauseOv(s);requestAnimationFrame(onResize)});
 
 // Fresh heart counts from other players: repaint the ♥ number on every slide (keeping your own state).
 hearts.onChange(ids=>slides.forEach(x=>{if(!ids||ids.includes(x.def.id))x.setLike(x.el.querySelector('.like').getAttribute('aria-pressed')==='true')}));
