@@ -84,13 +84,13 @@ export class Sky {
    */
   constructor(view, { time = 12, speed = 0, day = DAY, stars = 400, physical = false, fog = true, light = true, sun = view.sun, hemi = view.hemi, tilt = .35,
     clouds = null, cloudLight = null, cloudDark = null, gap = 0, env = false, sunSize = 1 } = {}) {
+    this.pq = {};
     Object.assign(this, { view, time, speed, day, fog, light, sunLight: sun || null, hemi: hemi || null, tilt, physical, clouds: clouds ?? 0, gap, env, flash: 0 });
     this.base = { sun: sun?.intensity ?? 1, amb: hemi?.intensity ?? 1 };
     this.sunDir = new Vector3(); this.top = C('#000'); this.horizon = C('#000'); this.sunCol = C('#fff'); this.night = 0;
     this.cloudLight = cloudLight ? C(cloudLight) : null; this.cloudDark = cloudDark ? C(cloudDark) : null;
     this.cLit = C('#fff'); this.cDark = C('#888'); this.envAt = null; this.envT = 0; this.t = 0;
     const R = radiusOf(view.cam);
-    this.phys = physical ? { ...PHYS, ...(physical === true ? {} : physical) } : null; this.pq = {};
     {
       // a gradient from the horizon up, a glow round the sun, the sun itself (on Next Gen bright enough
       // to bloom) and, when asked for, drifting clouds lit from the sun's side
@@ -100,22 +100,23 @@ export class Sky {
         uniforms: { top: { value: this.top }, horizon: { value: this.horizon }, sunCol: { value: this.sunCol }, sunDir: { value: this.sunDir }, size: { value: 1 - .0006 * sunSize * sunSize },
           disc: { value: hd ? 24 : 1.5 }, cloud: { value: new Vector4() }, cloudLit: { value: this.cLit }, cloudDark: { value: this.cDark }, noise: { value: clouds != null ? noiseTex() : null },
           pBR: { value: new Vector3() }, pBM: { value: new Vector3() }, pSun: { value: new Vector4() } },
-        defines: { ...(clouds != null ? { CLOUDS: '' } : {}), ...(physical ? { PHYSICAL: '' } : {}) },
+        defines: clouds != null ? { CLOUDS: '' } : {},
         vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w; }',
         fragmentShader: `varying vec3 vDir; uniform vec3 top, horizon, sunCol, sunDir, cloudLit, cloudDark, pBR, pBM; uniform float size, disc; uniform vec4 cloud, pSun; uniform sampler2D noise;
           void main(){ vec3 d = normalize(vDir), sd = normalize(sunDir); float h = clamp(d.y, -1., 1.), s = max(dot(d, sd), 0.);
-          #ifdef PHYSICAL
+            vec3 c;
+            if (pSun.z > 0.) {
             // light scattered by the air towards the eye (Preetham; pSun: sun strength, glow, brightness, how low the sun is)
             float zen = acos(max(d.y, 0.)), inv = 1. / (cos(zen) + .15 * pow(93.885 - zen * 57.29578, -1.253));
             vec3 fex = exp(-(pBR * 8400. * inv + pBM * 1250. * inv));
             float ct = dot(d, sd), g2 = pSun.y * pSun.y;
             vec3 r = (pBR * (.0596831 * (1. + pow(ct * .5 + .5, 2.))) + pBM * (.0795775 * (1. - g2) / pow(1. - 2. * pSun.y * ct + g2, 1.5))) / (pBR + pBM);
             vec3 lin = pow(pSun.x * r * (1. - fex), vec3(1.5)); lin *= mix(vec3(1.), sqrt(pSun.x * r * fex), pSun.w);
-            vec3 c = ((lin + .1 * fex) * .04 + vec3(0., .0003, .00075)) * pSun.z; c = mix(c, c * .55, clamp(-h * 3., 0., 1.));
-          #else
-            vec3 c = mix(horizon, top, pow(max(h, 0.), .55)); c = mix(c, horizon * .55, clamp(-h * 3., 0., 1.));
+            c = ((lin + .1 * fex) * .04 + vec3(0., .0003, .00075)) * pSun.z; c = mix(c, c * .55, clamp(-h * 3., 0., 1.));
+            } else {
+            c = mix(horizon, top, pow(max(h, 0.), .55)); c = mix(c, horizon * .55, clamp(-h * 3., 0., 1.));
             c += sunCol * (pow(s, 24.) * .35 + pow(s, 90.) * .4);
-          #endif
+            }
             float sun = smoothstep(size, size + .0004, s);
           #ifdef CLOUDS
             if (h > -.03) {
@@ -150,6 +151,9 @@ export class Sky {
     }
     this.apply();
   }
+  /** true (or { haze, blue, mie, glow, bright }) for colours from light scattering; false for the day keys' colours. Change any time. */
+  set physical(v) { this.phys = v ? { ...PHYS, ...(v === true ? {} : v) } : null; }
+  get physical() { return !!this.phys; }
   /** 0..1 through the day (0 midnight, .5 noon). */
   get dayPart() { return this.time / 24; }
   update(dt) {
@@ -195,7 +199,7 @@ export class Sky {
       const m = Math.max(this.horizon.r, this.horizon.g, this.horizon.b, this.top.r, this.top.g, this.top.b); if (m > 1) { this.horizon.multiplyScalar(1 / m); this.top.multiplyScalar(1 / m); }
       if (this.night > 0) { this.top.lerp(C(a.top).lerp(C(b.top), k), this.night); this.horizon.lerp(C(a.horizon).lerp(C(b.horizon), k), this.night); }
       physSun(q, this.sunDir, this.sunCol); if (this.night > .5) this.sunCol.set(a.sun).lerp(C(b.sun), k);
-    }
+    } else if (this.dome.material.uniforms?.pSun) this.dome.material.uniforms.pSun.value.z = 0;
     if (this.stars) this.stars.material.opacity = this.night * .9;
     if (this.light && this.sunLight) {
       this.sunLight.color.copy(this.sunCol); this.sunLight.intensity = this.base.sun * sunI;

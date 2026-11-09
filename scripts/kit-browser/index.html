@@ -143,7 +143,7 @@ try {
     const tv = new View(); tv.scene.fog = new gs.THREE.Fog('#fff', 10, 100); const sky = new Sky(tv, { time: 12, speed: 6 }); sky.update(0); const noon = tv.sun.intensity;
     sky.time = 0; sky.update(0); ok(sky.night > .9 && tv.sun.intensity < noon * .3, 'night falls: sun ' + tv.sun.intensity.toFixed(2) + ' vs ' + noon.toFixed(2));
     sky.time = 11; sky.update(1); ok(sky.time > 16.9 && sky.time < 17.1, 'time moves at its speed');
-    const hv = new HDView(); const hs = new Sky(hv, { physical: true, time: 8 }); hs.update(0); ok('PHYSICAL' in hs.dome.material.defines && hs.sunDir.y > 0, 'physical sky sun up at 8');
+    const hv = new HDView(); const hs = new Sky(hv, { physical: true, time: 8 }); hs.update(0); ok(hs.physical && hs.dome.material.uniforms.pSun.value.z > 0 && hs.sunDir.y > 0, 'physical sky sun up at 8');
     // Next Gen outdoors: shadows fitted to the view, air (haze, mist, cloud shadows, wet), grade, glare, clouds and sky reflections
     {
       const T3 = gs.THREE, HDh = window.__hd, ov = new HDView({ fog: .001 }), oc = document.createElement('canvas'); oc.width = 160; oc.height = 120; const ox = oc.getContext('2d');
