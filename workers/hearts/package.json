@@ -9,7 +9,7 @@
     "test": "node test.mjs"
   },
   "devDependencies": {
-    "cbor-x": "1.6.0",
+    "cbor-x": "^1.6.9",
     "wrangler": "4.158.0"
   },
   "dependencies": {

@@ -86,3 +86,24 @@ export function prepareGPU() {
 }
 /** The ready WebGPU setup { r (WebGPURenderer), W (three/webgpu), fx (hd3d-gpu.js) }, or null (not picked, not supported, not ready). */
 export const webgpu = () => pick === 'webgpu' ? gpu : null;
+
+/* ---------- compute only (no drawing): gs.ai Swarm and other number crunching ---------- */
+let compute = null;
+/**
+ * A WebGPU device for compute shaders, or null where there's no WebGPU. Shares the 3D renderer's
+ * device when WebGPU drawing is already running, else asks for its own (once). Never rejects. Callers keep a CPU
+ * version for when this is null or the device is lost.
+ */
+export function computeDevice() {
+  return compute ||= (async () => {
+    try {
+      const shared = webgpu()?.r?.backend?.device;   // already made for 3D: share it (never load three for this)
+      if (shared) return shared;
+      if (!await hasWebGPU()) return null;
+      const a = await navigator.gpu.requestAdapter(), d = a && await a.requestDevice();
+      if (!d) return null;
+      d.lost?.then(() => { compute = null; });
+      return d;
+    } catch (_) { compute = null; return null; }
+  })();
+}

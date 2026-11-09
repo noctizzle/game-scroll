@@ -44,9 +44,9 @@ function scroll(brain, likes, { views = 600, hours = [9, 20], rand = mulberry(7)
 function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function atHour(S, hour) { const d = new Date(NOW); d.setHours(hour, 0, 0, 0); return { ...S, now: () => d.getTime() }; }
 // Average position of a set of games over many shuffles (0 = top of the feed).
-function avgPos(S, pick, runs = 400) {
+function avgPos(S, pick, runs = 400, rand = Math.random) {
   let sum = 0, n = 0;
-  for (let r = 0; r < runs; r++) { const q = R.rankQueue(games, games, S); q.forEach((g, i) => { if (pick(g)) { sum += i; n++; } }); }
+  for (let r = 0; r < runs; r++) { const q = R.rankQueue(games, games, S, rand); q.forEach((g, i) => { if (pick(g)) { sum += i; n++; } }); }
   return sum / n;
 }
 const mid = (games.length - 1) / 2;
@@ -121,10 +121,11 @@ try {
     const b = scroll(new FeedBrain(), likes, { views: 900 });
     assert.ok(b.sure === 1, 'it has seen enough to have its full say');
     const eve = atHour({ ...signals(), brain: b }, 20), morn = atHour({ ...signals(), brain: b }, 9);
-    const puzE = avgPos(eve, g => g.id.startsWith('puzzle'), 200), racE = avgPos(eve, g => g.id.startsWith('racing'), 200);
-    const puzM = avgPos(morn, g => g.id.startsWith('puzzle'), 200), racM = avgPos(morn, g => g.id.startsWith('racing'), 200);
+    // seeded, so the check can't pass or fail by luck
+    const puzE = avgPos(eve, g => g.id.startsWith('puzzle'), 400, mulberry(11)), racE = avgPos(eve, g => g.id.startsWith('racing'), 400, mulberry(12));
+    const puzM = avgPos(morn, g => g.id.startsWith('puzzle'), 400, mulberry(13)), racM = avgPos(morn, g => g.id.startsWith('racing'), 400, mulberry(14));
     assert.ok(puzE < racE - 5 && racM < puzM - 5, `evening puzzles ${puzE.toFixed(1)} vs racing ${racE.toFixed(1)}; morning racing ${racM.toFixed(1)} vs puzzles ${puzM.toFixed(1)}`);
-    ok(`feed brain: learns the time of day (evening puzzles at ${puzE.toFixed(0)} vs racing ${racE.toFixed(0)}; mornings the other way)`);
+    ok(`feed brain: learns the time of day (evenings: puzzles at ${puzE.toFixed(0)} vs racing ${racE.toFixed(0)}; mornings: racing at ${racM.toFixed(0)} vs puzzles ${puzM.toFixed(0)})`);
 
     // guard rails: never more than 2x or less than 0.5x, nothing ever left out
     for (const g of games) { const x = R.explain(g, games, eve).brain; assert.ok(x >= .5 - 1e-9 && x <= 2 + 1e-9, 'boost in range: ' + x); }

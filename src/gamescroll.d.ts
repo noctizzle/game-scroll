@@ -577,7 +577,28 @@ export interface CharactersPart {
   Steps: new (o?: { feet?: [number, number][]; stride?: number; lift?: number; time?: number; lead?: number; ground?: ((x: number, z: number) => number) | null }) => { feet: { pos: Loose; lifting: number; landed: boolean }[]; update(dt: number, body: Loose): Loose };
   Wobble: new (o?: { stiffness?: number; damping?: number }) => { value: number; hit(amount?: number): Loose; update(dt: number): Loose };
 }
-export interface AiPart { Crowd: new (...a: Loose[]) => Loose; NavGrid: new (...a: Loose[]) => Loose; Brain: new (...a: Loose[]) => Loose; YUKA: Loose }
+/** Thousands of flockers: on the graphics chip (WebGPU compute) where the phone can, else the CPU. */
+export declare class Swarm {
+  constructor(o?: { count?: number; w?: number; h?: number; speed?: number; sight?: number; separate?: number; align?: number; cohere?: number; wander?: number; edges?: 'wrap' | 'bounce'; seed?: number; gpu?: boolean | 'auto' });
+  readonly count: number; living: number; gpu: boolean;
+  x: Float32Array; y: Float32Array; vx: Float32Array; vy: Float32Array; alive: Uint8Array;
+  speed: number; sight: number; separate: number; align: number; cohere: number; wander: number; edges: 'wrap' | 'bounce';
+  /** Resolves true once it's moving on the GPU (false if it stays on the CPU). */
+  ready: Promise<boolean>;
+  /** Towards (x, y) this frame; strength < 0 pushes away. Up to 8 a frame. */
+  pull(x: number, y: number, o?: { strength?: number; radius?: number }): this;
+  obstacle(x: number, y: number, r: number): this; clearObstacles(): this;
+  kill(i: number): this; revive(i: number, x: number, y: number): this; place(i: number, x: number, y: number): this;
+  angle(i: number): number;
+  /** Living ones within r of (x, y), as indices. */
+  near(x: number, y: number, r: number): number[];
+  /** 0 (all over) to 1 (all heading one way). */
+  order(): number;
+  update(dt: number): this; sync(): Promise<void>; dispose(): void;
+  /** About how many this phone moves smoothly (8192 with the GPU, 2000 without). */
+  static max(): number;
+}
+export interface AiPart { Crowd: new (...a: Loose[]) => Loose; NavGrid: new (...a: Loose[]) => Loose; Brain: new (...a: Loose[]) => Loose; YUKA: Loose; Swarm: typeof Swarm }
 
 /** Tiny Brains: a small neural network (tanh hidden layers, softmax out). */
 export declare class TinyNet {
