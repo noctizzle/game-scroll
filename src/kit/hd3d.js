@@ -610,13 +610,14 @@ export class Particles {
   emit(o) { if (this.list.length >= this.max) this.list.shift(); this.list.push({ vx: 0, vy: 0, vz: 0, life: 1, size: .1, grow: 0, col: [1, 1, 1], a: 1, drag: 0, grav: 0, ...o, t: 0 }); }
   clear() { this.list.length = 0; }
   update(dt) {
+    this.tick = (this.tick || 0) + 1;
     const L = this.list, g = this.pts.geometry, P = g.attributes.position.array, S = g.attributes.size.array, T = g.attributes.tint.array;
     let n = 0;
     for (let i = 0; i < L.length; i++) {
       const p = L[i]; p.t += dt; if (p.t >= p.life) continue;
       const k = Math.max(0, 1 - p.drag * dt); p.vx *= k; p.vy = p.vy * k - p.grav * dt; p.vz *= k;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-      const bl = p.blow ?? this.blow; if (this.wind && bl) { const w = this.wind.at(p.x, p.z, this.wAt); p.x += w.x * bl * dt; p.z += w.z * bl * dt; }
+      const bl = p.blow ?? this.blow; if (this.wind && bl) { if (p.wx === undefined || ((i + this.tick) & 7) === 0) { const w = this.wind.at(p.x, p.z, this.wAt); p.wx = w.x; p.wz = w.z; } p.x += p.wx * bl * dt; p.z += p.wz * bl * dt; }   // the wind where it is, looked up every 8th frame
       if (p.floor != null && p.y < p.floor) { p.y = p.floor; p.vy *= -.35; p.vx *= .6; p.vz *= .6; }
       const f = p.t / p.life;
       P[n * 3] = p.x; P[n * 3 + 1] = p.y; P[n * 3 + 2] = p.z; S[n] = p.size * (1 + p.grow * f);

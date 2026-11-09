@@ -197,6 +197,11 @@ try {
       ok(cv.cascade && sl.nearLight.parent && sl.nearLight.shadow.camera.right < sl.shadow.camera.right, `near cascade is the sharper one: ${(sl.nearLight.shadow.camera.right * 2).toFixed(0)} m vs ${(sl.shadow.camera.right * 2).toFixed(0)} m`);
       cv.focus = { at: 30, range: 3, depth: .5, blur: 8 };
       let bad = ''; const rr = gs.hd.bakeRenderer(); rr.debug.onShaderError = (g, p, vs, fs) => { bad = g.getShaderInfoLog(fs) || g.getShaderInfoLog(vs) || 'link'; };
+      const lumC = () => { const d = cx.getImageData(0, 60, 160, 60).data; let t = 0; for (let i = 0; i < d.length; i += 4) t += d[i] + d[i + 1] + d[i + 2]; return t / (d.length / 4 * 3); };
+      HDh.force = 3; cv.focus = null; sl.fit(cv, { far: 300, ground: () => 0 }); cv.render(cx, 160, 120); cv.render(cx, 160, 120); const one = lumC();
+      sl.fit(cv, { far: 300, near: 25, ground: () => 0 }); cv.render(cx, 160, 120); cv.render(cx, 160, 120); const two = lumC();
+      ok(Math.abs(two - one) < one * .06, `the sun isn't counted twice with a cascade: ${one.toFixed(0)} vs ${two.toFixed(0)}`);
+      cv.focus = { at: 30, range: 3, depth: .5, blur: 8 };
       HDh.force = 3; cv.render(cx, 160, 120); cv.render(cx, 160, 120); rr.debug.onShaderError = null;
       ok(!bad && cx.getImageData(80, 90, 1, 1).data[3] > 0, 'renders with cascades, depth of field and the physical sky' + (bad ? ': ' + bad.slice(0, 300) : ''));
       HDh.force = 0; sl.setTier(gs.hd.TIERS[1]); sl.fit(cv, { far: 300, near: 25, ground: () => 0 }); cv.render(cx, 160, 120); HDh.force = null;
