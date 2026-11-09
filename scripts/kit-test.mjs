@@ -784,6 +784,26 @@ console.log('physics ok');
   console.log('hex: taps (pointy and flat), neighbours, hex shape, range, ring, line, path, reach, sight, save; iso ok');
 }
 {
+  const { Select, formation, FlowField, BuildGrid, target } = await import('../src/kit/rts.js');
+  const U = [{ x: 10, y: 10, kind: 'a' }, { x: 50, y: 12, kind: 'a' }, { x: 200, y: 200, kind: 'b' }, { x: 300, y: 20, kind: 'a' }];
+  const sel = new Select(() => U);
+  sel.down(0, 0); sel.move(60, 30); assert.ok(sel.box); assert.ok(sel.up(60, 30)); assert.deepEqual(sel.list, [U[0], U[1]], 'box select');
+  sel.down(198, 201); assert.ok(sel.up(198, 201)); assert.deepEqual(sel.list, [U[2]], 'tap select');
+  sel.down(500, 500); assert.equal(sel.up(500, 500), false, 'a tap on nothing is an order'); assert.deepEqual(sel.list, [U[2]]);
+  sel.down(11, 10); sel.up(11, 10); sel.down(11, 10); sel.up(11, 10); assert.equal(sel.list.length, 3, 'double tap picks the kind');
+  for (const shape of ['grid', 'line', 'wedge', 'circle']) {
+    const f = formation(U, 100, 100, { shape, gap: 20 }); assert.equal(new Set(f.map(p => p[1])).size, 4, shape + ': a place each');
+    for (const [, a] of f) for (const [, b] of f) if (a !== b) assert.ok(Math.hypot(a.x - b.x, a.y - b.y) > 10, shape + ': places apart');
+  }
+  const bg = new BuildGrid(10, 10, 10); assert.ok(bg.place({}, 4, 0, 1, 9)); assert.equal(bg.fits(3, 0, 2, 2), false); const sn = bg.snap(12, 12, 2, 2); assert.deepEqual([sn.tx, sn.ty, sn.ok], [0, 0, true]);
+  const ff = new FlowField(10, 10, 10, (tx, ty) => bg.free(tx, ty) ? 1 : Infinity).to(8, 1);
+  let p = { x: 15, y: 15 }; for (let i = 0; i < 400 && ff.at(...Object.values(ff.tile(p.x, p.y))) > 0; i++) { const d = ff.dir(p.x, p.y); p.x += d.x * 2; p.y += d.y * 2; assert.ok(bg.free(Math.floor(p.x / 10), Math.floor(p.y / 10)), 'steers round the wall'); }
+  assert.deepEqual(ff.tile(p.x, p.y), { tx: 8, ty: 1 }, 'flow field reaches the goal');
+  const foes = [{ x: 0, y: 30, left: 5, hp: 3 }, { x: 0, y: 60, left: 2, hp: 9 }, { x: 0, y: 500, left: 0, hp: 1 }];
+  assert.equal(target({ x: 0, y: 0 }, foes, { range: 100 }), foes[1], 'first: furthest along, in range'); assert.equal(target({ x: 0, y: 0 }, foes, { by: 'near' }), foes[0]); assert.equal(target({ x: 0, y: 0 }, foes, { by: 'strong' }), foes[1]);
+  console.log('rts: box, tap, double tap, orders, formations, build grid, flow field, targets ok');
+}
+{
   const { dungeon, cave, maze, islands, pattern, fov, loadGen, proven, reach } = await import('../src/kit/gen.js');
   await loadGen();
   const a = dungeon(40, 30, { seed: 7 }), b2 = dungeon(40, 30, { seed: 7 });

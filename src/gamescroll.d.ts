@@ -919,6 +919,21 @@ export interface HexPart {
   HexMap: new (o?: { size?: number; pointy?: boolean; shape?: 'rect' | 'hex' | 'none'; w?: number; h?: number; radius?: number; x?: number; y?: number }) => HexMap;
   Iso: new (o?: { tw?: number; th?: number; x?: number; y?: number; zh?: number | null }) => Iso;
 }
+export interface XY { x: number; y: number; [k: string]: Loose }
+export interface Select<T extends XY = XY> {
+  chosen: Set<T>; readonly list: T[]; box: { x: number; y: number; w: number; h: number } | null;
+  on(ev: 'change', fn: (list: T[]) => void): Select<T>; has(t: T): boolean; set(list: T[]): Select<T>; clear(): Select<T>; near(x: number, y: number): T | null;
+  down(x: number, y: number): void; move(x: number, y: number): void; up(x: number, y: number): boolean;
+}
+export interface FlowField { w: number; h: number; size: number; dist: Float32Array; tile(x: number, y: number): { tx: number; ty: number }; to(tx: number, ty: number, force?: boolean): FlowField; at(tx: number, ty: number): number; dir(x: number, y: number): { x: number; y: number } }
+export interface BuildGrid { w: number; h: number; size: number; things: Set<Loose>; at(tx: number, ty: number): Loose; free(tx: number, ty: number): boolean; fits(tx: number, ty: number, fw?: number, fh?: number): boolean; snap(x: number, y: number, fw?: number, fh?: number): { tx: number; ty: number; x: number; y: number; ok: boolean }; place(thing: Loose, tx: number, ty: number, fw?: number, fh?: number): boolean; remove(thing: Loose): BuildGrid }
+export interface RtsPart {
+  Select: new <T extends XY = XY>(things: () => T[], o?: { radius?: number; drag?: number; kind?: (t: T) => Loose; doubleTap?: number }) => Select<T>;
+  formation<T extends XY>(units: T[], x: number, y: number, o?: { shape?: 'grid' | 'line' | 'wedge' | 'circle'; gap?: number; facing?: number | null }): [T, { x: number; y: number }][];
+  FlowField: new (w: number, h: number, size: number, cost?: (tx: number, ty: number) => number) => FlowField;
+  BuildGrid: new (w: number, h: number, size: number, o?: { blocked?: (tx: number, ty: number) => boolean }) => BuildGrid;
+  target<T extends XY>(from: XY, things: Iterable<T>, o?: { range?: number; by?: 'first' | 'last' | 'near' | 'far' | 'strong' | 'weak'; progress?: (t: T) => number; hp?: (t: T) => number }): T | null;
+}
 export interface DragPart { Drag: new (o?: { snap?: number; accept?: (piece: DragThing, slot: DragThing) => boolean; lift?: number; speed?: number; list?: { x: number; y: number; gap?: number; axis?: 'x' | 'y' } | null; swap?: boolean }) => Drag }
 
 export interface Earner {
@@ -1443,7 +1458,7 @@ export interface GS {
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
-  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
+  board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;

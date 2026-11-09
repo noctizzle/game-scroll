@@ -46,6 +46,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | An inventory, crafting recipes | `gs.items` | [Game kits](#game-kits) |
 | A point-and-click adventure | `gs.adventure` | [Game kits](#game-kits) |
 | Hex maps, isometric views | `gs.hex` | [Game kits](#game-kits) |
+| Strategy controls, tower defence | `gs.rts` | [Game kits](#game-kits) |
 | Idle game prices and big numbers, money while away | `gs.idle`, `api.away()` | [Game kits](#game-kits) |
 | Pass the phone, or split the screen | `gs.party` | [Game kits](#game-kits) |
 | Notes on the beat, Perfect / Good / Miss | `gs.rhythm` | [Game kits](#game-kits) |
@@ -1229,6 +1230,14 @@ own `data`. `at(x, y)` is the hex under a tap; `neighbours`, `distance`, `line`,
 `reach(from, moves, cost)` is everywhere a unit can move (a Map of cell to points spent, `cost(cell)`
 Infinity for blocked); `path(a, b, cost)` the cheapest route; `sees(a, b, blocks)` line of sight.
 `Iso({ tw, th, x, y })`: `toScreen(tx, ty, z)`, `toTile(x, y)` for taps, `corners`, `sort(things)` back to front.
+
+**Strategy controls** (`gs.rts`): `Select(() => things, { radius })` with `down/move/up` picks by tap or
+a dragged box (`sel.box` to draw it), a double tap picks every one of that `kind`, and `up` returns
+false for a tap on nothing (that's an order). `formation(units, x, y, { shape: 'grid' | 'line' | 'wedge'
+| 'circle', gap })` gives each unit its place. `FlowField(w, h, size, cost).to(tx, ty)` then `dir(x, y)`
+steers any number of units round walls. `BuildGrid(w, h, size)`: `snap` a dragged building to tiles,
+`fits`, `place`, `remove`, `at`. `target(tower, enemies, { range, by: 'first' | 'last' | 'near' |
+'strong' | 'weak' })` picks who a tower shoots.
 
 **Idle maths** (`gs.idle`): `cost` (prices that climb), `afford`, `short(1234567)` gives '1.23M', and
 `Earner` for producers that earn per second. `api.away()` is the seconds since this game last ran
