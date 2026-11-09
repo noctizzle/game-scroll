@@ -1139,7 +1139,7 @@ export class HDView {
         const seen = Math.min(1, (1.6 - Math.max(Math.abs(GP.x), Math.abs(GP.y))) * 2);
         o.glare = this.glare * seen;
         o.sunUV.set(GP.x * .5 + .5, GP.y * .5 + .5); o.sunCol = this.sun?.color || C_WARM;
-        if (o.shaftsOn) { o.shaft = Math.min(2, this.shafts) * seen; o.shaftCol = this.sun?.color || C_WARM; }
+        if (o.shaftsOn) { o.shaft = Math.min(2, this.shafts) * seen; o.shaftCol = this.sun?.color || C_WARM; o.shaftAt = this.shaftsAt; }
       }
     }
     // shadows: three's WebGPU renderer redraws them each frame (top phones only, for now)
