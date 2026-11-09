@@ -1,6 +1,7 @@
 // Simulates folding/unfolding mid-game on Galaxy Z Fold 8 and iPhone Duo screen sizes (CSS px, approx.)
-// and checks the running game survives and stays on screen. Usage: npm run build:bundled && node scripts/fold.cjs
+// and checks the running game survives and stays on screen. Usage: npm run build:bundled && node scripts/fold.cjs [id ...] [--jobs n]
 const { chromium } = require('playwright');
+const { jobs, pool } = require('./lib/pool.cjs');
 const SIZES = {
   'fold8-cover': { width: 374, height: 591 }, 'fold8-inner': { width: 549, height: 735 },
   'duo-cover': { width: 466, height: 678 }, 'duo-inner': { width: 890, height: 626 },
@@ -8,8 +9,9 @@ const SIZES = {
 const FLOWS = [['fold8-cover', 'fold8-inner', 'fold8-cover'], ['duo-cover', 'duo-inner', 'duo-cover']];
 (async () => {
   const server = await (await import('vite')).preview({ preview: { port: 4180 } });
-  const b = await chromium.launch(); let failed = 0;
-  for (const id of process.argv.slice(2).length ? process.argv.slice(2) : ['stack', 'cave', 'slice', 'gold-digger']) for (const flow of FLOWS) {
+  const argv = process.argv.slice(2), n = jobs(argv); let failed = 0;
+  const ids = argv.length ? argv : ['stack', 'cave', 'slice', 'gold-digger'];
+  await pool(ids.flatMap(id => FLOWS.map(flow => [id, flow])), n, () => chromium.launch(), async (b, [id, flow]) => {
     const ctx = await b.newContext({ viewport: SIZES[flow[0]], hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
     const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
     await p.goto('http://localhost:4180/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(300);
@@ -32,6 +34,6 @@ const FLOWS = [['fold8-cover', 'fold8-inner', 'fold8-cover'], ['duo-cover', 'duo
     const ok = !probs.length && !errs.length; if (!ok) failed++;
     console.log(`${ok ? 'PASS' : 'FAIL'} ${id} ${flow.join(' > ')}${ok ? '' : '\n   ' + [...probs, ...errs].join('\n   ')}`);
     await ctx.close();
-  }
-  await b.close(); server.httpServer.close(); process.exit(failed ? 1 : 0);
+  }, b => b.close());
+  server.httpServer.close(); process.exit(failed ? 1 : 0);
 })();

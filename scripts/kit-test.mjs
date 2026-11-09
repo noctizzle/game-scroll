@@ -1143,3 +1143,6 @@ console.log('physics ok');
   const ff = new Face(m, { blinkEvery: 0 }); ff.set('tall', 1); for (let i = 0; i < 60; i++) ff.update(1 / 60); assert.ok(m.morphTargetInfluences[0] > .9, 'eased');
   console.log('skinned person, face shapes, lip sync, blend spaces, foot IK ok');
 }
+
+// every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
+process.exit(0);

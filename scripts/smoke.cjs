@@ -1,21 +1,30 @@
 // Plays every game (or the ids given as args) with random input on a phone-sized screen
-// and fails if any game throws. Usage: npm run build:bundled && node scripts/smoke.cjs [id ...]
+// and fails if any game throws. Usage: npm run build:bundled && node scripts/smoke.cjs [id ...] [--jobs n]
+// --jobs: browsers playing at once (default: one per CPU, up to 6; JOBS=n does the same).
 const { chromium, devices } = require('playwright');
+const { jobs, pool } = require('./lib/pool.cjs');
 (async () => {
+  const argv = process.argv.slice(2), n = jobs(argv);
   const server = await (await import('vite')).preview({ preview: { port: 4179 } });
-  const b = await chromium.launch();
-  const ctx = await b.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 1 });
-  const p = await ctx.newPage(); let errs = [];
-  p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) errs.push(m.text()); });   // the app's own API calls (scores, hearts) can fail offline: not the game's fault
-  await p.goto('http://localhost:4179/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(400);
-  const ids = process.argv.slice(2).length ? process.argv.slice(2) : await p.evaluate(() => __gs.GAMES.map(g => g.id));
+  // one browser per worker: each has its own GPU process, so 3D games really draw side by side
+  const open = async () => {
+    const b = await chromium.launch();
+    const ctx = await b.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 1 });
+    const p = await ctx.newPage(), w = { b, p, errs: [] };
+    p.on('pageerror', e => w.errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) w.errs.push(m.text()); });   // the app's own API calls (scores, hearts) can fail offline: not the game's fault
+    await p.goto('http://localhost:4179/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(400);
+    return w;
+  };
+  const first = await open();
+  const ids = argv.length ? argv : await first.p.evaluate(() => __gs.GAMES.map(g => g.id));
   let failed = 0;
   // Every game must pay credits for a win, so every game needs a goal score.
-  const noGoal = await p.evaluate(ids => __gs.GAMES.filter(g => ids.includes(g.id) && !(g.goal > 0)).map(g => g.id), ids);
+  const noGoal = await first.p.evaluate(ids => __gs.GAMES.filter(g => ids.includes(g.id) && !(g.goal > 0)).map(g => g.id), ids);
   for (const id of noGoal) console.log(`FAIL ${id.padEnd(14)} has no \`goal\` (the score that counts as a win)`);
   failed += noGoal.length;
-  for (const id of ids) {
-    errs = [];
+  let spare = first;
+  await pool(ids, n, async () => { const w = spare || await open(); spare = null; return w; }, async (w, id) => {
+    const { p } = w; w.errs = [];
     await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(150);
     const r = await p.evaluate(() => { const c = __gs.active.canvas.getBoundingClientRect(); return { x: c.x, y: c.y, w: c.width, h: c.height }; });
     let rounds = 0, maxScore = 0;
@@ -29,10 +38,10 @@ const { chromium, devices } = require('playwright');
       await p.waitForTimeout(Math.random() * 120); await p.mouse.up();
       maxScore = Math.max(maxScore, await p.evaluate(() => __gs.active.score));
     }
-    const ok = errs.length === 0; if (!ok) failed++;
+    const errs = w.errs, ok = errs.length === 0; if (!ok) failed++;
     console.log(`${ok ? 'PASS' : 'FAIL'} ${id.padEnd(14)} rounds=${rounds} best=${maxScore}${ok ? '' : '\n   ' + errs.join('\n   ')}`);
     if (process.env.SHOTS) await p.screenshot({ path: `${process.env.SHOTS}/${id}.png` });
-  }
-  await b.close(); server.httpServer.close();
+  }, w => w.b.close());
+  server.httpServer.close();
   process.exit(failed ? 1 : 0);
 })();
