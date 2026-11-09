@@ -21,7 +21,7 @@
 // Two modes: 'blend' (t = .5, interpolation) shows each real frame half a frame late but has the
 // fewest smears; 'ahead' (t = 1.5, extrapolation) adds no lag, for reflex and rhythm games, and its
 // edges are a little softer where things uncover. Kit use only: games never see it, the app turns it
-// on (Settings › Graphics) and a game can say frameGen: false (or 'ahead') in its definition.
+// on (Settings › Frame generation) and a game can say frameGen: false (or 'ahead') in its definition.
 //
 // See-through things and glowing particles (transparent or added-light materials) have no single
 // motion: the background shows through them. frameGenMRT() keeps them out of the motion picture (the

@@ -248,7 +248,7 @@ the background round them. The method follows AMD FSR 3's frame interpolation (M
 SGSR 2's camera jitter back out of the motion, and costs a few milliseconds of compute instead of a
 whole extra frame.
 
-- **When:** Settings › Graphics (test). Auto (the default) makes frames only for a game that can't
+- **When:** Settings › Frame generation (on devices with WebGPU). Auto (the default) makes frames only for a game that can't
   reach the screen's rate (the 3D kit stepped it down to 60); Always draws half the frames of every 3D
   game and makes the rest (cooler, more detail per real frame); Off. A pinned frame rate turns it off.
   If the refreshes in between keep not arriving (the phone is too busy), it switches itself off for

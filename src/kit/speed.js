@@ -14,7 +14,7 @@
 //
 // Frame generation (src/kit/framegen.js, Next Gen and AR on WebGPU): where a 3D game runs at half
 // the screen's rate (60 fps on a 120 Hz screen), the 3D kit makes a frame for each refresh in
-// between, so it moves at the screen's rate. Settings › Graphics: Auto (only when a game can't reach
+// between, so it moves at the screen's rate. Settings › Frame generation: Auto (only when a game can't reach
 // the screen's rate), Always (3D games draw half the frames and make the rest: cooler, more detail)
 // or Off; and how: blend (between the last two frames, the fewest flaws, shown half a frame later)
 // or ahead (half a frame past the newest, no delay). A game can say frameGen: false or 'ahead'.
@@ -97,7 +97,7 @@ export function fpsFor(def) {
 /* ---------- frame generation ---------- */
 let fgPick = store.get(FG_KEY, 'auto'), fgHow = store.get(FG_HOW_KEY, 'game');
 const fgFailed = new Set();
-/** Settings › Graphics: 'auto' | 'always' | 'off'. */
+/** Settings › Frame generation: 'auto' | 'always' | 'off'. */
 export const frameGenPick = () => fgPick;
 export function setFrameGenPick(v) { fgPick = ['auto', 'always', 'off'].includes(v) ? v : 'auto'; store.set(FG_KEY, fgPick); }
 /** How frames are made: 'game' (the game's choice, else blend) | 'blend' | 'ahead'. */
