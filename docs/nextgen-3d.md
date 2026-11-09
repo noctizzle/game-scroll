@@ -217,6 +217,8 @@ s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
   horizon, an orange sun as it sets. Clouds, reflections (`env`), the air's colours, fog and the sky
   light all follow it; the day keys then only set how strong the sun and fill are. `sky.physical` can be
   switched any time (a clear morning on one mission, a grey storm with the day keys' colours on the next).
+  The glow round the sun has a soft cap (about as bright as a painted sky's), so facing a low sun doesn't
+  turn the screen white.
 - **Depth of field** (`v.focus = { at, range, depth, blur }`): what's `at` metres away, give or take
   `range`, stays sharp; things `depth` x `at` metres nearer or further are fully soft, up to `blur`
   pixels. Made for scopes and cutscene close-ups; `v.focus = null` turns it off. It reads the depth the
@@ -256,7 +258,9 @@ works on instanced meshes and on WebGL and WebGPU alike.
   `v.clearProbes()`.
 - `v.shafts = 1` (0..2) adds sun shafts: the bright sky round the sun is smeared towards it at quarter
   size, so whatever blocks it (trees, window frames, a hill) leaves streaks of light. Set `v.sun` so
-  it knows where the sun is. It's off on the lowest tier.
+  it knows where the sun is. It's off on the lowest tier. A physical sky is far brighter round the sun;
+  it tells the view how bright (`v.shaftsAt`), so only the sky close to the sun makes shafts and they
+  never white out the screen.
 
 ## Outdoor looks: ground, hills, rock, leaves
 

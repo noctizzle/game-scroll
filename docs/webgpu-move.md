@@ -48,7 +48,7 @@ The rules for new 3D code until then:
 | Part | Where | What it needs for WebGPU |
 | --- | --- | --- |
 | Cloud shadows and rain on the air | `hd3d.js` `airPatch` (the `'air'` look's light and roughness edits) | TSL nodes on the lit materials' light and roughness |
-| Sun shafts | `hd3d.js` `ShaftsPass` | A TSL radial blur (three has `radialBlur`, `godrays`) |
+| Sun shafts | `hd3d.js` `ShaftsPass` | A TSL radial blur (three has `radialBlur`, `godrays`); keep the mask's `thr`/`hi`/`cap`/`gain` from `v.shaftsAt` (set by a physical `Sky`) |
 | Reflections | three's `SSRPass` | Three's TSL `ssr()` node |
 | Upscaling | `src/kit/sgsr.js` (SGSR 1, GLSL) | A TSL port of SGSR 1 (only AR, `v.upscaler = 'sgsr1'` and SSR frames use it; on WebGPU they stretch). SGSR 2 is done: `sgsr2Gpu` in `hd3d-gpu.js` |
 | Light probe baking | `hd3d.js` `bakeLight` (`WebGLCubeRenderTarget` + `CubeCamera`) | A cube target on the WebGPU renderer |
@@ -60,7 +60,7 @@ The rules for new 3D code until then:
 | Outdoor looks: ground, hills, rock, leaves | `src/kit/looks.js` `looks.*` (effects 'ground', 'hills', 'rock', 'leaves' through `lookPatch`; a view using them stays on WebGL) | One TSL node per effect, same `lk...` uniforms |
 | Shadow cascades | `hd3d.js` the air look's light edit (`gsCasc`: a second sun light, weights in `lights_fragment_begin`) | Three's `CSMShadowNode` |
 | Depth of field | `hd3d.js` `DofPass` (reads the AO pass's depth) | Three's TSL `dof()` node on the scene pass's depth |
-| Physical sky | `src/kit/sky.js` dome shader, Preetham branch on `pSun.z` | Three's `SkyMesh` (TSL), or the same sums as a TSL node |
+| Physical sky | `src/kit/sky.js` dome shader, Preetham branch on `pSun.z`, with a soft knee on the brightest channel | Three's `SkyMesh` (TSL), or the same sums as a TSL node (keep the knee) |
 | Wind in leaves | `src/kit/looks.js` `looks.leaves` (`lkWindDir` lean) | Part of the leaves TSL node |
 | Tree impostors | `gs.outdoors` `impostor()` bakes with the WebGL renderer into a render target | The same bake on the WebGPU renderer (stock materials, so only the bake moves) |
 | Games with their own shaders | `long-shadow.js` (sky). Deep Pressure's sonar is now the kit's `gs.hd.pulse` look, which has a WebGPU version | Port to kit materials or TSL |
