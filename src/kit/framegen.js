@@ -9,8 +9,9 @@
 // doing it cheaply on phones from the game's own motion and depth instead of optical flow. Written
 // fresh in TSL (three.js's node language) so it runs as WebGPU compute, beside SGSR 2.
 //
+//   scenePass.setMRT(frameGenMRT());                 // the scene's pass writes motion and a see-through mask too
 //   const fg = new FrameGen(renderer);               // kit use: hd3d.js makes one per Next Gen / AR view
-//   after each real frame:  fg.real({ color, velocity, depth, renderSize, outputSize, jitterDelta })
+//   after each real frame:  fg.real({ color, velocity, reactive, depth, renderSize, outputSize, jitterDelta })
 //   on a refresh between:   fg.make(t) then draw fg.output (t = 0.5 halfway between the last two real
 //                            frames; t = 1.5 guesses half a frame ahead with no added lag)
 //
@@ -18,14 +19,49 @@
 // fewest smears; 'ahead' (t = 1.5, extrapolation) adds no lag, for reflex and rhythm games, and its
 // edges are a little softer where things uncover. Kit use only: games never see it, the app turns it
 // on (Settings › Graphics) and a game can say frameGen: false (or 'ahead') in its definition.
-import { StorageTexture, StorageBufferAttribute, HalfFloatType, FloatType, Vector2, LinearFilter, NearestFilter } from 'three/webgpu';
+//
+// See-through things and glowing particles (transparent or added-light materials) have no single
+// motion: the background shows through them. frameGenMRT() keeps them out of the motion picture (the
+// background's motion stays) and marks where they are (reactive); there the made frame shows the
+// newest real frame unmoved, so a spark or a glass edge never smears or shows twice (it moves at the
+// game's own rate while everything round it moves at the screen's).
+import {
+  StorageTexture, StorageBufferAttribute, DataTexture, HalfFloatType, FloatType, Vector2, LinearFilter, NearestFilter,
+  Node, BlendMode, MaterialBlending, NormalBlending, NoBlending,
+} from 'three/webgpu';
 import {
   Fn, instanceIndex, uint, int, float, vec2, vec4, ivec2, uniform, storage, atomicMin, atomicStore,
-  textureStore, texture, If, select, clamp, abs, max, floor, dot, mix, length, floatBitsToUint,
+  textureStore, texture, If, select, clamp, abs, max, floor, dot, mix, length, floatBitsToUint, smoothstep,
+  mrt, output, velocity, diffuseColor,
 } from 'three/tsl';
 
 const EMPTY = 0xffffffff;
 const LUMA = vec4(.299, .587, .114, 0);
+
+/** True for a material drawn see-through or with added light (glass, water, smoke, sparks, glows). */
+export const seeThrough = m => !!m && (m.transparent === true || (m.blending !== NormalBlending && m.blending !== NoBlending));
+// Picks one of two outputs by the material being drawn (worked out once per material, when it compiles).
+class ByMaterial extends Node {
+  constructor(solid, see) { super('vec4'); this.solid = solid; this.see = see; }
+  setup(builder) { return seeThrough(builder.material) ? this.see : this.solid; }
+}
+const BLEND = new BlendMode(MaterialBlending);
+/**
+ * The scene pass's outputs for frame generation: the picture, motion (velocity) and the see-through
+ * mask (reactive). Solid things write their motion; see-through things write motion with no weight
+ * (alpha 0), so with their own blending the motion under them stays, and they add their coverage to
+ * the mask. Extra outputs can be passed in.
+ */
+export function frameGenMRT(extra = {}) {
+  const m = mrt({
+    output,
+    velocity: new ByMaterial(vec4(velocity, 0, 1), vec4(0)),
+    reactive: new ByMaterial(vec4(0, 0, 0, 1), vec4(1, 1, 1, clamp(diffuseColor.a, 0, 1))),
+    ...extra,
+  });
+  return m.setBlendMode('velocity', BLEND).setBlendMode('reactive', BLEND);
+}
+const NO_REACTIVE = (() => { const t = new DataTexture(new Uint8Array(4), 1, 1); t.needsUpdate = true; return t; })();
 
 /**
  * One view's frame generator. The pictures it is given are three.js textures: color is the finished
@@ -49,7 +85,7 @@ export class FrameGen {
     this.dispose(); this.key = key; this.frames = 0; this.ready = false;
     const n = rw * rh, on = ow * oh, U = this.U;
     const st = (w, h, type = HalfFloatType, filter = NearestFilter) => { const s = new StorageTexture(w, h); s.type = type; s.minFilter = s.magFilter = filter; return s; };
-    // last real frame's colour (screen size) and depth (render size), kept by copy at keep()
+    // last real frame's colour (screen size), and its depth and see-through mask (render size, x and y), kept by copy at keep()
     this.prevColor = st(ow, oh, HalfFloatType, LinearFilter);
     this.prevDepth = st(rw, rh, FloatType);
     // mid-frame motion: one depth key per render pixel (atomic min), then the motion that won it
@@ -60,6 +96,7 @@ export class FrameGen {
     const keys = storage(this.keysAttr, 'uint', n).toAtomic(), keysR = storage(this.keysAttr, 'uint', n);
     // the inputs change every frame (SGSR 2 takes turns between two pictures): nodes whose value real() sets
     const col = this.colN = texture(this.prevColor), vel = this.velN = texture(this.prevColor), dep = this.depN = texture(this.prevDepth);
+    const rea = this.reaN = texture(NO_REACTIVE);
     const pcol = texture(this.prevColor), pdep = texture(this.prevDepth), mm = texture(this.midMotion), fm = texture(this.filled);
     const W = int(rw), H = int(rh), hi = ivec2(W.sub(1), H.sub(1));
     const xy = i => ivec2(int(i).mod(W), int(i).div(W));
@@ -123,21 +160,27 @@ export class FrameGen {
       const lin = v => U.near.mul(U.far).div(U.far.sub(v.mul(U.far.sub(U.near))));
       const L = lin(z), tol = L.mul(U.tol);
       const okN = in01(uN).and(lin(dep.load(pixOf(uN)).x).greaterThan(L.sub(tol)));
-      const okP = in01(uP).and(lin(pdep.load(pixOf(uP)).x).greaterThan(L.sub(tol))).and(U.interp.greaterThan(.5));
-      // see-through things and particles carry no motion of their own and would show twice: where the
-      // two frames disagree a lot about a pixel that is barely moving, keep the newest
+      const pP = pdep.load(pixOf(uP));
+      // the last frame's see-through things were where they were, not where the background went: skip it there
+      const okP = in01(uP).and(lin(pP.x).greaterThan(L.sub(tol))).and(U.interp.greaterThan(.5)).and(pP.y.lessThan(.25));
+      // unmarked see-through things (a game's own blending) would show twice: where the two frames disagree
+      // a lot about a pixel that is barely moving, keep the newest
       const still = length(d.mul(U.os)).lessThan(1.5), differ = abs(dot(cN.sub(cP), LUMA)).greaterThan(.2);
       const wN = select(okN, select(okP, select(still.and(differ), float(1), U.t), float(1)), select(okP, float(0), float(1)));
-      textureStore(this.output, q, mix(cP, cN, clamp(wN, 0, 1)));
+      const made = mix(cP, cN, clamp(wN, 0, 1));
+      // marked see-through things, here or where this pixel's colour comes from: the newest frame, unmoved
+      // (faint glass is mostly left to the motion, as what shows through it moves with the background)
+      const re = max(rea.sample(u).level(0).x, rea.sample(clamp(uN, 0, 1)).level(0).x);
+      textureStore(this.output, q, mix(made, col.sample(u).level(0), smoothstep(.2, .7, re)));
     })().compute(on, [64]);
 
     // 6 keep the newest frame as next time's last frame
     this.cKeepC = Fn(() => { const i = int(instanceIndex), q = ivec2(i.mod(OW), i.div(OW)); textureStore(this.prevColor, q, col.sample(vec2(q).add(.5).div(U.os)).level(0)); })().compute(on, [64]);
-    this.cKeepD = Fn(() => { const p = xy(instanceIndex); textureStore(this.prevDepth, p, vec4(dep.load(p).x, 0, 0, 1)); })().compute(n, [64]);
+    this.cKeepD = Fn(() => { const p = xy(instanceIndex); textureStore(this.prevDepth, p, vec4(dep.load(p).x, rea.sample(uvOf(p)).level(0).x, 0, 1)); })().compute(n, [64]);
   }
 
   /**
-   * After a real frame: keeps it. o: { color, velocity, depth (three Textures), renderSize, outputSize
+   * After a real frame: keeps it. o: { color, velocity, reactive (optional: frameGenMRT's mask), depth (three Textures), renderSize, outputSize
    * (Vector2 or [w, h]), camera (for its near and far), jitterDelta (this frame's jitter minus last frame's, in NDC; [0, 0] if none) }.
    * The previous frame stays in prevColor until the next real(), so make() always works between the
    * last two real frames.
@@ -145,7 +188,7 @@ export class FrameGen {
   real(o) {
     const rs = o.renderSize, os = o.outputSize, rw = rs.x ?? rs[0], rh = rs.y ?? rs[1], ow = os.x ?? os[0], oh = os.y ?? os[1];
     this.build(rw, rh, ow, oh);
-    this.colN.value = o.color; this.velN.value = o.velocity; this.depN.value = o.depth; this.U.rs.value.set(rw, rh); this.U.os.value.set(ow, oh);
+    this.colN.value = o.color; this.velN.value = o.velocity; this.depN.value = o.depth; this.reaN.value = o.reactive || NO_REACTIVE; this.U.rs.value.set(rw, rh); this.U.os.value.set(ow, oh);
     if (o.camera) { this.U.near.value = o.camera.near; this.U.far.value = o.camera.far; }
     const jd = o.jitterDelta || [0, 0]; this.U.jd.value.set(jd.x ?? jd[0], jd.y ?? jd[1]);
     this.frames++; this.stats.real++;

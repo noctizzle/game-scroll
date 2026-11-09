@@ -3,19 +3,21 @@
 // Error is the mean difference out of 255 and broken is the share of pixels off by more than 40 (a
 // visible break); both should beat showing the last frame again. Uses SwiftShader's Vulkan driver, so
 // it runs without a GPU (ms is software time, a rough guide only).
-//   node scripts/framegen-test.cjs [--scale 1.5] [--mode ahead] [--shots dir]
+//   node scripts/framegen-test.cjs [--scale 1.5] [--mode ahead] [--hard] [--shots dir]
+// --hard runs the hard cases instead: a see-through ball, glowing sparks, and SGSR 2's camera jitter.
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
 (async () => {
   const argv = process.argv.slice(2), opt = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
-  const scale = opt('--scale') || '1', mode = opt('--mode') || 'blend', shots = opt('--shots');
+  const scale = opt('--scale') || '1', mode = opt('--mode') || 'blend', shots = opt('--shots'), extra = opt('--query') || '';
+  const kinds = argv.includes('--hard') ? 'glass,sparks,jitter' : 'still,strafe,turn';
   const vite = await import('vite');
   const server = await vite.createServer({ server: { port: 4187 }, mode: 'bundled', logLevel: 'error' }); await server.listen();
   const icd = path.join(path.dirname(chromium.executablePath()), 'vk_swiftshader_icd.json');
   const b = await chromium.launch({ args: ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--use-angle=vulkan', '--enable-features=Vulkan'], env: { ...process.env, VK_ICD_FILENAMES: icd } });
   const p = await b.newPage(); const errs = [];
   p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') errs.push(m.text()); });
-  await p.goto(`http://localhost:4187/scripts/framegen-test/?scale=${scale}&mode=${mode}${shots ? '&shots' : ''}`);
+  await p.goto(`http://localhost:4187/scripts/framegen-test/?scale=${scale}&mode=${mode}&kinds=${kinds}${shots ? '&shots' : ''}${extra}`);
   await p.waitForFunction(() => window.result, null, { timeout: 600000 }).catch(() => {});
   const res = await p.evaluate(() => window.result || { error: 'no result' });
   await b.close(); await server.close();
