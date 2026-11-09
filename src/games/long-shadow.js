@@ -1119,13 +1119,14 @@ function make(api) {
     s.m.rig.parts.head.getWorldPosition(tmpA);
     h.m.position.copy(tmpA).y += .14; h.m.visible = true; h.life = 4; h.vx = rnd(-1, 1); h.vy = 5; h.vz = rnd(-1, 1); h.spin = rnd(6, 12);
   }
+  // (asked for every soldier near every bullet step: the three spheres are filled in place, not made anew)
   function hitSpheres(s, out) {
-    const p = s.m.rig.parts; out.length = 0;
-    p.head.getWorldPosition(tmpA); out.push([tmpA.x, tmpA.y + .12, tmpA.z, .17, true]);
-    p.spine.getWorldPosition(tmpA); out.push([tmpA.x, tmpA.y + .24, tmpA.z, .27, false]);
-    p.hips.getWorldPosition(tmpA); out.push([tmpA.x, tmpA.y - .05, tmpA.z, .24, false]);
+    const p = s.m.rig.parts;
+    if (out.length !== 3) { out.length = 0; out.push([0, 0, 0, .17, true], [0, 0, 0, .27, false], [0, 0, 0, .24, false]); }
+    putSphere(out[0], p.head, .12); putSphere(out[1], p.spine, .24); putSphere(out[2], p.hips, -.05);
     return out;
   }
+  function putSphere(q, part, up) { part.getWorldPosition(tmpA); q[0] = tmpA.x; q[1] = tmpA.y + up; q[2] = tmpA.z; }
   const SPH = [];
 
   // ---- the player's shots
@@ -1213,10 +1214,13 @@ function make(api) {
     }
     for (const b of drums || []) { if (b.gone) continue; const ox = x0 - b.x, oy = y0 - b.y - .5, oz = z0 - b.z, bq = ox * dx + oy * dy + oz * dz, cq = ox * ox + oy * oy + oz * oz - .5, disc = bq * bq - L * L * cq; if (disc >= 0) take((-bq - Math.sqrt(disc)) / (L * L), { drum: b }); }
     for (const b of WD.solids) {
+      // the box's three slabs in turn (no arrays made: this runs for every box on every bullet step)
       let t0 = 0, t1 = 1, ok = true;
-      for (const [p, d, lo, hi] of [[x0, dx, b.x0, b.x1], [y0, dy, b.y0, b.y1], [z0, dz, b.z0, b.z1]]) {
-        if (Math.abs(d) < 1e-9) { if (p < lo || p > hi) { ok = false; break; } continue; }
-        let a = (lo - p) / d, c = (hi - p) / d; if (a > c) [a, c] = [c, a]; t0 = Math.max(t0, a); t1 = Math.min(t1, c); if (t0 > t1) { ok = false; break; }
+      for (let ax = 0; ax < 3 && ok; ax++) {
+        const p = ax === 0 ? x0 : ax === 1 ? y0 : z0, d = ax === 0 ? dx : ax === 1 ? dy : dz;
+        const lo = ax === 0 ? b.x0 : ax === 1 ? b.y0 : b.z0, hi = ax === 0 ? b.x1 : ax === 1 ? b.y1 : b.z1;
+        if (Math.abs(d) < 1e-9) { if (p < lo || p > hi) ok = false; continue; }
+        let a = (lo - p) / d, c = (hi - p) / d; if (a > c) { const sw = a; a = c; c = sw; } t0 = Math.max(t0, a); t1 = Math.min(t1, c); if (t0 > t1) ok = false;
       }
       if (ok) take(t0, { box: b });
     }
