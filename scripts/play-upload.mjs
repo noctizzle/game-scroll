@@ -109,7 +109,7 @@ try {
 } catch (e) {
   console.error(e.message);
   if (e.status === 401 || e.status === 403) console.error('The service account can\'t publish this app: invite it in Play Console → Users and permissions (docs/google-play.md, step 4).');
-  if (e.status === 404) console.error(`Play doesn't know ${PKG} yet, or the API isn't on: upload the first bundle by hand (docs/google-play.md, step 3).`);
+  if (e.status === 404) console.error(`Play doesn't know ${PKG} yet, or the API isn't on: check the package name and that the Play Developer API is on (docs/google-play.md, step 4).`);
   if (/version code .* already been used/i.test(e.detail || '')) console.error('That version code is already on Play: run the workflow again (each run gets a new number).');
   process.exit(1);
 }

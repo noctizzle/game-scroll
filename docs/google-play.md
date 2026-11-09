@@ -19,7 +19,7 @@ installing from Play** (progress saved only on the phone goes with it).
 
 ## One-time setup (Rob)
 
-Steps 1 to 4 are about 20 minutes. Do them in order.
+Steps 1 to 4 take about 20 minutes.
 
 ### 1. Make the upload key
 
@@ -34,7 +34,17 @@ keytool -genkeypair -v -keystore game-scroll-upload.jks -alias upload \
   -keyalg RSA -keysize 4096 -validity 10000 -storetype PKCS12
 ```
 
-It asks for a password (pick a long one) and a name; the rest can be left blank. Then copy the key
+It asks for a password (pick a long one) and a name; the rest can be left blank.
+
+No Java on the Mac? The built-in openssl makes the same kind of key (it asks for the password at the end):
+
+```bash
+openssl req -x509 -newkey rsa:4096 -nodes -keyout upload.key -out upload.crt -days 10000 -subj "/CN=Your Name"
+openssl pkcs12 -export -in upload.crt -inkey upload.key -name upload -out game-scroll-upload.jks \\
+  -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 && rm upload.key upload.crt
+```
+
+Then copy the key
 as text:
 
 ```bash
@@ -56,24 +66,23 @@ GitHub → the repo → **Settings → Secrets and variables → Actions → New
 Only if you chose differently in step 1: `PLAY_UPLOAD_KEY_ALIAS` (default `upload`) and
 `PLAY_UPLOAD_KEY_PASSWORD` (default: the same as the store password).
 
-### 3. Upload the first bundle by hand
+### 3. Testers, and the first rollout
 
-Play only accepts uploads from the API once the app has a first release made in Play Console.
+Play takes uploads from the API even before the app's first release, but it keeps them as a **draft**
+until a release has been rolled out once. The upload script saves that first one as a draft for you.
 
-1. GitHub → **Actions → Google Play → Run workflow** (branch `main`) → Run. Wait for it to go green
-   (about 15 minutes); the summary should say **signed: true**.
-2. On the finished run, download **game-scroll-aab** under Artifacts and unzip it: you need `game-scroll.aab`.
-3. Play Console → Game Scroll → **Test and release → Testing → Internal testing → Testers** tab →
+1. Play Console → Game Scroll → **Test and release → Testing → Internal testing → Testers** tab →
    **Create email list**, add the Google accounts of the phones you test on (yours first) → Save changes.
-4. **Releases** tab (same page) → **Create new release**. If Play asks about app signing, keep
-   **Let Google manage and protect your app signing key** (recommended).
-5. Upload `game-scroll.aab`, leave the release name as Play suggests, **Next → Save and publish**
-   (or **Start rollout to Internal testing**). If Play lists tasks it needs first (privacy policy,
-   app access, ads, content rating, target audience, data safety), the answers are all in
+2. Once step 4 is done and a build has uploaded, open the **Releases** tab: the draft is there. Open
+   it → **Next → Start rollout to Internal testing**. If Play lists tasks it needs first (privacy
+   policy, app access, ads, content rating, target audience, data safety), the answers are all in
    `store/play-store.md`.
-6. On the **Testers** tab, copy the **Join on the web** link and open it on the phone, signed in to
+3. On the **Testers** tab, copy the **Join on the web** link and open it on the phone, signed in to
    the same Google account → **Accept** → **Download it on Google Play**. Uninstall the GitHub APK first.
    (A first internal build can take a few minutes to an hour to show up in the Play Store.)
+
+(Or upload by hand: Actions → Google Play → Run workflow, download **game-scroll-aab** from the run,
+and drop `game-scroll.aab` into **Create new release**.)
 
 ### 4. Let GitHub upload the next ones
 
@@ -116,7 +125,7 @@ The run's log (Actions → Google Play → the run → *Upload to Google Play*) 
 | *No upload key in the repository secrets yet* | Step 2. |
 | *No PLAY_SERVICE_ACCOUNT_JSON secret yet* | Step 4. |
 | *The service account can't publish this app* (401/403) | Step 4.5, or wait a few hours for new permissions. |
-| *Play doesn't know com.game_scroll.app yet* (404) | Step 3 (first release by hand). |
+| *Play doesn't know com.game_scroll.app yet* (404) | Step 3, or check the package name and that the API is on (step 4.2). |
 | *Saving it as a draft* | Play hasn't rolled out a release yet: roll out the draft in Play Console once, then later uploads go straight to testers. |
 | *Version code already used* | Click **Run workflow** for a fresh run (re-running an old run reuses its number). |
 | *...is aligned to 0x1000, not 16 KB* | A native library won't run on 16 KB-page phones and Play will refuse the bundle: update the library that ships it. |
