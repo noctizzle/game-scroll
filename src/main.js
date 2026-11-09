@@ -339,7 +339,7 @@ function fit(s,again){
   // Pocket games draw chunky pixels; Console games render at full device resolution, smoothed and lit.
   const pixel=d.retro&&d.era!=='console'&&d.era!=='nextgen'&&d.era!=='ar';
   if(pixel){s.canvas.width=w;s.canvas.height=h;s.ctx.setTransform(1,0,0,1,0,0)}
-  else{const k=sc*Math.min(2.5,window.devicePixelRatio||1);s.canvas.width=Math.round(w*k);s.canvas.height=Math.round(h*k);s.ctx.setTransform(k,0,0,k,0,0)}
+  else{let k=sc*Math.min(2.5,window.devicePixelRatio||1);if(s.lite&&w*h*k*k>LITE_PX)k=Math.sqrt(LITE_PX/(w*h));s.canvas.width=Math.round(w*k);s.canvas.height=Math.round(h*k);s.ctx.setTransform(k,0,0,k,0,0)}
   s.ctx.imageSmoothingEnabled=!pixel;s.canvas.classList.toggle('hires',!pixel);s.dirty=true;
   // first fit of a new slide guessed the frame size; now it's laid out, refit once with the real one
   if(!again&&dev&&dev.offsetHeight-s.screen.offsetHeight!==ch)fit(s,true);
@@ -559,6 +559,20 @@ function hotSwap(d){
 // Debug overlay for makers (src/debug.js): dev and test builds only, never in the store apps.
 const DBG=import.meta.env.MODE==='bundled'?makeDebug():null;
 let lastT=performance.now(),nextAt=0;
+// A 2D game on a big screen (a foldable opened up) draws twice a phone's pixels each frame. If it can't keep
+// up (two windows of 45 frames a quarter over the frame budget), its canvas drops to at most LITE_PX and the
+// screen stretches it; after ~6 s of easy frames it goes back to full sharpness (once per visit to the card, so it
+// can't flip back and forth). A game keeping up is never touched. (Next Gen and AR do the same in hd3d.js.)
+const LITE_PX=2.4e6,L2={id:null,t:0,sum:0,cnt:0,slow:0,fast:0,back:0};
+function lite2d(s,now,step){
+  if(L2.id!==s){L2.id=s;L2.t=0;L2.sum=L2.cnt=L2.slow=L2.fast=L2.back=0}
+  const gap=now-(L2.t||now);L2.t=now;if(!(gap>0&&gap<100))return;
+  if(!s.lite&&s.canvas.width*s.canvas.height<=LITE_PX)return;
+  L2.sum+=gap;if(++L2.cnt<45)return;const a=L2.sum/L2.cnt;L2.sum=L2.cnt=0;
+  if(a>step*1.26){L2.fast=0;if(!s.lite&&++L2.slow>=2){L2.slow=0;s.lite=true;fit(s)}}
+  else if(a<step*1.044){L2.slow=0;if(s.lite&&!L2.back&&++L2.fast>=8){L2.fast=0;L2.back=1;s.lite=false;fit(s)}}
+  else L2.slow=L2.fast=0;
+}
 function frame(now){
   requestAnimationFrame(frame);
   pollPads(padInput);
@@ -592,6 +606,7 @@ function frame(now){
       if(!hold&&(s.state!=='ready'||s.dirty||(DBG&&DBG.on))){paint(s);s.dirty=false}
       if(DBG&&DBG.on)DBG.after(s,timed?t1-t0:0,performance.now()-t1,now);
       // frame timing for the anonymous stutter reports (src/perf.js)
+      if(timed&&s.state==='playing'&&!usesHD(s.def))lite2d(s,now,step);
       if(timed&&s.state==='playing')perf.frame(s.def.id,now,performance.now()-t0,1000/fps);else perf.gap();
     }catch(e){console.error(s.def.id,e);perf.error(e,s.def.id);s.dirty=false;if(s.state==='playing')try{gameOver(s)}catch(_){}}
   }

@@ -342,7 +342,7 @@ export function noAO(m) { m.mrtNode = new SoftMRT({ output, normal: vec4(normalV
 // texture through a WebGL shader patch. Here each of its detail levels is a plain InstancedMesh instead,
 // filled each frame with the copies in view (a little wider, for their shadows) at that level's distance,
 // from the same matrices, visibility and colours.
-const PF = new Frustum(), PS = new Sphere(), PM = new Matrix4(), PV = new Vector3();
+const PF = new Frustum(), PS = new Sphere(), PM = new Matrix4(), PV = new Vector3(), SF = [];
 export function gpuProps(im) {
   const levels = im.LODinfo ? im.LODinfo.render.levels.map(l => ({ obj: l.object, dist: l.distance * (1 - (l.hysteresis || 0)) })) : [{ obj: im, dist: 0 }];   // (the library keeps distances squared)
   const group = new Group(); group.name = im.name + ':webgpu';
@@ -364,18 +364,20 @@ export function gpuProps(im) {
   make();
   return {
     group,
-    sync(cam, occ = null) {   // occ: hd3d.js occlusion culling (only for props without shadows: one list feeds both here)
+    sync(cam, occ = null, shadowCams = null) {   // occ: hd3d.js occlusion culling (only for props without shadows: one list feeds both here); shadowCams: the lights' shadow cameras (a copy off screen that casts into view is kept)
       if ((im._capacity || 0) > cap) make();
       const n = im._instancesArrayCount || 0, D = im.matricesTexture?._data, C = im.colorsTexture?._data, wm = im.matrixWorld;
       for (const t of tw) t.count = 0;
       if (!D) return;
       cam.updateMatrixWorld(); PM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); PF.setFromProjectionMatrix(PM, cam.coordinateSystem);
+      const nsf = im.castShadow && shadowCams ? shadowCams.length : 0;
+      for (let j = 0; j < nsf; j++) { const c = shadowCams[j]; (SF[j] ||= new Frustum()).setFromProjectionMatrix(PM.multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse), c.coordinateSystem); }
       const cp = cam.getWorldPosition(PV), cx = cp.x, cy = cp.y, cz = cp.z, R0 = levels[0].obj.geometry.boundingSphere?.radius ?? 1;
       for (let i = 0; i < n; i++) {
         if (!im.getActiveAndVisibilityAt(i)) continue;
         const o = i * 16, sx = Math.sqrt(D[o] * D[o] + D[o + 1] * D[o + 1] + D[o + 2] * D[o + 2]), sy = Math.sqrt(D[o + 4] * D[o + 4] + D[o + 5] * D[o + 5] + D[o + 6] * D[o + 6]), sz = Math.sqrt(D[o + 8] * D[o + 8] + D[o + 9] * D[o + 9] + D[o + 10] * D[o + 10]);   // (Math.hypot made garbage for each copy)
         PS.center.set(D[o + 12], D[o + 13], D[o + 14]).applyMatrix4(wm); PS.radius = R0 * Math.max(sx, sy, sz) + 8;   // (+8 m: things just out of view still cast their shadows in)
-        if (!PF.intersectsSphere(PS)) continue;
+        if (!PF.intersectsSphere(PS)) { let j = 0; while (j < nsf && !SF[j].intersectsSphere(PS)) j++; if (j === nsf) continue; }
         if (occ && !im.castShadow && occ.hidden(PS.center, PS.radius - 8)) continue;
         const d = (PS.center.x - cx) ** 2 + (PS.center.y - cy) ** 2 + (PS.center.z - cz) ** 2;   // squared, like the levels
         let L = 0; while (L + 1 < levels.length && d >= levels[L + 1].dist) L++;

@@ -1265,6 +1265,10 @@ export interface DestructionPart {
 }
 export interface PropsPart {
   simplify(geometry: Loose, keep?: number): Loose;
+  /** A finished InstancedMesh of still things, swapped in place for one that skips the copies off screen (same look). Returns the new mesh. */
+  perCopy(instancedMesh: Loose, o?: { renderer?: Loose }): Loose;
+  /** Frees the perCopy() / Props meshes under root once it's thrown away (a rebuilt level). */
+  freeCopies(root: Loose): void;
   Props: new (scene: Loose, o?: { renderer?: Loose; shadows?: boolean }) => {
     kind(name: string, geometry: Loose, material: Loose, o?: { lod?: (number | [number, Loose])[]; keep?: number[]; shadows?: boolean; shadowFar?: number; capacity?: number }): Loose;
     mesh(name: string): Loose; add(name: string, x: number, y: number, z: number, o?: { rot?: number | P3; scale?: number | P3; color?: string }): number;

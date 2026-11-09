@@ -3,6 +3,7 @@ const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
 const { HDView, Particles, pbr, rbox, surface, speckle, spot, THREE } = gs.hd;
+const { perCopy, freeCopies } = gs.props;
 const { Group, Mesh, InstancedMesh, Object3D, Vector3, CatmullRomCurve3, BufferGeometry, BufferAttribute, CylinderGeometry, BoxGeometry, PlaneGeometry, Color } = THREE;
 
 // Neon Drift: a night-time street circuit, wet tarmac shining with neon. The car always has its foot
@@ -85,7 +86,7 @@ function make(api) {
   }
   function buildWorld() {
     setup(); const m = looks();
-    if (built) v.scene.remove(built);
+    if (built) { v.scene.remove(built); freeCopies(built); }
     built = new Group(); v.scene.add(built); buildTrack();
     // road ribbon
     const pos3 = new Float32Array((N + 1) * 2 * 3), uv = new Float32Array((N + 1) * 2 * 2), idx = [];
@@ -128,6 +129,7 @@ function make(api) {
       lampSpots.push({ x: x - r.x * s, y: 6.6, z: z - r.z * s, col: (i / 18) % 3 ? '#ffd8a8' : '#ff8ad8', i: 40 });
     }
     poles.count = bulbs.count = pc; poles.castShadow = true; poles.frustumCulled = bulbs.frustumCulled = false; built.add(poles, bulbs);
+    for (const o of [bar, ...neon, tw, ...signs, poles, bulbs]) perCopy(o);   // the copies off screen aren't drawn
     // checkpoint gates
     gates = [];
     for (let k = 1; k <= 6; k++) {

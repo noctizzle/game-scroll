@@ -3,6 +3,7 @@ const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
 const { HDView, Particles, pbr, rbox, surface, speckle, spot, THREE } = gs.hd;
+const { perCopy, freeCopies } = gs.props;
 const {
   Group, Mesh, InstancedMesh, Object3D, Vector3, Matrix4, Color, CatmullRomCurve3, TubeGeometry, CylinderGeometry, TorusGeometry,
   OctahedronGeometry, PlaneGeometry, BoxGeometry, ConeGeometry, MeshBasicMaterial, BackSide, DoubleSide, AdditiveBlending, CanvasTexture, SRGBColorSpace,
@@ -126,7 +127,7 @@ function make(api) {
   function buildWorld() {
     setup();
     const { m, G } = looks();
-    if (world) { v.scene.remove(world); world.traverse(o => { if (o.userData.own) o.geometry.dispose(); }); }
+    if (world) { v.scene.remove(world); world.traverse(o => { if (o.userData.own) o.geometry.dispose(); }); freeCopies(world); }
     world = new Group(); v.scene.add(world);
     buildTrack();
     const tg = new TubeGeometry(curve, NF, R, 24, true);
@@ -162,6 +163,7 @@ function make(api) {
     const pd = new InstancedMesh(G.plane, m.boost, pads.length * 3);
     pads.forEach((p, i) => { for (let k = 0; k < 3; k++) { place3(mx, p.d + k * 1.6, p.a, .04); mx.rotateX(-Math.PI / 2); mx.rotateZ(Math.PI / 4); mx.scale.set(1.3, 1.3, 1); mx.updateMatrix(); pd.setMatrixAt(i * 3 + k, mx.matrix); } });
     pd.frustumCulled = false; pd.renderOrder = 3; world.add(pd);
+    for (const o of [frames, ob]) perCopy(o); rings = perCopy(rings);   // the big copies off screen aren't drawn (the small strips and pads cost more to check than to draw)
     gems.im = new InstancedMesh(G.gem, m.crystal, gems.length); gems.im.frustumCulled = false; world.add(gems.im);
     // cars on a staggered grid; you start fifth
     cars = [];
