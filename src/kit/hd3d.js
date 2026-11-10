@@ -31,7 +31,7 @@ import {
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
   OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4, DataTexture, RGBAFormat, ShaderChunk,
   LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion, DepthTexture, WebGLCoordinateSystem, Box3, Sphere, UnsignedIntType,
-  Data3DTexture, UnsignedByteType,
+  Data3DTexture, UnsignedByteType, DoubleSide,
 } from 'three';
 import { LUTCubeLoader } from 'three/examples/jsm/loaders/LUTCubeLoader.js';
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
@@ -2295,7 +2295,10 @@ function shaderKey(o) {
   const mat = o.material, g = o.geometry, c = KEYS.get(o);
   if (c && sameMats(c, mat, g)) return c.key;
   const ms = Array.isArray(mat) ? mat : [mat];
-  const sig = ms.map(m => m.id + '.' + m.version).join(',') + '|' + (g?.id ?? '');
+  // (three draws a two-sided see-through material as back faces then front faces, marking it changed for each,
+  // so its version climbs every frame: its shaders are the same, so the version is left out, or holdNew
+  // took it for a new shader every frame and kept it hidden for good)
+  const sig = ms.map(m => m.id + '.' + (m.transparent && m.side === DoubleSide && !m.forceSinglePass ? 'd' : m.version)).join(',') + '|' + (g?.id ?? '');
   if (c?.sig === sig) { remember(o, c.sig, c.key, mat, g); return c.key; }
   const key = sig.replace(/\|.*$/, '') + '|' + (o.isSkinnedMesh ? 's' : '') + (o.isInstancedMesh ? 'i' : '') + (o.isBatchedMesh ? 'b' : '') + (o.isPoints ? 'p' : o.isLine ? 'l' : o.isSprite ? 'S' : '') +
     (o.morphTargetInfluences ? 'm' : '') + (g ? '|' + Object.keys(g.attributes).sort().join(',') + (g.index ? '+i' : '') + '|' + Object.keys(g.morphAttributes || {}).join(',') : '');
