@@ -2078,12 +2078,13 @@ function make(api) {
   // ---- sound: the valley's own echo, beds of wind, river and rain, and a rifle built in layers.
   // Everything loud goes through the valley space, so a shot cracks, booms and then rolls round the hills.
   // The echo's impulse (seconds of shaped noise) is costly to make, so each kind is made once, and on
-  // the tap that starts a mission rather than in the first frame of play (a hitch on slower phones).
+  // the start of a mission rather than in the first frame of play (a hitch on slower phones).
   let aud = null; const earF = new Vector3(), spaces = {};
+  const echoFor = wet => spaces[wet] ||= space({ seconds: wet ? 2.4 : 3.6, decay: wet ? 3.4 : 2.3, wet: wet ? .2 : .28, bright: wet ? 2000 : 3400, pre: .09 });
   function audioUp() {
     if (aud && aud.mid === mid) return; audioDown();
     const wet = missions[mid]?.weather === 'rain';
-    const sp = spaces[wet] ||= space({ seconds: wet ? 2.4 : 3.6, decay: wet ? 3.4 : 2.3, wet: wet ? .2 : .28, bright: wet ? 2000 : 3400, pre: .09 });
+    const sp = echoFor(wet);
     aud = {
       mid, sp, ears: new Ears({ ref: 10, max: 500, rolloff: .5, hrtf: false, space: sp, send: .8 }),
       wind: bed({ vol: .01, from: 480, q: .5, gusts: .9 }),
@@ -2159,6 +2160,7 @@ function make(api) {
     freeMen(); men = []; allies = null; shots = []; timers = [];
     // Wren herself, seen when she moves between nests
     WD.wren ||= wrenFigure(); WD.wren.visible = false;
+    echoFor(missions[id]?.weather === 'rain');   // made here (silent) rather than in the first frame of play
     if (!WD.wren.rig.poses.ladder) WD.wren.rig.add('ladder', ph => { const q = Math.sin(ph * TAU); return { j: { spine: [.12, 0, 0], head: [-.35, 0, 0], armL: [-2.5 + .45 * q, 0, -.12], armR: [-2.5 - .45 * q, 0, .12], foreL: [-.6 - .4 * Math.max(0, -q), 0, 0], foreR: [-.6 - .4 * Math.max(0, q), 0, 0], legL: [-.95 - .45 * q, 0, 0], shinL: [1.3 + .5 * q, 0, 0], legR: [-.95 + .45 * q, 0, 0], shinR: [1.3 - .5 * q, 0, 0] }, drop: 0 }; }, .8); tower?.g.removeFromParent(); for (const p of tower?.pieces || []) { p.removeFromParent(); p.geometry?.dispose(); }
     tower = null; drums = null; car = null; op = null; cs = null; boom.list.length = 0; if (WD.bags) WD.bags.visible = false;
     WD.solids = WD.solids.filter(b => !b.temp);
@@ -2621,7 +2623,7 @@ function make(api) {
     // listening for your habit: always said out loud first, so you know to change it
     if (guard && !/listen|waits/i.test(hello || '')) { const l = marr.line('habit'); if (l) soon(7.5, () => say(l, MARR, 3.2, true)); }
   }
-  function go() { begin(sel); audioUp(); haptic('medium'); sounds.click?.(); }
+  function go() { begin(sel); haptic('medium'); sounds.click?.(); }
   function briefTap(x, y) {
     if (briefT < .3) return;
     for (const r of briefRows) if (y >= r.y && y <= r.y + r.h && x >= r.x && x <= r.x + r.w) { if (r.id && r.id !== sel && camp.open(r.id)) { sel = r.id; begin(sel); state = 'brief'; haptic('tick'); } return; }
