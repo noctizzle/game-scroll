@@ -68,7 +68,7 @@ function make(api) {
       feel.end(c, W, H);
       for (let i = 0; i < 3; i++) text(c, i < strikes ? 'X' : '-', 4 + i * 6, 4, { color: R[0] });
       if (combo >= 4) text(c, `${combo} IN A ROW`, W - 4, 4, { color: R[0], align: 'right' });
-      if (t < 4) text(c, 'SWIPE PARCELS TO THE RIGHT BIN', W / 2, 20, { align: 'center', color: R[0], outline: R[3] });
+      if (t < 4) text(c, 'SWIPE PARCELS TO THE RIGHT BIN', W / 2, Math.max(20, Math.ceil(api.scoreArea().bottom) + 2), { align: 'center', color: R[0], outline: R[3] });
     },
     down(x, y) {
       // grab the parcel nearest the touch on that belt (forgiving)
