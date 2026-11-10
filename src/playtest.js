@@ -1,0 +1,116 @@
+// AI playtester: a bot that really tries to win a game, for the PR check (scripts/playtest.cjs).
+// The QA bots only sit still or mash taps; this one runs the game much faster than real time with
+// a seeded Math.random and looks ahead: every quarter second of game time it tries a few taps,
+// holds, drags and keys (and doing nothing), plays each out a little, and keeps the best. It reports
+// whether the goal was reached and after how much game time, so a goal nobody can reach (or one
+// reached by doing nothing) shows up before Rob plays it.
+//
+// Dev and test builds only: __gs.playtest(id, opts) loads this file.
+import { ownedBy, release, stopAll } from './kit/cleanup.js';
+import { sound } from './sfx.js';
+import { rng as makeRng } from './kit/math.js';
+import { tickRate } from './kit/tick.js';
+
+const KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '];
+
+/**
+ * playtest(def, baseApi, { budget, maxSec, seed }) -> report.
+ * budget: real milliseconds to search (default 20 s). maxSec: longest round in game seconds (180).
+ */
+export async function playtest(def, baseApi, { budget = 20000, maxSec = 180, seed = 1, pop = 6 } = {}) {
+  const W = def.w, H = def.h, goal = def.goal || 0, r = makeRng(seed), h = 1 / (tickRate(def) || 60);
+  const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d'), errors = new Set();
+  const wasMuted = sound.muted; sound.muted = true;
+  const realRandom = Math.random;
+  let evals = 0;
+
+  // one round following plan (sorted by time); deterministic for a given plan and seed
+  function run(plan, roundSeed, realLimit = 4000, stopAt = maxSec) {
+    const owner = {}, R = makeRng(roundSeed); let game, score = 0, ended = null, goalAt = null, best = 0;
+    const save = new Map();
+    const api = {
+      ...baseApi,
+      score: n => { score = n; if (n > best) best = n; if (goal && n >= goal && goalAt == null) goalAt = t; },
+      over: () => { ended = ended || 'over'; }, win: () => { ended = 'win'; if (goalAt == null) goalAt = t; },
+      has: () => false, save: d => { save.set('d', JSON.parse(JSON.stringify(d))); }, load: f => save.has('d') ? save.get('d') : f, clearSave: () => save.clear(),
+      away: () => 0,
+    };
+    let t = 0;
+    Math.random = R; evals++;
+    const t0 = performance.now();
+    try {
+      ownedBy(owner, () => { game = def.make(api); game.reset(); });
+      let i = 0, held = null, ticks = 0;
+      while (t < stopAt && !ended && goalAt == null) {
+        while (i < plan.length && plan[i].at <= t) {
+          const m = plan[i++];
+          if (held) { held.up(); held = null; }
+          if (m.kind === 'key') { game.key?.(m.key, true); held = { end: t + m.len, up: () => game.key?.(m.key, false) }; }
+          else {
+            game.down?.(m.x, m.y, 0);
+            const f = { end: t + m.len, x: m.x, y: m.y, m }; f.up = () => game.up?.(f.x, f.y, 0); held = f;
+          }
+        }
+        if (held && held.m && held.m.kind === 'drag') {   // slide the finger towards the end point
+          const k = Math.min(1, 1 - (held.end - t) / held.m.len);
+          held.x = held.m.x + (held.m.x2 - held.m.x) * k; held.y = held.m.y + (held.m.y2 - held.m.y) * k;
+          game.move?.(held.x, held.y, true, 0);
+        }
+        if (held && t >= held.end) { const u = held.up; held = null; u(); }
+        game.update(h); t += h; ticks++;
+        if (ticks % 15 === 0) { game.draw(ctx, 1); if (performance.now() - t0 > realLimit) break; }
+      }
+    } catch (e) { errors.add(String(e && e.message || e)); }
+    finally { Math.random = realRandom; try { stopAll(); } catch (_) { /* nothing playing */ } release(owner); }
+    return { score: best, goalAt, ended, sec: t, win: goalAt != null };
+  }
+
+  // plans
+  const pt = () => ({ x: r.range(W * .04, W * .96), y: r.range(H * .04, H * .96) });
+  const move = at => {
+    const k = r(), p = pt();
+    if (k < .08) return { at, kind: 'key', key: r.pick(KEYS), len: r.range(.05, .8) };
+    if (k < .55) return { at, kind: 'tap', ...p, len: r.range(.03, .12) };
+    if (k < .75) return { at, kind: 'hold', ...p, len: r.range(.2, 1.5) };
+    const q = pt(); return { at, kind: 'drag', ...p, x2: q.x, y2: q.y, len: r.range(.1, .6) };
+  };
+  const randomPlan = (gap = r.range(.12, .7)) => { const out = []; for (let at = r.range(0, .5); at < maxSec; at += gap * r.range(.5, 1.5)) out.push(move(at)); return out; };
+
+  const start = performance.now();
+  const idle = run([], 1);
+  const firstGen = Array.from({ length: pop }, () => run(randomPlan(), 1));
+  // Looking ahead: every STEP of game time, try a few next moves (and doing nothing), each followed
+  // by a short random play-out, by replaying the round so far (games can't be copied, but with a
+  // seeded Math.random a replay is exact). Keep the best and move on. Slow (each look replays from
+  // the start), but it reacts like a player, which a fixed plan can't.
+  const STEP = .25, AHEAD = 1.6, TRIES = 5;
+  const value = res => res.win ? 1e12 - res.goalAt : res.ended ? -1e9 + res.score * 1e3 + res.sec : res.score * 1e3 + res.sec * .01;
+  let plan = [], t = 0, looks = 0;
+  while (t < maxSec && performance.now() - start < budget) {
+    let pick = null;
+    for (let k = 0; k <= TRIES; k++) {
+      const next = k === 0 ? [] : [move(t + r.range(0, STEP * .5))];
+      const tail = []; for (let at = t + STEP; at < t + AHEAD; at += r.range(.15, .5)) tail.push(move(at));
+      // each try is played out twice: with a few random moves after it, and with nothing after it
+      // (random moves can lose a game a careful player wouldn't)
+      for (const after of [tail, []]) {
+        const res = run([...plan, ...next, ...after], 1, 4000, t + AHEAD); looks++;
+        if (!pick || value(res) > value(pick.res)) pick = { next, tail: after, res };
+      }
+    }
+    if (pick.res.win) { plan = [...plan, ...pick.next, ...pick.tail]; break; }
+    plan.push(...pick.next); t += STEP;
+    if (pick.res.ended && pick.res.sec < t) break;   // even the best try lost before the next look: the round is over
+  }
+  const top = { plan, res: run(plan, 1) };
+  if (value(firstGen.reduce((a, b) => value(b) > value(a) ? b : a, firstGen[0])) > value(top.res)) top.res = firstGen.reduce((a, b) => value(b) > value(a) ? b : a);
+    sound.muted = wasMuted;
+  return {
+    id: def.id, goal, tick: tickRate(def) || null,
+    reached: top.res.win, goalAt: top.res.win ? +top.res.goalAt.toFixed(1) : null, best: top.res.score,
+    idleScore: idle.score, idleWin: idle.win, idleEndsAt: idle.ended ? +idle.sec.toFixed(1) : null,
+    randomBest: Math.max(...firstGen.map(x => x.score)), randomWin: firstGen.some(x => x.win),
+    playedTo: +top.res.sec.toFixed(1), looks, evals, ms: Math.round(performance.now() - start), errors: [...errors],
+  };
+}

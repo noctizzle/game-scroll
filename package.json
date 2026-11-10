@@ -34,6 +34,7 @@
     "ml": "node scripts/fetch-ml.mjs",
     "kit-test": "node scripts/kit-test.mjs",
     "brains": "node scripts/brain-check.mjs",
+    "playtest": "vite build --mode bundled && node scripts/playtest.cjs",
     "licences": "node scripts/licence-check.mjs",
     "qnn-pin": "node scripts/qnn-pin.mjs",
     "types-check": "node scripts/types-check.mjs",

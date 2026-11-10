@@ -172,6 +172,10 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' && matrix.changed != '' }}
         run: node scripts/brain-check.mjs --games $CHANGED
 
+      - name: AI playtester tries to win changed games (warnings; fails on errors or a goal reached with no input)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && matrix.changed != '' }}
+        run: node scripts/playtest.cjs $CHANGED
+
       - name: Speed budget for changed games (frame time and memory on a slowed CPU)
         if: ${{ !cancelled() && steps.build.outcome == 'success' && matrix.changed != '' }}
         run: node scripts/budget.cjs $CHANGED
