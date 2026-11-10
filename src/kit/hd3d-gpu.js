@@ -16,11 +16,13 @@ import {
   positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min, materialEmissive, distance,
   attribute, vertexColor, normalWorld, normalViewGeometry, positionLocal, positionGeometry, positionPrevious, modelWorldMatrix, modelWorldMatrixInverse,
   materialColor, materialOpacity, materialRoughness, cos, floor, step, fwidth, dFdx, dFdy, normalize, uniformArray, Loop, int, If, sqrt,
-  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix, shadow as shadowOf, texture3D, parallaxDirection, normalMap, instanceIndex, storageTexture3D, textureStore, mx_noise_float, uvec3, ivec3,
+  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix, shadow as shadowOf, texture3D, parallaxDirection, normalMap, instanceIndex, storageTexture3D, textureStore, diffuseColor, mx_noise_float, uvec3, ivec3,
 } from 'three/tsl';
 import { lut3D } from 'three/examples/jsm/tsl/display/Lut3DNode.js';
 import { oitPass } from 'three/examples/jsm/tsl/display/OITPassNode.js';
 import { lensflare } from 'three/examples/jsm/tsl/display/LensflareNode.js';
+import { ssgi } from 'three/examples/jsm/tsl/display/SSGINode.js';
+import { vxgi } from 'three/examples/jsm/lighting/vxgi/VXGINode.js';
 import { LightProbeGrid } from 'three/examples/jsm/lighting/LightProbeGrid.js';
 // v.tone (hd3d.js): three.js's own tone mappers
 const TONE = { aces: ACESFilmicToneMapping, neutral: NeutralToneMapping, agx: AgXToneMapping };
@@ -931,7 +933,7 @@ export class GpuChain {
     this.pp = new RenderPipeline(r); this.pp.outputColorTransform = false;
     this.F = { tint: uniform(new Vector3(1, 1, 1)), th: uniform(.15), sp: uniform(.3), fade: uniform(20), k: uniform(1), dk: uniform(0), dirt: texture(new Texture()) };   // v.flare
     this.U = {
-      t: uniform(0), hurt: uniform(0), vig: uniform(.32), gradeOn: uniform(0), sat: uniform(1), con: uniform(1),
+      giK: uniform(1), t: uniform(0), hurt: uniform(0), vig: uniform(.32), gradeOn: uniform(0), sat: uniform(1), con: uniform(1),
       lo: uniform(new Vector3(1, 1, 1)), hi: uniform(new Vector3(1, 1, 1)), glare: uniform(0), sunUV: uniform(new Vector2(.5, .5)),
       sunCol: uniform(new Color()), aspect: uniform(1), lutK: uniform(1),
       // depth of field (hd3d.js DOF): at, range, depth, blur in pixels; camera near and far; one pixel
@@ -958,14 +960,14 @@ export class GpuChain {
     this.fg = null; this.sched = null; this.fgMode = null; this.fgWin = { real: 0, missed: 0 }; this.still = null; this.lastShown = null;
     this.warp = uniform(new Matrix3()); this.aim = null; this.aimBase = newPose(); this.aimAt = -1e9;
   }
-  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces', traaOn = false, lutOn = false, oitOn = false, flareOn = false) {
-    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}|${traaOn}|${lutOn}|${oitOn}|${flareOn}`;
+  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces', traaOn = false, lutOn = false, oitOn = false, flareOn = false, giOn = false) {
+    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}|${traaOn}|${lutOn}|${oitOn}|${flareOn}|${giOn}`;
     const TM = TONE[tone] ?? ACESFilmicToneMapping;
     if (key === this.key) return;
     this.key = key; this.fg?.reset(); this.sched = null; this.still?.reset();
     this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose(); this.s2?.dispose(); this.s1?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose();
     for (const t of [this.volT, this.baseT, this.mbT]) t?.renderTarget?.dispose();
-    this.traaN?.dispose(); this.casN?.dispose(); this.traaN = this.casN = null;
+    this.traaN?.dispose(); this.casN?.dispose(); this.traaN = this.casN = null; this.giN?.dispose?.(); this.giT?.renderTarget?.dispose(); this.giN = this.giT = null;
     this.aoN = this.dnN = this.bloomN = this.s2 = this.s1 = this.dofT = this.shM = this.shB = this.volT = this.baseT = this.mbT = null;
     // v.oit: three's weighted blended order-independent transparency (McGuire and Bavoil) in place of the plain
     // scene pass: see-through things blend right whatever order they're drawn in (glass behind glass, smoke in water)
@@ -981,8 +983,9 @@ export class GpuChain {
     }
     // (the normals picture's alpha says whether a pixel takes ambient occlusion: see-through things,
     // leaf cards and anything marked noAO write 0, as WebGL's AO leaves them out: noAO() below)
-    const nrm = aoOn ? { normal: vec4(normalView, 1) } : {};
-    if (mrtOn) sp.setMRT(frameGenMRT(nrm)); else if (traaOn || mbOn) sp.setMRT(mrt({ output, velocity: vec4(velocity, 0, 1), ...nrm }));   // (motion blur: each thing's own move) else if (aoOn) sp.setMRT(mrt({ output, ...nrm }));
+    // (live bounce light, v.liveBounce: each pixel's own surface colour too, which the bounced light tints)
+    const nrm = aoOn ? { normal: vec4(normalView, 1), ...(giOn ? { diffuse: vec4(diffuseColor.rgb, 1) } : {}) } : {};
+    if (mrtOn) sp.setMRT(frameGenMRT(nrm)); else if (traaOn || mbOn) sp.setMRT(mrt({ output, velocity: vec4(velocity, 0, 1), ...nrm })); else if (aoOn) sp.setMRT(mrt({ output, ...nrm }));   // (motion blur: velocity for each thing's own move)
     const U = this.U;
     // temporal anti-aliasing (three.js's TRAA, top tiers when the picture isn't upscaled: SGSR 2 does its
     // own): the camera moves by a fraction of a pixel each frame and each pixel blends with where it was
@@ -991,6 +994,27 @@ export class GpuChain {
     let colT = sp.getTextureNode('output');
     // (OIT: the see-through things are blended over the scene by the pass node itself, so that's what's read on)
     if (oitOn) colT = rtt(sp, null, null, { type: HalfFloatType, depthBuffer: false });
+    // live bounce light (v.liveBounce, high and ultra): light bounced off walls and floors onto what's
+    // near them, worked out each frame, so it follows a moving sun, a lamp switched on, a door opened.
+    // 'screen': three's SSGI (what's on screen bounces); 'voxel': three's VXGI (the level as voxels, light
+    // traced through them in cones: off-screen walls count too, the level's shape built once).
+    // Before TRAA, which smooths its noise frame to frame
+    if (giOn && aoOn) {
+      const dN = sp.getTextureNode('depth'), nN = sp.getTextureNode('normal'), dif = sp.getTextureNode('diffuse'), C = colT;
+      let g;
+      if (giOn === 'voxel') {
+        const n = this.giN = vxgi(dN, nN, this.scene, this.cam, this.giRes || 64); n.useTemporalFiltering = traaOn; n.bounces = 1;
+        if (this.giBox) n.volume.bounds.copy(this.giBox);
+        const gi = n.getGINode(), vao = n.getAONode();
+        g = Fn(() => vec4(C.sample(uv()).rgb.mul(mix(float(1), vao.sample(uv()).r, .5)).add(dif.sample(uv()).rgb.mul(gi.sample(uv()).rgb).mul(U.giK)), 1))();
+      } else {
+        const n = this.giN = ssgi(C, dN, nN, this.cam); n.useTemporalFiltering = traaOn;
+        n.sliceCount.value = traaOn ? 2 : 3; n.stepCount.value = 8; n.radius.value = 6; n.giIntensity.value = 4; n.aoIntensity.value = 0;
+        const gt = n.getGINode();
+        g = Fn(() => vec4(C.sample(uv()).rgb.add(dif.sample(uv()).rgb.mul(gt.sample(uv()).rgb).mul(U.giK)), 1))();
+      }
+      this.giT = rtt(g, 1, 1, { type: HalfFloatType, depthBuffer: false }); colT = this.giT;
+    }
     // (then AMD FidelityFX's contrast-adaptive sharpening, three's RCAS, gives back the crispness the blending takes, as engines do after TAA)
     if (traaOn) {
       this.traaN = traa(colT, sp.getTextureNode('depth'), sp.getTextureNode('velocity'), this.cam);
@@ -1164,7 +1188,8 @@ export class GpuChain {
     // o.mrt: the scene's pass also writes motion and the see-through mask (frame generation, SGSR 2)
     const f = !this.clear && o.s2 ? o.s2 : null, s1 = !f && !!o.s1, live = !!o.live;
     DRAWN.n++;
-    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !f && !s1 && !!o.traa, !this.clear && !!o.lut, !this.clear && !!o.oit, !this.clear && !!o.flare);
+    if (o.gi) { this.giRes = o.gi.res; this.giBox = o.gi.box; }
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !f && !s1 && !!o.traa, !this.clear && !!o.lut, !this.clear && !!o.oit, !this.clear && !!o.flare, !this.clear && o.ao > 0 && o.gi ? o.gi.kind : false);
     if (this.s1) this.s1.size(o.w, o.h);
     // the passes size themselves from the canvas: upscaled, the canvas is the screen's size, so scale them down
     const k = f || s1 ? (o.w + .5) / o.fw : 1;
@@ -1176,6 +1201,8 @@ export class GpuChain {
       U.t.value = o.t; U.hurt.value = o.hurt;
       const g = o.grade; U.gradeOn.value = g ? 1 : 0;
       if (g) { U.sat.value = g.sat; U.con.value = g.con; U.lo.value.copy(g.lo); U.hi.value.copy(g.hi); }
+      if (this.giT) this.giT.setSize(o.w, o.h);
+      if (o.gi) { U.giK.value = o.gi.strength; if (o.gi.rebuild && this.giN?.volume) this.giN.needsUpdate = true; }
       U.glare.value = o.glare; U.sunUV.value.set(o.sunUV.x, 1 - o.sunUV.y); U.sunCol.value.copy(o.sunCol); U.aspect.value = o.aspect;
       U.px.value.set(1 / o.w, 1 / o.h);
       if (o.flare) { const F = this.F, f = o.flare; F.tint.value.copy(f.tint); F.th.value = f.threshold; F.sp.value = f.spacing; F.fade.value = f.fade; F.k.value = f.strength; F.dk.value = f.dirt; F.dirt.value = f.dirtTex; }

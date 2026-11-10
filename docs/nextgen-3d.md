@@ -158,6 +158,14 @@ so its next round starts there instead of stuttering down again.
   parts, mirrored through the middle of the picture (three.js's LensflareNode, the same maths on WebGL),
   and lens dirt (smudges, dust and wipe marks drawn in code) lit where bright light falls on it.
   `dirt` (.5) is how dirty the lens is, 0 for none. Needs bloom; off by default.
+- `v.liveBounce = 'screen' | 'voxel' | { kind, strength, res, box }` (WebGPU, high and ultra): light
+  bounced off walls and floors onto what's near them, worked out every frame, so it follows a moving
+  sun, a lamp switched on or a door opened (`v.bounce()` instead bakes it once, on every renderer).
+  `'screen'` is three.js's SSGI: what's on screen bounces, cheapest. `'voxel'` is three.js's VXGI: the
+  level is turned into voxels once (`res` along its longest side, 64; `box` a Box3 to cover only part of
+  a big world) and light is traced through them in cones, so walls off screen and behind you count
+  too; call `v.levelChanged()` after its big still pieces change. Moving things count where they stood
+  when the voxels were made, so keep it for levels whose shape stays put. `strength` (1) scales it.
 - `v.fog3d = { density, height, falloff, far, colour, glow, ambient, strength, noise, wind, lamps }`
   (WebGPU, high and ultra): fog that light really travels through, kept in a grid of small boxes fitted
   to the view (froxels, as in Frostbite and Unreal) and worked out each frame on the graphics chip. The

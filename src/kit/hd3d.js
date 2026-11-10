@@ -1239,7 +1239,7 @@ export class HDView {
     if (fog) this.scene.fog = new FogExp2(bg, fog);
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
-    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null; this.lut = null; this.lutAmount = 1; this.oit = false; this.flare = null; this.fog3d = null;
+    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null; this.lut = null; this.lutAmount = 1; this.oit = false; this.flare = null; this.fog3d = null; this.liveBounce = null;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
     this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null; this.beams = null; this.motionBlur = null;
@@ -1779,6 +1779,8 @@ export class HDView {
     return any;
   }
   /** Redraw the shadow maps next frame even if nothing seems to have moved (e.g. after changing a geometry in place). */
+  /** The level's big still pieces changed: voxel bounce light (v.liveBounce = 'voxel') builds its picture of them again. */
+  levelChanged() { this._giRebuild = true; return this; }
   shadowsDirty() { this.shK?.clear(); return this; }
   // The WebGPU frame (render() decided this view fits): the same numbers as the WebGL chain, drawn by hd3d-gpu.js.
   // up: { pw, fw, fh, s1 } when the scene is drawn pw wide and upscaled to the canvas (fw x fh) by SGSR 2, or SGSR 1 if s1
@@ -1837,6 +1839,13 @@ export class HDView {
     this._dofUsed ||= !!this.focus; this._shaftsUsed ||= this.shafts > 0;
     o.dofOn = this._dofUsed && T.ao > 0; o.shaftsOn = this._shaftsUsed && T.shadow > 0;
     if (o.dofOn && this.focus) { const f = this.focus; o.lens = [f.at ?? 50, f.range ?? 2, f.depth ?? .5, (f.blur ?? 6) * ph / 640]; }
+    // live bounce light (v.liveBounce, WebGPU, high and ultra): 'screen' (three's SSGI) or 'voxel' (three's VXGI)
+    const lb = this.liveBounce;
+    if (lb && T.ao > 0) {
+      const spec = typeof lb === 'string' ? { kind: lb } : lb, gi = this._gi ||= { kind: 'screen', strength: 1, res: 64, box: null, rebuild: false };
+      gi.kind = spec.kind === 'voxel' ? 'voxel' : 'screen'; gi.strength = spec.strength ?? 1; gi.res = Math.min(128, Math.max(16, spec.res ?? 64)); gi.box = spec.box || null;
+      gi.rebuild = !!this._giRebuild; this._giRebuild = false; o.gi = gi;
+    }
     // volumetric light and motion blur: the same tiers as WebGL (high and ultra, and shadows for the light)
     this._volUsed ||= !!this.beams; this._mbUsed ||= !!this.motionBlur;
     o.volOn = this._volUsed && T.ao > 0 && T.shadow > 0; o.vol = o.volOn && this.beams ? beamsFrame(this) : null;
