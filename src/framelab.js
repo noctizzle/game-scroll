@@ -36,6 +36,7 @@
 import { Capacitor } from '@capacitor/core';
 import { speed, screenHz, fpsFor, phoneClass, frameGenStatus } from './kit/speed.js';
 import { power } from './kit/power.js';
+import { screen } from './kit/screenrate.js';
 import { webgpu, gpuPick, setGpuPick, prepareGPU, gpuName, glStats } from './kit/gpu.js';
 import { BUILD } from './perf.js';
 import { store } from './util.js';
@@ -232,6 +233,7 @@ function config(s) {
     backend: hd ? i.backend : d?.era === 'console' ? 'webgl' : '2d', tier: hd ? HD.name : null, res: hd ? HD.res : null,
     rw: hd ? i.rw : s?.canvas?.width, rh: hd ? i.rh : s?.canvas?.height, ow: hd ? i.ow : s?.canvas?.width, oh: hd ? i.oh : s?.canvas?.height,
     upscaler: hd ? i.upscaled || 'off' : null, fg: hd ? i.framegen || false : false, fgWhy: d && hd ? frameGenStatus(d) : '', lite: !!s?.lite,
+    rates: screen.rates.join('/'), asked: screen.want, lifted: screen.lifted,
     view: `${innerWidth}x${innerHeight}@${devicePixelRatio}`, form: Math.min(innerWidth, innerHeight) >= 600 ? 'wide' : 'phone',
   };
 }
@@ -506,7 +508,7 @@ export function summary(R = lastRec) {
   const lines = [
     `Frame lab · ${R.title || R.game} · ${phoneLabel()} · build ${BUILD} · ${secs.toFixed(0)} s · ${c.view} (${c.form})`,
     c.tier ? `${c.backend} · ${c.tier} · 3D ${c.rw}x${c.rh} → ${c.ow}x${c.oh} (${c.ow ? Math.round(100 * c.rw / c.ow) : '?'}%) · upscaler ${c.upscaler} · frame gen ${c.fg || 'off'}${c1.tier !== c.tier || c1.rw !== c.rw ? ` · ended ${c1.tier} 3D ${c1.rw}x${c1.rh}` : ''}` : `${c.backend} · canvas ${c.rw}x${c.rh}${c.lite ? ' (eased)' : ''}`,
-    `screen ${c.hz} Hz · game ${c.fps} fps · phone class ${c.cls} · ${c.gpu || 'gpu ?'}`,
+    `screen ${c.hz} Hz${c.rates ? ` (offers ${c.rates}, asked ${c.asked || 'none'})` : ''} · game ${c.fps} fps · phone class ${c.cls} · ${c.gpu || 'gpu ?'}`,
     m ? `avg ${m.fps.toFixed(1)} fps · 1% low ${m.low1.toFixed(0)} · 0.1% low ${m.low01 ? m.low01.toFixed(0) : '–'} · worst ${m.worst.toFixed(0)} ms · pacing ${(m.pacing * 100).toFixed(0)}% on the beat · ${m.stutters} stutters (${(m.stutters / Math.max(1, m.secs)).toFixed(2)}/s) · ${m.skipped} refreshes skipped${m.made ? ` · ${m.made} made + ${m.real} real` : ''}` : 'not enough frames in play',
     hit.length ? 'Hitch causes: ' + Object.entries(groups).sort((a, b) => b[1].n - a[1].n).slice(0, 6).map(([k, g]) => `${g.n}× ${k} (worst ${g.worst.toFixed(0)} ms)`).join('; ') : 'No hitches.',
     s0 && s1 ? `Heat ${['cool', 'warm', 'hot'][s0.heat]} → ${['cool', 'warm', 'hot'][s1.heat]}${s1.headroom != null && s1.headroom >= 0 ? ` (headroom ${s1.headroom.toFixed(2)})` : ''} · CPU speed ${Math.round(s0.cpu * 100)}% → ${Math.round(s1.cpu * 100)}% · battery ${Math.round(s0.level * 100)}% → ${Math.round(s1.level * 100)}%${s1.charging ? ' charging' : ''}${s1.heap ? ` · heap ${s1.heap} MB` : ''}` : '',
@@ -673,7 +675,7 @@ function text(now) {
   const fpsTxt = m ? `${m.fps.toFixed(0)} fps · 1% ${m.low1.toFixed(0)} · 0.1% ${m.low01 ? m.low01.toFixed(0) : '–'} · pacing ${(m.pacing * 100).toFixed(0)}% · ${m.stutters} stutter${m.stutters === 1 ? '' : 's'}/5 s${m.skipped ? ` · ${m.skipped} skipped` : ''}` : 'waiting for play…';
   UI.sum.textContent = (frozen ? 'FROZEN · ' : '') + fpsTxt;
   const L = [];
-  L.push(`${d ? d.id : 'no card'}${s ? ' ' + s.state : ''} · screen ${cfg.hz} Hz · game ${cfg.fps} fps · ${cfg.view}`);
+  L.push(`${d ? d.id : 'no card'}${s ? ' ' + s.state : ''} · screen ${cfg.hz} Hz${screen.rates.length ? ` (offers ${cfg.rates}, asked ${screen.want || 'none'})` : ''}${screen.lifted ? ' 60 Hz cap off' : ''} · game ${cfg.fps} fps · ${cfg.view}`);
   if (hd) {
     const pct = i.ow ? Math.round(100 * i.rw / i.ow) : 0;
     L.push(`${i.backend} ${cfg.tier} (step ${Math.round(HD.res * 100)}%) · 3D ${i.rw}×${i.rh} → ${i.ow}×${i.oh} ${pct}% · ${i.upscaled || 'no upscaler'}`);

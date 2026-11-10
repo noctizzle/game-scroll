@@ -43,7 +43,9 @@ The numbers, over the last 5 seconds:
   needs 500+ frames, so it shows – at first).
 - **pacing**: the share of pictures that came on the beat (within 0.4 of a refresh).
 - **stutters** and **skipped** refreshes.
-- the game, its state, the screen's rate and the game's frame rate, the screen size.
+- the game, its state, the screen's measured rate (and on Android the rates it offers and the one the
+  app asked for, `src/kit/screenrate.js`; on iPhone whether the 60 Hz cap came off), the game's frame
+  rate, the screen size.
 - 3D games: backend (WebGPU or WebGL), quality tier and resolution step, the **3D's own size → the
   final picture's size** (the resolution counter, straight from the 3D kit, so no pixel counting
   needed), the upscaler (SGSR 1 or 2), frame generation (mode, frames made per real one, its cost)
