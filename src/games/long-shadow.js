@@ -962,7 +962,7 @@ function wrenFigure() {
   add('head', new SphereGeometry(.142, 20, 12, Math.PI * .5 + 1.05, TAU - 2.1, 0, Math.PI * .66), hood, [0, .135, -.012], [-.12, 0, 0], [1.02, 1.06, 1.12]);
   add('spine', new TorusGeometry(.078, .034, 8, 18), hood, [0, .41, -.005], [Math.PI / 2 - .2, 0, 0], [1.05, 1.15, 1]);
   // the rifle across her back, muzzle up past the right shoulder, on a strap
-  const rifle = new Group(); rifle.position.set(0, .26, -.17); rifle.rotation.z = -.55; w.bones.spine.add(rifle);
+  const rifle = new Group(); rifle.position.set(0, .26, -.17); rifle.rotation.z = -.55; rifle.scale.setScalar(.78); w.bones.spine.add(rifle);
   const wood = pbr('#5a3e26', { rough: .6 }), steel = pbr('#2a2a2a', { rough: .35, metal: .8 });
   for (const [geo, mat, y] of [[new BoxGeometry(.045, .32, .07), wood, -.3], [new BoxGeometry(.035, .4, .045), wood, .02], [new CylinderGeometry(.011, .011, .42, 8), steel, .4], [new BoxGeometry(.035, .12, .04), steel, .12]]) { const m = new Mesh(geo, mat); m.position.y = y; m.castShadow = true; rifle.add(m); }
   add('spine', new BoxGeometry(.03, .5, .012), sling, [.02, .28, .13], [.12, 0, .62]);
@@ -2362,7 +2362,7 @@ function make(api) {
           const f = tripAt(move).fig, w = WD.wren; w.visible = true; w.position.set(f.x, f.y, f.z); w.rotation.order = 'YXZ'; w.rotation.y = f.yaw; w.rotation.x = f.sw || 0; w.rotation.z = f.roll || 0;
           if (f.sw) { const s_ = Math.sin(f.sw), c_ = Math.cos(f.sw); w.position.x -= 2.02 * s_ * Math.sin(f.yaw); w.position.y += 2.02 * (1 - c_); w.position.z -= 2.02 * s_ * Math.cos(f.yaw); }   // she swings from her hands, not her feet
           WD.trolley.visible = move.kind === 'zip' && move.t >= .6; if (move.kind === 'zip') { const h = zip.hands; WD.trolley.position.set(h.x, h.y + .05, h.z); WD.trolley.rotation.y = f.yaw; }
- w.face?.update(dtReal);
+          w.rig.play(f.pose, { fade: .15 }); w.rig.update(dt, { speed: f.speed }); w.face?.update(dtReal);
           for (const m of WD.wrenMats) m.emissiveIntensity = mid === 'm2' ? .1 : 0;   // a little warm light on her at dusk, or she's lost against the dark stone
           // footsteps on the run, rungs on the ladder
           if (f.speed > 0 && Math.floor(move.t * (f.pose === 'ladder' ? 3 : 3.4)) !== move.step) { move.step = Math.floor(move.t * (f.pose === 'ladder' ? 3 : 3.4)); if (f.pose === 'ladder') tone(220, { len: .04, wave: 'triangle', vol: .02 }); else noise(.07, { vol: .025, from: 700, to: 200 }); }
