@@ -1510,5 +1510,21 @@ console.log('physics ok');
   console.log('frame generation: props keep their places on WebGPU ok');
 }
 
+// gs.models material recipes: each tiles seamlessly (the same at p and p + one tile), with finite numbers
+{
+  const { JS } = await import('../src/kit/models/ops.js'), { RECIPES } = await import('../src/kit/models/recipes.js');
+  for (const [n, R] of Object.entries(RECIPES)) {
+    const K = {}; for (const k in R.look) K[k] = JS.rgb(R.look[k]);
+    for (let i = 0; i < 60; i++) {
+      const x = (i * .618) % R.P, y = (i * .377) % R.P, a = R.f(JS, { x, y }, K);
+      for (const b of [R.f(JS, { x: x + R.P, y }, K), R.f(JS, { x, y: y + R.P }, K)]) {
+        assert.ok(Math.abs(a.h - b.h) < 1e-6 && Math.abs(a.rough - b.rough) < 1e-6 && a.col.every((v, j) => Math.abs(v - b.col[j]) < 1e-6), `${n} tiles at ${x}, ${y}`);
+      }
+      for (const v of [a.h, a.rough, a.metal, ...a.col]) assert.ok(Number.isFinite(v), `${n} gives numbers`);
+    }
+  }
+  console.log('gs.models: material recipes tile ok');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);

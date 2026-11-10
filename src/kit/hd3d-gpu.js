@@ -18,7 +18,11 @@ import {
   materialColor, materialOpacity, materialRoughness, cos, floor, step, fwidth, dFdx, dFdy, normalize, uniformArray, Loop, int, If, sqrt,
   modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix, shadow as shadowOf, texture3D, parallaxDirection, normalMap, instanceIndex, storageTexture3D, textureStore, diffuseColor, mx_noise_float, uvec3, ivec3,
 } from 'three/tsl';
+import * as TSL from 'three/tsl';
 import { lut3D } from 'three/examples/jsm/tsl/display/Lut3DNode.js';
+import { tslOps } from './models/ops.js';
+import { RECIPES } from './models/recipes.js';
+import { seeded } from './models/materials.js';
 import { oitPass } from 'three/examples/jsm/tsl/display/OITPassNode.js';
 import { lensflare } from 'three/examples/jsm/tsl/display/LensflareNode.js';
 import { ssgi } from 'three/examples/jsm/tsl/display/SSGINode.js';
@@ -89,6 +93,10 @@ export const gpuMaterials = {
     m.name = gm.name || 'pom';
     return m;
   },
+  // gs.models.material: the textures as baked (or laid on by position: solid; or with each tile moved: scatter),
+  // and a second, close-up version that works the recipe out exactly per pixel (ops.js in TSL), used
+  // while the thing is within a few metres (hd3d.js swapTwins picks, once it has built in the background)
+  recipe(gm) { return recipeTwin(gm); },
   // pbr(col, { sss }): three's subsurface scattering material, with everything else copied as three does
   sss(gm) {
     const m = new MeshSSSNodeMaterial(), S = gm.userData.sss;
@@ -448,6 +456,54 @@ export function splitDraw(r, scene, cam, l, mask, keep) {
 /** A target holding a copy of a shadow map's depth. */
 export function splitTarget(r, w, h) { const t = new RenderTarget(w, h, { depthBuffer: true }); t.depthTexture = new DepthTexture(w, h); r.initRenderTarget(t); return t; }
 
+
+/* ---------- gs.models material recipes on WebGPU (materials.js) ---------- */
+const { sRGBTransferEOTF, positionWorld: PW, normalWorld: NW, faceDirection, positionView, cross } = TSL;
+// a height's slope turned into a bent normal (Mikkelsen's surface gradient, as three's bump map does), from n
+const bumpN = (h, k, n) => {
+  const dpx = dFdx(positionView), dpy = dFdy(positionView), r1 = cross(dpy, n), r2 = cross(n, dpx), det = dot(dpx, r1).mul(faceDirection);
+  const g = TSL.sign(det).mul(dFdx(h).mul(k).mul(r1).add(dFdy(h).mul(k).mul(r2)));
+  return normalize(abs(det).mul(n).sub(g));
+};
+const hash21 = q => fract(sin(dot(q, vec2(127.1, 311.7))).mul(43758.5453));
+function recipeTwin(gm) {
+  const R = gm.userData.recipe, REC = RECIPES[R.name], Cls = gm.isMeshPhysicalMaterial ? MeshPhysicalNodeMaterial : MeshStandardNodeMaterial;
+  const copy = () => { const m = new Cls(); for (const k in gm) if (k !== 'uuid' && k !== 'id' && k !== 'type') m[k] = gm[k]; return m; };
+  const rp = gm.map.repeat, solidK = R.solid ? (typeof R.solid === 'number' ? R.solid : 2) : 0;
+  // where on the tile (in tiles): the mesh's UVs, or (solid) its world position on the plane it faces most
+  const ax = abs(NW), useX = ax.x.greaterThan(ax.y).and(ax.x.greaterThan(ax.z)), useY = ax.y.greaterThan(ax.z);
+  const tileAt = solidK ? select(useX, PW.zy, select(useY, PW.xz, PW.xy)).div(solidK) : uv().mul(vec2(rp.x, rp.y));
+  // far: the baked textures; scatter: four neighbouring tiles each moved by a random amount, blended
+  const far = copy(), q = tileAt;
+  const read = (t, qq) => texture(t, qq);
+  const look = t => {
+    if (!R.scatter) return read(t, q);
+    const c = floor(q.sub(.5)), f = q.sub(.5).sub(c), w = f.mul(f).mul(f.mul(-2).add(3));
+    const at = (dx, dy) => read(t, q.add(vec2(hash21(c.add(vec2(dx, dy))), hash21(c.add(vec2(dx, dy)).add(17.3)))));
+    return mix(mix(at(0, 0), at(1, 0), w.x), mix(at(0, 1), at(1, 1), w.x), w.y);
+  };
+  if (solidK || R.scatter) {
+    far.colorNode = look(gm.map).mul(materialColor);
+    far.roughnessNode = look(gm.roughnessMap).g.mul(materialRoughness);
+    if (gm.metalnessMap) far.metalnessNode = look(gm.metalnessMap).b.mul(TSL.materialMetalness);
+    // (normals from the height layer: a normal map read by world position would point the wrong way)
+    far.normalNode = bumpN(look(gm.userData.recipeHeight || gm.map).r, gm.normalScale.x * .06 * (solidK || 1), TSL.normalView);
+    far.map = far.roughnessMap = far.metalnessMap = far.normalMap = null;
+  }
+  far.name = (gm.name || 'recipe') + ':far';
+  if (!R.closeUp) return far;
+  // near: the recipe itself at this pixel (sharp however close), its height bending the normal
+  const near = copy(), O = seeded(tslOps(TSL), R.seed), K = {}; for (const k in R.look) K[k] = O.rgb(R.look[k]);
+  const pTile = fract(tileAt).mul(REC.P), r = REC.f(O, pTile, K), num = v => (typeof v === 'number' ? float(v) : v);
+  near.colorNode = vec4(sRGBTransferEOTF(r.col), 1).mul(materialColor);
+  near.roughnessNode = num(r.rough).clamp(0, 1).mul(materialRoughness);
+  near.metalnessNode = num(r.metal).clamp(0, 1).mul(TSL.materialMetalness);
+  near.normalNode = bumpN(num(r.h), gm.normalScale.x * .05 * (solidK || 1 / Math.max(rp.x, rp.y)) * REC.P / 4, TSL.normalView);
+  near.map = near.roughnessMap = near.metalnessMap = near.normalMap = null;
+  near.name = (gm.name || 'recipe') + ':near';
+  far.userData.gsNear = near; far.userData.gsNearDist = 4;
+  return far;
+}
 /* ---------- froxel fog (hd3d.js v.fog3d) ---------- */
 // Fog lit by the sun through its shadows and by the lamps nearby, in a grid of small boxes fitted to
 // the view (froxels: 64 x 36 across the screen, 48 deep, deeper slices further away), as Frostbite and

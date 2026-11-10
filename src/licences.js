@@ -9,6 +9,8 @@
 
 export const OPEN_SOURCE = [
   { name: 'three.js', for: '3D graphics', licence: 'MIT', spdx: 'MIT', packages: ['three'] },
+  { name: 'EZ-Tree', for: 'growing trees in code (gs.models), by Daniel Greenheck; its bark and leaf pictures are not used', licence: 'MIT', spdx: 'MIT', packages: ['@dgreenheck/ez-tree'] },
+  { name: 'three-subdivide', for: 'smoothing code-built people and shapes (gs.models), by Stephens Nunnally', licence: 'MIT', spdx: 'MIT', packages: ['three-subdivide'] },
   { name: 'Capacitor', for: 'the phone app and its haptics, motion, location, share and file plugins', licence: 'MIT', spdx: 'MIT',
     packages: ['@capacitor/android', '@capacitor/ios', '@capacitor/core', '@capacitor/app', '@capacitor/device',
       '@capacitor/filesystem', '@capacitor/geolocation', '@capacitor/haptics', '@capacitor/motion', '@capacitor/share'] },

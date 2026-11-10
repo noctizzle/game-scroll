@@ -30,7 +30,7 @@ const fs = require('fs'), path = require('path');
   let bad = 0;
   for (const [name, url] of Object.entries(res)) {
     const file = path.join(dir, name + '.png'), png = Buffer.from(url.split(',')[1], 'base64');
-    if (mode === 'save') { fs.writeFileSync(file, png); console.log('saved', file); continue; }
+    if (mode === 'save') { fs.writeFileSync(file, png); console.log('saved', file, backends[name] ? '(' + backends[name] + ')' : ''); continue; }
     if (!fs.existsSync(file)) { console.log('MISSING', file); bad++; continue; }
     // gpu-...: scenes of features that are fuller on WebGPU (WebGL draws a lighter stand-in), so only same-backend runs compare them
     if (gpu && name.startsWith('gpu-')) { console.log(`skip  ${name}: WebGPU draws more than WebGL here by design`); fs.writeFileSync(path.join(dir, name + '.new.png'), png); continue; }

@@ -751,10 +751,11 @@ export function pbr(col = '#ffffff', { rough = .6, metal = 0, glow = 0, glowCol,
  * rough). The kit turns the height layer into a normal map. Returns { map, normal, rough,
  * repeat(u, v) } where repeat() returns a copy with that tiling.
  */
-export function surface(size, paint, { strength = 2.5 } = {}) {
+export function surface(size, paint, { strength = 2.5, metal = false } = {}) {
   const mk = () => { const c = document.createElement('canvas'); c.width = c.height = size; return c; };
   const C = mk(), Hc = mk(), Rc = mk(), g = { col: C.getContext('2d'), h: Hc.getContext('2d', { willReadFrequently: true }), r: Rc.getContext('2d', { willReadFrequently: true }), size };
   g.h.fillStyle = '#808080'; g.h.fillRect(0, 0, size, size); g.r.fillStyle = '#999'; g.r.fillRect(0, 0, size, size);
+  const Mc = metal ? mk() : null; if (Mc) { g.m = Mc.getContext('2d'); g.m.fillStyle = '#000'; g.m.fillRect(0, 0, size, size); }   // (metal: white = metal; its blue is what three reads)
   paint(g);
   // height -> tangent-space normal map (wrapping Sobel)
   const hd = g.h.getImageData(0, 0, size, size).data, N = mk(), nc = N.getContext('2d'), out = nc.createImageData(size, size), nf = new Float32Array(size * size * 3);
@@ -768,10 +769,10 @@ export function surface(size, paint, { strength = 2.5 } = {}) {
   }
   nc.putImageData(out, 0, 0);
   const tx = (cv, srgb) => { const t = new CanvasTexture(cv); t.wrapS = t.wrapT = RepeatWrapping; t.colorSpace = srgb ? SRGBColorSpace : NoColorSpace; t.anisotropy = 4; t.minFilter = LinearMipmapLinearFilter; return t; };
-  const base = { map: tx(C, true), normal: tx(N), rough: roughMips(tx(Rc), g.r.getImageData(0, 0, size, size).data, nf, size), height: tx(Hc), nf, size, rd: g.r.getImageData(0, 0, size, size).data };
+  const base = { map: tx(C, true), normal: tx(N), rough: roughMips(tx(Rc), g.r.getImageData(0, 0, size, size).data, nf, size), height: tx(Hc), nf, size, rd: g.r.getImageData(0, 0, size, size).data, ...(Mc ? { metal: tx(Mc) } : {}), canvases: { col: C, h: Hc, r: Rc, ...(Mc ? { m: Mc } : {}) } };
   const set = (u, v, b = base) => {
     if (u === 1 && v === 1) return { ...b, repeat: set };
-    const cl = {}; for (const k of ['map', 'normal', 'rough', 'height']) { cl[k] = b[k].clone(); cl[k].repeat.set(u, v); cl[k].needsUpdate = true; }
+    const cl = {}; for (const k of ['map', 'normal', 'rough', 'height', 'metal']) { if (!b[k]) continue; cl[k] = b[k].clone(); cl[k].repeat.set(u, v); cl[k].needsUpdate = true; }
     return { ...cl, repeat: set };
   };
   return { ...base, repeat: set };
@@ -2189,19 +2190,37 @@ function gpuFor(v) {
 // swap each view's parts between their WebGL and WebGPU versions (particles: points or sprites)
 const gpuLooked = new WeakSet(), gpuTwins = new WeakMap(), sunRoles = new WeakMap();
 // kit ShaderMaterials (GPU_TWINS) swapped for their node material twin on WebGPU, and back
-function swapTwins(scene, G) {
+// A twin can have a close-up version (gs.models materials: the recipe worked out per pixel): drawn
+// while the thing is within its distance of the camera, once its shaders have built in the background
+// (so walking up to a wall never hides it while a shader builds)
+const NEAR_S = new Sphere();
+function swapTwins(scene, G, cam = null) {
   scene.traverse(o => {
     if (!o.isMesh) return;
     const gl = o.userData.gsGlMat || o.material;
     if (!gl?.userData?.gsGpu) return;
     if (G) {
-      let tw = gpuTwins.get(gl); if (tw?.r !== G.r) gpuTwins.set(gl, tw = { r: G.r, m: G.fx.gpuMaterials[gl.userData.gsGpu](gl) });
-      o.userData.gsGlMat = gl; o.material = tw.m;
+      let tw = gpuTwins.get(gl); if (tw?.r !== G.r) gpuTwins.set(gl, tw = { r: G.r, m: G.fx.gpuMaterials[gl.userData.gsGpu](gl), nearOk: false, building: false });
+      o.userData.gsGlMat = gl;
+      const near = tw.m.userData.gsNear;
+      let use = tw.m;
+      if (near && cam && !o.isInstancedMesh) {
+        if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+        NEAR_S.copy(o.geometry.boundingSphere).applyMatrix4(o.matrixWorld);
+        const close = NEAR_S.distanceToPoint(cam.position) < tw.m.userData.gsNearDist;
+        if (close && tw.nearOk) use = near;
+        else if (close && !tw.building) {
+          tw.building = true; const keep = o.material; o.material = near;
+          try { G.r.compileAsync(o, cam, scene).then(() => { tw.nearOk = true; }, () => {}); } catch (e) { /* stays far */ }
+          o.material = keep;
+        }
+      }
+      o.material = use;
     } else if (o.userData.gsGlMat) { o.material = gl; delete o.userData.gsGlMat; }
   });
 }
 function gpuSwap(v, G) {
-  swapTwins(v.scene, G);
+  swapTwins(v.scene, G, v.cam);
   if (AREA_LTC && G && !AREA_GPU) { G.fx.areaLTC(AREA_LTC); AREA_GPU = true; }   // area lights' tables for WebGPU (panel)
   // shadow maps: each renderer keeps its own. WebGL drew into WebGPU's map when it found one on the light
   // (and the other way round), which made WebGPU remake it in the middle of a frame that still used it:
