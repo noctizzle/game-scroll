@@ -171,6 +171,8 @@ export const HD = {
   get tier() { return Q.force ?? Math.min(Q.tier, Q.capNow); }, get name() { return TIERS[this.tier].name; }, get res() { return Q.force != null ? 1 : LEVELS[Q.lvl]; },
   set force(t) { Q.force = t; }, get force() { return Q.force; },
   /** Last frame: draw calls, triangles, milliseconds spent in render() on the CPU, and whether the shadows were redrawn. */
+  /** GPU culling of gs.props copies on WebGPU: 'auto' (sets of GPU_CULL_MIN copies or more), true (every set), false (CPU). Off while frame generation runs. */
+  gpuCull: 'auto',
   info: { gpuMs: null, calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0, fgSteps: 0, still: false, rw: 0, rh: 0, ow: 0, oh: 0 },
   /** Things needing a shader not built yet wait (hidden) at most this long while it builds in the background (v.holdNew); hold = false: build it in the frame instead. */
   holdMs: 500, hold: true,
@@ -1824,7 +1826,10 @@ export class HDView {
     this.holdNew(r, baking || off, now);
     const shc = this.shadowCams ||= []; shc.length = 0;
     if (tier().shadow > 0) this.scene.traverseVisible(o => { if (o.isLight && o.castShadow && o.shadow?.camera) shc.push(o.shadow.camera); });
-    this.scene.traverse(o => { if (o.isInstancedMesh2 && o.userData.gpuHid) o.userData.gpuTwin.sync(this.cam, this.occlusion?.ready && HD.occlude !== false ? this.occlusion : null, shc); });
+    // GPU culling (HD.gpuCull): big sets of copies are picked on the chip, except while frame generation runs (it
+    // needs each copy to keep its place in the list from frame to frame: hd3d-gpu.js gpuProps)
+    const gc = HD.gpuCull, gcOk = gc !== false && !(live && frameGenFor(speed.game)), occ = this.occlusion?.ready && HD.occlude !== false ? this.occlusion : null;
+    this.scene.traverse(o => { if (o.isInstancedMesh2 && o.userData.gpuHid) o.userData.gpuTwin.sync(this.cam, occ, shc, gcOk && (gc === true || (o._instancesArrayCount || 0) >= GPU_CULL_MIN) ? r : null); });
     for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
     // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
     const pw = up ? up.pw : r.domElement.width, ph = up ? Math.max(1, Math.floor(up.fh * (pw + .5) / up.fw)) : r.domElement.height;
@@ -2014,15 +2019,16 @@ export class HDView {
     // A card being added below the one on screen (speed.offscreen) gets a copied frame: it mustn't take
     // the 3D canvas, the quality tuning or a shader warm-up away from the game being played.
     const off = !baking && speed.offscreen;
-    // A card being added below the one on screen: until its shaders and textures are ready (above),
-    // draw no 3D (drawing would stall the feed while they compile), then paint its picture in later.
-    if (off && !this.ready) {
-      this.prepare().then(() => { if (c.canvas.isConnected && host?.canvas !== c.canvas) bakeLater(this, c); });
+    // A card being added below the one on screen: draw no 3D now, paint its picture in later, once its
+    // shaders and textures are ready (drawing would stall the feed while they compile) and the feed is
+    // still (a whole frame plus its copy, and the playing card's frame drawn again, landed mid-swipe)
+    if (off) {
+      if (!waiting.has(c)) { waiting.add(c); (this.ready ? Promise.resolve() : this.prepare()).then(() => { waiting.delete(c); if (c.canvas.isConnected && host?.canvas !== c.canvas) bakeLater(this, c); }); }
       c.save(); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, c.canvas.width, c.canvas.height); c.restore();
       return;
     }
     // (each is a whole frame of another card plus a copy: never while a round is played or the feed moves)
-    if (!baking && !off) { this.drawnAt = now; if (bakes.length && !speed.playing() && !speed.busy()) for (const [v, bc] of bakes.splice(0)) if (bc.canvas.isConnected && host?.canvas !== bc.canvas) try { v.bake(bc, true); } catch (_) { /* best effort */ } }
+    if (!baking && !off) { this.drawnAt = now; if (bakes.length && !speed.playing() && !speed.busy()) { const [v, bc] = bakes.shift(); if (bc.canvas.isConnected && host?.canvas !== bc.canvas) try { v.bake(bc, true); } catch (_) { /* best effort */ } } }   // (one a frame: several at once were one long stall)
     const direct = HD.direct && !baking && !off && !!c.canvas.parentNode && mount(r.domElement, c, this);
     if (!baking && !off) {
       if (Q.game !== speed.game) startGame(speed.game);
@@ -2196,6 +2202,7 @@ const gpuLooked = new WeakSet(), gpuTwins = new WeakMap(), sunRoles = new WeakMa
 // A twin can have a close-up version (gs.models materials: the recipe worked out per pixel): drawn
 // while the thing is within its distance of the camera, once its shaders have built in the background
 // (so walking up to a wall never hides it while a shader builds)
+const GPU_CULL_MIN = 2000;   // copies in one gs.props set before the chip picks them (HD.gpuCull 'auto'): below it the CPU's list is quick
 const NEAR_S = new Sphere(), nearBusy = new WeakSet();
 function swapTwins(scene, G, cam = null) {
   scene.traverse(o => {
@@ -2294,7 +2301,7 @@ const gpuAir = G => { let a = gpuAirs.get(G); if (!a) { a = G.fx.airNodes(AIR); 
 let host = null, lastView = null, GS2 = null;   // GS2: SGSR 2's frame numbers on WebGPU
 // Pictures of cards that finished getting ready (prepare) wait here and are drawn into their cards
 // just before the playing card's next frame, which then redraws the shared 3D canvas.
-const bakes = [];
+const bakes = [], waiting = new WeakSet();   // waiting: card canvases whose picture is already on its way
 // A card's picture before it's played is drawn with fewer pixels (it's copied off the graphics chip,
 // which costs in proportion): its first live frame, once it's on screen and still, is full quality.
 const PIC_PX = .6e6;
@@ -2302,8 +2309,8 @@ const idle = () => new Promise(res => (typeof requestIdleCallback === 'function'
 // A card's shaders finish compiling whenever they do, often while the next swipe is under way or a
 // round has started: its picture waits until the feed is still and no round is being played.
 function bakeLater(view, c) {
-  if (speed.busy() || speed.playing()) { setTimeout(() => { if (c.canvas.isConnected && host?.canvas !== c.canvas) bakeLater(view, c); }, 250); return; }
-  if (host && host.canvas.isConnected && performance.now() - (host.view.drawnAt || 0) < 300) { bakes.push([view, c]); return; }
+  if (speed.busy() || speed.playing()) { if (waiting.has(c)) return; waiting.add(c); setTimeout(() => { waiting.delete(c); if (c.canvas.isConnected && host?.canvas !== c.canvas) bakeLater(view, c); }, 250); return; }
+  if (host && host.canvas.isConnected && performance.now() - (host.view.drawnAt || 0) < 300) { if (!bakes.some(b => b[1] === c)) bakes.push([view, c]); return; }
   // no 3D game is being played: give the card that holds the 3D canvas its own last picture, take the
   // canvas off it, and draw this card's picture
   const r = renderer(); if (!r) return;
@@ -2315,8 +2322,9 @@ function mount(cv, c, view) {
   const hc = c.canvas, par = hc.parentNode, prevUnder = host?.under;
   if (host && host.canvas !== hc) {
     const old = host; host = null;
-    // (the card it leaves has just gone off screen: a lighter picture, until it's played again)
-    if (old.canvas.isConnected) try { old.view.bake(old.ctx, true); } catch (_) { /* best effort */ }
+    // (the card it leaves has just gone off screen: a lighter picture, until it's played again, made once
+    // the feed is still: drawn here, a whole frame of it plus its copy landed in the middle of the swipe)
+    if (old.canvas.isConnected && !bakes.some(b => b[1] === old.ctx)) bakes.push([old.view, old.ctx]);
     old.canvas.classList.remove('hd-host');
   }
   // a view that moved between WebGL and WebGPU: take the other renderer's canvas off this card

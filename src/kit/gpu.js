@@ -56,6 +56,16 @@ export function readPixels(r, target, x, y, w, h, buf = new Uint8Array(w * h * 4
   return Promise.resolve(buf);
 }
 
+/**
+ * Marks only the first n items of a buffer attribute (instance matrices, particle positions...) to go up to
+ * the graphics chip, not the whole array: a list sized for thousands that holds a few hundred this frame
+ * sent all of it every frame (6,000 trees: 100 ms of the frame on WebGPU). Nothing goes up when n is 0.
+ */
+export function sendUsed(a, n) {
+  if (!a || n <= 0) return;
+  a.clearUpdateRanges(); a.addUpdateRange(0, Math.min(a.array.length, n * a.itemSize)); a.needsUpdate = true;
+}
+
 /* ---------- WebGPU: always, where the device has it ---------- */
 // Rob (2026-11-09): no setting; 3D games use WebGPU whenever the device supports it and WebGL otherwise.
 // setGpuPick stays for tests and the look-compare / gpu-games scripts (they draw each backend in turn);

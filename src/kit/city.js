@@ -43,6 +43,7 @@ import { Props } from './props.js';
 import { Path } from './paths.js';
 import { tree } from './outdoors.js';
 import { phoneClass } from './speed.js';
+import { sendUsed } from './gpu.js';
 import { bed, tone, Ears } from './sound.js';
 
 /* ---------- looks ---------- */
@@ -621,8 +622,8 @@ class Traffic {
       this.head.setMatrixAt(i, _m); this.tail.setMatrixAt(i, _m);
       this.tail.setColorAt(i, _c.setScalar(c.braking ? 2.4 : 1));
     });
-    for (const k in this.meshes) { const m = this.meshes[k]; m.count = n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
-    for (const m of [this.head, this.tail]) { m.count = this.list.length; m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; }
+    for (const k in this.meshes) { const m = this.meshes[k]; m.count = n; sendUsed(m.instanceMatrix, n); sendUsed(m.instanceColor, n); }   // (only the cars in use go up)
+    for (const m of [this.head, this.tail]) { m.count = this.list.length; sendUsed(m.instanceMatrix, m.count); sendUsed(m.instanceColor, m.count); }
     // vans use the car's light spots (close enough at this size)
     this.head.material.color.set('#fff3d6').multiplyScalar(.35 + night * 3.2); this.tail.material.color.set('#ff2c1c').multiplyScalar(.5 + night * 1.6);
   }
@@ -738,7 +739,7 @@ class People {
         leg.updateMatrix(); _m.multiplyMatrices(e.matrix, leg.matrix); L.setMatrixAt(i * 2 + k, _m); L.setColorAt(i * 2 + k, _c.set(p.pants));
       }
     });
-    for (const [m, k] of [[T, 1], [Hd, 1], [L, 2]]) { m.count = this.list.length * k; m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; }
+    for (const [m, k] of [[T, 1], [Hd, 1], [L, 2]]) { m.count = this.list.length * k; sendUsed(m.instanceMatrix, m.count); sendUsed(m.instanceColor, m.count); }
   }
   near(p, r) { const pz = p.z ?? p.y; return this.list.filter(q => Math.hypot(q.x - p.x, q.z - pz) <= r).sort((a, b) => Math.hypot(a.x - p.x, a.z - pz) - Math.hypot(b.x - p.x, b.z - pz)); }
   /** The first person standing within r of p (or null; people lying down don't count). */

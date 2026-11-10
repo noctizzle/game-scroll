@@ -111,10 +111,13 @@ server) and count the calls per second.
 
 - `look-compare.cjs` draws fixed, seeded scenes (Next Gen at every tier, Console) and fails on a
   visible difference. Save before the change, check after, on WebGL and with `--webgpu`.
-  `PICK=recipes,wear` draws just those scenes (about 10 s); `Q=dbg` (with `ALLWARN=1`) logs what the
+  `PICK=recipes,wear` draws just those scenes (about 10 s; `beams` draws beams-sun, beams-lamp and motion-blur); `Q=dbg` (with `ALLWARN=1`) logs what the
   renderer holds (and how many textures are packed) every 3 s and says when the graphics queue stops
   answering; `Q=nopack` draws code-made textures uncompressed on WebGPU; `Q=hdr` turns on HDR output (as on an HDR
   phone screen; the saved pictures clip it to white).
+- GPU culling of `gs.props`: `PICK=gpu-cull-cpu,gpu-cull node scripts/look-compare.cjs save <dir> --webgpu`
+  draws the same forest culled on the CPU and on the GPU (`Q=n=6000` sets the number of trees). The two
+  pictures should match, and each line gives the CPU time per frame and the time spent building the lists.
 - Known noise (2026-11-10): the test machine's software WebGPU (SwiftShader) sometimes hangs its queue,
   with no error, partway through a full `--webgpu` run (seen after the live bounce light scenes), and
   every scene after that shows the same frozen picture. If a run of CHANGED lines all differ by 30+,

@@ -21,6 +21,8 @@ import {
 import * as TSL from 'three/tsl';
 import { lut3D } from 'three/examples/jsm/tsl/display/Lut3DNode.js';
 import { tslOps } from './models/ops.js';
+import { gpuCull, gpuCullFits } from './props-gpu.js';
+import { sendUsed } from './gpu.js';
 import { RECIPES } from './models/recipes.js';
 import { seeded } from './models/materials.js';
 import { oitPass } from 'three/examples/jsm/tsl/display/OITPassNode.js';
@@ -609,7 +611,7 @@ export function gpuParticles(parts) {
   m.colorNode = tn.rgb; m.opacityNode = tn.a.mul(a).mul(select(r.greaterThan(1), float(0), float(1)));
   const sp = new Sprite(m); sp.frustumCulled = false; sp.renderOrder = parts.pts.renderOrder; sp.count = 0;
   sp.userData.noAO = true;
-  return { sprite: sp, sync(n) { for (const at of [pos, size, tint]) at.needsUpdate = true; sp.count = n; } };
+  return { sprite: sp, sync(n) { for (const at of [pos, size, tint]) sendUsed(at, n); sp.count = n; } };
 }
 
 /** A material that takes no ambient occlusion (hd3d.js seeThrough3d: see-through, cut-out, noAO). */
@@ -665,11 +667,20 @@ export function gpuProps(im) {
     });
   };
   make();
+  // GPU culling (props-gpu.js; hd3d.js says when): its own meshes, so the CPU lists keep their slots for switching back
+  let gc = null, onGpu = false;
+  const useGpu = on => { if (on && !gc) gc = gpuCull(im, levels, group); if (on === onGpu) return; onGpu = on; for (const t of tw) t.visible = false; for (const m of gc?.meshes || []) m.visible = on; };
   // a slot drawn as nothing: every point at the copy's own place
   const hide = (M, m0) => { const x = M[m0 + 12], y = M[m0 + 13], z = M[m0 + 14]; M.fill(0, m0, m0 + 16); M[m0 + 12] = x; M[m0 + 13] = y; M[m0 + 14] = z; M[m0 + 15] = 1; };
   return {
     group,
-    sync(cam, occ = null, shadowCams = null) {   // occ: hd3d.js occlusion culling (only for props without shadows: one list feeds both here); shadowCams: the lights' shadow cameras (a copy off screen that casts into view is kept)
+    /** Copies this many or more draw with GPU culling where allowed (HD.gpuCull 'auto'). */
+    gpuFits: gpuCullFits(levels),
+    isGpu: () => onGpu,   // (a function: the twin is copied with ...spread in hd3d.js)
+    sends: () => gc?.sends() ?? 0,
+    sync(cam, occ = null, shadowCams = null, gpuR = null) {   // occ: hd3d.js occlusion culling (only for props without shadows: one list feeds both here); shadowCams: the lights' shadow cameras (a copy off screen that casts into view is kept); gpuR: the renderer, to cull on the GPU instead
+      useGpu(!!gpuR && this.gpuFits);
+      if (onGpu) { gc.sync(gpuR, cam, shadowCams); for (const m of gc.meshes) m.visible = true; return; }
       if ((im._capacity || 0) > cap) make();
       const n = Math.min(cap, im._instancesArrayCount || 0), D = im.matricesTexture?._data, C = im.colorsTexture?._data, wm = im.matrixWorld;
       if (!D) { for (const t of tw) { t.count = 0; t.userData.slots.top = 0; t.userData.slots.slotOf.fill(0); t.userData.slots.owner.fill(0); } return; }
@@ -710,11 +721,12 @@ export function gpuProps(im) {
         }
         while (S.top && !S.owner[S.top - 1]) S.top--;
         t.count = S.top;
-        if (t.count) { t.instanceMatrix.needsUpdate = true; if (t.instanceColor) t.instanceColor.needsUpdate = true; }
+        // (only the slots in use go up to the chip, not the whole list)
+        sendUsed(t.instanceMatrix, t.count); sendUsed(t.instanceColor, t.count);
         t.visible = t.count > 0;
       }
     },
-    dispose() { for (const t of tw) t.dispose(); },
+    dispose() { for (const t of tw) t.dispose(); gc?.dispose(); },
   };
 }
 
