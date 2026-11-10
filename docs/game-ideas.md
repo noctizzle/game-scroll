@@ -133,9 +133,9 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Block Fit Grid — place given blocks on a 8x8 grid, clear full rows and columns
 - [x] Ball Sort Tubes — pour coloured balls so each tube is one colour
 - [x] Untangle — drag points until no lines cross
-- [ ] Word Swipe — swipe letters to form words from a wheel
-- [ ] Hexa Merge — drop numbered hexes, merge three of a kind
-- [ ] Pin Pull — pull pins in the right order so balls reach the cup
+- [x] Word Swipe — swipe letters to form words from a wheel
+- [x] Hexa Merge — drop numbered hexes, merge three of a kind
+- [x] Pin Pull — pull pins in the right order so balls reach the cup
 - [x] Parking Out — slide cars so the red car can leave the lot
 - [x] Gem Slide — match-three where you slide whole rows and columns round like a loop instead of swapping (20 slides)
 - [ ] Draw to Save — draw a line that shields a character from falling rocks
@@ -143,9 +143,9 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [ ] Tangram Snap — rotate pieces to fill a silhouette
 - [x] Liquid Mixer — mix colours to match a target shade
 - [x] Nonogram 5x5 (built as Picture Logic) — fill cells from row and column hints
-- [ ] Sudoku 4x4 Speed — quick 4x4 sudokus against the clock
+- [x] Sudoku 4x4 Speed — quick 4x4 sudokus against the clock
 - [x] Bubble Shooter (built as Bubble Pop) — aim coloured bubbles to pop groups of three
-- [ ] Jigsaw Six — six-piece jigsaw against the clock
+- [x] Jigsaw Six — six-piece jigsaw against the clock
 - [x] Spot the Difference — two pictures, five differences
 - [x] Link Pairs — connect matching icons with a path of max two turns
 - [ ] Rotate Maze — rotate the whole maze to roll the ball out
@@ -345,3 +345,6 @@ Ten batches toward 1000, mostly from the open ideas above (ticked where they wer
 - [x] Lasso Loop — circle your finger over a running calf, let go to drop the loop there
 - [x] Yo-Yo Tricks — flick to throw, swipe the trick shown while it sleeps, tap to catch before it stops
 - [x] Skip Stone — swipe fast and flat to skim stones; lily pads kick, ducks stop it
+- [x] Word Ladder — change one letter at a time to turn a word into the target
+- [x] Lamp Flip — tap lamps that flip their neighbours until every lamp is lit
+- [x] Island Bridges — link numbered islands with single and double bridges that never cross

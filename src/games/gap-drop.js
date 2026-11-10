@@ -18,14 +18,14 @@ function make(api) {
     // 12 tiles round the drum: some gaps, some red, the rest plain
     const tiles = new Array(SEGS).fill(0), g = Math.random() * SEGS | 0, gw = i > 15 ? 1 : 2;
     for (let k = 0; k < gw; k++) tiles[(g + k) % SEGS] = 1;
-    const reds = Math.min(5, Math.floor(i / 4));
+    const reds = Math.min(6, 2 + Math.floor(i / 4));
     for (let k = 0; k < reds; k++) { const j = Math.random() * SEGS | 0; if (tiles[j] === 0 && Math.abs(j - g) > 1) tiles[j] = 2; }
     return { y: 260 + i * GAP, tiles, gone: false, i };
   }
   const tileAt = f => { const w = W / SEGS * 1.0, x = ((W / 2 - rot) % W + W) % W; return f.tiles[Math.floor(x / w) % SEGS]; };
 
   return {
-    reset() { floors = []; for (let i = 0; i < 8; i++) floors.push(floor(i)); floors[0].tiles = floors[0].tiles.map(v => v === 2 ? 0 : v); rot = 0; ball = { y: 150, vy: 0 }; cam = 0; score = 0; falls = 0; t = 0; last = null; bits = []; depth = 8; started = false; feel.clear(); },
+    reset() { floors = []; for (let i = 0; i < 8; i++) floors.push(floor(i)); floors[0].tiles = floors[0].tiles.map(v => v === 2 ? 0 : v); floors[1].tiles = floors[1].tiles.map(v => v === 2 ? 0 : v); rot = 0; ball = { y: 150, vy: 0 }; cam = 0; score = 0; falls = 0; t = 0; last = null; bits = []; depth = 8; started = false; feel.clear(); },
     resize(w, h) { W = w; H = h; },
     update(dt) {
       feel.update(dt); if (feel.frozen) return;
@@ -99,7 +99,7 @@ export default {
   tag: 'Casual · Drop',
   retro: false,
   w: 360, h: 640, maxH: 800,
-  goal: 40,
+  goal: 60,
   hint: 'Drag left and right to turn the floors so the bouncing ball drops through the gaps. Red tiles pop it; three drops in a row smash the next floor.',
   make,
 };

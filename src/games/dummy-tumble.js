@@ -45,9 +45,9 @@ function make(api) {
       const d =a.tag === 'dummy' ? a : b.tag === 'dummy' ? b : null; if (!d || !run) return;
       const other = d === a ? b : a;
       if (other.tag === 'bin') { if (!binHit) { binHit = true; pops.push({ x, y, txt: 'IN THE BIN! +15', l: 1.4 }); score += 15; api.score(score); notes('C5 E5 G5 C6', { len: .06 }); haptic('success'); } return; }
-      if (speed < 160 || (cool.get(d) || 0) > t) return;
+      if (speed < 250 || (cool.get(d) || 0) > t) return;
       cool.set(d, t + .15);
-      const p = Math.round(speed / 140) * (d.head ? 2 : 1);
+      const p = Math.floor(speed / 250) * (d.head ? 2 : 1);
       score += p; api.score(score); run.got += p;
       pops.push({ x, y, txt: `+${p}`, l: .7 });
       sfx(140 + speed * .1, .06, 'square', .04); haptic(speed > 500 ? 'medium' : 'light');
@@ -144,7 +144,7 @@ export default {
   tag: 'Casual · Physics',
   retro: false,
   w: 360, h: 640, maxH: 800,
-  goal: 60,
+  goal: 80,
   hint: 'Drag back from the crash-test dummy and let go to fling it down the stairs. Hard bumps score, head bumps double; knock crates off and land in the bin. Three flings.',
   make,
 };

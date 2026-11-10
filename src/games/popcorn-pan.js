@@ -110,7 +110,7 @@ export default {
   tag: 'Color · Cooking',
   retro: true, era: 'color', pal: 'lemon',
   w: 160, h: 192, maxW: 220, maxH: 260,
-  goal: 60,
+  goal: 90,
   hint: 'Hold for heat so kernels pop, swipe sideways to shake so popped corn does not scorch, swipe up to serve. Ten burnt bits and it is over.',
   make,
 };
