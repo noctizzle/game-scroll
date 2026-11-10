@@ -1601,5 +1601,36 @@ console.log('physics ok');
   console.log('gs.sound.compose ok');
 }
 
+// gs.solve: a one-answer sudoku made, graded and hinted; a tic-tac-toe opponent that wins and blocks
+{
+  const { Puzzle, Search } = await import('../src/kit/solve.js');
+  const p = new Puzzle(); for (let i = 0; i < 81; i++) p.cell(i, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  for (let r = 0; r < 9; r++) { p.allDiff([...Array(9)].map((_, c) => r * 9 + c)); p.allDiff([...Array(9)].map((_, c) => c * 9 + r)); }
+  for (let b = 0; b < 9; b++) { const ids = []; for (let i = 0; i < 9; i++) ids.push(((b / 3 | 0) * 3 + (i / 3 | 0)) * 9 + (b % 3) * 3 + i % 3); p.allDiff(ids); }
+  const full = p.solve({ rng: 7 }).solution;
+  for (let r = 0; r < 9; r++) assert.equal(new Set([...Array(9)].map((_, c) => full[r * 9 + c])).size, 9, 'filled grid rows differ');
+  const easy = p.carve(full, { rng: 3, grade: 'easy' });
+  assert.ok(p.unique(easy) && p.grade(easy).level === 'easy' && Object.keys(easy).length < 40, 'easy sudoku: one answer, deduction alone');
+  assert.ok(!p.unique({}), 'an empty grid has many answers');
+  const open = Object.keys(full).map(Number).find(k => !(k in easy)), bad = full[open] % 9 + 1;
+  const h = p.hint(easy, { [open]: bad });
+  assert.ok(h && h.wrong.includes(open) && h.value === full[h.id], 'hint is right and spots the wrong move');
+  const q = new Puzzle(); for (const x of 'abc') q.cell(x, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  q.allDiff([...'abc']); q.sum([...'abc'], 24); q.rule(['a', 'b'], ([a, b]) => a < b); q.rule(['b', 'c'], ([b, c]) => b < c);
+  assert.deepEqual(q.solve({ limit: 5 }), { solution: { a: 7, b: 8, c: 9 }, count: 1 }, 'sums and rules');
+  const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+  const win = b => { for (const [a, c, d] of lines) if (b[a] && b[a] === b[c] && b[a] === b[d]) return b[a]; return null; };
+  const g = { moves: s => win(s.b) ? [] : s.b.map((v, i) => v ? null : i).filter(x => x !== null), play: (s, m) => { const b = s.b.slice(); b[m] = s.t; return { b, t: s.t === 'X' ? 'O' : 'X' }; },
+    turn: s => s.t, over: s => !!win(s.b) || s.b.every(Boolean), score: (s, who) => { const w = win(s.b); return w ? (w === who ? 100 : -100) : 0; }, winner: s => win(s.b) };
+  const S = new Search(g);
+  for (const mode of ['minimax', 'mcts']) {
+    assert.equal(S.best({ b: ['O', 'O', null, 'X', 'X', null, null, null, null], t: 'X' }, { mode, time: 80, rng: 1 }), 5, mode + ' takes the win');
+    assert.equal(S.best({ b: ['O', 'O', null, 'X', null, null, null, null, 'X'], t: 'X' }, { mode, time: 80, rng: 1 }), 2, mode + ' blocks');
+  }
+  let s = { b: Array(9).fill(null), t: 'X' }; while (!g.over(s)) s = g.play(s, S.best(s, { time: 40 }));
+  assert.equal(win(s.b), null, 'perfect play draws');
+  console.log('gs.solve ok');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);
