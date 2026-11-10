@@ -170,6 +170,37 @@ async function pomScene() {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend];
 }
+// soft shadows (sun().softShadows): a post, a raised slab and a crate sitting on the ground: the
+// crate's shadow sharp at its foot, the post's and slab's spreading the further they fall
+async function pcssScene() {
+  window.__hd.force = 2;
+  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: 0, env: .3, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 3, 5); v.cam.lookAt(0, 0, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 6, [-.5, .8, .3]).softShadows(3); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(12, 12).rotateX(-Math.PI / 2), gs.hd.pbr('#c8c0b0', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const put = (geo, px, py, pz) => { const o = new T.Mesh(geo, gs.hd.pbr('#8a6040', { rough: .7 })); o.position.set(px, py, pz); o.castShadow = o.receiveShadow = true; v.scene.add(o); };
+  put(new T.CylinderGeometry(.08, .08, 3, 12), -1.2, 1.5, 0); put(new T.BoxGeometry(1.2, .1, .8), .6, 1.6, -.6); put(new T.BoxGeometry(.6, .6, .6), .9, .3, 1);
+  const t0 = performance.now(); while (performance.now() - t0 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
+// richer materials: brushed metal (aniso), a soap-film ball (film), glass, a wet path and a detail-normal stone
+async function materialsScene() {
+  window.__hd.force = 2;
+  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: 0, env: .5, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 1.4, 3.4); v.cam.lookAt(0, .5, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 6, [-.6, .8, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const grain = (n, s) => gs.hd.surface(128, g => { g.col.fillStyle = '#8a8478'; g.col.fillRect(0, 0, 128, 128); g.h.fillStyle = '#808080'; g.h.fillRect(0, 0, 128, 128); for (let i = 0; i < n; i++) { const a = (i * 97) % 128, b = (i * 61) % 128; g.h.fillStyle = i % 2 ? '#fff' : '#000'; g.h.beginPath(); g.h.arc(a, b, s * (1 + i % 3), 0, 7); g.h.fill(); } });
+  const floor = new T.Mesh(new T.PlaneGeometry(6, 6).rotateX(-Math.PI / 2), gs.hd.pbr('#7a6a58', { rough: .8, wet: .8 })); floor.receiveShadow = true; v.scene.add(floor);
+  const put = (geo, m, px) => { const o = new T.Mesh(geo, m); o.position.set(px, .45, 0); o.castShadow = o.receiveShadow = true; v.scene.add(o); return o; };
+  put(new T.CylinderGeometry(.3, .3, .9, 32), gs.hd.pbr('#c8ccd0', { metal: 1, rough: .35, aniso: .9 }), -1.2);
+  put(new T.SphereGeometry(.35, 32, 16), gs.hd.pbr('#202830', { rough: .1, film: 1 }), -.4);
+  put(new T.SphereGeometry(.35, 32, 16), gs.hd.pbr('#ffffff', { glass: { tint: '#9fe0c8' } }), .4);
+  put(new T.DodecahedronGeometry(.4), gs.hd.pbr('#ffffff', { rough: .9, tex: gs.hd.detail(grain(12, 8), grain(60, 2), { times: 6 }) }), 1.2);
+  const t0 = performance.now(); while (performance.now() - t0 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
 // automatic static batching: a yard of crates, posts and rocks sharing a few materials, kept still long
 // enough to be batched (?nobatch draws them one by one: the two pictures must match)
 async function batchScene() {
@@ -335,7 +366,11 @@ function consoleScene() {
   v.render(x, 192, 160);
   return c.toDataURL();
 }
-try {
+// ?pick=materials,gpu-pcss draws only those (a quick look while working on one)
+const SCENES = { area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene() };
+const PICK = new URLSearchParams(location.search).get('pick');
+if (PICK) try { for (const n of PICK.split(',')) [out[n], backends[n]] = await SCENES[n](); } catch (e) { out.error = String(e && e.stack || e); }
+else try {
   const only = new URLSearchParams(location.search).get('only');
   for (const t of only ? [+only] : [0, 1, 2, 3]) [out['nextgen-tier' + t], backends['nextgen-tier' + t]] = await nextgen(t);
   [out['nextgen-wet'], backends['nextgen-wet']] = await nextgen(3, .3);
@@ -351,6 +386,8 @@ try {
   [out.flare, backends.flare] = await flareScene();
   [out['gpu-pom'], backends['gpu-pom']] = await pomScene();
   [out.batch, backends.batch] = await batchScene();
+  [out.materials, backends.materials] = await materialsScene();
+  [out['gpu-pcss'], backends['gpu-pcss']] = await pcssScene();
   { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; }
   [out.river, backends.river] = await riverScene();
   [out.flood, backends.flood] = await floodScene();

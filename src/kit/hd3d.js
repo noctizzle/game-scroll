@@ -676,10 +676,19 @@ function seeThrough(r, w, h) {
  * A PBR material. col: base colour; rough/metal 0..1; glow: emissive strength (values above 1
  * bloom); tex: a surface() set; rep: texture repeat [u, v]. Extra options pass to three.js.
  */
-export function pbr(col = '#ffffff', { rough = .6, metal = 0, glow = 0, glowCol, tex, rep, clear = 0, sss, depth = 0, ...o } = {}) {
-  const M = clear || o.sheen || sss ? MeshPhysicalMaterial : MeshStandardMaterial;
+export function pbr(col = '#ffffff', { rough = .6, metal = 0, glow = 0, glowCol, tex, rep, clear = 0, sss, depth = 0, aniso = 0, anisoDir = 0, film = 0, glass, wet = 0, porosity, ...o } = {}) {
+  const M = clear || o.sheen || sss || aniso || film || glass || wet ? MeshPhysicalMaterial : MeshStandardMaterial;
   const m = new M({ color: col, roughness: rough, metalness: metal, ...o });
   if (clear) { m.clearcoat = clear; m.clearcoatRoughness = .15; }
+  // richer surfaces, all three.js's own physical material (both backends):
+  // aniso: brushed metal, hair, satin, a CD's streaks (highlights stretched along anisoDir, radians)
+  if (aniso) { m.anisotropy = aniso; m.anisotropyRotation = anisoDir; }
+  // film: a thin rainbow film (soap bubbles, oil on water, beetle shells, tempered metal)
+  if (film) { m.iridescence = film; m.iridescenceIOR = 1.3; m.iridescenceThicknessMinimum = 120; m.iridescenceThicknessMaximum = 480; }
+  // glass: light through it, bent (true or { thickness, ior, tint }); costs a picture of what's behind
+  if (glass) { const g = glass === true ? {} : glass; m.transmission = 1; m.thickness = g.thickness ?? .3; m.ior = g.ior ?? 1.5; m.attenuationColor = new Color(g.tint ?? '#ffffff'); m.attenuationDistance = g.distance ?? (g.tint ? .5 : Infinity); if (o.roughness === undefined && rough === .6) m.roughness = .05; }
+  // wet (0..1): rain on a surface, as Lagarde's wet surfaces: darker where porous, smoother, and a water film on top
+  if (wet) { const k = Math.min(1, wet), por = porosity ?? 1 - metal; m.color.multiplyScalar(1 - .45 * k * por); m.roughness = m.roughness * (1 - .7 * k); m.clearcoat = Math.max(m.clearcoat, k); m.clearcoatRoughness = .05; }
   // subsurface scattering (skin, wax, leaves, jade, ears against the light): light passing through and
   // glowing out the far side. WebGPU: three.js's MeshSSSNodeMaterial (fast translucency, Barré-Brisebois
   // and Bouchard, as in Frostbite); WebGL phones get a soft tinted rim (sheen) in its place.
@@ -722,10 +731,37 @@ export function surface(size, paint, { strength = 2.5 } = {}) {
   }
   nc.putImageData(out, 0, 0);
   const tx = (cv, srgb) => { const t = new CanvasTexture(cv); t.wrapS = t.wrapT = RepeatWrapping; t.colorSpace = srgb ? SRGBColorSpace : NoColorSpace; t.anisotropy = 4; t.minFilter = LinearMipmapLinearFilter; return t; };
-  const base = { map: tx(C, true), normal: tx(N), rough: roughMips(tx(Rc), g.r.getImageData(0, 0, size, size).data, nf, size), height: tx(Hc) };
+  const base = { map: tx(C, true), normal: tx(N), rough: roughMips(tx(Rc), g.r.getImageData(0, 0, size, size).data, nf, size), height: tx(Hc), nf, size, rd: g.r.getImageData(0, 0, size, size).data };
   const set = (u, v, b = base) => {
     if (u === 1 && v === 1) return { ...b, repeat: set };
     const cl = {}; for (const k of ['map', 'normal', 'rough', 'height']) { cl[k] = b[k].clone(); cl[k].repeat.set(u, v); cl[k].needsUpdate = true; }
+    return { ...cl, repeat: set };
+  };
+  return { ...base, repeat: set };
+}
+/**
+ * Detail normals: a fine surface's bumps laid over a big one's, `times` repeats of the fine one across the
+ * big one (pores on skin, weave on cloth, grain on wood, scratches on metal), so a surface stays detailed
+ * close up without a bigger texture. The two normal maps are blended once, here, the way game engines
+ * blend detail normals ("whiteout" blending), so it costs nothing per frame on either backend.
+ * Returns a surface set like surface()'s.
+ */
+export function detail(big, fine, { times = 4, strength = .7 } = {}) {
+  const n = big.size, A = big.nf, B = fine.nf, m = fine.size, out = new Float32Array(n * n * 3);
+  const c = document.createElement('canvas'); c.width = c.height = n; const x = c.getContext('2d'), im = x.createImageData(n, n);
+  for (let y = 0; y < n; y++) for (let X = 0; X < n; X++) {
+    const i = (y * n + X) * 3, fx = Math.floor(X * times * m / n) % m, fy = Math.floor(y * times * m / n) % m, j = (fy * m + fx) * 3;
+    const bx = B[j] * strength, by = B[j + 1] * strength;
+    let nx = A[i] + bx, ny = A[i + 1] + by, nz = A[i + 2] * (B[j + 2] * strength + 1 - strength); const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
+    out[i] = nx; out[i + 1] = ny; out[i + 2] = nz;
+    const k = (y * n + X) * 4; im.data[k] = (nx * .5 + .5) * 255; im.data[k + 1] = (ny * .5 + .5) * 255; im.data[k + 2] = (nz * .5 + .5) * 255; im.data[k + 3] = 255;
+  }
+  x.putImageData(im, 0, 0);
+  const t = new CanvasTexture(c); t.wrapS = t.wrapT = RepeatWrapping; t.colorSpace = NoColorSpace; t.anisotropy = 4; t.minFilter = LinearMipmapLinearFilter;
+  const base = { ...big, normal: t, nf: out, rough: big.rd ? roughMips(big.rough.clone(), big.rd, out, n) : big.rough };
+  const set = (u, v, b = base) => {
+    if (u === 1 && v === 1) return { ...b, repeat: set };
+    const cl = { ...b }; for (const k of ['map', 'normal', 'rough', 'height']) if (b[k]) { cl[k] = b[k].clone(); cl[k].repeat.set(u, v); cl[k].needsUpdate = true; }
     return { ...cl, repeat: set };
   };
   return { ...base, repeat: set };
@@ -2128,6 +2164,7 @@ function gpuSwap(v, G) {
     if (sk?.boneTexture) { const n = sk.bones.length * 16; sk.boneTexture.dispose(); sk.boneTexture = null; if (sk.boneMatrices.length !== n) sk.boneMatrices = sk.boneMatrices.slice(0, n); }
     const sh = o.isLight && o.shadow;
     // (each spot and sun light gets a shadow node the still/moving split can drive, before its shaders are built)
+    if (G && sh && o.gsSoft && o.isDirectionalLight && !sh.filterNode) sh.filterNode = G.fx.pcss(o);   // (sun().softShadows)
     if (G && sh && !o.isPointLight && sh.shadowNode === undefined) sh.shadowNode = G.fx.splitShadowNode(o);
     if (!sh?.map) return;
     if (sh.gsCache && !!G !== !sh.gsCache.isWebGLRenderTarget) { sh.gsCache.dispose(); sh.gsCache = null; }   // (a copy belongs to the renderer that made it)
@@ -2436,6 +2473,10 @@ export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
   s.shadow.bias = -.0004; s.shadow.normalBias = .04; s.shadow.radius = 2;
   s.setTier = T => { s.tierShadow = T.shadow; s.castShadow = T.shadow > 0; if (T.shadow && s.shadow.mapSize.x !== T.shadow * 2) shadowSize(s.shadow, T.shadow * 2); };
   s.dir = d;
+  // soft shadows that stay sharp where things touch and spread with height (PCSS on WebGPU, hd3d-gpu.js
+  // pcss); deg is the sun's width in the sky (the real sun is .5; 2 reads as a soft summer day). WebGL
+  // phones get an evenly softer edge. Call it when making the sun, before the first frame.
+  s.softShadows = (deg = 2) => { s.gsSoft = deg; s.shadow.radius = 2 + Math.min(3, deg * .75); if (s.nearLight) { s.nearLight.gsSoft = deg; s.nearLight.shadow.radius = s.shadow.radius; } return s; };
   s.aim = (x, y, z) => { if (x?.isVector3) d.copy(x); else d.set(x, y, z); d.normalize(); return s; };
   s.follow = (x, y, z) => {
     if (s.fitted) { s.fitted = false; c.left = c.bottom = -size; c.right = c.top = size; c.near = 1; c.far = 120; c.updateProjectionMatrix(); s.shadow.bias = -.0004; s.shadow.normalBias = .04; }
@@ -2447,7 +2488,7 @@ export function sun(col = '#fff2d8', i = 3, size = 18, dir = [-.45, 1, .35]) {
     // a near cascade (high and ultra, with v.air on): a second, sharp shadow over the first `near` metres
     if (nf > 0 && s.castShadow && (s.tierShadow ?? 1024) >= 1024 && s.parent && view._air) {
       let n = s.nearLight;
-      if (!n) { n = s.nearLight = new DirectionalLight(); n.name = 'sun-near'; n.dir = d; n.shadow.radius = s.shadow.radius; }
+      if (!n) { n = s.nearLight = new DirectionalLight(); n.name = 'sun-near'; n.dir = d; n.shadow.radius = s.shadow.radius; n.gsSoft = s.gsSoft; }
       if (n.parent !== s.parent) s.parent.add(n, n.target);
       n.visible = true; n.castShadow = true; n.color.copy(s.color); n.intensity = s.intensity;
       const ms = s.shadow.mapSize.x; if (n.shadow.mapSize.x !== ms) shadowSize(n.shadow, ms);

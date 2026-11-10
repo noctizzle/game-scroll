@@ -27,6 +27,10 @@ ceilings), `neon-drift.js` (drift racer on a wet neon street circuit), `storm-ho
   `s.follow(x, y, z)` each frame so the shadow box tracks the player (it snaps to shadow texels, so
   shadows do not shimmer) and `v.onTier(T => s.setTier(T))`. Big outdoor levels use `s.fit(v, ...)`
   instead (see [Outdoor worlds](#outdoor-worlds-sun-air-sky-and-grade)).
+  `gs.hd.sun(...).softShadows(2)` makes its shadows soft the way real ones are: sharp where a thing
+  touches the ground, spreading the higher it stands (PCSS, as three.js's own shadow filter hook, on
+  WebGPU; WebGL phones get an evenly softer edge). The number is the sun's width in the sky in degrees
+  (the real sun is 0.5; 2 to 4 reads as a soft, hazy day). Call it when you make the sun.
 - **Lamp light pool** (`v.lampLights(range)` then `v.placeLamps(spots, x, y, z, t)` each frame):
   a level can have dozens of lamps; the nearest few get real point lights (with flicker) and the
   rest only glow. Light count stays fixed, so shaders never recompile mid-game.
@@ -133,6 +137,15 @@ so its next round starts there instead of stuttering down again.
   scattering for skin, wax, leaves, jade and ears against the light: light passing through glows out
   of the far side in `colour` (default a skin red). On WebGPU this is three.js's MeshSSSNodeMaterial
   (fast translucency, as in Frostbite); WebGL phones get a soft tinted rim in its place.
+- Richer materials on `pbr()` (three.js's MeshPhysicalMaterial, the same on WebGL and WebGPU):
+  `aniso: .9` (and `anisoDir` in radians) stretches highlights along brushed or turned metal, hair and
+  satin; `film: 1` is a thin rainbow film (soap bubbles, oil, beetle shells, lens coatings);
+  `glass: true | { thickness, ior, tint, distance }` lets light through and bends it (bottles, ice,
+  gems; it costs a picture of what's behind, so keep it to a few things); `wet: .8` soaks a surface
+  (darker, glossy, a water layer on top; `porosity` 0..1 for how much it darkens: stone 1, metal 0).
+- `detail(big, fine, { times: 4, strength: .7 })`: mixes a fine `surface()` (pores, grain, scratches),
+  repeated `times` over, into the normals of a big one, so a close-up keeps its grain without a huge
+  texture. Give it sets without `repeat()`; the result has its own `repeat`.
 - `v.flare = true | { strength, threshold, spacing, fade, tint, dirt }`: lens flare ghosts of the bright
   parts, mirrored through the middle of the picture (three.js's LensflareNode, the same maths on WebGL),
   and lens dirt (smudges, dust and wipe marks drawn in code) lit where bright light falls on it.

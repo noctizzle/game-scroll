@@ -369,6 +369,42 @@ export function setCascade(near, fade) { if (near) CASC.m.value = near.shadow.ma
 if (ClusteredLightsNode.prototype.shadowNode === undefined) ClusteredLightsNode.prototype.shadowNode = null;
 // area lights' LTC tables (hd3d.js panel), once they've loaded
 export function areaLTC(lib) { RectAreaLightNode.setLTC(lib.init()); }
+// Soft shadows that harden where things touch (hd3d.js sun().softShadows): PCSS (Fernando, NVIDIA 2005)
+// as three's own shadow.filterNode hook. A few taps find how far above the ground the blockers are,
+// then the filter spreads by that gap times the sun's width: sharp at a foot, soft at a rooftop's edge.
+// Sun (orthographic) shadows: depth there is linear, so the gap in metres is the depth gap x range.
+const PCSS_FIND = 8, PCSS_TAPS = 12, GOLDEN = 2.39996323;
+const disc = (i, n, phi) => { const r = Math.sqrt((i + .5) / n), a = phi.add(i * GOLDEN); return vec2(cos(a), sin(a)).mul(r); };
+export function pcss(light) {
+  const sh = light.shadow, cam = sh.camera;
+  // texels of spread per unit of depth gap: depth range (m) x tan(sun width) / texel size (m)
+  const K = uniform(1).onRenderUpdate(() => { const tx = (cam.right - cam.left) / sh.mapSize.x; return (cam.far - cam.near) * Math.tan((light.gsSoft || 2) * Math.PI / 180) / Math.max(1e-4, tx); });
+  const TEXEL = uniform(new Vector2()).onRenderUpdate(() => TEXEL.value.set(1 / sh.mapSize.x, 1 / sh.mapSize.y));
+  const MAXR = uniform(1).onRenderUpdate(() => Math.min(24, sh.mapSize.x / 64));   // widest spread (texels): ~16 at 1024
+  return Fn(({ depthTexture, shadowCoord, depthLayer }, builder) => {
+    const rev = builder.renderer.reversedDepthBuffer;
+    const at = u => { let t = texture(depthTexture, u); if (depthTexture.isArrayTexture) t = t.depth(depthLayer); return t; };
+    // (the raw depth by texel: the map's sampler is a comparing one, which can't read depths)
+    const raw = u => { let t = texture(depthTexture).load(ivec2(u.div(TEXEL))); if (depthTexture.isArrayTexture) t = t.depth(depthLayer); return t.x; };
+    const texel = TEXEL, z = shadowCoord.z, phi = interleavedGradientNoise(screenCoordinate.xy).mul(6.2831853);
+    // 1: blockers in reach of the widest spread, their average depth
+    const sum = float(0).toVar(), n = float(0).toVar();
+    for (let i = 0; i < PCSS_FIND; i++) {
+      const d = raw(clamp(shadowCoord.xy.add(disc(i, PCSS_FIND, phi).mul(MAXR).mul(texel)), 0, .9999));
+      const b = rev ? step(z, d) : step(d, z);   // (closer to the sun than this point)
+      sum.addAssign(d.mul(b)); n.addAssign(b);
+    }
+    const lit = float(1).toVar();
+    If(n.greaterThan(0), () => {
+      const gap = abs(z.sub(sum.div(n))), r = clamp(gap.mul(K), 1, MAXR).mul(texel);
+      // 2: the filter, as wide as the gap says
+      const acc = float(0).toVar();
+      for (let i = 0; i < PCSS_TAPS; i++) acc.addAssign(at(shadowCoord.xy.add(disc(i, PCSS_TAPS, phi.add(1.7)).mul(r))).compare(z));
+      lit.assign(acc.div(PCSS_TAPS));
+    });
+    return lit;
+  });
+}
 export function manyLights(r) { r.lighting = new ClusteredLighting(256, 32, 24, 32); r.gsClustered = true; }
 // Auto exposure's light meter (hd3d.js Eye): the scene's brightness as 16 x 16 log values (each from a
 // 4 x 4 grid of taps), packed into bytes so any phone can read them back without stalling.
