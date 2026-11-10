@@ -80,8 +80,12 @@ export function prepareGPU() {
       const [W, fx] = await Promise.all([import('three/webgpu'), import('./hd3d-gpu.js')]);
       const canvas = document.createElement('canvas');
       // trackTimestamp: three times each pass on the GPU where the phone allows it (hd3d.js reads it as HD.info.gpuMs)
-      const r = new W.WebGPURenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance', trackTimestamp: true });
+      // HDR screens: a half-float canvas in extended range, so highlights can go brighter than paper white
+      // (hd3d-gpu.js GpuChain); everywhere else the usual 8-bit canvas
+      const hdr = hdrScreen();
+      const r = new W.WebGPURenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance', trackTimestamp: true, ...(hdr ? { outputType: W.HalfFloatType } : {}) });
       await r.init();
+      r.gsHdr = hdr && (r.backend?.context?.getConfiguration?.()?.toneMapping?.mode ?? 'extended') === 'extended';
       if (!r.backend?.isWebGPUBackend) { console.warn('WebGPU: three fell back to WebGL 2'); r.dispose(); return null; }   // three fell back to WebGL 2: keep our own WebGL path
       r.gsBackend = 'webgpu';
       fx.manyLights(r);
@@ -91,6 +95,11 @@ export function prepareGPU() {
     } catch (e) { console.warn('WebGPU did not start:', e); gpuLoad = null; return null; }
   })();
 }
+// HDR output: on screens that report a high dynamic range, unless a test turned it off or on (setHdr)
+let hdrPick = null;
+/** Tests: true or false to pick HDR output before WebGPU starts; null (default): the screen decides. */
+export function setHdr(v) { hdrPick = v; }
+function hdrScreen() { try { return hdrPick ?? (typeof matchMedia === 'function' && matchMedia('(dynamic-range: high)').matches); } catch (_) { return false; } }
 /** The ready WebGPU setup { r (WebGPURenderer), W (three/webgpu), fx (hd3d-gpu.js) }, or null (not supported, not ready, or WebGL forced for a test). */
 export const webgpu = () => pick === 'webgpu' ? gpu : null;
 

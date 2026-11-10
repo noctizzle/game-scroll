@@ -382,6 +382,12 @@ Code-made textures (`surface()`, `gs.models` recipes, `detail()`) are packed int
 formats on WebGPU by spark.js (Ludicon), one at a time in the background. `HD.packed` says how many
 and how much memory that saved; `HD.pack = false` keeps them plain (tests).
 
+HDR screens: where the phone's screen reports a high dynamic range, the WebGPU canvas is half-float in
+extended range. The picture up to paper white is the same as on any screen; what's brighter than white in
+the scene (the sun, glows, sparks, glints, bloom) goes past it, up to about twice paper white, instead of
+stopping at white. `HD.info.hdr` says whether it's on. Nothing to do in a game: brighter `glow` values and
+bloom simply show brighter on those screens.
+
 ### Frame generation
 
 On WebGPU, a Next Gen or AR game that draws fewer frames than a fast screen shows gets made frames on

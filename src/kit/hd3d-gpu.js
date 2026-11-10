@@ -992,6 +992,8 @@ export class GpuChain {
       giK: uniform(1), t: uniform(0), hurt: uniform(0), vig: uniform(.32), gradeOn: uniform(0), sat: uniform(1), con: uniform(1),
       lo: uniform(new Vector3(1, 1, 1)), hi: uniform(new Vector3(1, 1, 1)), glare: uniform(0), sunUV: uniform(new Vector2(.5, .5)),
       sunCol: uniform(new Color()), aspect: uniform(1), lutK: uniform(1),
+      // HDR screens (gpu.js): how far past paper white the brightest highlights go (headroom - 1), and the exposure
+      hdrK: uniform(0), hdrExp: uniform(1),
       // depth of field (hd3d.js DOF): at, range, depth, blur in pixels; camera near and far; one pixel
       lens: uniform(new Vector4()), cn: uniform(.1), cf: uniform(1000), px: uniform(new Vector2(1, 1)),
       // sun shafts (hd3d.js SHAFT_*): strength x how much the sun shows, and the light's colour
@@ -1230,6 +1232,13 @@ export class GpuChain {
     this.lutN = null;
     if (lutOn) out = this.lutN = lut3D(vec4(clamp(out.rgb, 0, 1), 1), texture3D(NO_LUT), 2, this.U.lutK);
     if (smooth) out = fxaa(out);
+    // HDR screens: the picture up to paper white as on any screen, and what's brighter than white in the
+    // scene (the sun, glows, sparks, glints, bloom) goes past it, up to the screen's headroom, instead of
+    // stopping at white. A soft knee on how far past white the light is, so it eases in
+    if (this.r.gsHdr) {
+      const U = this.U, over = max(dot(graded, LUM).mul(U.hdrExp).sub(1), 0);
+      out = vec4(out.rgb.mul(float(1).add(U.hdrK.mul(float(1).sub(exp(over.mul(-.6)))))), 1);
+    }
     // live, the last touches go on as each refresh is shown (show()), not here
     const fin = live ? vec4(out.rgb, 1) : Fn(() => vec4(touches(U, out.rgb, U.t, float(1)), 1))();
     if (s2) { this.s2 = sgsr2Gpu(fin, sp.getTextureNode('depth'), mrtOn ? { vel: sp.getTextureNode('velocity'), rea: sp.getTextureNode('reactive') } : null); return; }
@@ -1255,6 +1264,7 @@ export class GpuChain {
       if (this.aoN && this.aoN.resolutionScale !== o.ao * k) this.aoN.resolutionScale = o.ao * k;
       this.bloomK.value = Math.max(0, o.bloom) * .8; this.bloomN.size(o.w, o.h, o.bloomScale || .5);
       U.t.value = o.t; U.hurt.value = o.hurt;
+      if (this.r.gsHdr) { U.hdrK.value = Math.max(0, (o.headroom ?? 2) - 1); U.hdrExp.value = this.r.toneMappingExposure; }
       const g = o.grade; U.gradeOn.value = g ? 1 : 0;
       if (g) { U.sat.value = g.sat; U.con.value = g.con; U.lo.value.copy(g.lo); U.hi.value.copy(g.hi); }
       if (this.giT) this.giT.setSize(o.w, o.h);
