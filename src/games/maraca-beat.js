@@ -28,7 +28,7 @@ function make(api) {
       score += good ? 2 : 1; api.score(score); energy = Math.min(100, energy + (good ? 6 : 3));
       judge = good ? 'PERFECT' : 'GOOD'; jl = .5; if (how === 'shake') shakes++;
       if (combo % 10 === 0) feel.juice.pop(W / 2, 70, `${combo} COMBO`, { color: K[4] });
-    } else { energy -= 4; combo = 0; judge = 'EARLY'; jl = .4; }
+    } else { energy -= 9; combo = 0; judge = 'EARLY'; jl = .4; }
   }
 
   return {
@@ -91,7 +91,7 @@ export default {
   tag: 'Color · Rhythm',
   retro: true, era: 'color', pal: 'lemon',
   w: 160, h: 176, maxW: 220, maxH: 240,
-  goal: 60,
+  goal: 90,
   hint: 'Shake the phone (or tap) just as each bead reaches the line. Hits fill the party meter, misses drain it.',
   make,
 };

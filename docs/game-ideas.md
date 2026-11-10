@@ -201,19 +201,19 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 
 - [x] Tiny Tower Defense — build dart, frost and boom towers on pads beside a path; survive five waves
 - [x] Lemonade Stand — set cups and price against the forecast, five days
-- [ ] Ant Colony Path — draw a path for ants from nest to food
+- [x] Ant Colony Path — draw a path for ants from nest to food
 - [ ] Garden Grow — water the right plants in time, avoid overwatering
 - [x] Dungeon Door — pick doors with risk/reward to get as deep as possible
 - [x] Rock Paper Duel — beat CPU opponents whose habits you read from their history
 - [x] Higher or Lower — guess the next card, long shots pay more, cash out any time
-- [ ] Auction Snipe — bid against bots in a 10-second auction
+- [x] Auction Snipe — bid against bots in a 10-second auction
 - [ ] Traffic Grid — set light timings on a 2x2 grid to clear rush hour
-- [ ] Fire Brigade — route fire trucks to fires on a small town map
+- [x] Fire Brigade — route fire trucks to fires on a small town map
 - [ ] Shepherd's Fence — place fence pieces to enclose the most sheep
 - [ ] Pirate Cannons — angle cannon broadsides against a moving ship
 - [x] Town Mayor — swipe left or right on townsfolk requests, keep Food, Gold, Mood and Safety balanced
 - [x] Chef Orders — assemble burgers matching orders before customers leave
-- [ ] Space Mining — send drones to asteroids, balance fuel and cargo
+- [x] Space Mining — send drones to asteroids, balance fuel and cargo
 
 ## Physics toys 📱
 
@@ -349,3 +349,7 @@ Ten batches toward 1000, mostly from the open ideas above (ticked where they wer
 - [x] Lamp Flip — tap lamps that flip their neighbours until every lamp is lit
 - [x] Island Bridges — link numbered islands with single and double bridges that never cross
 - [x] Swing Pump 📳 — pump a playground swing higher by pushing the phone (or tapping) as it stops at each end
+- [x] Sevens — card game against three robots: build each suit out from its 7, knock when nothing fits
+- [x] Castle Lanes — send swords, spears and bows down three lanes; each beats one and loses to another
+- [x] Bee Keeper — share bees between foraging, building comb and guarding against wasp raids
+- [x] Ferry Crossing — river-crossing logic puzzles with a small boat and a different rule each river

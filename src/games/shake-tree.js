@@ -97,7 +97,7 @@ export default {
   tag: 'Advance · Luck',
   retro: true, era: 'advance', pal: 'grape',
   w: 176, h: 176, maxW: 240, maxH: 240,
-  goal: 40,
+  goal: 80,
   hint: 'Shake the phone (or tap the tree) to drop apples into the basket, then tap the basket to bank them before the angry bees come out. Three stings and it is over.',
   make,
 };

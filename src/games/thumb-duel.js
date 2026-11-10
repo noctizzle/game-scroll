@@ -20,7 +20,7 @@ function make(api) {
   function point(who, why) {
     if (who === 'you') you++; else them++;
     msg = why; ml = 1.3; phase = 'gap'; wait = 1.4; rounds++;
-    if (who === 'you') { score += 3 + Math.max(0, Math.round((.4 - last) * 10)); api.score(score); notes('C5 G5', { len: .06 }); haptic('success'); } else { haptic('error'); sfx(150, .2, 'square', .04); }
+    if (who === 'you') { if (!two) { score += 3 + Math.max(0, Math.round((.4 - last) * 10)); api.score(score); } notes('C5 G5', { len: .06 }); haptic('success'); } else { haptic('error'); sfx(150, .2, 'square', .04); }
     if (you >= 5 || them >= 5) {
       phase = 'done'; wait = 2;
       msg = you >= 5 ? (two ? 'BOTTOM WINS!' : 'YOU WIN!') : (two ? 'TOP WINS!' : 'ROBOT WINS');
@@ -85,6 +85,6 @@ export default {
   retro: false,
   w: 360, h: 640, maxH: 800,
   goal: 15,
-  hint: 'Tap your half the moment the lamp turns green, before the robot or a friend on the top half. Tapping on a fake-out gives them the point. First to five.',
+  hint: 'Against the robot: tap your half the moment the lamp turns green, before the robot or a friend on the top half. Tapping on a fake-out gives them the point. First to five.',
   make,
 };
