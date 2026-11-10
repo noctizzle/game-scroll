@@ -55,7 +55,8 @@ import { Occlusion } from './occlusion.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { speed, phoneClass, fpsFor, stepDown, stepUp, settle, settledFor, frameGenFor, frameGenFailed, frameGenReady, frameGenPace, frameGenSteps, frameGenSteady, fgSaving, screenHz } from './speed.js';
+import { power } from './power.js';
+import { speed, phoneClass, fpsFor, stepDown, stepUp, settle, settledFor, frameGenFor, frameGenFailed, frameGenReady, frameGenPace, frameGenSteps, frameGenSteady, fgSaving, screenHz, qualityVerdict } from './speed.js';
 
 export * as THREE from 'three';
 
@@ -80,8 +81,16 @@ export const TIERS = [
   { name: 'high', px: 1.3e6, shadow: 1024, lights: 4, ao: .5, msaa: 2, bloom: .5, ssr: false, contact: 256 },
   { name: 'ultra', px: 2e6, shadow: 1024, lights: 4, ao: 1, msaa: 2, bloom: .5, ssr: true, contact: 256 },
 ];
-// Where a phone starts: top phones (Fold 8, recent iPhone Pro) on ultra, others on high or medium.
-const START = { top: 3, mid: 2, low: 1 };
+// Where a phone starts: top phones (Fold 8, recent iPhone Pro) on high, others on high or medium.
+const START = { top: 2, mid: 2, low: 1 };
+// Play never climbs above high (Rob, 2026-11-10: the Fold got hot and throttled in every 3D game on ultra,
+// and then stuttered). Ultra stays for HD.force (tests, screenshots, the frame lab's A/B).
+const CAP = 2;
+// While the phone is warm or hot (src/kit/power.js), and for a minute after it cools, games draw one tier
+// lower (from the next round: a tier change rebuilds shaders) and at most the first resolution step (now).
+const HOT_HOLD = 60000;
+let hotAt = -1e9;
+function hot(now = performance.now()) { if (power.heat >= 1) hotAt = now; return now - hotAt < HOT_HOLD; }
 // Resolution moves in a few fixed steps (each step reallocates the render targets, so it must be
 // rare): drop a step after two slow windows of ~45 frames, climb back after ~6 s at full speed, and
 // never climb back above a step that already proved too slow (for 30 s, longer each time a climb fails).
@@ -98,13 +107,13 @@ const FG_PX = 1.6;
 // A climb that turns out too slow again soon after doubles how long the step it fell back to holds
 // (30 s, 1, 2, 4 min), so a game that's on the edge doesn't keep stuttering every half a minute.
 const HOLD = 30000, HOLD_MAX = 240000;
-const Q = { gsum: 0, gcnt: 0, tier: 2, lvl: 0, sum: 0, cnt: 0, slow: 0, fast: 0, lastT: 0, ceil: 0, ceilT: 0, tierCeil: 3, force: null, game: undefined, easy: 0, fpsT: 0, hold: HOLD, upT: -1e9, fpsHold: 60000, fpsUpT: -1e9 };
+const Q = { gsum: 0, gcnt: 0, tier: 2, lvl: 0, sum: 0, cnt: 0, late: 0, slow: 0, fast: 0, lastT: 0, ceil: 0, ceilT: 0, tierCeil: 3, capNow: CAP, force: null, game: undefined, easy: 0, fpsT: 0, hold: HOLD, upT: -1e9, fpsHold: 60000, fpsUpT: -1e9 };
 // a new game is on screen: start from where it settled last time, or from the phone's class
 // (and the resolution step it settled on, so a round doesn't start too sharp, stutter and step down again)
 function startGame(def) {
   Q.game = def; const s = settledFor(def?.id);
-  Q.tier = s?.tier ?? START[phoneClass()] ?? 2; Q.lvl = Math.min(LEVELS.length - 1, s?.lvl ?? 0); Q.ceil = Q.lvl; Q.ceilT = performance.now(); Q.tierCeil = 3;
-  Q.sum = Q.cnt = Q.slow = Q.fast = Q.easy = Q.gsum = Q.gcnt = 0; Q.lastT = 0; Q.want = null; Q.hold = HOLD; Q.upT = -1e9; Q.fpsHold = 60000;
+  Q.tier = Math.min(CAP, s?.tier ?? START[phoneClass()] ?? 2); Q.lvl = Math.min(LEVELS.length - 1, s?.lvl ?? 0); Q.ceil = Q.lvl; Q.ceilT = performance.now(); Q.tierCeil = 3;
+  Q.sum = Q.cnt = Q.late = Q.slow = Q.fast = Q.easy = Q.gsum = Q.gcnt = 0; Q.lastT = 0; Q.want = null; Q.hold = HOLD; Q.upT = -1e9; Q.fpsHold = 60000;
 }
 // WebGPU timestamps: three adds up every pass's GPU time between two reads, so each read is divided by
 // the frames drawn since (one read at a time: the answer comes back a frame or two later)
@@ -117,8 +126,10 @@ function gpuTime(r) {
 }
 function adapt(gap) {
   if (Q.force != null || !(gap > 0 && gap < 100)) return;
-  Q.sum += gap; if (++Q.cnt < 45) return;
-  const a = Q.sum / Q.cnt, now = performance.now(), fps = Q.game ? fpsFor(Q.game) : 60, budget = 1000 / fps; Q.sum = Q.cnt = 0;
+  const fps = Q.game ? fpsFor(Q.game) : 60, budget = 1000 / fps;
+  Q.sum += gap; if (gap > budget * 1.5) Q.late++;   // a frame a whole refresh (or more) late: a stutter you can see
+  if (++Q.cnt < 45) return;
+  const a = Q.sum / Q.cnt, now = performance.now(), v = qualityVerdict(a, Q.late, budget); Q.sum = Q.cnt = Q.late = 0;
   // the GPU's own time per frame (WebGPU timestamps, where the phone has them): how much of a slow frame
   // is the graphics chip's. A frame that's slow while the GPU has room is held up by the CPU, and fewer
   // pixels wouldn't help it; a GPU with plenty of room can take sharpness back sooner (Unreal and
@@ -127,19 +138,19 @@ function adapt(gap) {
   const cpuBound = g != null && g < budget * .75, gpuRoom = g != null && g < budget * .6;
   if (now - Q.ceilT > Q.hold) { Q.ceil = 0; Q.tierCeil = 3; }
   const tier0 = Q.tier, lvl0 = Q.lvl;
-  if (a > budget * 1.26) {
+  if (v === 'slow') {
     Q.fast = 0; Q.easy = 0; if (++Q.slow < 2) return; Q.slow = 0; Q.ceilT = now;
     if (now - Q.upT < 20000) Q.hold = Math.min(HOLD_MAX, Q.hold * 2);   // the last climb didn't hold
     if (fps > 60 && Q.lvl >= 1 && stepDown(Q.game)) { Q.lvl = 0; Q.ceil = 0; Q.fpsT = now; if (now - Q.fpsUpT < 20000) Q.fpsHold = Math.min(8 * 60000, Q.fpsHold * 2); }
     else if (Q.lvl < LEVELS.length - 1 && !cpuBound) { Q.lvl++; Q.ceil = Q.lvl; }
     else if (Q.tier > 0) { if (Q.want == null) { Q.tierCeil = Q.tier - 1; Q.want = Q.tier - 1; } }
     else if (stepDown(Q.game)) { Q.lvl = 1; Q.fpsT = now; }
-  } else if (a < budget * 1.044) {
+  } else if (v === 'fast') {
     Q.slow = 0; if (++Q.fast < (gpuRoom && Q.lvl > Q.ceil ? 3 : 8)) return; Q.fast = 0;
-    if (Q.lvl > Q.ceil) { Q.lvl--; Q.upT = now; }
-    else if (Q.lvl === 0 && Q.want == null && Q.tier < Math.min(Q.tierCeil, TIERS.length - 1)) { Q.want = Q.tier + 1; Q.upT = now; }
+    if (Q.lvl > Q.ceil) { if (!(hot(now) && Q.lvl <= 1)) { Q.lvl--; Q.upT = now; } }
+    else if (Q.lvl === 0 && Q.want == null && Q.tier < Math.min(Q.tierCeil, CAP)) { Q.want = Q.tier + 1; Q.upT = now; }
     // a long spell of easy frames at the top tier, a while after stepping the frame rate down: try one notch up
-    else if (Q.lvl === 0 && Q.tier === TIERS.length - 1 && ++Q.easy >= 3 && now - Q.fpsT > Q.fpsHold && stepUp(Q.game)) { Q.easy = 0; Q.fpsT = now; Q.fpsUpT = now; }
+    else if (Q.lvl === 0 && Q.tier === CAP && ++Q.easy >= 3 && now - Q.fpsT > Q.fpsHold && stepUp(Q.game)) { Q.easy = 0; Q.fpsT = now; Q.fpsUpT = now; }
   } else { Q.slow = 0; Q.fast = 0; }
   if (Q.tier !== tier0 || Q.lvl !== lvl0) settle(Q.game?.id, { tier: Q.tier, lvl: Q.lvl });
 }
@@ -147,13 +158,15 @@ function adapt(gap) {
 // rebuilds them all: a long stall. So a tier change waits until no round is being played (the
 // game-over screen, the next card) and the round carries on at its lowest resolution until then.
 function applyTier() {
-  if (Q.want == null || speed.playing()) return;
-  const down = Q.want < Q.tier; Q.tier = Q.want; Q.want = null; Q.lvl = 1; Q.ceil = down ? 1 : 0; Q.sum = Q.cnt = Q.slow = Q.fast = 0;
+  if (speed.playing()) { if (Q.force == null && Q.lvl < 1 && hot()) { Q.lvl = 1; Q.ceil = Math.max(Q.ceil, 1); } return; }   // hot mid-round: the first resolution step
+  Q.capNow = hot() ? CAP - 1 : CAP;   // between rounds: one tier lower while hot
+  if (Q.want == null) return;
+  const down = Q.want < Q.tier; Q.tier = Q.want; Q.want = null; Q.lvl = 1; Q.ceil = down ? 1 : 0; Q.sum = Q.cnt = Q.late = Q.slow = Q.fast = 0;
   settle(Q.game?.id, { tier: Q.tier, lvl: Q.lvl });
 }
 /** Current quality: { tier, name, res }. Set HD.force = 0..3 to pin a tier (tests, screenshots). */
 export const HD = {
-  get tier() { return Q.force ?? Q.tier; }, get name() { return TIERS[this.tier].name; }, get res() { return Q.force != null ? 1 : LEVELS[Q.lvl]; },
+  get tier() { return Q.force ?? Math.min(Q.tier, Q.capNow); }, get name() { return TIERS[this.tier].name; }, get res() { return Q.force != null ? 1 : LEVELS[Q.lvl]; },
   set force(t) { Q.force = t; }, get force() { return Q.force; },
   /** Last frame: draw calls, triangles, milliseconds spent in render() on the CPU, and whether the shadows were redrawn. */
   info: { gpuMs: null, calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0, fgSteps: 0, still: false, rw: 0, rh: 0, ow: 0, oh: 0 },
