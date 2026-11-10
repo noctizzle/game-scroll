@@ -31,7 +31,9 @@ import {
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
   OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4, DataTexture, RGBAFormat, ShaderChunk,
   LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion, DepthTexture, WebGLCoordinateSystem, Box3, Sphere, UnsignedIntType,
+  Data3DTexture, UnsignedByteType,
 } from 'three';
+import { LUTCubeLoader } from 'three/examples/jsm/loaders/LUTCubeLoader.js';
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
 import { LightProbeGridWebGL } from 'three/examples/jsm/lighting/LightProbeGridWebGL.js';
@@ -48,6 +50,7 @@ import { SGSR2, SgsrFrame } from './sgsr2.js';
 import { lookPatch, looksOf, lookSpec } from './looks.js';
 import { copyFrame, webgpu, setGpuPick, prepareGPU } from './gpu.js';
 import { makeRenderer } from './renderer.js';
+import { MeshoptSimplifier } from 'three/examples/jsm/libs/meshopt_simplifier.module.js';
 import { Occlusion } from './occlusion.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -104,13 +107,22 @@ const FG_PX = 1.6;
 // A climb that turns out too slow again soon after doubles how long the step it fell back to holds
 // (30 s, 1, 2, 4 min), so a game that's on the edge doesn't keep stuttering every half a minute.
 const HOLD = 30000, HOLD_MAX = 240000;
-const Q = { tier: 2, lvl: 0, sum: 0, cnt: 0, late: 0, slow: 0, fast: 0, lastT: 0, ceil: 0, ceilT: 0, tierCeil: 3, capNow: CAP, force: null, game: undefined, easy: 0, fpsT: 0, hold: HOLD, upT: -1e9, fpsHold: 60000, fpsUpT: -1e9 };
+const Q = { gsum: 0, gcnt: 0, tier: 2, lvl: 0, sum: 0, cnt: 0, late: 0, slow: 0, fast: 0, lastT: 0, ceil: 0, ceilT: 0, tierCeil: 3, capNow: CAP, force: null, game: undefined, easy: 0, fpsT: 0, hold: HOLD, upT: -1e9, fpsHold: 60000, fpsUpT: -1e9 };
 // a new game is on screen: start from where it settled last time, or from the phone's class
 // (and the resolution step it settled on, so a round doesn't start too sharp, stutter and step down again)
 function startGame(def) {
   Q.game = def; const s = settledFor(def?.id);
   Q.tier = Math.min(CAP, s?.tier ?? START[phoneClass()] ?? 2); Q.lvl = Math.min(LEVELS.length - 1, s?.lvl ?? 0); Q.ceil = Q.lvl; Q.ceilT = performance.now(); Q.tierCeil = 3;
-  Q.sum = Q.cnt = Q.late = Q.slow = Q.fast = Q.easy = 0; Q.lastT = 0; Q.want = null; Q.hold = HOLD; Q.upT = -1e9; Q.fpsHold = 60000;
+  Q.sum = Q.cnt = Q.late = Q.slow = Q.fast = Q.easy = Q.gsum = Q.gcnt = 0; Q.lastT = 0; Q.want = null; Q.hold = HOLD; Q.upT = -1e9; Q.fpsHold = 60000;
+}
+// WebGPU timestamps: three adds up every pass's GPU time between two reads, so each read is divided by
+// the frames drawn since (one read at a time: the answer comes back a frame or two later)
+const GT = { n: 0, busy: false };
+function gpuTime(r) {
+  GT.n++;
+  if (GT.busy || !r.backend?.trackTimestamp) return;
+  const n = GT.n; GT.n = 0; GT.busy = true;
+  r.resolveTimestampsAsync('render').then(ms => { if (ms > 0 && n > 0) { const f = ms / n; HD.info.gpuMs = f; if (f < 100) { Q.gsum += f; Q.gcnt++; } } }, () => {}).finally(() => { GT.busy = false; });
 }
 function adapt(gap) {
   if (Q.force != null || !(gap > 0 && gap < 100)) return;
@@ -118,17 +130,23 @@ function adapt(gap) {
   Q.sum += gap; if (gap > budget * 1.5) Q.late++;   // a frame a whole refresh (or more) late: a stutter you can see
   if (++Q.cnt < 45) return;
   const a = Q.sum / Q.cnt, now = performance.now(), v = qualityVerdict(a, Q.late, budget); Q.sum = Q.cnt = Q.late = 0;
+  // the GPU's own time per frame (WebGPU timestamps, where the phone has them): how much of a slow frame
+  // is the graphics chip's. A frame that's slow while the GPU has room is held up by the CPU, and fewer
+  // pixels wouldn't help it; a GPU with plenty of room can take sharpness back sooner (Unreal and
+  // Unity's dynamic resolution work from GPU time the same way)
+  const g = Q.gcnt >= 5 ? Q.gsum / Q.gcnt : null; Q.gsum = Q.gcnt = 0;
+  const cpuBound = g != null && g < budget * .75, gpuRoom = g != null && g < budget * .6;
   if (now - Q.ceilT > Q.hold) { Q.ceil = 0; Q.tierCeil = 3; }
   const tier0 = Q.tier, lvl0 = Q.lvl;
   if (v === 'slow') {
     Q.fast = 0; Q.easy = 0; if (++Q.slow < 2) return; Q.slow = 0; Q.ceilT = now;
     if (now - Q.upT < 20000) Q.hold = Math.min(HOLD_MAX, Q.hold * 2);   // the last climb didn't hold
     if (fps > 60 && Q.lvl >= 1 && stepDown(Q.game)) { Q.lvl = 0; Q.ceil = 0; Q.fpsT = now; if (now - Q.fpsUpT < 20000) Q.fpsHold = Math.min(8 * 60000, Q.fpsHold * 2); }
-    else if (Q.lvl < LEVELS.length - 1) { Q.lvl++; Q.ceil = Q.lvl; }
+    else if (Q.lvl < LEVELS.length - 1 && !cpuBound) { Q.lvl++; Q.ceil = Q.lvl; }
     else if (Q.tier > 0) { if (Q.want == null) { Q.tierCeil = Q.tier - 1; Q.want = Q.tier - 1; } }
     else if (stepDown(Q.game)) { Q.lvl = 1; Q.fpsT = now; }
   } else if (v === 'fast') {
-    Q.slow = 0; if (++Q.fast < 8) return; Q.fast = 0;
+    Q.slow = 0; if (++Q.fast < (gpuRoom && Q.lvl > Q.ceil ? 3 : 8)) return; Q.fast = 0;
     if (Q.lvl > Q.ceil) { if (!(hot(now) && Q.lvl <= 1)) { Q.lvl--; Q.upT = now; } }
     else if (Q.lvl === 0 && Q.want == null && Q.tier < Math.min(Q.tierCeil, CAP)) { Q.want = Q.tier + 1; Q.upT = now; }
     // a long spell of easy frames at the top tier, a while after stepping the frame rate down: try one notch up
@@ -151,7 +169,7 @@ export const HD = {
   get tier() { return Q.force ?? Math.min(Q.tier, Q.capNow); }, get name() { return TIERS[this.tier].name; }, get res() { return Q.force != null ? 1 : LEVELS[Q.lvl]; },
   set force(t) { Q.force = t; }, get force() { return Q.force; },
   /** Last frame: draw calls, triangles, milliseconds spent in render() on the CPU, and whether the shadows were redrawn. */
-  info: { calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0, fgSteps: 0, still: false, rw: 0, rh: 0, ow: 0, oh: 0 },
+  info: { gpuMs: null, calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0, fgSteps: 0, still: false, rw: 0, rh: 0, ow: 0, oh: 0 },
   /** Things needing a shader not built yet wait (hidden) at most this long while it builds in the background (v.holdNew); hold = false: build it in the frame instead. */
   holdMs: 500, hold: true,
   /** Upscale when the 3D is drawn below the screen's size (false: plain stretch). */
@@ -260,6 +278,9 @@ const UP = `uniform sampler2D tDiffuse; uniform vec2 px; uniform float k; varyin
 export const FINAL_EFFECTS = [
   { name: 'head', what: 'uniforms, the tone mapping three leaves out under SGSR, helpers', glsl: `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, bloom; uniform vec2 px; varying vec2 vUv;
   uniform float gradeOn, sat, con, glare, aspect; uniform vec3 lo, hi, sunCol; uniform vec2 sunUV;
+  #ifdef LUT
+  uniform highp sampler3D tLut; uniform float lutS, lutO, lutK;
+  #endif
   // (three.js adds its tone mapping and sRGB helpers to every ShaderMaterial drawn to the screen; when
   // SGSR upscales after this pass, it draws into a buffer and three leaves tone mapping out, so here it is)
   #ifndef TONE_MAPPING
@@ -314,6 +335,10 @@ ${ShaderChunk.tonemapping_pars_fragment}
   { name: 'tone', what: 'tone mapping (v.tone: ACES, Khronos Neutral or AgX; three.js\'s own) and sRGB', glsl: `    col = TONE_FN(col);
     col = sRGBTransferOETF(vec4(col, 1.)).rgb;
 ` },
+  { name: 'lut', what: 'colour look (v.lut: a 3D lookup table, gs.hd.lut)', glsl: `  #ifdef LUT
+    col = mix(col, texture(tLut, clamp(col, 0., 1.) * lutS + lutO).rgb, lutK);
+  #endif
+` },
   { name: 'vignette', what: 'vignette', glsl: `    col *= 1. - vig * smoothstep(.12, .62, r2 * 1.6);
 ` },
   { name: 'grain', what: 'film grain', glsl: `    col += (h(vUv / px + t) - .5) * .035;
@@ -337,7 +362,7 @@ class FinalPass extends Pass {
     this.down = qmat(DOWN, { tDiffuse: { value: null }, px: { value: new Vector2() } });
     this.up = qmat(UP, { tDiffuse: { value: null }, px: { value: new Vector2() }, k: { value: 1 } }, { blending: ADD });
     this.final = qmat(FINAL, { tDiffuse: { value: null }, tBloom: { value: null }, t: { value: 0 }, hurt: { value: 0 }, vig: { value: .32 }, bloom: { value: .7 }, px: { value: new Vector2(1, 1) }, toneMappingExposure: { value: 1 },
-      gradeOn: { value: 0 }, sat: { value: 1 }, con: { value: 1 }, lo: { value: new Vector3(1, 1, 1) }, hi: { value: new Vector3(1, 1, 1) }, glare: { value: 0 }, sunUV: { value: new Vector2() }, sunCol: { value: new Color() }, aspect: { value: 1 } }, { defines: { SRGB_TRANSFER: '', TONE_FN: TONE_FN.aces } });
+      gradeOn: { value: 0 }, sat: { value: 1 }, con: { value: 1 }, lo: { value: new Vector3(1, 1, 1) }, hi: { value: new Vector3(1, 1, 1) }, glare: { value: 0 }, sunUV: { value: new Vector2() }, sunCol: { value: new Color() }, aspect: { value: 1 }, tLut: { value: null }, lutS: { value: 1 }, lutO: { value: 0 }, lutK: { value: 1 } }, { defines: { SRGB_TRANSFER: '', TONE_FN: TONE_FN.aces } });
     this.quad = new FullScreenQuad(null); this.mips = []; this.scale = .5; this.w = 0; this.h = 0; this.fxaa = false; this.strength = .7;
   }
   setSize(w, h) {
@@ -349,6 +374,14 @@ class FinalPass extends Pass {
       this.mips.push(new WebGLRenderTarget(x, y, { type: HalfFloatType, depthBuffer: false, minFilter: LinearFilter, magFilter: LinearFilter }));
   }
   setTone(t) { const f = TONE_FN[t] || TONE_FN.aces; if (this.final.defines.TONE_FN === f) return; this.final.defines.TONE_FN = f; this.final.needsUpdate = true; }
+  // v.lut: the look's table (null: none) and how much of it (0..1)
+  setLut(t, k = 1) {
+    const u = this.final.uniforms, on = !!t && k > 0;
+    if (on) { const n = t.image.width; u.tLut.value = t; u.lutS.value = (n - 1) / n; u.lutO.value = .5 / n; u.lutK.value = Math.min(1, k); }
+    if (on === ('LUT' in this.final.defines)) return;
+    if (on) this.final.defines.LUT = ''; else delete this.final.defines.LUT;
+    this.final.needsUpdate = true;
+  }
   setFxaa(on) { if (this.fxaa === on) return; this.fxaa = on; if (on) this.final.defines.FXAA = ''; else delete this.final.defines.FXAA; this.final.needsUpdate = true; }
   pass(r, mat, target) { this.quad.material = mat; r.setRenderTarget(target); this.quad.render(r); }
   render(r, writeBuffer, readBuffer) {
@@ -364,9 +397,17 @@ class FinalPass extends Pass {
     }
     F.tDiffuse.value = readBuffer.texture; F.tBloom.value = M[0]?.texture ?? null; F.bloom.value = on ? this.strength * .8 : 0;
     F.toneMappingExposure.value = r.toneMappingExposure; F.px.value.set(1 / readBuffer.width, 1 / readBuffer.height);
+    if (this.eyeView?.eye) {   // auto exposure's light meter, from the scene before tone mapping
+      const v = this.eyeView, src = readBuffer.texture;
+      v.eyeRead(() => {
+        const M = this.eyeM ||= { rt: new WebGLRenderTarget(16, 16, { depthBuffer: false }), mat: qmat(EYE_FS, { tDiffuse: { value: null } }), px: new Uint8Array(1024) };
+        M.mat.uniforms.tDiffuse.value = src; this.pass(r, M.mat, M.rt);
+        return r.readRenderTargetPixelsAsync(M.rt, 0, 0, 16, 16, M.px);
+      });
+    }
     this.pass(r, this.final, this.renderToScreen ? null : writeBuffer);
   }
-  dispose() { for (const m of this.mips) m.dispose(); for (const m of [this.bright, this.down, this.up, this.final]) m.dispose(); this.quad.dispose(); }
+  dispose() { this.eyeM?.rt.dispose(); this.eyeM?.mat.dispose(); for (const m of this.mips) m.dispose(); for (const m of [this.bright, this.down, this.up, this.final]) m.dispose(); this.quad.dispose(); }
 }
 // Sun shafts (v.shafts): light streaming past trees, through windows and round a hill top. A small
 // pass of its own (so it can be swapped for a WebGPU node later without touching the final pass):
@@ -700,6 +741,48 @@ function roughMips(t, rd, nf, size) {
   t.mipmaps = mips; t.generateMipmaps = false; return t;
 }
 /** Speckle noise helper for surface painters: n dots of colour col, radius up to r. */
+// Colour looks (v.lut): a 3D lookup table, the way films and big games grade their pictures. It
+// changes the finished screen colours (after tone mapping), so any recipe of curves, tints and channel
+// mixing costs one texture read. Made in code: a look's name, your own function, or the text of a
+// .cube file pasted into the game (three.js's LUTCubeLoader reads it; the free looks online are .cube).
+const L_LUM = (r, g, b) => .2126 * r + .7152 * g + .0722 * b;
+const L_S = (x, k) => { const y = x - .5; return Math.min(1, Math.max(0, .5 + y * k / (1 + Math.abs(y) * (k - 1) * 2))); };   // S-curve round mid grey
+const L_SAT = (c, l, k) => c.map(x => l + (x - l) * k);
+const LOOKS = {
+  film: (r, g, b) => { const l = L_LUM(r, g, b), w = L_S(l, 1.15), t = w * w * (3 - 2 * w); return L_SAT([r, g, b], l, 1.08).map((x, i) => L_S(x, 1.1) + [(t - .5) * .08, (t - .5) * .01, (.5 - t) * .09][i]); },   // teal shadows, warm highlights
+  bleach: (r, g, b) => { const l = L_LUM(r, g, b); return L_SAT([r, g, b], l, .45).map(x => L_S(x * .5 + l * .5, 1.45)); },   // bleach bypass: hard, silvery, washed colour
+  noir: (r, g, b) => { const l = L_S(L_LUM(r, g, b), 1.6); return [l, l, l * .97]; },
+  sepia: (r, g, b) => { const l = L_S(L_LUM(r, g, b), 1.1); return [l * 1.07 + .03, l * .9 + .02, l * .7]; },
+  warm: (r, g, b) => [r * 1.06 + .015, g * 1.01 + .005, b * .9],
+  cold: (r, g, b) => [r * .9, g * .99 + .005, b * 1.07 + .02],
+  faded: (r, g, b) => { const l = L_LUM(r, g, b); return L_SAT([r, g, b], l, .78).map(x => .07 + x * .86); },   // lifted blacks, softer colour
+  vivid: (r, g, b) => { const l = L_LUM(r, g, b); return L_SAT([r, g, b], l, 1.3).map(x => L_S(x, 1.12)); },
+  night: (r, g, b) => { const l = Math.pow(L_LUM(r, g, b), .7); return [l * .25, Math.min(1, l * 1.15 + .04), l * .3]; },   // night vision
+};
+const LUT_CACHE = new Map();
+/** A colour look for v.lut: lut('film' | 'bleach' | 'noir' | 'sepia' | 'warm' | 'cold' | 'faded' | 'vivid' | 'night'),
+ * lut((r, g, b) => [r, g, b]) with screen colours 0..1, or lut(cubeFileText). { size } (32) points per side. */
+export function lut(look, { size = 32 } = {}) {
+  if (look?.isData3DTexture) return look;
+  const key = typeof look === 'string' ? look + '|' + size : null;
+  if (key && LUT_CACHE.has(key)) return LUT_CACHE.get(key);
+  let t;
+  if (typeof look === 'string' && /LUT_3D_SIZE/.test(look)) t = new LUTCubeLoader().setType(UnsignedByteType).parse(look).texture3D;
+  else {
+    const f = typeof look === 'function' ? look : LOOKS[look];
+    if (!f) throw new Error(`gs.hd.lut: no look called ${look} (${Object.keys(LOOKS).join(', ')})`);
+    const n = size, d = new Uint8Array(n * n * n * 4);
+    for (let b = 0, i = 0; b < n; b++) for (let g = 0; g < n; g++) for (let r = 0; r < n; r++, i += 4) {
+      const c = f(r / (n - 1), g / (n - 1), b / (n - 1));
+      for (let k = 0; k < 3; k++) d[i + k] = Math.round(Math.min(1, Math.max(0, c[k])) * 255);
+      d[i + 3] = 255;
+    }
+    t = new Data3DTexture(d, n, n, n); t.type = UnsignedByteType;
+  }
+  t.format = RGBAFormat; t.minFilter = t.magFilter = LinearFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.needsUpdate = true;
+  if (key) LUT_CACHE.set(key, t);
+  return t;
+}
 export function speckle(ctx, size, n, col, r = 1.5, a = .2) {
   ctx.save(); ctx.fillStyle = col;
   for (let i = 0; i < n; i++) { ctx.globalAlpha = Math.random() * a; ctx.beginPath(); ctx.arc(Math.random() * size, Math.random() * size, Math.random() * r + .3, 0, 7); ctx.fill(); }
@@ -1050,7 +1133,7 @@ export class HDView {
     if (fog) this.scene.fog = new FogExp2(bg, fog);
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
-    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces';
+    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null; this.lut = null; this.lutAmount = 1;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
     this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null; this.beams = null; this.motionBlur = null;
@@ -1403,11 +1486,17 @@ export class HDView {
    * with spots = [{ x, y, z, col, i, flick }].
    */
   lampLights(dist = 7) {
+    this.lampDist = dist;
     for (let i = 0; i < 4; i++) { const l = new PointLight('#ffd8a0', 0, dist, 1.6); this.scene.add(l); this.lamps.push(l); }
     return this;
   }
   placeLamps(spots, x, y, z, t = 0) {
-    const n = tier().lights, near = spots.map(s => [s, (s.x - x) ** 2 + (s.z - z) ** 2 + (s.y - y) ** 2]).sort((a, b) => a[1] - b[1]);
+    // on WebGPU, clustered lighting (hd3d-gpu.js manyLights) lights 8 times as many of the nearest lamps
+    // for about the same cost; the pool grows as needed (its extra lights stay off on WebGL)
+    const many = HD.manyLights !== false && !!gpuFor(this)?.r.gsClustered;
+    const n = Math.min(tier().lights * (many ? 8 : 1), many ? spots.length : 4);
+    while (this.lamps.length < n) { const l = new PointLight('#ffd8a0', 0, this.lampDist ?? 7, 1.6); this.scene.add(l); this.lamps.push(l); }
+    const near = spots.map(s => [s, (s.x - x) ** 2 + (s.z - z) ** 2 + (s.y - y) ** 2]).sort((a, b) => a[1] - b[1]);
     // A light switching on or off changes how many lights every material is built for, so three.js
     // rebuilds all their shaders: a stutter each time a lamp came into or left range. So the pooled
     // lights stay switched on (the tier sets how many) and a spare one just goes dark.
@@ -1421,6 +1510,26 @@ export class HDView {
       const fade = i === n - 1 && near[n] ? Math.min(1, (near[n][1] - near[i][1]) * .6) : 1;
       l.intensity = (s.i ?? 6) * fl * fade; s.lit = fl;
     });
+  }
+  /** The auto exposure multiplier for this frame (1 without v.autoExposure; card pictures keep the settled one). */
+  eyeAt(still) {
+    const o = this.autoExposure; if (!o) { this.eye = null; return 1; }
+    const eye = this.eye ||= new Eye(); if (o === true) this.autoExposure = {};
+    const now = performance.now(), dt = Math.min(.1, (now - (eye.t || now)) / 1000); eye.t = now;   // real time: the same speed at any frame rate
+    return still ? 2 ** eye.e : eye.step(dt, this.autoExposure);
+  }
+  // after a frame: a new light meter reading now and then (r: the renderer, read(): starts the reading)
+  eyeRead(read) {
+    const eye = this.eye; if (!eye || !eye.want()) return;
+    eye.busy = true;
+    let p; try { p = read(); } catch (e) { p = null; }
+    Promise.resolve(p).then(px => { if (px) eye.take(px, this.autoExposure || {}); }, () => {}).finally(() => { eye.busy = false; });
+  }
+  // v.lut as a texture: a look's name, a function, a .cube text or a table from gs.hd.lut (made once)
+  lutTex() {
+    const l = this.lut; if (!l) return null;
+    if (this._lutOf !== l) { this._lutOf = l; try { this._lutT = lut(l); } catch (e) { console.warn(e.message); this._lutT = null; } }
+    return this._lutT;
   }
   /** Size the camera to the game's W x H (call from draw before render). */
   fit(W, H) { if (W !== this.W || H !== this.H || this.cam.aspect !== W / H) { this.W = W; this.H = H; this.cam.aspect = W / H; this.cam.updateProjectionMatrix(); } return this; }
@@ -1518,7 +1627,7 @@ export class HDView {
       if (o.isLight) return;
       if (!o.castShadow) { if (o.layers.mask & SH_BITS) o.layers.mask &= ~SH_BITS; return; }
       const e = o.matrixWorld.elements, w = (o.id % 89) + 1, held = (o.layers.mask & HOLD_BIT) !== 0;
-      let h = (e[0] * 1.3 + e[1] * 1.7 + e[2] * 2.3 + e[4] * 2.9 + e[5] * 3.1 + e[6] * 3.7 + e[8] * 4.1 + e[9] * 4.3 + e[10] * 4.7 + e[12] * 5.3 + e[13] * 5.9 + e[14] * 6.1 + (held ? .5 : 0)) * w;
+      let h = ((o.geometry?.id ?? 0) % 97 * .37 + e[0] * 1.3 + e[1] * 1.7 + e[2] * 2.3 + e[4] * 2.9 + e[5] * 3.1 + e[6] * 3.7 + e[8] * 4.1 + e[9] * 4.3 + e[10] * 4.7 + e[12] * 5.3 + e[13] * 5.9 + e[14] * 6.1 + (held ? .5 : 0)) * w;
       let wide = false, copies = 1;   // instanced and skinned things: counted for every light (their bounds move without the object)
       const tw = o.userData.gsTwin;
       if (tw) { h += ((tw.instanceCount ?? 0) * 7 + (tw.matricesTexture?.version ?? 0) + tw.matrixWorld.elements[12] * 3 + tw.matrixWorld.elements[14] * 5) * w; wide = true; copies = o.count; }
@@ -1582,7 +1691,7 @@ export class HDView {
       let role = sunRoles.get(l); if (!role) sunRoles.set(l, role = G.fx.gpuSunLight(l, AIR, noiseTex()));
       role.value = casc ? (l === cs.near ? 1 : l === cs.far ? 2 : 0) : 0;
     });
-    r.toneMapping = TONES[this.tone] ?? ACESFilmicToneMapping; r.toneMappingExposure = this.exposure;
+    r.toneMapping = TONES[this.tone] ?? ACESFilmicToneMapping; r.toneMappingExposure = this.exposure * this.eyeAt(baking || off);
     if (this.decals.length && !baking && !off) this.tickDecals(Math.min(.1, (now - (this.decalT || now)) / 1000)); this.decalT = now;
     if (!baking && !off) this.t += 1 / 60;
     gpuSwap(this, G);
@@ -1595,8 +1704,14 @@ export class HDView {
     for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
     // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
     const pw = up ? up.pw : r.domElement.width, ph = up ? Math.max(1, Math.floor(up.fh * (pw + .5) / up.fw)) : r.domElement.height;
-    const o = { tone: this.tone, w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, s1: !!up?.s1, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
+    const o = { tone: this.tone, w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, s1: !!up?.s1, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, lut: this.lutAmount > 0 ? this.lutTex() : null, lutK: this.lutAmount, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
       dofOn: false, lens: null, near: this.cam.near, far: this.cam.far, shaftsOn: false, shaft: 0, shaftCol: null };
+    // temporal anti-aliasing in place of MSAA (three.js's TRAA) where the tier pays for smooth edges and the
+    // picture isn't upscaled (SGSR 2 is temporal itself); card pictures keep MSAA (one frame has no history)
+    // Small bright moving things (particles, sparks) blend away in its history and look dimmer, so a view
+    // with particles keeps MSAA unless the game asks for it (v.aa = 'traa'; 'msaa' keeps MSAA anyway)
+    const traaOk = this.aa === 'traa' || (this.aa !== 'msaa' && !this.parts.length);
+    if (HD.traa !== false && traaOk && T.msaa && !up && !baking && !off && !this.clearBg) { o.traa = true; o.msaa = 0; o.smooth = false; }
     const g = this.grade;
     if (g) o.grade = { sat: g.saturation ?? 1, con: g.contrast ?? 1, lo: toRGB(g.shadows, GL), hi: toRGB(g.highlights, GH) };
     // depth of field and sun shafts: in the chain from the first time the view uses them (high and ultra
@@ -1622,6 +1737,7 @@ export class HDView {
         if (o.shaftsOn) { o.shaft = Math.min(2, this.shafts) * seen; o.shaftCol = this.sun?.color || C_WARM; o.shaftAt = this.shaftsAt; }
       }
     }
+    if (!baking && !off) autoLod(this, r.domElement.height);
     // shadows: each light's map is drawn again only when it or a caster it sees moved (shadowLights)
     r.shadowMap.enabled = T.shadow > 0; r.shadowMap.type = PCFShadowMap;
     if (T.shadow > 0) {
@@ -1641,6 +1757,7 @@ export class HDView {
     for (const e of empty) e.visible = false;
     r.info.autoReset = false; r.info.reset();
     const cut = lastView !== this || this._cut; lastView = this; this._cut = false; if (TEST) window.__hdView = this;
+    if (cut && ch.traaN) ch.traaN._historyRenderTarget?.setSize(1, 1);   // (TRAA starts its history again from this frame)
     // Frame generation starts again after a cut (another view drew, v.cut(), a pause, the camera
     // jumping): the frames either side of one don't belong together.
     let fg = null;
@@ -1664,6 +1781,7 @@ export class HDView {
     this._aimJit = s2 && fg ? fg.jit : null;   // the real frame is shown while SGSR 2's jitter is still on the camera
     let shown = false;
     try { shown = ch.render(o) || false; } finally { for (const e of empty) e.visible = true; if (s2) o.s2.end(this.cam); this._aimJit = null; }
+    if (this.eye && !baking && !off && ch.sp) this.eyeRead(() => (ch.eyeM ||= G.fx.eyeMeter(r)).read(ch.sp.getTexture('output')));
     const made = !!fg && !!shown;
     if (made) HD.fgTap?.(shown, r.domElement, 'frame');
     // the refreshes after this one that the feed skips show the moments due then (last: the next draws a real frame)
@@ -1676,6 +1794,7 @@ export class HDView {
       else if (miss > .08 && how === 'blend') console.info('Frame generation: ahead for this game, its refreshes were too full in blend');
     }
     if (!baking && !off) {
+      gpuTime(r);
       HD.info.calls = r.info.render.drawCalls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = T.shadow > 0; HD.info.upscaled = s2 ? 'sgsr2' : up ? 'sgsr1' : false; HD.info.backend = 'webgpu';
       HD.info.framegen = made ? how : false; HD.info.fgMs = made ? ch.fg.stats.ms : 0; HD.info.fgSteps = made ? steps : 0;
     }
@@ -1820,7 +1939,7 @@ export class HDView {
     this.patchAir(); this.airUniforms();
     if (this.gi || this.rooms?.length) this.bakeExtras(null, r);
     this.holdNew(r, baking || off, now, this.clearBg ? null : cp.readBuffer);
-    r.toneMappingExposure = this.exposure;
+    r.toneMappingExposure = this.exposure * this.eyeAt(baking || off);
     if (this.clearBg) { P.arRender.scene = this.scene; P.arRender.camera = this.cam; } else { P.render.scene = P.ao.scene = this.scene; P.render.camera = P.ao.camera = this.cam; }
     // reflections (ultra, and only if the game marked shiny surfaces): SSR draws the scene itself
     if (ssr) {
@@ -1840,7 +1959,7 @@ export class HDView {
     if (!baking && !off) this.t += 1 / 60;
     if (!this.clearBg) {
       const F = P.final; P.ao.enabled = T.ao > 0; if (T.ao > 0 && P.ao.scale !== T.ao) { P.ao.scale = T.ao; P.ao.setSize(P.ao.fw || pw, P.ao.fh || ph); }
-      F.strength = this.bloom; F.scale = T.bloom; F.setTone(this.tone); F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
+      F.strength = this.bloom; F.scale = T.bloom; F.setTone(this.tone); F.setLut(this.lutTex(), this.lutAmount); F.eyeView = baking || off ? null : this; F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
       const u = F.final.uniforms; u.t.value = this.t % 10; u.hurt.value = this.hurt;
       const g = this.grade; u.gradeOn.value = g ? 1 : 0;
       if (g) { u.sat.value = g.saturation ?? 1; u.con.value = g.contrast ?? 1; toRGB(g.shadows, u.lo.value); toRGB(g.highlights, u.hi.value); }
@@ -1880,6 +1999,7 @@ export class HDView {
     if (!this.warmed && !off) this.warm();
     // shadows: redraw the maps only when a shadow caster or a shadow light moved (or the tier, view or map changed)
     this.scene.updateMatrixWorld();
+    if (!baking && !off) autoLod(this, r.domElement.height);
     r.shadowMap.enabled = T.shadow > 0;
     let shadows = false; const cut = lastView !== this || this._cut; this._cut = false;
     if (T.shadow > 0 && this.shadowLights(lastView !== this)) r.shadowMap.needsUpdate = shadows = true;
@@ -2075,6 +2195,82 @@ function shadowSize(sh, n) {
   if (sh.map?.isWebGLRenderTarget) { sh.map.dispose(); sh.map = null; } else sh.map?.setSize(n, n, sh.map.depth);
 }
 // the layer things hidden by occlusion culling move to: the view's camera doesn't draw it, shadow cameras do
+// Automatic level of detail for the game's own meshes (Unreal and Unity make these on import; here they're
+// made in the background as a game plays). A detailed mesh (LOD_MIN_TRIS or more) gets simpler copies
+// from meshoptimizer, each with the most it may move a point (its error, in metres at the mesh's size).
+// Each frame the simplest copy whose error would show as less than LOD_PX pixels on screen is drawn, so
+// nobody can see the swap: far away a mesh needs a fraction of its triangles. The copies share the
+// original's points (only the triangle list changes), so normals, colours and UVs stay exact.
+// Skinned and morphing meshes too (their bone weights and shapes are shared points). Off for instanced and
+// multi-material meshes, see-through ones and userData.noLod.
+const LOD_MIN_TRIS = 3000, LOD_PX = .6, LOD_KEEP = [.5, .25, .1], LODS = new WeakMap(), LOD_Q = [];
+let lodReady = false; MeshoptSimplifier.ready.then(() => { lodReady = true; }, () => {});
+function lodLevels(g) {
+  const idx = g.index, pos = g.attributes.position;
+  if (!lodReady || !idx || !pos || pos.itemSize !== 3 || pos.isInterleavedBufferAttribute) return null;
+  const P = pos.array instanceof Float32Array && pos.array.length === pos.count * 3 ? pos.array : Float32Array.from({ length: pos.count * 3 }, (_, i) => pos.getComponent(i / 3 | 0, i % 3));
+  const I = idx.array instanceof Uint32Array ? idx.array : new Uint32Array(idx.array), scale = MeshoptSimplifier.getScale(P, 3);
+  const out = [{ g, err: 0, tris: I.length / 3 }];
+  for (const k of LOD_KEEP) {
+    const [ix, err] = MeshoptSimplifier.simplify(I, P, 3, Math.max(3, Math.floor(I.length * k / 3) * 3), .05, ['LockBorder']);
+    if (ix.length >= out.at(-1).tris * 3 * .85 || !ix.length) break;   // (not much simpler: stop)
+    const lg = new BufferGeometry();
+    for (const n in g.attributes) lg.setAttribute(n, g.attributes[n]);
+    lg.morphAttributes = g.morphAttributes; lg.morphTargetsRelative = g.morphTargetsRelative;
+    lg.setIndex(new BufferAttribute(pos.count > 65535 ? ix : Uint16Array.from(ix), 1));
+    lg.boundingSphere = g.boundingSphere; lg.boundingBox = g.boundingBox; lg.name = g.name + ':lod';
+    out.push({ g: lg, err: err * scale, tris: ix.length / 3 });
+  }
+  return out.length > 1 ? out : null;
+}
+function autoLod(v, ph) {
+  if (HD.autoLod === false) return;
+  const cam = v.cam, k = ph / (2 * Math.tan(cam.fov * Math.PI / 360));   // pixels per metre at 1 m
+  let built = 0;
+  v.scene.traverseVisible(o => {
+    if (!o.isMesh || o.isInstancedMesh || o.isInstancedMesh2 || o.isBatchedMesh || o.userData.noLod) return;
+    let L = o.userData.gsLod;
+    if (L === undefined) {
+      const g = o.geometry;
+      if (!g?.index || g.groups.length > 1 || Array.isArray(o.material) || o.material.transparent || g.index.count < LOD_MIN_TRIS * 3) { o.userData.gsLod = null; return; }
+      if (!g.boundingSphere) g.computeBoundingSphere();
+      let lv = LODS.get(g);
+      if (lv === undefined) { if (built++ > 0 || !lodReady) return; try { lv = lodLevels(g); } catch (e) { lv = null; } LODS.set(g, lv); }   // one a frame
+      o.userData.gsLod = L = lv ? { lv, base: g } : null;
+    }
+    if (!L) return;
+    if (o.geometry !== L.base && !L.lv.some(x => x.g === o.geometry)) { o.userData.gsLod = undefined; return; }   // the game swapped the geometry itself
+    const bs = L.base.boundingSphere, e = o.matrixWorld.elements, sc = Math.sqrt(Math.max(e[0] * e[0] + e[1] * e[1] + e[2] * e[2], e[4] * e[4] + e[5] * e[5] + e[6] * e[6], e[8] * e[8] + e[9] * e[9] + e[10] * e[10]));
+    LOD_V.copy(bs.center).applyMatrix4(o.matrixWorld);
+    const d = Math.max(.01, LOD_V.distanceTo(cam.position) - bs.radius * sc), px = k * sc / d;
+    let pick = L.lv[0];
+    for (let i = L.lv.length - 1; i > 0; i--) if (L.lv[i].err * px < LOD_PX) { pick = L.lv[i]; break; }
+    if (o.geometry !== pick.g) o.geometry = pick.g;
+  });
+}
+const LOD_V = new Vector3();
+// Auto exposure (v.autoExposure): the eye adapting, as every big engine does. A light meter reads the
+// scene's brightness every few frames (a 16 x 16 grid of log brightness, read back without waiting:
+// readRenderTargetPixelsAsync), and the exposure drifts towards the one that puts the average at
+// mid grey: stepping out of a dark bunker into sunlight dazzles for a moment, then settles. Faster
+// to darken than to brighten, like eyes.
+const EYE_FS = `uniform sampler2D tDiffuse; varying vec2 vUv;
+  void main(){ float s = 0.;
+    for (int y = 0; y < 4; y++) for (int x = 0; x < 4; x++) { vec3 c = texture2D(tDiffuse, vUv + (vec2(float(x), float(y)) - 1.5) / 64.).rgb; s += log2(max(dot(c, vec3(.2126, .7152, .0722)), 1e-4)); }
+    float n = clamp((s / 16. + 14.) / 20., 0., 1.) * 255.; gl_FragColor = vec4(floor(n) / 255., fract(n), 0., 1.); }`;
+class Eye {
+  constructor() { this.e = 0; this.goal = 0; this.busy = false; this.n = 0; this.key = null; }   // log2 of the exposure
+  // the 16 x 16 bytes back: mean log brightness (the middle of the screen counts twice)
+  take(px, o) {
+    let s = 0, w = 0;
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const i = (y * 16 + x) * 4, l = (px[i] + px[i + 1] / 255) / 255 * 20 - 14, k = x >= 4 && x < 12 && y >= 4 && y < 12 ? 2 : 1; s += l * k; w += k; }
+    const avg = s / w, key = o.key ? Math.log2(o.key) : (this.key ??= avg);   // no key: the game's look as it starts is the target
+    this.goal = Math.min(Math.log2(o.max ?? 2.5), Math.max(Math.log2(o.min ?? .4), (key - avg) * (o.amount ?? .7)));   // eyes don't fully make up the difference
+  }
+  step(dt, o) { const up = this.goal > this.e, k = 1 - Math.exp(-dt * (up ? o.speed ?? 1.2 : o.darken ?? 3)); this.e += (this.goal - this.e) * k; return 2 ** this.e; }
+  // read now and then (one read at a time)
+  want() { return !this.busy && ++this.n % 6 === 0; }
+}
 const OCC_LAYER = 30;
 // shadowLights(): scratch (no garbage per frame)
 let SH_H = new Float64Array(40); const SH_S = new Sphere(), SH_P = new Vector3(), SH_LAST = new WeakMap();

@@ -105,10 +105,39 @@ so its next round starts there instead of stuttering down again.
   outweigh the moving ones (20,000 triangles or more, at least twice the moving ones), for sun and
   spot lights with one map. `__hd.shadowCache = false` turns it off; `node scripts/shadow-check.cjs <id> [--gpu]`
   checks the pictures match a full redraw.
+- On WebGPU at high and ultra, when the picture isn't upscaled, edges are smoothed by temporal
+  anti-aliasing (three.js's TRAA, then its RCAS sharpening from AMD FidelityFX) instead of MSAA:
+  smoother thin lines and edges, less memory. Small bright moving things blend away in its history,
+  so a view with particles keeps MSAA unless it sets `v.aa = 'traa'` (`v.aa = 'msaa'` always keeps
+  MSAA). `__hd.traa = false` turns it off everywhere. A camera jump (`v.cut()`) starts its history again.
+- WebGPU times each frame on the graphics chip where the phone allows it (`__hd.info.gpuMs`). The
+  quality steps use it: a frame slowed by the CPU doesn't give up resolution (it wouldn't help), and
+  a GPU with plenty of room gets sharpness back sooner.
+- Detailed meshes (3,000 triangles or more, skinned ones too) get simpler copies from meshoptimizer
+  in the background, one mesh a frame, and each frame draws the simplest copy whose change would
+  show as under a pixel: far soldiers and props need a fraction of their triangles and look the
+  same. The copies share the original's points, so normals, UVs and bone weights stay exact. Off for
+  instanced and multi-material meshes, see-through ones and `mesh.userData.noLod = true`;
+  `__hd.autoLod = false` turns it off. (gs.props makes LODs for instanced props.)
+- On WebGPU, lights use three.js's clustered (Forward+) lighting: each pixel only adds up the point
+  and spot lights that reach it, so `v.lampLights()` / `v.placeLamps()` light 8 times as many of the
+  nearest lamps (up to 32) for about the same cost, and lamps coming and going build no shaders.
+  Lights with shadows are drawn as before. `__hd.manyLights = false` keeps the old lamp count.
 - `v.tone = 'aces' | 'neutral' | 'agx'`: which of three.js's tone mappers turns the light into
   screen colours. ACES (the default, the film look) pushes very bright colours towards yellow and
   white; Neutral (Khronos PBR Neutral) keeps colours true to the material, good for neon, paint and
   products; AgX (Blender's) keeps their hue in bright light and rolls off softly.
+- `v.lut = 'film' | 'bleach' | 'noir' | 'sepia' | 'warm' | 'cold' | 'faded' | 'vivid' | 'night'`: a colour
+  look, the way films grade their pictures (a 3D lookup table on the finished colours: one texture
+  read, three.js's LUTPass maths and Lut3DNode). Also your own recipe, `v.lut = (r, g, b) => [r, g, b]`
+  with screen colours 0..1 (made once), or the text of a `.cube` file pasted into the game as a
+  string. `v.lutAmount` (1) blends it in; `gs.hd.lut(look)` makes the table to swap between.
+- `v.autoExposure = true | { amount, min, max, speed, darken, key }`: the eye adapts, like walking out
+  of a bunker into sunlight: it dazzles a moment, then settles. A light meter reads the picture every
+  few frames (read back without waiting) and the exposure drifts so the scene's brightness stays near
+  how it looked when it was turned on (or near `key`, a mid grey such as .18). `amount` (.7) is how
+  much of the change the eye makes up, `min`/`max` (.4 / 2.5) cap it, `speed` (1.2) brightens and
+  `darken` (3) dims, per second. `v.eye = null` measures afresh (a new level). Off by default.
 - Bumpy surfaces made with `surface()` don't sparkle in the distance: each smaller copy of the
   roughness map is made a little rougher by how much the bumps under it disagree (Toksvig specular
   anti-aliasing, as in Filament and Unreal). three.js already does the same for curved shapes.
