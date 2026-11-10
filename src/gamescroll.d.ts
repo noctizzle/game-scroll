@@ -1359,6 +1359,10 @@ export interface ModelsPart {
   readonly materials: readonly string[];
   /** Ages a mesh in place (and returns it), from its own shape: outer edges rubbed lighter, creases and the part near the ground grimy, moss or snow on what faces up. Baked once into vertex colours (free to draw). edges, dirt, moss, snow 0..1; ground: metres up from its bottom that get dirty (.4); edgeColour, dirtColour, mossColour; seed; split (false: don't add corners first). */
   wear<M = Loose>(mesh: M, o?: { edges?: number; edgeColour?: string; dirt?: number; dirtColour?: string; ground?: number; moss?: number; mossColour?: string; snow?: number; seed?: number; split?: boolean }): M;
+  /** An everyday thing built in code from the recipes and aged with wear(): a Group (one mesh per material), foot at y = 0, facing +z. seed (small differences), size (its main measure, metres), colour (main material), wear (wear() options, or false), tile (metres per texture repeat), lit (lamp brightness). The same options again give a copy sharing shapes and materials. */
+  prop(name: 'crate' | 'barrel' | 'drum' | 'pallet' | 'table' | 'chair' | 'bench' | 'shelf' | 'lamp' | 'fence' | 'sign' | 'bucket' | 'sack' | 'chest' | 'cone' | 'bin' | 'door' | 'pipe', o?: { seed?: number; size?: number; colour?: string; color?: string; wear?: false | Record<string, Loose>; tile?: number; lit?: number }): Loose;
+  /** The prop names. */
+  readonly props: readonly string[];
   /** Per-vertex curvature of a geometry (convex > 0, concave < 0) and how much each vertex faces up. */
   curvature(geometry: Loose): { curve: Float32Array; up: Float32Array };
 }

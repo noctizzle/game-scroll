@@ -600,6 +600,7 @@ const { material, wear } = gs.models, { rbox, THREE } = gs.hd;
 const crate = new THREE.Mesh(rbox(.8, .8, .8, .05), material('planks', { colour: '#a87a4c' }));
 wear(crate, { edges: .8, dirt: .6 });                                       // rubbed edges, grimy foot
 const wall = new THREE.Mesh(new THREE.BoxGeometry(6, 3, .4), material('brick', { solid: 1, scatter: true }));
+const barrel = gs.models.prop('barrel', { seed: 2 }); barrel.position.set(1, 0, 2); v.scene.add(barrel);
 wear(wall, { moss: .7 });                                                    // moss on the top
 ```
 
@@ -618,3 +619,10 @@ wear(wall, { moss: .7 });                                                    // 
   `snow`). It is worked out once into vertex colours, so it costs nothing to draw. Flat-sided shapes are
   split into smaller triangles first (the shape stays the same) so there are corners to wear; `split: false`
   skips that. The material is copied, so other things sharing it stay clean.
+- **`prop(name, o)`**: everyday things built from simple shapes, dressed in the recipes and aged with
+  `wear`: `crate`, `barrel`, `drum`, `pallet`, `table`, `chair`, `bench`, `shelf`, `lamp`, `fence`, `sign`,
+  `bucket`, `sack`, `chest`, `cone`, `bin`, `door`, `pipe` (`gs.models.props` lists them). A Group with one
+  mesh per material, its foot at y = 0, facing +z. `seed` (small differences), `size` (its main measure in
+  metres), `colour` (its main material), `wear` (options for `wear`, or `false` for new), `lit` (lamp glow).
+  Asking again with the same options gives a copy that shares shapes and materials, so a hundred crates
+  cost one to make, and copies that keep still merge into one draw.
