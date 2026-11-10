@@ -119,6 +119,10 @@ so its next round starts there instead of stuttering down again.
   screen colours. ACES (the default, the film look) pushes very bright colours towards yellow and
   white; Neutral (Khronos PBR Neutral) keeps colours true to the material, good for neon, paint and
   products; AgX (Blender's) keeps their hue in bright light and rolls off softly.
+- `pbr(col, { tex, depth: .05 })`: parallax occlusion mapping on WebGPU for a `surface()` texture: the
+  raised parts of its height layer stand up and hide what's behind them as you look across the surface
+  (bricks, cobbles, planks, tiles), with no extra triangles. `depth` is in texture widths. WebGL keeps
+  the normal map's shading. Use it on big flat surfaces seen at a slant, where it shows the most.
 - `pbr(col, { sss: true | { colour, power, scale, distortion, ambient, attenuation } })`: subsurface
   scattering for skin, wax, leaves, jade and ears against the light: light passing through glows out
   of the far side in `colour` (default a skin red). On WebGPU this is three.js's MeshSSSNodeMaterial

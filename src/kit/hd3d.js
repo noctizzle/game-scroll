@@ -675,7 +675,7 @@ function seeThrough(r, w, h) {
  * A PBR material. col: base colour; rough/metal 0..1; glow: emissive strength (values above 1
  * bloom); tex: a surface() set; rep: texture repeat [u, v]. Extra options pass to three.js.
  */
-export function pbr(col = '#ffffff', { rough = .6, metal = 0, glow = 0, glowCol, tex, rep, clear = 0, sss, ...o } = {}) {
+export function pbr(col = '#ffffff', { rough = .6, metal = 0, glow = 0, glowCol, tex, rep, clear = 0, sss, depth = 0, ...o } = {}) {
   const M = clear || o.sheen || sss ? MeshPhysicalMaterial : MeshStandardMaterial;
   const m = new M({ color: col, roughness: rough, metalness: metal, ...o });
   if (clear) { m.clearcoat = clear; m.clearcoatRoughness = .15; }
@@ -691,6 +691,10 @@ export function pbr(col = '#ffffff', { rough = .6, metal = 0, glow = 0, glowCol,
     const t = rep ? tex.repeat(rep[0], rep[1]) : tex;
     m.map = t.map; m.normalMap = t.normal; m.roughnessMap = t.rough; if (t.metal) { m.metalnessMap = t.metal; }
     m.normalScale.set(t.ns ?? 1, t.ns ?? 1);
+    // depth (in texture widths, e.g. .04): parallax occlusion mapping on WebGPU, the bumps' raised parts
+    // standing up and hiding what's behind them as you look across the surface (bricks, cobbles, planks);
+    // WebGL keeps the normal map's shading. Not with sss (one or the other).
+    if (depth > 0 && t.height && !sss) { m.userData.pom = { height: t.height, depth }; m.userData.gsGpu = 'pom'; }
   }
   return m;
 }
@@ -717,10 +721,10 @@ export function surface(size, paint, { strength = 2.5 } = {}) {
   }
   nc.putImageData(out, 0, 0);
   const tx = (cv, srgb) => { const t = new CanvasTexture(cv); t.wrapS = t.wrapT = RepeatWrapping; t.colorSpace = srgb ? SRGBColorSpace : NoColorSpace; t.anisotropy = 4; t.minFilter = LinearMipmapLinearFilter; return t; };
-  const base = { map: tx(C, true), normal: tx(N), rough: roughMips(tx(Rc), g.r.getImageData(0, 0, size, size).data, nf, size) };
+  const base = { map: tx(C, true), normal: tx(N), rough: roughMips(tx(Rc), g.r.getImageData(0, 0, size, size).data, nf, size), height: tx(Hc) };
   const set = (u, v, b = base) => {
     if (u === 1 && v === 1) return { ...b, repeat: set };
-    const cl = {}; for (const k of ['map', 'normal', 'rough']) { cl[k] = b[k].clone(); cl[k].repeat.set(u, v); cl[k].needsUpdate = true; }
+    const cl = {}; for (const k of ['map', 'normal', 'rough', 'height']) { cl[k] = b[k].clone(); cl[k].repeat.set(u, v); cl[k].needsUpdate = true; }
     return { ...cl, repeat: set };
   };
   return { ...base, repeat: set };

@@ -154,6 +154,22 @@ async function flareScene() {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend];
 }
+// parallax occlusion mapping (pbr { tex, depth }, WebGPU): a cobbled floor and a brick wall seen at a slant
+async function pomScene() {
+  window.__hd.force = 2;
+  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: 0, env: .3, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 1.1, 2.6); v.cam.lookAt(0, .4, -1); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 6, [-.8, .6, .4]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const bricks = gs.hd.surface(256, g => {
+    g.col.fillStyle = '#6b6058'; g.col.fillRect(0, 0, 256, 256); g.h.fillStyle = '#000'; g.h.fillRect(0, 0, 256, 256); g.r.fillStyle = '#ddd'; g.r.fillRect(0, 0, 256, 256);
+    for (let r = 0; r < 8; r++) for (let k = -1; k < 4; k++) { const bx = k * 64 + (r % 2) * 32 + 3, by = r * 32 + 3; g.col.fillStyle = ['#a0503a', '#94482f', '#ad5c42'][(r + k + 3) % 3]; g.col.fillRect(bx, by, 58, 26); g.h.fillStyle = '#fff'; g.h.fillRect(bx, by, 58, 26); }
+  });
+  const wall = new T.Mesh(new T.PlaneGeometry(4, 2), gs.hd.pbr('#ffffff', { rough: .85, tex: bricks.repeat(2, 1), depth: .06 })); wall.position.set(-1.2, 1, -1); wall.rotation.y = .9; v.scene.add(wall);
+  const floor = new T.Mesh(new T.PlaneGeometry(6, 6).rotateX(-Math.PI / 2), gs.hd.pbr('#ffffff', { rough: .85, tex: bricks.repeat(3, 3), depth: .05 })); v.scene.add(floor);
+  const t0 = performance.now(); while (performance.now() - t0 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
 async function roomScene() {
   window.__hd.force = 2;
   const F = new Set((new URLSearchParams(location.search).get('feat') || '').split(',')), on = k => !F.has('-' + k);
@@ -318,6 +334,7 @@ try {
   [out['gpu-sss'], backends['gpu-sss']] = await sssScene();
   [out['gpu-oit'], backends['gpu-oit']] = await oitScene();
   [out.flare, backends.flare] = await flareScene();
+  [out['gpu-pom'], backends['gpu-pom']] = await pomScene();
   { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; }
   [out.river, backends.river] = await riverScene();
   [out.flood, backends.flood] = await floodScene();

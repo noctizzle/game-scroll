@@ -9,14 +9,14 @@
 // scripts/look-compare.cjs --webgpu draws the same scenes both ways and compares them.
 // Kit use only.
 import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Vector4, Color, BackSide, Sprite, Group, InstancedMesh, BufferGeometry, Frustum, Sphere, InstancedBufferAttribute as IBA, SpriteNodeMaterial, InstancedBufferAttribute, AdditiveBlending, NormalBlending,
-  MeshBasicNodeMaterial, NodeMaterial, Data3DTexture, RectAreaLightNode, MeshSSSNodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, DepthTexture, LessEqualCompare, NoToneMapping, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, SRGBColorSpace, LinearSRGBColorSpace, Matrix3 } from 'three/webgpu';
+  MeshBasicNodeMaterial, NodeMaterial, Data3DTexture, RectAreaLightNode, MeshSSSNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, DepthTexture, LessEqualCompare, NoToneMapping, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, SRGBColorSpace, LinearSRGBColorSpace, Matrix3 } from 'three/webgpu';
 import {
   pass, mrt, output, velocity, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
   positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min, materialEmissive, distance,
   attribute, vertexColor, normalWorld, normalViewGeometry, positionLocal, positionGeometry, positionPrevious, modelWorldMatrix, modelWorldMatrixInverse,
   materialColor, materialOpacity, materialRoughness, cos, floor, step, fwidth, dFdx, dFdy, normalize, uniformArray, Loop, int, If, sqrt,
-  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix, shadow as shadowOf, texture3D,
+  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix, shadow as shadowOf, texture3D, parallaxDirection, normalMap,
 } from 'three/tsl';
 import { lut3D } from 'three/examples/jsm/tsl/display/Lut3DNode.js';
 import { oitPass } from 'three/examples/jsm/tsl/display/OITPassNode.js';
@@ -60,6 +60,33 @@ export function envFrom(r, scene, { size = 256, blur = .03 } = {}) {
 // hd3d.js swaps a mesh's material for its twin here while the view draws on WebGPU (material.userData.gsGpu
 // names it). The twin reads the WebGL material's own uniform objects, so changes show on both.
 export const gpuMaterials = {
+  // pbr(col, { tex, depth }): parallax occlusion mapping (the classic steep-parallax march with a final
+  // interpolation, as in Unreal's and Unity's POM nodes). three.js only has plain parallax offset
+  // (parallaxUV), so the march is ours, on its tangent-space view direction (parallaxDirection: from
+  // the screen-space derivatives when the mesh has no tangents). The surface's maps are read at the
+  // marched place; height is surface()'s height layer (white raised).
+  pom(gm) {
+    const m = new (gm.isMeshPhysicalMaterial ? MeshPhysicalNodeMaterial : MeshStandardNodeMaterial)(), P = gm.userData.pom;
+    for (const k in gm) if (k !== 'uuid' && k !== 'id' && k !== 'type') m[k] = gm[k];   // (as three's own NodeLibrary.fromMaterial)
+    const H = texture(P.height), rp = P.height.repeat, depth = float(P.depth);
+    const base = uv().mul(vec2(rp.x, rp.y)).add(vec2(P.height.offset.x, P.height.offset.y));
+    const puv = Fn(() => {
+      const gx = dFdx(base), gy = dFdy(base), h = q => H.sample(q).grad(gx, gy).r;
+      const V = parallaxDirection.normalize(), N = 16, step = float(1 / N);
+      const d = V.xy.div(max(V.z, .25)).mul(depth).mul(step);   // (flat angles capped, or the march runs off sideways)
+      const cur = base.toVar(), lay = float(0).toVar(), mapD = float(1).sub(h(base)).toVar();
+      Loop(N, () => { If(lay.greaterThanEqual(mapD), () => { Break(); }); cur.subAssign(d); lay.addAssign(step); mapD.assign(float(1).sub(h(cur))); });
+      const prev = cur.add(d), after = mapD.sub(lay), before = float(1).sub(h(prev)).sub(lay).add(step);
+      return mix(cur, prev, after.div(after.sub(before)).clamp(0, 1));
+    })().toVar('pomUV');
+    const at = (t, q) => texture(t, q).grad(dFdx(base), dFdy(base));
+    if (gm.map) m.colorNode = at(gm.map, puv).mul(materialColor);
+    if (gm.normalMap) m.normalNode = normalMap(at(gm.normalMap, puv), uniform(gm.normalScale));
+    if (gm.roughnessMap) m.roughnessNode = at(gm.roughnessMap, puv).g.mul(materialRoughness);
+    m.map = m.normalMap = m.roughnessMap = null;   // (read above at the marched place; three's materialColor would multiply the map in again)
+    m.name = gm.name || 'pom';
+    return m;
+  },
   // pbr(col, { sss }): three's subsurface scattering material, with everything else copied as three does
   sss(gm) {
     const m = new MeshSSSNodeMaterial(), S = gm.userData.sss;
