@@ -6,7 +6,7 @@
 //   const { sfx, sounds } = gs.sound, { haptic } = gs.device, { clamp, rnd } = gs.util;
 //
 // What's on it (docs/maker-kit.md has the full guide):
-//   gs.sound     beeps, ready-made sounds, ZzFX designs, music loops, Tone.js synths, the mixer, speech (say)
+//   gs.sound     beeps, ready-made sounds, ZzFX designs, music loops (and compose(): original tunes from a mood and a seed), Tone.js synths, the mixer, speech (say)
 //   gs.device    haptics (and rich haptic patterns), tilt, shake, mic (level, pitch, claps, blowing), camera, compass
 //   gs.util      clamp, rnd, pix, hash, fmt, disc, flickTracker
 //   gs.math      seeded random, daily seed, smooth noise, vectors, overlap tests, Grid, Timers
@@ -150,6 +150,7 @@ import * as vehicles from './kit/vehicles.js';
 import * as paths from './kit/paths.js';
 import * as bones from './kit/bones.js';
 import { tick } from './kit/tick.js';
+import * as composer from './kit/compose.js';
 import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
@@ -248,7 +249,7 @@ export function offers(names) {
 }
 
 const core = {
-  sound: pick('sound', sound, sfx),
+  sound: pick('sound', sound, sfx, composer),
   device: pick('device', device),
   util: pick('util', util),
   math: pick('math', math),

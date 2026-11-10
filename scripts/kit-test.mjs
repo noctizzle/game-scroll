@@ -1585,5 +1585,21 @@ console.log('physics ok');
   console.log('gs.tick ok');
 }
 
+// music composer: seeded, every part the same length, every note a real note
+{
+  const { compose, MOODS } = await import('../src/kit/compose.js'), { freq } = await import('../src/kit/sound.js');
+  for (const mood of Object.keys(MOODS)) for (const bars of [4, 8]) {
+    const t = compose({ mood, seed: 'kit-test', bars });
+    assert.equal(JSON.stringify(t), JSON.stringify(compose({ mood, seed: 'kit-test', bars })), 'same seed, same tune');
+    for (const k of ['lead', 'bass', 'pad', 'pad2', 'arp', 'drums', 'drums2', 'lead2']) {
+      const toks = t[k].split(' '); assert.equal(toks.length, bars * 8, `${mood} ${k} is ${bars} bars`);
+      for (const x of toks) if (k.startsWith('drums')) assert.ok(/^([kshc]+|\.)$/.test(x), 'drum ' + x); else assert.ok(x === '.' || x === '-' || freq(x) > 30, `${mood} ${k} note ${x}`);
+    }
+    assert.ok(t.tempo >= 60 && t.tempo <= 180 && t.info.chords.length === bars);
+  }
+  assert.notEqual(compose({ seed: 1 }).lead, compose({ seed: 2 }).lead, 'different seeds, different tunes');
+  console.log('gs.sound.compose ok');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);

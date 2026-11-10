@@ -119,6 +119,9 @@ export interface SoundPart {
   /** Background music from patterns; start it in update(), not reset(). */
   /** Living music: the tune follows the play (tension from close calls, settles, a loss calms it, tempo leans to the player's pace). */
   follow(song: Loose, o?: { calm?: number; ease?: number; tempo?: [number, number]; pace?: number; brain?: Brain }): { readonly tension: number; readonly speed: number; feel(x?: number): Loose; tap(): Loose; lost(): Loose; won(): Loose; update(dt: number): Loose };
+  /** Writes an original looping tune from a mood and a seed (same seed, same tune): pass it to music(). */
+  compose(o?: { mood?: 'happy' | 'calm' | 'tense' | 'spooky' | 'heroic' | 'sad' | 'silly' | 'chase' | 'puzzle'; seed?: string | number; tempo?: number; key?: string; bars?: 4 | 8 }): { tempo: number; swing: number; layers: Record<string, number>; lead: string; bass: string; pad: string; pad2: string; arp: string; drums: string; drums2: string; lead2: string; info: { mood: string; key: string; mode: string; bars: number; chords: number[]; win: string; lose: string } };
+  MOODS: Record<string, Loose>;
   music(o?: { tempo?: number; vol?: number; swing?: number; lead?: string; bass?: string; drums?: string; layers?: Record<string, number>; [part: string]: Loose }): { start(): Loose; stop(): void; pause(): void; resume(): void; speed(x: number): Loose; layer(name: string, level?: number, fade?: number): Loose; intensity(x: number, fade?: number): Loose; readonly level: number; readonly playing: boolean; [k: string]: Loose };
   /** 3D sound: the listener follows the camera; sounds play at points in the world (HRTF in headphones). */
   Ears: new (o?: { ref?: number; max?: number; rolloff?: number; hrtf?: boolean; flat?: boolean; space?: { tail: AudioNode } | null; send?: number }) => {
