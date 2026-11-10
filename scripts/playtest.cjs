@@ -29,6 +29,8 @@ const { jobs, pool } = require('./lib/pool.cjs');
   await pool(ids, n, async () => { const w = spare || await open(); spare = null; return w; }, async (w, id) => {
     const { p } = w; w.errs = [];
     await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(300);
+    // a game whose kit loads on first use (physics, 3D...) needs it in before the bot can play
+    await p.waitForFunction(() => __gs.active && !__gs.active.loading, null, { timeout: 60000 }).catch(() => {});
     let rep;
     try { rep = await p.evaluate(([id, budget]) => __gs.playtest(id, { budget }), [id, budget]); }
     catch (e) { rep = { id, errors: [String(e.message || e).split('\n')[0]] }; }

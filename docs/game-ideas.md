@@ -56,12 +56,12 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Pipe Plumber — rotate pipe tiles to route water before it starts flowing
 - [x] Sheep Herder — drag a dog around to push sheep into a pen
 - [x] Bomb Sweeper — tap cells to reveal numbers, hold to flag (8x8 board)
-- [ ] Ladder Climber — tap left/right rungs in rhythm; missing a rung drops you
-- [ ] Ghost Lantern — light a dark maze with a short-lived lantern pulse to find the exit
+- [x] Ladder Climber — tap left/right rungs in rhythm; missing a rung drops you
+- [x] Ghost Lantern (built as Lantern Maze) — light a dark maze with a short-lived lantern pulse to find the exit
 - [x] Mine Cart — tap to switch the rail junction ahead of your cart
-- [ ] Balloon Pop Archer — aim and release an arrow at drifting balloons, limited arrows
+- [x] Balloon Pop Archer (built as Balloon Archer) — aim and release an arrow at drifting balloons, limited arrows
 - [x] Egg Catcher — move a basket between four chutes to catch rolling eggs
-- [ ] Penguin Slide — hold to dive down slopes, release to fly over gaps
+- [x] Penguin Slide — hold to dive down slopes, release to fly over gaps
 - [x] Tank Duel — angle and power artillery shots against a CPU tank on hilly ground
 - [x] Fishing Line — drop a hook, reel up through layers, avoid snagging jellyfish
 - [ ] Bat Cave Echo — tap to send an echo that briefly reveals walls in the dark
@@ -69,13 +69,13 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Gold Digger — tunnel down through dirt, collect gems, don't get crushed by boulders
 - [x] Pinball Pocket — two flippers, one table, three balls
 - [x] Traffic Light — control a crossing's lights so cars and walkers never collide
-- [ ] Number Merge Grid — slide tiles on a 4x4 grid to merge equal numbers (sum target per run)
+- [x] Number Merge Grid (built as Slide Ten) — slide tiles on a 4x4 grid; bumping tiles add up to at most 10, exactly 10 clears
 - [x] Frog Tongue — aim a sticky tongue at passing flies, chain combos
-- [ ] Kite Flyer — keep a kite in the wind band by tugging the string
+- [x] Kite Flyer — keep a kite in the wind band by tugging the string
 - [ ] Domino Run — place dominoes on a grid so one push topples them all
 - [x] Space Docking — thrust to match speed and angle with a station port
 - [x] Ninja Wall — tap to jump between two walls, dodge spikes
-- [ ] Chess Knight Path — visit every lit square with knight moves before time runs out
+- [x] Chess Knight Path (built as Knight Path) — visit every lit square with knight moves before time runs out
 
 ## Pocket puzzle 🕹
 
@@ -256,15 +256,15 @@ Research notes on what made the dual-screen handheld era special, turned into or
 - Stylus: draw paths, slash, trace shapes, rub to reveal, drag-and-fling.
 - Microphone: blow to push sails, put out candles, or spin a pinwheel.
 - Touch-only control schemes: tap where you want to walk, draw a line to guide a ball.
-- [ ] Path Doodle: draw a road for a rolling ball in real time; ink runs out
+- [x] Path Doodle: draw a road for a rolling ball in real time; ink runs out
 - [ ] Brain Drills: a set of daily quick-maths and memory drills with an original "mind score"
-- [ ] Ink Ward: draw lines to bounce blobs into the goal under an ink budget
-- [ ] Twin Mine: top-screen radar, bottom-screen digging; find gems before the cave-in
-- [ ] Puzzle Detective: tap clues in a scene, then choose the culprit from the evidence
-- [ ] Blow Sail: blow into the mic to sail a boat around rocks
-- [ ] Pet Pocket: feed, wash and play with a pocket pet using rubs and taps
-- [ ] Kitchen Steps: chop by slashing, stir by circling, flip by flicking (original recipes)
-- [ ] Stylus Rally: draw racing lines for a kart that follows your ink
+- [x] Ink Ward: draw lines to bounce blobs into the goal under an ink budget
+- [x] Twin Mine: top-screen radar, bottom-screen digging; find gems before the cave-in
+- [x] Puzzle Detective: tap clues in a scene, then choose the culprit from the evidence
+- [x] Blow Sail: blow into the mic to sail a boat around rocks
+- [x] Pet Pocket: feed, wash and play with a pocket pet using rubs and taps
+- [x] Kitchen Steps: chop by slashing, stir by circling, flip by flicking (original recipes)
+- [x] Stylus Rally: draw racing lines for a kart that follows your ink
 - [ ] Rhythm Tap Squad: tap and slide on beat markers as a team of original cheer characters
 
 ### Batch 15: best of the Advance and first 3D-console era, rebuilt for touch
@@ -332,3 +332,8 @@ Modern HD 3D on `src/kit/hd3d.js` (see [nextgen-3d.md](nextgen-3d.md)).
 - [x] Mech Brawl — two-thumb boxing between giant mechs; dodge glowing swings to open them up
 - [x] Frost Line — tilt-to-carve snowboarding ahead of an avalanche, with air tricks
 - [x] Canyon Ace — tilt-to-fly jet through a desert canyon; skim the rock for up to x4
+
+## Batches 18-27 (2026-11-10)
+Ten batches toward 1000, mostly from the open ideas above (ticked where they were built). New ideas that weren't on the list:
+- [x] Belt Sorter 🕹 — swipe parcels between three conveyor belts so each lands in the bin with its shape; the bins swap labels
+

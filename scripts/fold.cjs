@@ -16,6 +16,8 @@ const FLOWS = [['fold8-cover', 'fold8-inner', 'fold8-cover'], ['duo-cover', 'duo
     const p = await ctx.newPage(); const errs = []; p.on('pageerror', e => errs.push(e.message));
     await p.goto('http://localhost:4180/'); await p.waitForFunction(() => window.__gs, null, { timeout: 60000 }); await p.waitForTimeout(300);
     await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(200);
+    // a game whose kit loads on first use (physics, 3D...) can't start until it's in
+    await p.waitForFunction(() => __gs.active && !__gs.active.loading, null, { timeout: 60000 }).catch(() => {});
     await p.evaluate(() => __gs.start());
     const probs = [];
     for (const step of flow.slice(1)) {
