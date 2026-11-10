@@ -119,6 +119,10 @@ so its next round starts there instead of stuttering down again.
   screen colours. ACES (the default, the film look) pushes very bright colours towards yellow and
   white; Neutral (Khronos PBR Neutral) keeps colours true to the material, good for neon, paint and
   products; AgX (Blender's) keeps their hue in bright light and rolls off softly.
+- `pbr(col, { sss: true | { colour, power, scale, distortion, ambient, attenuation } })`: subsurface
+  scattering for skin, wax, leaves, jade and ears against the light: light passing through glows out
+  of the far side in `colour` (default a skin red). On WebGPU this is three.js's MeshSSSNodeMaterial
+  (fast translucency, as in Frostbite); WebGL phones get a soft tinted rim in its place.
 - `gs.hd.panel(colour, intensity, w, h, { glow })`: an area light, a glowing rectangle (window, TV,
   striplight, softbox) with the soft, stretched highlights a point light can't make (three.js's
   RectAreaLight, both backends). It shines out of its front (-z): place it and `lookAt` the target.

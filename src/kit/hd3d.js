@@ -657,10 +657,17 @@ function seeThrough(r, w, h) {
  * A PBR material. col: base colour; rough/metal 0..1; glow: emissive strength (values above 1
  * bloom); tex: a surface() set; rep: texture repeat [u, v]. Extra options pass to three.js.
  */
-export function pbr(col = '#ffffff', { rough = .6, metal = 0, glow = 0, glowCol, tex, rep, clear = 0, ...o } = {}) {
-  const M = clear || o.sheen ? MeshPhysicalMaterial : MeshStandardMaterial;
+export function pbr(col = '#ffffff', { rough = .6, metal = 0, glow = 0, glowCol, tex, rep, clear = 0, sss, ...o } = {}) {
+  const M = clear || o.sheen || sss ? MeshPhysicalMaterial : MeshStandardMaterial;
   const m = new M({ color: col, roughness: rough, metalness: metal, ...o });
   if (clear) { m.clearcoat = clear; m.clearcoatRoughness = .15; }
+  // subsurface scattering (skin, wax, leaves, jade, ears against the light): light passing through and
+  // glowing out the far side. WebGPU: three.js's MeshSSSNodeMaterial (fast translucency, Barré-Brisebois
+  // and Bouchard, as in Frostbite); WebGL phones get a soft tinted rim (sheen) in its place.
+  if (sss) {
+    const S = m.userData.sss = { colour: new Color(sss.colour ?? sss.color ?? '#ff5a3c'), power: sss.power ?? 3, scale: sss.scale ?? 1, distortion: sss.distortion ?? .2, ambient: sss.ambient ?? .02, attenuation: sss.attenuation ?? .35 };
+    m.userData.gsGpu = 'sss'; if (!o.sheen) { m.sheen = .5; m.sheenColor = S.colour.clone(); m.sheenRoughness = .7; }
+  }
   if (glow) { m.emissive = new Color(glowCol || col); m.emissiveIntensity = glow; }
   if (tex) {
     const t = rep ? tex.repeat(rep[0], rep[1]) : tex;

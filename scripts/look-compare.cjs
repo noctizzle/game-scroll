@@ -31,6 +31,8 @@ const fs = require('fs'), path = require('path');
     const file = path.join(dir, name + '.png'), png = Buffer.from(url.split(',')[1], 'base64');
     if (mode === 'save') { fs.writeFileSync(file, png); console.log('saved', file); continue; }
     if (!fs.existsSync(file)) { console.log('MISSING', file); bad++; continue; }
+    // gpu-...: scenes of features that are fuller on WebGPU (WebGL draws a lighter stand-in), so only same-backend runs compare them
+    if (gpu && name.startsWith('gpu-')) { console.log(`skip  ${name}: WebGPU draws more than WebGL here by design`); fs.writeFileSync(path.join(dir, name + '.new.png'), png); continue; }
     const old = 'data:image/png;base64,' + fs.readFileSync(file).toString('base64');
     const d = await p.evaluate(async ([a, c]) => {
       const load = u => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = u; });
