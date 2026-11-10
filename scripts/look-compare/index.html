@@ -232,6 +232,28 @@ async function recipesScene(near = false) {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend + ', baked ' + names.length + ' in ' + Math.round(bake) + ' ms'];
 }
+// gs.models.wear: the same things new (left) and aged from their own shape (right): rubbed edges,
+// grime in the creases and near the ground, moss on the steps, snow on the pillar's top
+async function wearScene() {
+  window.__hd.force = 2;
+  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: 0, env: .4, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  if (new URLSearchParams(location.search).has('zoom')) { v.cam.position.set(1.1, 2.2, 2.6); v.cam.lookAt(1.1, .4, 0); } else { v.cam.position.set(0, 3.4, 4.4); v.cam.lookAt(0, .3, 0); } v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 6, [-.5, .8, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(12, 12).rotateX(-Math.PI / 2), gs.hd.pbr('#a8a090', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const t0 = performance.now();
+  for (const side of [-1, 1]) {
+    const add = (m, px, py, pz, o) => { m.position.set(px * side, py, pz); m.castShadow = m.receiveShadow = true; if (side > 0) gs.models.wear(m, o); v.scene.add(m); };
+    add(new T.Mesh(gs.hd.rbox(.8, .8, .8, .05), gs.models.material('paint', { colour: '#2f6a4a' })), .55, .4, .8, { edges: .9, dirt: .6 });
+    add(new T.Mesh(new T.CylinderGeometry(.3, .3, .9, 20, 4), gs.models.material('metal', { colour: '#8a3a2a' })), 1.55, .45, .8, { edges: .8, dirt: .7 });
+    const steps = new T.Group(); for (let i = 0; i < 3; i++) { const b = new T.Mesh(new T.BoxGeometry(.9, .25, .3 * (3 - i)), gs.models.material('stone')); b.position.set(0, .125 + i * .25, -.15 * i); b.castShadow = b.receiveShadow = true; if (side > 0) gs.models.wear(b, { moss: .9, dirt: .5 }); steps.add(b); }
+    steps.position.set(.6 * side, 0, -.6); v.scene.add(steps);
+    add(new T.Mesh(new T.BoxGeometry(.35, 1.6, .35), gs.models.material('brick')), 1.6, .8, -.7, { snow: 1, dirt: .4 });
+  }
+  const ms = performance.now() - t0;
+  const t1 = performance.now(); while (performance.now() - t1 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + ', made in ' + Math.round(ms) + ' ms'];
+}
 // soft shadows (sun().softShadows): a post, a raised slab and a crate sitting on the ground: the
 // crate's shadow sharp at its foot, the post's and slab's spreading the further they fall
 async function pcssScene() {
@@ -429,7 +451,7 @@ function consoleScene() {
   return c.toDataURL();
 }
 // ?pick=materials,gpu-pcss draws only those (a quick look while working on one)
-const SCENES = { area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene(), 'gpu-fog': () => fogScene(), 'gpu-mblur': () => objBlurScene(), 'gpu-gi-none': () => giScene(null), 'gpu-gi-screen': () => giScene('screen'), 'gpu-gi-voxel': () => giScene('voxel'), recipes: () => recipesScene(), 'gpu-recipes-near': () => recipesScene(true) };
+const SCENES = { area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene(), 'gpu-fog': () => fogScene(), 'gpu-mblur': () => objBlurScene(), 'gpu-gi-none': () => giScene(null), 'gpu-gi-screen': () => giScene('screen'), 'gpu-gi-voxel': () => giScene('voxel'), recipes: () => recipesScene(), 'gpu-recipes-near': () => recipesScene(true), wear: () => wearScene() };
 const PICK = new URLSearchParams(location.search).get('pick');
 if (PICK) try { for (const n of PICK.split(',')) [out[n], backends[n]] = await SCENES[n](); } catch (e) { out.error = String(e && e.stack || e); }
 else try {
@@ -455,6 +477,7 @@ else try {
   for (const k of ['screen', 'voxel']) [out['gpu-gi-' + k], backends['gpu-gi-' + k]] = await giScene(k);
   [out.recipes, backends.recipes] = await recipesScene();
   [out['gpu-recipes-near'], backends['gpu-recipes-near']] = await recipesScene(true);
+  [out.wear, backends.wear] = await wearScene();
   { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; }
   [out.river, backends.river] = await riverScene();
   [out.flood, backends.flood] = await floodScene();

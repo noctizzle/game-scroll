@@ -1524,6 +1524,18 @@ console.log('physics ok');
     }
   }
   console.log('gs.models: material recipes tile ok');
+  // wear: a box's edges come out convex, its face middles flat; snow lands on top, grime at the foot
+  const T = await import('three'), { wear, curvature } = await import('../src/kit/models/wear.js');
+  const box = new T.Mesh(new T.BoxGeometry(1, 1, 1, 4, 4, 4), new T.MeshStandardMaterial()), { curve } = curvature(box.geometry), P = box.geometry.attributes.position;
+  for (let i = 0; i < P.count; i++) {
+    const v = [P.getX(i), P.getY(i), P.getZ(i)].map(Math.abs), edge = v.filter(a => a > .5 - 1e-6).length >= 2, middle = v.filter(a => a < .2).length === 2;
+    if (edge) assert.ok(curve[i] > .05, `box edge convex at vertex ${i}`); if (middle) assert.ok(Math.abs(curve[i]) < 1e-6, `box face flat at vertex ${i}`);
+  }
+  const old = box.material; wear(box, { snow: 1, dirt: 1, edges: 0 }); assert.ok(box.material !== old && box.material.vertexColors && !old.vertexColors, 'wear copies the material');
+  const C = box.geometry.attributes.color, Q = box.geometry.attributes.position; let top = 0, foot = 1e9;
+  for (let i = 0; i < Q.count; i++) { const l = C.getX(i) + C.getY(i) + C.getZ(i); if (Q.getY(i) > .49 && Math.abs(Q.getX(i)) < .3 && Math.abs(Q.getZ(i)) < .3) top = Math.max(top, l); if (Q.getY(i) < -.45) foot = Math.min(foot, l); }
+  assert.ok(top > 3 && foot < 2, `snow on top (${top}), grime at the foot (${foot})`);
+  console.log('gs.models: wear ok');
 }
 
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits

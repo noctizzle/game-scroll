@@ -4,3 +4,4 @@
 // Each part lives in src/kit/models/.
 export { material, NAMES as materials } from './models/materials.js';
 export { warm as ready } from './models/cache.js';
+export { wear, curvature } from './models/wear.js';

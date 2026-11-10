@@ -589,3 +589,32 @@ const leafLook = looks.leaves(leafMaterial, { wind: .6 });      // sway, sun glo
   depths are copied back every few frames for `flood.depth()`. Both look the same on WebGL and WebGPU.
 - Every look is a named effect (`material.userData.gsLooks` lists them), so the WebGPU version can
   swap each one for a node later (see `docs/webgpu-move.md`). Road segments: up to 32.
+
+## Things made in code: gs.models
+
+A game stays one `.js` file with no image or model files, so `gs.models` makes the materials and
+things a scene needs from recipes written in code. Everything works on WebGL and WebGPU.
+
+```js
+const { material, wear } = gs.models, { rbox, THREE } = gs.hd;
+const crate = new THREE.Mesh(rbox(.8, .8, .8, .05), material('planks', { colour: '#a87a4c' }));
+wear(crate, { edges: .8, dirt: .6 });                                       // rubbed edges, grimy foot
+const wall = new THREE.Mesh(new THREE.BoxGeometry(6, 3, .4), material('brick', { solid: 1, scatter: true }));
+wear(wall, { moss: .7 });                                                    // moss on the top
+```
+
+- **`material(name, o)`**: 17 recipes: `wood`, `planks`, `bark`, `brick`, `stone`, `cobbles`, `tiles`,
+  `concrete`, `metal`, `rust`, `paint`, `fabric`, `leather`, `marble`, `dirt`, `sand`, `snow`
+  (`gs.models.materials` lists them). Change the recipe's colours (`colour`, `dark`, `mortar`, `gap`, `rust`,
+  `under`, `vein`, `grout`...), `seed` for another pattern, `repeat: [u, v]`, `size` (texture pixels, 256).
+  Each is painted once into tiling colour, bump, roughness and metal textures, and kept across launches
+  (the next launch reads them back instead of painting again). On WebGPU: `closeUp` (on by default)
+  works the recipe out per pixel near the camera so it stays sharp however close you get; `solid: true`
+  (or metres per tile) lays it on by world position, with no UVs or seams; `scatter: true` turns and moves
+  each tile so a big floor shows no repeat. Other options go to `gs.hd.pbr` (`glow`, `clear`, `wet`...).
+- **`wear(mesh, o)`**: ages a thing from its own shape, the way texture artists use curvature and cavity
+  maps: outer edges rubbed lighter (`edges` 0..1, `edgeColour` for what shows through), creases and the
+  bottom `ground` metres grimy (`dirt`, `dirtColour`), moss or snow on what faces up (`moss`, `mossColour`,
+  `snow`). It is worked out once into vertex colours, so it costs nothing to draw. Flat-sided shapes are
+  split into smaller triangles first (the shape stays the same) so there are corners to wear; `split: false`
+  skips that. The material is copied, so other things sharing it stay clean.
