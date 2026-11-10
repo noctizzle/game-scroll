@@ -52,7 +52,7 @@ import { Occlusion } from './occlusion.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { speed, phoneClass, fpsFor, stepDown, stepUp, settle, settledFor, frameGenFor, frameGenFailed, frameGenReady, frameGenPace, frameGenSteps, frameGenSteady, fgSaving, screenHz } from './speed.js';
+import { speed, phoneClass, fpsFor, stepDown, stepUp, settle, settledFor, frameGenFor, frameGenFailed, frameGenReady, frameGenPace, frameGenSteps, frameGenSteady, fgSaving, screenHz, qualityVerdict } from './speed.js';
 
 export * as THREE from 'three';
 
@@ -95,28 +95,30 @@ const FG_PX = 1.6;
 // A climb that turns out too slow again soon after doubles how long the step it fell back to holds
 // (30 s, 1, 2, 4 min), so a game that's on the edge doesn't keep stuttering every half a minute.
 const HOLD = 30000, HOLD_MAX = 240000;
-const Q = { tier: 2, lvl: 0, sum: 0, cnt: 0, slow: 0, fast: 0, lastT: 0, ceil: 0, ceilT: 0, tierCeil: 3, force: null, game: undefined, easy: 0, fpsT: 0, hold: HOLD, upT: -1e9, fpsHold: 60000, fpsUpT: -1e9 };
+const Q = { tier: 2, lvl: 0, sum: 0, cnt: 0, late: 0, slow: 0, fast: 0, lastT: 0, ceil: 0, ceilT: 0, tierCeil: 3, force: null, game: undefined, easy: 0, fpsT: 0, hold: HOLD, upT: -1e9, fpsHold: 60000, fpsUpT: -1e9 };
 // a new game is on screen: start from where it settled last time, or from the phone's class
 // (and the resolution step it settled on, so a round doesn't start too sharp, stutter and step down again)
 function startGame(def) {
   Q.game = def; const s = settledFor(def?.id);
   Q.tier = s?.tier ?? START[phoneClass()] ?? 2; Q.lvl = Math.min(LEVELS.length - 1, s?.lvl ?? 0); Q.ceil = Q.lvl; Q.ceilT = performance.now(); Q.tierCeil = 3;
-  Q.sum = Q.cnt = Q.slow = Q.fast = Q.easy = 0; Q.lastT = 0; Q.want = null; Q.hold = HOLD; Q.upT = -1e9; Q.fpsHold = 60000;
+  Q.sum = Q.cnt = Q.late = Q.slow = Q.fast = Q.easy = 0; Q.lastT = 0; Q.want = null; Q.hold = HOLD; Q.upT = -1e9; Q.fpsHold = 60000;
 }
 function adapt(gap) {
   if (Q.force != null || !(gap > 0 && gap < 100)) return;
-  Q.sum += gap; if (++Q.cnt < 45) return;
-  const a = Q.sum / Q.cnt, now = performance.now(), fps = Q.game ? fpsFor(Q.game) : 60, budget = 1000 / fps; Q.sum = Q.cnt = 0;
+  const fps = Q.game ? fpsFor(Q.game) : 60, budget = 1000 / fps;
+  Q.sum += gap; if (gap > budget * 1.5) Q.late++;   // a frame a whole refresh (or more) late: a stutter you can see
+  if (++Q.cnt < 45) return;
+  const a = Q.sum / Q.cnt, now = performance.now(), v = qualityVerdict(a, Q.late, budget); Q.sum = Q.cnt = Q.late = 0;
   if (now - Q.ceilT > Q.hold) { Q.ceil = 0; Q.tierCeil = 3; }
   const tier0 = Q.tier, lvl0 = Q.lvl;
-  if (a > budget * 1.26) {
+  if (v === 'slow') {
     Q.fast = 0; Q.easy = 0; if (++Q.slow < 2) return; Q.slow = 0; Q.ceilT = now;
     if (now - Q.upT < 20000) Q.hold = Math.min(HOLD_MAX, Q.hold * 2);   // the last climb didn't hold
     if (fps > 60 && Q.lvl >= 1 && stepDown(Q.game)) { Q.lvl = 0; Q.ceil = 0; Q.fpsT = now; if (now - Q.fpsUpT < 20000) Q.fpsHold = Math.min(8 * 60000, Q.fpsHold * 2); }
     else if (Q.lvl < LEVELS.length - 1) { Q.lvl++; Q.ceil = Q.lvl; }
     else if (Q.tier > 0) { if (Q.want == null) { Q.tierCeil = Q.tier - 1; Q.want = Q.tier - 1; } }
     else if (stepDown(Q.game)) { Q.lvl = 1; Q.fpsT = now; }
-  } else if (a < budget * 1.044) {
+  } else if (v === 'fast') {
     Q.slow = 0; if (++Q.fast < 8) return; Q.fast = 0;
     if (Q.lvl > Q.ceil) { Q.lvl--; Q.upT = now; }
     else if (Q.lvl === 0 && Q.want == null && Q.tier < Math.min(Q.tierCeil, TIERS.length - 1)) { Q.want = Q.tier + 1; Q.upT = now; }
@@ -130,7 +132,7 @@ function adapt(gap) {
 // game-over screen, the next card) and the round carries on at its lowest resolution until then.
 function applyTier() {
   if (Q.want == null || speed.playing()) return;
-  const down = Q.want < Q.tier; Q.tier = Q.want; Q.want = null; Q.lvl = 1; Q.ceil = down ? 1 : 0; Q.sum = Q.cnt = Q.slow = Q.fast = 0;
+  const down = Q.want < Q.tier; Q.tier = Q.want; Q.want = null; Q.lvl = 1; Q.ceil = down ? 1 : 0; Q.sum = Q.cnt = Q.late = Q.slow = Q.fast = 0;
   settle(Q.game?.id, { tier: Q.tier, lvl: Q.lvl });
 }
 /** Current quality: { tier, name, res }. Set HD.force = 0..3 to pin a tier (tests, screenshots). */

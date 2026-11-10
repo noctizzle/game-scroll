@@ -68,10 +68,12 @@ draws every other refresh), which saves battery and heat. Settings has Auto / 12
 (battery saver); a game can also set `fps: 30` in its definition to cap itself.
 
 Frame times are averaged over 45-frame windows and compared with the frame budget for the game's rate
-(8.3 ms at 120 fps, 16.7 ms at 60). After two slow windows the render resolution steps down one fixed
+(8.3 ms at 120 fps, 16.7 ms at 60). A window is slow when its average is a quarter over the budget, or
+when two or more of its frames came a whole refresh late (a game averaging 57 fps at 60 that drops a
+frame three times a second stutters visibly, though its average looks fine). After two slow windows the render resolution steps down one fixed
 level (100%, 85%, 70%, 55%), then the tier drops. At 120 fps a struggling game first gives up one
 resolution step, then drops to 60 fps at full resolution, keeping the picture; at the lowest tier and
-resolution a 60 fps game can drop to 30. It only climbs back after eight fast windows in a row, and
+resolution a 60 fps game can drop to 30. It only climbs back after eight fast windows in a row (on the beat, with no late frames), and
 never above a level that was too slow in the last 30 seconds, so it does not bounce up and down (each
 step reallocates render targets). Where a game settles (tier and frame rate) is remembered per game,
 so its next round starts there instead of stuttering down again.
