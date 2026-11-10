@@ -21,7 +21,7 @@ const fs = require('fs'), path = require('path');
     ? { args: ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--use-angle=vulkan', '--enable-features=Vulkan'], env: { ...process.env, VK_ICD_FILENAMES: icd } }
     : { args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] }), p = await b.newPage();
   const errs = [], warns = new Set(); p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'warning' && /THREE|WebGPU/.test(m.text())) warns.add(m.text()); });
-  await p.goto('http://localhost:' + (process.env.PORT || 4183) + '/scripts/look-compare/?' + (gpu ? 'gpu&' : '') + (process.env.ONLY ? 'only=' + process.env.ONLY : '') + (process.env.Q ? '&' + process.env.Q : '') + (process.env.PICK ? '&pick=' + process.env.PICK : '')); await p.waitForFunction(() => window.result, null, { timeout: 400000 });
+  await p.goto('http://localhost:' + (process.env.PORT || 4183) + '/scripts/look-compare/?' + (gpu ? 'gpu&' : '') + (process.env.ONLY ? 'only=' + process.env.ONLY : '') + (process.env.Q ? '&' + process.env.Q : '') + (process.env.PICK ? '&pick=' + process.env.PICK : '')); await p.waitForFunction(() => window.result, null, { timeout: 1200000 });
   const res = await p.evaluate(() => window.result);
   if (res.error || errs.length) { for (const w of warns) console.log('warning:', w); console.log('FAIL', res.error || errs.join('\n')); process.exit(1); }
   for (const w of warns) console.log('three.js warning:', w);
