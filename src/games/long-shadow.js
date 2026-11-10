@@ -24,7 +24,8 @@ const { Rig } = gs.poses;
 const { Gun, Health, Explosives } = gs.combat;
 const { CoverMap, Squad } = gs.tactics;
 const { NavGrid } = gs.ai;
-const { Brain, Wave, Imagine } = gs.brains;
+const { Brain, Wave, Imagine, Nemesis } = gs.brains;
+const { Senses, Noises } = gs.senses;
 const { Bodies } = gs.stealth;
 const { Mission } = gs.missions;
 const { Cutscene } = gs.cutscene;
@@ -1055,6 +1056,20 @@ function make(api) {
     rules: (s, a) => a === 'peek' && s[1] < .3 ? 'hold' : a === 'flank' && (s[6] < .4 || squad.t - squad.lastFlank < 8) ? 'rush' : a === 'fallback' && s[0] > 1.3 ? 'hold' : a,
   });
   const riflemen = new Wave(rifleman);
+  // Colonel Marr, who runs the Grey Order in the valley, remembers Wren between sessions (Tiny Brains'
+  // Nemesis): how often they've met, who's ahead, and how she covers her shots. Once he's sure of a
+  // habit (always the bell, always the train) his men sometimes listen for it, and he says so on the
+  // radio first, so it's fair. He never does it while you're on a losing run, and his lines after a
+  // loss are kind.
+  const SHOT_KINDS = ['the train', 'the bell', 'the thunder', 'silence'];
+  const marr = new Nemesis(api, { name: 'grey-colonel', moves: SHOT_KINDS, target: .62, lines: {
+    first: ['A sniper in Ashvale? Then we hunt one.'], back: ['The sniper again. Eyes on the hills.', 'Same valley, same sniper. Stay low, men.'],
+    long: ['{days} days quiet. I had hoped the sniper went home.'], habit: ['This one shoots in {move}. Listen for it.', 'Mark it: the sniper waits for {move}.'],
+    won: ['Lucky. The valley is long.', 'Fall back and count heads.'], lost: ['Rest now, sniper. We will meet again.', 'Not today. Get some sleep, whoever you are.'],
+    streak: ['{streak} in a row. Who IS this?'],
+  } });
+  const MARR = 'COL. MARR · GREY ORDER';
+  let noises = new Noises(), guard = null, metMarr = false, mistT = 0, mistK = 1, lensDrops = [], lensT = 0, lensAcc = 0;
   // The commander also thinks a few seconds ahead (Tiny Brains' Imagine) with a rough sketch of the
   // fight: [heat, your favourite nest, quiet, men left, your health, masked, alerted, time, how close
   // they are, mortar ready]. Pushing closes in but costs men while you're watching; flanking is slower
@@ -1114,7 +1129,7 @@ function make(api) {
   const alive = list => list.filter(s => !s.ko);
   const wakeUp = (s, why) => {
     if (s.ko || s.alert || s.fixed) return;
-    s.alert = true; s.sus = 1; s.alertT = 0; if (!squad.members.includes(s)) squad.members.push(s);
+    s.alert = true; s.sus = 1; s.alertT = 0; s.shoutT = t; if (!squad.members.includes(s)) squad.members.push(s);
     if (!squad.alerted) { squad.alerted = true; squad.call(s, 'contact'); }
     s.order = { do: 'hold' }; s.plan = null; s.thinkT = rnd(.2, 1.4); s.thinkDt = 0;   // staggered, so they don't all decide at once
     if (!s.mind) s.mind = riflemen.mind();
@@ -1169,11 +1184,18 @@ function make(api) {
     if (!s.length) { if (gun.reloading) tone(220, { len: .05, wave: 'square', vol: .03 }); return; }
     lastShotT = t; if (cs && !cs.ko) gun.shotsAtCs++;
     const b = { x: eye.x, y: eye.y - .05, z: eye.z, x0: eye.x, y0: eye.y - .05, z0: eye.z, vx: d.x * V0, vy: d.y * V0, vz: d.z * V0, life: 2.2, dist: 0, masked: masked() };
+    // a shot aimed square at the church bell is drowned by its own clang (and sets it ringing: impact)
+    if (!b.masked && bellReady() && onBell(eye, d)) { b.masked = true; b.atBell = true; }
     shots.push(b);
-    // loud unless something covers it
-    heat = clamp(heat + (b.masked ? .04 : .3), 0, 1.2);
+    // loud unless something covers it; the colonel notes what covered it, and when his men are
+    // listening for that (he said so on the radio) it covers it only half as well
+    const how = train.on && Math.abs(train.x) < 190 ? 'the train' : bell.ring > 0 || b.atBell ? 'the bell' : storm > 0 ? 'the thunder' : 'silence';
+    marr.see(how); const heard = b.masked && guard === how;
+    heat = clamp(heat + (b.masked ? (heard ? .16 : .04) : .3), 0, 1.2);
     for (const f of WD.flocks) if (Math.hypot(f.x - eye.x, f.z - eye.z) < (b.masked ? 40 : 130)) flush(f, 'shot');
-    for (const o of men) if (!o.ko && !o.alert && !b.masked) o.sus = Math.max(o.sus, .35);
+    // the crack carries a long way across the valley: whoever hears it turns towards the hills (gs.senses)
+    noises.make(eye.x, eye.z, b.masked ? (heard ? 220 : 50) : 520);
+    if (!b.masked && !bell.tip && !lineFx && bellReady()) { bell.tip = true; say('They heard that. Put a round in the church bell, its din will hide your shots.', OAKE, 3.2); }
     rifleReport();
     haptic('heavy'); fx.shake(scoped ? 2 : 5);
     if (!scoped && !glass) { WD.gun.updateWorldMatrix(true, false); const mz = WD.gun.localToWorld(tmpA.set(0, .03, -.74)); muzzle(mz.x, mz.y, mz.z, d.x, d.y, d.z, .3); }
@@ -1189,6 +1211,15 @@ function make(api) {
     boltT = 1.1;
   }
   let boltT = 0, markAt = -1, markV = null;
+  // the bolt throws the spent brass out to the right; it tinkles on the stone a moment later
+  function ejectCase() {
+    if (!scoped && !glass && WD.gun.visible) {
+      const fy = nest ? nestEye(nest).y - .5 : WD.v.cam.position.y - 1;
+      WD.bolt.updateWorldMatrix(true, false); const p = WD.bolt.localToWorld(tmpA.set(.03, .02, 0)), r = dirOf(look.yaw - Math.PI / 2, 0, tmpB);
+      WD.sparks.emit({ x: p.x, y: p.y, z: p.z, vx: r.x * 2.2 + rnd(-.3, .3), vy: rnd(1.6, 2.2), vz: r.z * 2.2 + rnd(-.3, .3), life: .9, size: .035, col: [1.1, .8, .35], a: 1, grav: 9.8, floor: fy });
+    }
+    metal(.45, 3400, .012); metal(.62, 2900, .008);
+  }
   // where a shot fired now would land, on screen: [x, y, range] (worked out every few frames)
   function impactMark() {
     if (frame - markAt < 3 && markV) return markV;
@@ -1244,6 +1275,7 @@ function make(api) {
       }
     }
     for (const b of drums || []) { if (b.gone) continue; const ox = x0 - b.x, oy = y0 - b.y - .5, oz = z0 - b.z, bq = ox * dx + oy * dy + oz * dz, cq = ox * ox + oy * oy + oz * oz - .5, disc = bq * bq - L * L * cq; if (disc >= 0) take((-bq - Math.sqrt(disc)) / (L * L), { drum: b }); }
+    if (WD.bell) { const p = WD.bell.position, ox = x0 - p.x, oy = y0 - p.y, oz = z0 - p.z, bq = ox * dx + oy * dy + oz * dz, cq = ox * ox + oy * oy + oz * oz - .81, disc = bq * bq - L * L * cq; if (disc >= 0) take((-bq - Math.sqrt(disc)) / (L * L), { bell: true }); }
     for (const b of WD.solids) {
       // the box's three slabs in turn (no arrays made: this runs for every box on every bullet step)
       let t0 = 0, t1 = 1, ok = true;
@@ -1291,6 +1323,7 @@ function make(api) {
       if (h.s === cs && gun.shotsAtCs === 1) cs.oneShot = true;
     } else {
       if (firstShotHit == null) firstShotHit = false;
+      if (h.bell) { ringBell(x, y, z); return; }
       const stoneHit = h.box && h.box.kind !== 'house';
       for (const f of WD.flocks) if (Math.hypot(f.x - x, f.z - z) < 35) flush(f, 'hit');
       const wet = rain.amount > .2 && h.ground, col = stoneHit ? [.7, .68, .62] : h.box ? [.74, .66, .54] : wet ? [.32, .27, .2] : [.52, .44, .32];
@@ -1300,7 +1333,8 @@ function make(api) {
       for (let i = 0; i < 8; i++) WD.dust.emit({ x, y: y + .05, z, vx: rnd(-2.5, 2.5) + bx * 2, vy: rnd(2, 6), vz: rnd(-2.5, 2.5) + bz * 2, life: 1.2, size: .07, col: col.map(c => c * .55), a: 1, grav: 12, floor: h.ground ? WD.land.height(x, z) : y - 3 });
       holeAt(h, x, y, z, stoneHit, wet);
       if (stoneHit) for (let i = 0; i < 6; i++) WD.sparks.emit({ x, y, z, vx: rnd(-3, 3), vy: rnd(0, 3), vz: rnd(-3, 3), life: .25, size: .08, col: [4, 3, 1.4], drag: 1 });
-      // a near miss makes them jumpy
+      // a near miss makes them jumpy (and the smack of it is heard round about)
+      noises.make(x, z, 28);
       for (const s of men) if (!s.ko && Math.hypot(s.x - x, s.y - z) < 8) { s.sus = 1; s.shaken = 1; if (!b.masked || Math.hypot(s.x - x, s.y - z) < 3) wakeUp(s, 'miss'); }
     }
     if (h.drum) drumHit(h.drum);
@@ -1398,6 +1432,16 @@ function make(api) {
   function setTimeout0(sec, fn) { timers.push({ at: t + sec, fn }); }
 
   // ---- masking sounds: the train and the church bell
+  // the church bell: shoot it and it rings for six seconds of cover (then it needs a while to settle)
+  function bellReady() { return bell.ring <= 0 && t - bell.shotT > 30; }
+  function onBell(o, d) { const p = WD.bell.position, ox = o.x - p.x, oy = o.y - p.y, oz = o.z - p.z, bq = ox * d.x + oy * d.y + oz * d.z, cq = ox * ox + oy * oy + oz * oz - 1.1, k = -bq; return bq * bq - cq >= 0 && k > 0 && k < 600; }
+  function ringBell(x, y, z) {
+    for (let i = 0; i < 10; i++) WD.sparks.emit({ x, y, z, vx: rnd(-3, 3), vy: rnd(0, 3), vz: rnd(-3, 3), life: .3, size: .08, col: [4, 3, 1.4], drag: 1 });
+    tone(1180, { len: .4, wave: 'triangle', vol: .04, out: aud?.sp?.in });
+    if (!bellReady()) { bell.ring = Math.max(bell.ring, 1.5); return; }
+    bell.ring = 6; bell.shotT = t; bellToll(); for (const f of WD.flocks) if (Math.hypot(f.x - x, f.z - z) < 60) flush(f, 'shot');
+    if (!bell.told) { bell.told = true; say('The bell! Six seconds of cover. Make them count.', OAKE, 2.4); }
+  }
   function masked() { return (train.on && Math.abs(train.x) < 190) || (bell.ring > 0) || (storm > 0); }
 
   // ---- mortars (the commander's call)
@@ -1883,7 +1927,11 @@ function make(api) {
     return s.hidT || 0;
   }
   function updateMen(dt) {
-    const eye = WD.v.cam.position; pathBudget = 1; thinkBudget = 1;
+    const eye = WD.v.cam.position; pathBudget = 1; thinkBudget = 1; let plantN = 6;
+    // Wren as the soldiers' senses see her: at her nest, harder to make out at dusk, easier just after
+    // a shot (the flash and the dust) and through her lenses (a glint)
+    if (nest && !move && state === 'play') { const e = nestEye(nest); wrenT ||= {}; wrenT.x = e.x; wrenT.y = e.z; wrenT.hidden = false; } else wrenT = null;
+    wrenLight = (mid === 'm2' ? .3 : .5) * (t - lastShotT < 2 ? 2.2 : 1) * (scoped || glass ? 1.3 : 1);
     for (const s of men) {
       const m = s.m; let speed = 0;
       if (s.ko) { m.rig.update(dt, { speed: 0 }); if (s.koFx) s.koFx.t += dt; continue; }
@@ -1947,16 +1995,29 @@ function make(api) {
         m.rig.play(speed > 0 ? 'run' : s.crouch ? 'crouch' : 'idle'); m.rig.upper(speed > 0 ? null : 'aim');
       } else {
         // calm: patrol or stand; suspicion grows when bullets land near or a friend drops
+        // eyes and ears (gs.senses): he hears shots and near misses and turns to look; close enough,
+        // with a clear line, he can make Wren out (sooner just after she fires, through the lens glint)
+        const sn = s.senses ||= new Senses({ range: mid === 'm2' ? 95 : 135, fov: 110, near: 12, hearing: mid === 'm2' ? .75 : 1, spotTime: 2.4, memory: 5, searchTime: 7, calmDown: 5 });
+        if (!s.fixed) {
+          if ((s.seeT = (s.seeT ?? Math.random() * .4) - dt) <= 0 && wrenT && Math.hypot(s.x - wrenT.x, s.y - wrenT.y) < sn.range) { s.seeT = .4; s.clear = shootable(nestEye(nest), s); }
+          const was = sn.mood;
+          sn.update(dt, { x: s.x, y: s.y, facing: Math.PI / 2 - s.yaw }, wrenT, { sees: () => !!s.clear, noises, light: wrenLight });
+          if (sn.mood !== was) s.moodT = 0; s.moodT = (s.moodT || 0) + dt;
+          s.sus = Math.max(s.sus, sn.awareness * .98);
+          if (sn.mood === 'alert' && sn.seen) { heat = Math.max(heat, 1); wakeUp(s, 'seen'); }
+        }
+        const wary = !s.fixed && (sn.mood === 'suspicious' || sn.mood === 'searching') && sn.lookAt;
         // a sentry standing where the nest can't reach him wanders out to where it can
         if (!s.route && !s.fixed && hiddenFor(s, dt, true) > 5) { const p = seenSpot(s, nestEye(nest)); s.hidT = 0; if (p) s.route = [[p.x, p.y, 1e9]], s.ri = 0, s.wt = 0; }
-        if (s.route) {
+        if (wary) s.yaw = turnTo(s.yaw, Math.atan2(sn.lookAt.x - s.x, sn.lookAt.y - s.y), dt * 2.5);   // stops and stares where the sound came from
+        else if (s.route) {
           const r = s.route[s.ri % s.route.length];
           if (Math.hypot(r[0] - s.x, r[1] - s.y) > .6) { if (walk(s, r[0], r[1], s.late ? 2.6 : 1.3, dt) === 'stuck') { s.ri++; if (s.route.length < 2) s.route = null; } else speed = s.late ? 2.6 : 1.3; }
           else if ((s.wt += dt) > r[2]) { s.wt = 0; s.ri++; if (s.late) { s.route = null; s.sus = .8; } }
         }
-        if (s.sus > .5) { s.yaw += Math.sin(t * 2 + s.x) * dt; }
+        if (s.sus > .5 && !wary) { s.yaw += Math.sin(t * 2 + s.x) * dt; }
         s.sus = Math.max(0, s.sus - dt * .05);
-        m.rig.play(speed > 2 ? 'run' : speed > 0 ? 'walk' : 'idle'); m.rig.upper(null);
+        m.rig.play(speed > 2 ? 'run' : speed > 0 ? 'walk' : 'idle'); m.rig.upper(wary && sn.mood === 'searching' ? 'aim' : null);   // searching: rifle up, scanning
         if (s.spotter && spotting) { s.yaw = turnTo(s.yaw, Math.atan2(eye.x - s.x, eye.z - s.y), dt * 2); m.rig.upper('aim'); }
       }
       s.gy = s.deck ?? groundAt(s.x, s.y) + (s.lift || 0);
@@ -1966,9 +2027,13 @@ function make(api) {
       // far soldiers animate less often
       const far = Math.hypot(s.x - eye.x, s.y - eye.z) > 160 && !scoped;
       if (!far || (frame + (s.x | 0)) % 3 === 0) m.rig.update(far ? dt * 3 : dt, { speed, aim: s.alert ? -.05 : 0 });
+      // through the scope his feet meet the slope he stands on (foot IK), for the few men in view
+      if (scoped && !s.deck && plantN > 0 && watched(s)) { plantN--; m.rig.plant(WD.ground, m); }
     }
     bodies.update(dt, men.filter(s => !s.ko && !s.fixed));
+    noises.update(dt);
   }
+  let wrenT = null, wrenLight = .5;
   let frame = 0, spotting = false;
   function nearestAlly(s) { if (!allies) return null; let best = null, bd = 140; for (const a of allies) { if (a.ko || a.done) continue; const d = Math.hypot(a.x - s.x, a.y - s.y); if (d < bd) { bd = d; best = a; } } return best; }
   function updateAllies(dt) {
@@ -2012,11 +2077,14 @@ function make(api) {
   // ---- the round
   // ---- sound: the valley's own echo, beds of wind, river and rain, and a rifle built in layers.
   // Everything loud goes through the valley space, so a shot cracks, booms and then rolls round the hills.
-  let aud = null; const earF = new Vector3();
+  // The echo's impulse (seconds of shaped noise) is costly to make, so each kind is made once, and on
+  // the start of a mission rather than in the first frame of play (a hitch on slower phones).
+  let aud = null; const earF = new Vector3(), spaces = {};
+  const echoFor = wet => spaces[wet] ||= space({ seconds: wet ? 2.4 : 3.6, decay: wet ? 3.4 : 2.3, wet: wet ? .2 : .28, bright: wet ? 2000 : 3400, pre: .09 });
   function audioUp() {
     if (aud && aud.mid === mid) return; audioDown();
     const wet = missions[mid]?.weather === 'rain';
-    const sp = space({ seconds: wet ? 2.4 : 3.6, decay: wet ? 3.4 : 2.3, wet: wet ? .2 : .28, bright: wet ? 2000 : 3400, pre: .09 });
+    const sp = echoFor(wet);
     aud = {
       mid, sp, ears: new Ears({ ref: 10, max: 500, rolloff: .5, hrtf: false, space: sp, send: .8 }),
       wind: bed({ vol: .01, from: 480, q: .5, gusts: .9 }),
@@ -2092,6 +2160,7 @@ function make(api) {
     freeMen(); men = []; allies = null; shots = []; timers = [];
     // Wren herself, seen when she moves between nests
     WD.wren ||= wrenFigure(); WD.wren.visible = false;
+    echoFor(missions[id]?.weather === 'rain');   // made here (silent) rather than in the first frame of play
     if (!WD.wren.rig.poses.ladder) WD.wren.rig.add('ladder', ph => { const q = Math.sin(ph * TAU); return { j: { spine: [.12, 0, 0], head: [-.35, 0, 0], armL: [-2.5 + .45 * q, 0, -.12], armR: [-2.5 - .45 * q, 0, .12], foreL: [-.6 - .4 * Math.max(0, -q), 0, 0], foreR: [-.6 - .4 * Math.max(0, q), 0, 0], legL: [-.95 - .45 * q, 0, 0], shinL: [1.3 + .5 * q, 0, 0], legR: [-.95 + .45 * q, 0, 0], shinR: [1.3 - .5 * q, 0, 0] }, drop: 0 }; }, .8); tower?.g.removeFromParent(); for (const p of tower?.pieces || []) { p.removeFromParent(); p.geometry?.dispose(); }
     tower = null; drums = null; car = null; op = null; cs = null; boom.list.length = 0; if (WD.bags) WD.bags.visible = false;
     WD.solids = WD.solids.filter(b => !b.temp);
@@ -2100,7 +2169,7 @@ function make(api) {
     squad = new Squad([], { cover: WD.cover, sees: (a, b) => WD.nav.sees(a.x - GX0, a.y - GZ0, b.x - GX0, b.y - GZ0), range: 110, grenades: 2, camp: 10, aggression: .5 });
     squad.on('call', callout); lastCall = -99;
     squadTarget = null; foeAim = null; allyGo = 0; mgOn = false;
-    mood(id); WD.v.clearDecals();
+    mood(id); mistT = 0; mistK = 1; lensDrops = []; WD.v.clearDecals();
     rain.set(def.weather === 'rain' ? 'storm' : 'clear', def.weather === 'rain' ? .75 : 0);
     def.setup();
     for (const [i, l] of WD.letters.entries()) { const p = WD.letterSpots[id][i]; l.position.set(p.x, p.y, p.z); l.rotation.set(p.tilt, p.ry, 0); l.visible = !camp.picked(id, i); }
@@ -2110,12 +2179,13 @@ function make(api) {
     const e = nestEye(nest); look = { yaw: Math.atan2(-(nest.face.x - e.x), -(nest.face.z - e.z)), pitch: -.06 };
     mission = new Mission(def.script.bind(def));
     mission.nests = def.nests;
+    noises = new Noises(); guard = null; metMarr = false;
     cut = new Cutscene(def.intro(), { bars: .14 }); state = 'intro';
     { const cam = WD.v.cam, keep = cam.position.clone(), e = nestEye(nest); cam.position.set(e.x, e.y, e.z); cam.updateMatrixWorld(); WD.land.update(0, cam); grassAt.copy(cam.position); cam.position.copy(keep); cam.updateMatrixWorld(); }
     for (const s of men) { s.m.updateMatrixWorld(true); s.m.rig.update(0, { speed: 0 }); }
     train = { on: id === 'm1', x: -420, speed: 30, next: 26, final: false };
     WD.train.visible = false;
-    bell = { ring: 0, next: id === 'm2' ? 14 : 1e9 };
+    bell = { ring: 0, next: id === 'm2' ? 14 : 1e9, shotT: -1e9, told: false, tip: false };
     wind = { x: id === 'm1' ? 2.5 : -4, z: 0, base: id === 'm1' ? 2.5 : -4 };
   }
   // the mission's light: time of day, clouds, air, grade (the sky's reflections are redone next frame)
@@ -2273,7 +2343,7 @@ function make(api) {
       }
       if (state === 'intro' || state === 'outro') {
         cut.update(dt); audioTick(dt);
-        if (state === 'intro' && cut.done) { state = 'play'; const s = cut.shot; if (s?.look) { const dx = s.look.x - s.x, dy = s.look.y - s.y, dz = s.look.z - s.z; look.yaw = Math.atan2(-dx, -dz); look.pitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -.5, .35); } }
+        if (state === 'intro' && cut.done) { state = 'play'; meetMarr(); const s = cut.shot; if (s?.look) { const dx = s.look.x - s.x, dy = s.look.y - s.y, dz = s.look.z - s.z; look.yaw = Math.atan2(-dx, -dz); look.pitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -.5, .35); } }
       updateMen(dt); updateAllies(dt); WD.dust.update(dt); WD.sparks.update(dt); WD.smoke.update(dt); WD.trail.update(dt);
         if (state === 'outro') { mission.update(dt); trainUpdate(dt); if (mid === 'm1' && train.final) rideTrain(dt); }
         if (outroDone && state === 'outro') finish(true);
@@ -2287,7 +2357,7 @@ function make(api) {
 
       mission.update(dt);
       gun.update(dt); me.update(dt); for (const h of hits) h.life -= dtReal; hits = hits.filter(h => h.life > 0);
-      boltT = Math.max(0, boltT - dt);
+      { const was = boltT; boltT = Math.max(0, boltT - dt); if (was > .9 && boltT <= .9) ejectCase(); }
       if (gun.reloaded) { metal(.0, 1800, .03); metal(.12, 1100, .035); noise(.05, { vol: .03, from: 1500, to: 600, at: .2 }); }
       audioTick(dt);
       // keys
@@ -2296,7 +2366,9 @@ function make(api) {
       clampLook();
       // masking
       trainUpdate(dt);
-      bell.next -= dt; if (bell.next <= 0) { bell.next = 26; bell.ring = 6; } if (bell.ring > 0) { bell.ring -= dt; if (Math.floor(bell.ring * 1.2) !== Math.floor((bell.ring + dt) * 1.2)) bellToll(); WD.bell.rotation.z = Math.sin(t * 5) * .5; }
+      bell.next -= dt; if (bell.next <= 0) { bell.next = 26; bell.ring = 6; } if (bell.ring > 0) { bell.ring -= dt; if (Math.floor(bell.ring * 1.2) !== Math.floor((bell.ring + dt) * 1.2)) bellToll(); WD.bell.rotation.z = Math.sin(t * 5) * .5 * Math.min(1, bell.ring); } else WD.bell.rotation.z *= .92;
+      // the morning mist burns off as the sun climbs (mission 1)
+      if (mid === 'm1') { mistT += dt; const k = 1 - .6 * clamp(mistT / 160, 0, 1); if (Math.abs(k - mistK) > .004) { mistK = k; WD.v.air({ mist: MOODS.m1.air.mist * k, patchy: MOODS.m1.air.patchy * (.6 + .4 * k) }); } }
       // heat: they work out where you are
       quietT = t - lastShotT;
       if (heat > 0 && !squad.alerted) heat = Math.max(0, heat - dt * .015);
@@ -2534,12 +2606,22 @@ function make(api) {
       score += 500 + st.filter(Boolean).length * 250; api.score(score);
       const d = api.load({}) || {}; d.nests = favour; api.save(d);
       boss.result(true); rifleman.result(true); for (const s of men) endMind(s);
+      { const l = marr.result(true); if (l) say(l, MARR, 2.4, true); }
       api.win(); state = 'won'; endT = 2.4; sounds.win(); haptic('success');
     } else {
       boss.result(false); rifleman.result(false); for (const s of men) endMind(s);
+      { const l = marr.result(false); if (l) say(l, MARR, 2.2, true); }
       const d = api.load({}) || {}; d.nests = favour; api.save(d);
       state = 'fail'; endT = 2.2; sounds.lose(); haptic('error'); failMsg = mission.failed || 'Mission failed';
     }
+  }
+  // the colonel on the radio as the mission starts (an intercept, red like the Grey Order's calls)
+  function meetMarr() {
+    if (metMarr) return; metMarr = true;
+    const hello = marr.met(); guard = marr.counter(boss.skill);
+    if (hello) soon(3.2, () => say(hello, MARR, 3.2, true));
+    // listening for your habit: always said out loud first, so you know to change it
+    if (guard && !/listen|waits/i.test(hello || '')) { const l = marr.line('habit'); if (l) soon(7.5, () => say(l, MARR, 3.2, true)); }
   }
   function go() { begin(sel); haptic('medium'); sounds.click?.(); }
   function briefTap(x, y) {
@@ -2568,6 +2650,7 @@ function make(api) {
     const sc = scoped, gl = glass;
     // tags above soldiers, KO pops
     tags(c, brass, red);
+    tells(c, brass, red);
     koPops(c);
     if (sc) scopeView(c, brass, red); else if (gl) glassView(c, brass);
     else crosshair(c);
@@ -2676,11 +2759,30 @@ function make(api) {
   function crosshair(c) {
     c.strokeStyle = '#ffffffaa'; c.lineWidth = 1.5; c.beginPath(); c.arc(W / 2, H / 2, 3, 0, TAU); c.stroke();
   }
+  // rain on the scope's front glass: beads land, swell, and the big ones run down and off
+  function lens(c, cx, cy, R) {
+    const wet = rain ? rain.amount : 0, dt = clamp(t - lensT, 0, .1); lensT = t;
+    lensAcc += wet > .15 ? dt * wet * 8 : 0;
+    for (; lensAcc >= 1; lensAcc--) if (lensDrops.length < 40) { const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * R * .95; lensDrops.push({ x: Math.cos(a) * r, y: Math.sin(a) * r, r: rnd(2, 5.5), life: rnd(4, 9), vy: 0 }); }
+    if (!lensDrops.length) return;
+    c.save(); c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.clip();
+    for (const d of lensDrops) {
+      d.life -= dt; if (d.r > 4.6) { d.vy = Math.min(d.vy + dt * 30, 45); d.y += d.vy * dt; d.r -= dt * .4; }
+      const x = cx + d.x, y = cy + d.y, a = clamp(d.life, 0, 1) * .8, g = c.createRadialGradient(x - d.r * .3, y - d.r * .35, d.r * .1, x, y, d.r);
+      g.addColorStop(0, `rgba(255,255,250,${.85 * a})`); g.addColorStop(.25, `rgba(220,228,236,${.3 * a})`); g.addColorStop(.7, `rgba(120,130,140,${.15 * a})`); g.addColorStop(.88, `rgba(6,8,12,${.7 * a})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = g; c.beginPath(); c.arc(x, y, d.r, 0, TAU); c.fill();
+      c.fillStyle = `rgba(230,236,240,${.35 * a})`; c.beginPath(); c.arc(x + d.r * .25, y + d.r * .45, d.r * .28, 0, TAU); c.fill();   // light gathered at the bottom, as through a lens
+      if (d.vy > 4) { c.strokeStyle = `rgba(190,200,210,${.18 * a})`; c.lineWidth = d.r * .7; c.beginPath(); c.moveTo(x, y - d.r); c.lineTo(x, y - d.r - Math.min(30, d.vy * .8)); c.stroke(); }
+    }
+    c.restore();
+    lensDrops = lensDrops.filter(d => d.life > 0 && d.y < R);
+  }
   function scopeView(c, brass, red) {
     const cx = W / 2, cy = H / 2, R = Math.min(W, H) * .44, fovR = fovNow() * Math.PI / 180, px = H / fovR;   // units per radian
     c.save();
     c.fillStyle = '#050505'; c.beginPath(); c.rect(0, 0, W, H); c.arc(cx, cy, R, 0, TAU, true); c.fill('evenodd');
     const g = c.createRadialGradient(cx, cy, R * (.7 - beat * .08 * gs.prefs.motion), cx, cy, R); g.addColorStop(0, '#0000'); g.addColorStop(1, '#000d'); c.fillStyle = g; c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.fill();
+    lens(c, cx, cy, R);
     c.strokeStyle = '#8a7a50'; c.lineWidth = 3; c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.stroke();
     // the Wren reticle: fine cross with an open centre, drop chevrons below, wind dots to the sides
     c.strokeStyle = '#0d0d0c'; c.fillStyle = '#0d0d0c'; c.lineWidth = 1.2;
@@ -2757,6 +2859,23 @@ function make(api) {
     if (scoped) return;
     c.font = '700 7px "Courier New", monospace'; c.textAlign = 'center'; c.lineWidth = 2.5; c.strokeStyle = '#0b0b0a99'; c.lineJoin = 'round';
     for (const l of labels) { const txt = Math.round(l.d) + 'm' + (l.n > 1 ? ' ×' + l.n : ''); c.strokeText(txt, l.x, l.y - 9); c.fillStyle = l.alert ? red : brass; c.fillText(txt, l.x, l.y - 9); }
+  }
+  // what a soldier's senses are up to, over his head: a "?" that fills as he grows sure something's
+  // there (he heard a shot, he's staring at the hills), a red "!" as he raises the alarm. Shown over
+  // tagged men, and over anyone in the scope or glasses
+  function tells(c, brass, red) {
+    c.save(); c.textAlign = 'center'; c.font = '800 11px Rubik, sans-serif'; c.lineWidth = 2;
+    for (const s of men) {
+      if (s.ko || s.inside || !(s.tagged || scoped || glass)) continue;
+      const sn = s.senses, shout = s.alert && t - (s.shoutT ?? -9) < 2, wary = !s.alert && sn && sn.mood !== 'calm';
+      if (!shout && !wary) continue;
+      const [x, y, z] = WD.v.toScreen(s.x, s.gy + 2.75, s.y); if (z > 1 || x < 8 || x > W - 8 || y < 8 || y > H - 8) continue;
+      const pop = clamp(s.moodT * 6, 0, 1), r = 7 * (.6 + .4 * pop);
+      c.fillStyle = '#0b0b0acc'; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+      if (wary) { c.strokeStyle = brass; c.beginPath(); c.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + TAU * clamp(sn.awareness, .08, 1)); c.stroke(); }
+      c.fillStyle = shout ? red : brass; c.fillText(shout ? '!' : '?', x, y + 4);
+    }
+    c.restore();
   }
   function koPops(c) {
     for (const s of men) {
@@ -2851,7 +2970,7 @@ export default {
   retro: true, era: 'nextgen', pal: 'grape',
   w: 300, h: 300, maxW: 600, maxH: 420,
   goal: 1500, reward: 30,
-  hint: 'A sniper campaign in a 1944 valley. Drag to look, tap GLASS to tag soldiers, SCOPE in, hold BREATH and FIRE: aim above far targets and into the wind. Shoot while the train or bell is loud, and MOVE when they find you.',
+  hint: 'A sniper campaign in a 1944 valley. Drag to look, tap GLASS to tag soldiers, SCOPE in, hold BREATH and FIRE: aim above far targets and into the wind. Shoot while the train or bell is loud (or ring the bell yourself), and MOVE when they find you.',
   traits: ['theme:military', 'genre:shooter'],
   creator: 'Game Scroll',
   make,
