@@ -71,7 +71,7 @@ function make(api) {
       // SET button
       const by = cy + r + 40; c.fillStyle = '#f582ae'; c.beginPath(); c.roundRect(W / 2 - 70, by, 140, 54, 27); c.fill(); c.fillStyle = '#fff'; c.textAlign = 'center'; c.font = '800 22px Rubik, sans-serif'; c.fillText('SET', W / 2, by + 35);
       c.fillStyle = '#001858'; c.font = '700 18px Rubik, sans-serif'; c.textAlign = 'left'; c.fillText('⏰'.repeat(3 - strikes), 20, H - 24);
-      if (round === 1 && t < 5 && !banner) { c.textAlign = 'center'; c.fillStyle = '#8b8bab'; c.font = '600 14px Rubik, sans-serif'; c.fillText('Drag the long hand round, then tap SET', W / 2, 30); }
+      if (round === 1 && t < 5 && !banner) { c.textAlign = 'center'; c.fillStyle = '#8b8bab'; c.font = '600 14px Rubik, sans-serif'; c.fillText('Drag the long hand round, then tap SET', W / 2, cy + r + 120); }
       if (banner) { c.fillStyle = '#001858e8'; c.fillRect(0, H * .5 - 44, W, 88); c.fillStyle = '#fff'; c.textAlign = 'center'; c.font = '800 28px Rubik, sans-serif'; c.fillText(banner.txt, W / 2, H * .5 - 4); c.font = '600 16px Rubik, sans-serif'; c.fillText(banner.sub, W / 2, H * .5 + 26); }
     },
     down(x, y) {

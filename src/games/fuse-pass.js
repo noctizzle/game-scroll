@@ -84,7 +84,7 @@ function make(api) {
       c.textAlign = 'center'; c.fillStyle = '#fff';
       if (holder === 0 && !fly && started) { c.font = '800 11px Rubik, sans-serif'; c.fillStyle = (t * 6 | 0) % 2 ? '#ffe060' : '#fff'; c.fillText('TAP A FRIEND!', W / 2, H - 22); }
       for (const i of nap) { const [x, y] = seat(i); c.font = '800 10px Rubik, sans-serif'; c.fillStyle = '#c0d8ff'; c.fillText('z', x + 6, y - 26 - (t * 8 % 6)); c.fillText('Z', x + 11, y - 32 - (t * 8 % 6)); }
-      if (ml > 0) { c.font = '800 14px Rubik, sans-serif'; c.fillStyle = '#fff'; c.fillText(msg, W / 2, 30); }
+      if (ml > 0) { c.font = '800 14px Rubik, sans-serif'; c.fillStyle = '#fff'; c.fillText(msg, W / 2, Math.max(30, api.scoreArea().bottom + 14)); }
       if (!started) { c.fillStyle = '#000b'; c.fillRect(0, H / 2 - 20, W, 34); c.fillStyle = '#fff'; c.font = '700 10px Rubik, sans-serif'; c.fillText('You are at the front with the cake.', W / 2, H / 2 - 6); c.fillText('Tap a friend to throw it. Tap to start', W / 2, H / 2 + 8); }
     },
     down(x, y) {

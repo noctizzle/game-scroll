@@ -88,7 +88,7 @@ function make(api) {
       for (let i = 0; i < 3 - misses; i++) { c.fillStyle = '#a06838'; c.fillRect(W - 9 - i * 7, 3, 5, 5); }
       // spin meter
       c.fillStyle = '#00000040'; c.fillRect(8, H - 10, 50, 4); c.fillStyle = spin > .7 ? '#f8d038' : '#f8f8f0'; c.fillRect(8, H - 10, Math.round(50 * spin), 4);
-      if (ml > 0) text(c, msg, W / 2, 16, { align: 'center', color: '#683820' });
+      if (ml > 0) text(c, msg, W / 2, Math.max(16, Math.ceil(api.scoreArea().bottom) + 2), { align: 'center', color: '#683820' });
       else if (t < 6 && !score) text(c, 'CIRCLE YOUR FINGER, LET GO', W / 2, H - 46, { align: 'center', color: '#f8f8f0', outline: '#284028' });
     },
     down(x, y) { held = true; pts = [{ x, y }]; spin = Math.max(spin, .05); },
