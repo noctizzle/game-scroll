@@ -14,14 +14,14 @@ const fs = require('fs'), path = require('path');
   const argv = process.argv.slice(2), gpu = argv.includes('--webgpu'), [mode, dir] = argv.filter(a => !a.startsWith('--'));
   if (!['save', 'check'].includes(mode) || !dir) { console.log('usage: look-compare.cjs save|check <dir>'); process.exit(2); }
   const vite = await import('vite');
-  const server = await vite.createServer({ server: { port: 4183 }, mode: 'bundled', logLevel: 'error' }); await server.listen();
+  const server = await vite.createServer({ server: { port: +(process.env.PORT || 4183) }, mode: 'bundled', logLevel: 'error' }); await server.listen();
   // WebGPU in a headless browser needs Chromium's own SwiftShader Vulkan driver
   const icd = path.join(path.dirname(chromium.executablePath()), 'vk_swiftshader_icd.json');
   const b = await chromium.launch(gpu
     ? { args: ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--use-angle=vulkan', '--enable-features=Vulkan'], env: { ...process.env, VK_ICD_FILENAMES: icd } }
     : { args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] }), p = await b.newPage();
   const errs = [], warns = new Set(); p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'warning' && /THREE|WebGPU/.test(m.text())) warns.add(m.text()); });
-  await p.goto('http://localhost:4183/scripts/look-compare/?' + (gpu ? 'gpu&' : '') + (process.env.ONLY ? 'only=' + process.env.ONLY : '') + (process.env.Q ? '&' + process.env.Q : '') + (process.env.PICK ? '&pick=' + process.env.PICK : '')); await p.waitForFunction(() => window.result, null, { timeout: 400000 });
+  await p.goto('http://localhost:' + (process.env.PORT || 4183) + '/scripts/look-compare/?' + (gpu ? 'gpu&' : '') + (process.env.ONLY ? 'only=' + process.env.ONLY : '') + (process.env.Q ? '&' + process.env.Q : '') + (process.env.PICK ? '&pick=' + process.env.PICK : '')); await p.waitForFunction(() => window.result, null, { timeout: 400000 });
   const res = await p.evaluate(() => window.result);
   if (res.error || errs.length) { for (const w of warns) console.log('warning:', w); console.log('FAIL', res.error || errs.join('\n')); process.exit(1); }
   for (const w of warns) console.log('three.js warning:', w);

@@ -554,6 +554,29 @@ function beamsFrame(v) {
   m.density = Math.max(0, b.density ?? .02); m.far = Math.max(1, b.far ?? 60); m.g = Math.min(.9, Math.max(0, b.glow ?? .5)); m.steps = Math.round(Math.min(VOL_MAX, Math.max(4, b.steps ?? 24)));
   return m;
 }
+// froxel fog (v.fog3d, WebGPU: hd3d-gpu.js froxels): this frame's numbers for it
+const FOG_C = new Color(), FOG_L = [];
+function fogFrame(v) {
+  const f = v.fog3d, m = v._fz ||= { colour: new Color(), ambient: new Color(), sunDir: new Vector3(0, 1, 0), sunCol: new Color(), shadow: null, shadowM: null, lamps: [], wind: [1, .4], t: 0 };
+  m.near = v.cam.near; m.far = Math.max(5, f.far ?? 60); m.density = Math.max(0, f.density ?? .03); m.height = f.height ?? 0; m.falloff = Math.max(0, f.falloff ?? .15);
+  m.noise = Math.min(1, Math.max(0, f.noise ?? .5)); m.g = Math.min(.9, Math.max(-.5, f.glow ?? .4)); m.wind = f.wind || m.wind; m.t = v.t;
+  m.colour.set(f.colour ?? '#c8d0d8'); m.ambient.setScalar(f.ambient ?? .35);
+  const L = v.sun;
+  if (L?.isDirectionalLight && L.visible) {
+    L.updateMatrixWorld(); L.target.updateMatrixWorld(); L.getWorldPosition(m.sunDir); L.target.getWorldPosition(GV); m.sunDir.sub(GV).normalize();
+    m.sunCol.copy(L.color).multiplyScalar(L.intensity * (f.strength ?? 1) * 4);
+    m.shadow = L.castShadow && L.shadow?.map?.depthTexture || null; m.shadowM = L.shadow.matrix;
+  } else { m.sunCol.setRGB(0, 0, 0); m.shadow = null; }
+  // the nearest lit lamps (point and spot lights), up to 8
+  FOG_L.length = 0; const cp = v.cam.position;
+  if (f.lamps !== false) v.scene.traverseVisible(o => { if ((o.isPointLight || o.isSpotLight) && o.intensity > 0) FOG_L.push(o); });
+  if (FOG_L.length > 8) FOG_L.sort((a, b) => a.getWorldPosition(GV).distanceToSquared(cp) - b.getWorldPosition(GW).distanceToSquared(cp));
+  const n = Math.min(8, FOG_L.length);
+  while (m.lamps.length < n) m.lamps.push({ p: new Vector4(), c: new Vector4() });
+  m.lamps.length = n;
+  for (let i = 0; i < n; i++) { const o = FOG_L[i]; o.getWorldPosition(GV); m.lamps[i].p.set(GV.x, GV.y, GV.z, o.distance || 10); FOG_C.copy(o.color).multiplyScalar(o.intensity * (f.strength ?? 1)); m.lamps[i].c.set(FOG_C.r, FOG_C.g, FOG_C.b, 0); }
+  return m;
+}
 class BeamsPass extends Pass {
   constructor() {
     super(); this.needsSwap = true; this.a = null;
@@ -610,6 +633,7 @@ function blurFrame(v, cut) {
   m.prevVP.copy(m.has && !cut ? m.prev : m.cur); m.prev.copy(m.cur); m.has = true;
   if (!b) return null;
   m.mb.set(Math.max(0, b.amount ?? .5), Math.max(0, b.max ?? .04), Math.max(0, b.sharp ?? 0), v.W / v.H);
+  m.obj = b.objects !== false && !cut && m.had ? 1 : 0; m.had = true;   // (WebGPU: each thing's own move, not just the camera's)
   return m;
 }
 class BlurPass extends Pass {
@@ -1215,7 +1239,7 @@ export class HDView {
     if (fog) this.scene.fog = new FogExp2(bg, fog);
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
-    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null; this.lut = null; this.lutAmount = 1; this.oit = false; this.flare = null;
+    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null; this.lut = null; this.lutAmount = 1; this.oit = false; this.flare = null; this.fog3d = null;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
     this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null; this.beams = null; this.motionBlur = null;
@@ -1772,7 +1796,11 @@ export class HDView {
     if (!baking && !off) HD.info.still = false;
     try { this.envMaker?.(); } catch (e) { /* the studio reflections stay */ }
     this.scene.environment = this.envFor(G); this.scene.environmentIntensity = this.envI;
-    if (this._air) { this.airUniforms(); const a = gpuAir(G); a.sync(); this.scene.fogNode = a.node(); } else { this.scene.fogNode = null; AIR.gsAirOn.value = 0; }
+    let fogN = null;
+    if (this._air) { this.airUniforms(); const a = gpuAir(G); a.sync(); fogN = a.node(); } else AIR.gsAirOn.value = 0;
+    // froxel fog (v.fog3d): lit by the sun and lamps, over the air's haze when both are on (high and ultra)
+    if (this.fog3d && T.ao > 0) { const fz = this._froxels?.r === r ? this._froxels : (this._froxels = { r, ...G.fx.froxels() }); fz.update(r, this.cam, fogFrame(this)); fogN = fz.node(fogN); }
+    this.scene.fogNode = fogN;
     // the sun lights: cloud shadows and the near shadow cascade's share (hd3d-gpu.js gpuSunLight)
     const cs = this.cascade, casc = !!(cs?.near.visible && cs.near.castShadow && cs.near.parent);
     G.fx.setCascade(casc ? cs.near : null, cs?.fade ?? .06);

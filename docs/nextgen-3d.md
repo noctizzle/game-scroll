@@ -158,6 +158,15 @@ so its next round starts there instead of stuttering down again.
   parts, mirrored through the middle of the picture (three.js's LensflareNode, the same maths on WebGL),
   and lens dirt (smudges, dust and wipe marks drawn in code) lit where bright light falls on it.
   `dirt` (.5) is how dirty the lens is, 0 for none. Needs bloom; off by default.
+- `v.fog3d = { density, height, falloff, far, colour, glow, ambient, strength, noise, wind, lamps }`
+  (WebGPU, high and ultra): fog that light really travels through, kept in a grid of small boxes fitted
+  to the view (froxels, as in Frostbite and Unreal) and worked out each frame on the graphics chip. The
+  sun lights it through its shadows (dark under a roof, bright in the gaps between pillars), the
+  nearest 8 lamps glow in it, and every material reads it at its own place, so glass and particles are
+  fogged right too. `density` per metre (.03), lying thickest below `height` (0) and thinning by
+  `falloff` (.15) per metre above it, out to `far` metres (60); `glow` (.4) is how much more it shines
+  looking towards the light; `noise` (.5) makes it patchy, drifting with `wind` ([x, z]). A plain
+  `bg` colour behind isn't fogged, so match it to the fog or use a sky. WebGL keeps the view's own fog.
 - `v.oit = true` (WebGPU): order-independent transparency, three.js's weighted blended OIT (McGuire and
   Bavoil). See-through things (normal blending, not glass with `transmission`) blend right whatever
   order they're drawn in: glass behind glass, panes passing through each other, smoke in water, with no
@@ -340,8 +349,9 @@ s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
 - **Motion blur** (`v.motionBlur = { amount, max, sharp }`): the world smears as the camera turns and
   moves fast. `amount` is how much of each frame's move (0.5, a half-frame shutter); `max` is the longest
   smear as a part of the screen's width (0.04); things nearer than `sharp` metres stay sharp, such as the
-  car, bike or hands the camera carries. Camera motion only, the same on both renderers: a thing moving
-  by itself in front of a still camera doesn't blur. High and ultra; `v.cut()` after a camera jump stops
+  car, bike or hands the camera carries. On WebGPU each thing also blurs by its own move (a ball flying
+  past, a spinning wheel, a swung sword), smearing out over what's behind it, from three.js's velocity
+  picture; `objects: false` keeps it to the camera's move. WebGL blurs the camera's move only. High and ultra; `v.cut()` after a camera jump stops
   one big smear. Scale `amount` by `gs.prefs.motion` for players with Reduce motion on.
 - `v.envFrom(scene)` makes the reflections from any scene of your own (a painted room, a sunset dome),
   and makes them again on WebGPU when the view draws there; `v.env = null` goes back to the studio.

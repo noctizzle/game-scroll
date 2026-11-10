@@ -170,6 +170,37 @@ async function pomScene() {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend];
 }
+// froxel fog (v.fog3d, WebGPU): low fog in a colonnade, the sun through it in shafts and two lamps glowing
+async function fogScene() {
+  window.__hd.force = 3;
+  const v = new gs.hd.HDView({ bg: '#8aa0b8', fog: 0, env: .3, amb: .25 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 1.6, 8); v.cam.lookAt(0, 1.2, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#ffe8c8', 3, 14, [-.7, .5, -.4]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(40, 40).rotateX(-Math.PI / 2), gs.hd.pbr('#8a8478', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const stone = gs.hd.pbr('#b8b0a0', { rough: .8 });
+  for (let i = 0; i < 6; i++) for (const sx of [-2.5, 2.5]) { const p = new T.Mesh(new T.CylinderGeometry(.3, .35, 5, 16), stone); p.position.set(sx, 2.5, 3 - i * 3); p.castShadow = p.receiveShadow = true; v.scene.add(p); }
+  const roof = new T.Mesh(new T.BoxGeometry(6, .4, 18), stone); roof.position.set(0, 5.2, -4.5); roof.castShadow = true; v.scene.add(roof);
+  for (const [lx, lc] of [[-1.2, '#ffb060'], [1.4, '#60c0ff']]) { const l = new T.PointLight(lc, 6, 6); l.position.set(lx, 1.2, -2); v.scene.add(l); }
+  if (!new URLSearchParams(location.search).has('nofog')) v.fog3d = { density: .06, height: .5, falloff: .5, far: 40, colour: '#d8dce8', glow: .5 };
+  const t0 = performance.now(); while (performance.now() - t0 < 2000) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
+// per-object motion blur (WebGPU): a still camera, a wheel spinning and a ball flying past blur; the post stays sharp
+async function objBlurScene() {
+  window.__hd.force = 3;
+  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: 0, env: .3, amb: .4 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 1.5, 5); v.cam.lookAt(0, 1, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 8, [-.5, .8, .4]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(20, 20).rotateX(-Math.PI / 2), gs.hd.pbr('#7a8a68', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const wheel = new T.Mesh(new T.CylinderGeometry(.8, .8, .2, 6).rotateX(Math.PI / 2), gs.hd.pbr('#d04030', { rough: .5 })); wheel.position.set(-1, 1.2, 0); v.scene.add(wheel);
+  const ball = new T.Mesh(new T.SphereGeometry(.3, 24, 12), gs.hd.pbr('#3060d0', { rough: .4 })); v.scene.add(ball);
+  const post = new T.Mesh(new T.BoxGeometry(.3, 2, .3), gs.hd.pbr('#e0d8c8', { rough: .7 })); post.position.set(1.5, 1, -.5); v.scene.add(post);
+  v.motionBlur = { amount: .5, max: .08 };
+  let k = 0; const step = () => { k++; wheel.rotation.z = k * .35; ball.position.set(-2 + (k % 40) * .12, .8, .8); };
+  for (let i = 0; i < 90; i++) { step(); v.t = 0; v.render(x, 240, 320); await frame(); }
+  return [c.toDataURL(), window.__hd.info.backend];
+}
 // soft shadows (sun().softShadows): a post, a raised slab and a crate sitting on the ground: the
 // crate's shadow sharp at its foot, the post's and slab's spreading the further they fall
 async function pcssScene() {
@@ -367,7 +398,7 @@ function consoleScene() {
   return c.toDataURL();
 }
 // ?pick=materials,gpu-pcss draws only those (a quick look while working on one)
-const SCENES = { area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene() };
+const SCENES = { area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene(), 'gpu-fog': () => fogScene(), 'gpu-mblur': () => objBlurScene() };
 const PICK = new URLSearchParams(location.search).get('pick');
 if (PICK) try { for (const n of PICK.split(',')) [out[n], backends[n]] = await SCENES[n](); } catch (e) { out.error = String(e && e.stack || e); }
 else try {
@@ -388,6 +419,8 @@ else try {
   [out.batch, backends.batch] = await batchScene();
   [out.materials, backends.materials] = await materialsScene();
   [out['gpu-pcss'], backends['gpu-pcss']] = await pcssScene();
+  [out['gpu-fog'], backends['gpu-fog']] = await fogScene();
+  [out['gpu-mblur'], backends['gpu-mblur']] = await objBlurScene();
   { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; }
   [out.river, backends.river] = await riverScene();
   [out.flood, backends.flood] = await floodScene();

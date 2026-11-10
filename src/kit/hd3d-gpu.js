@@ -9,14 +9,14 @@
 // scripts/look-compare.cjs --webgpu draws the same scenes both ways and compares them.
 // Kit use only.
 import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Vector4, Color, BackSide, Sprite, Group, InstancedMesh, BufferGeometry, Frustum, Sphere, InstancedBufferAttribute as IBA, SpriteNodeMaterial, InstancedBufferAttribute, AdditiveBlending, NormalBlending,
-  MeshBasicNodeMaterial, NodeMaterial, Data3DTexture, RectAreaLightNode, MeshSSSNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, DepthTexture, LessEqualCompare, NoToneMapping, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, SRGBColorSpace, LinearSRGBColorSpace, Matrix3 } from 'three/webgpu';
+  MeshBasicNodeMaterial, NodeMaterial, Data3DTexture, RectAreaLightNode, MeshSSSNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, DepthTexture, Storage3DTexture, LinearFilter, LessEqualCompare, NoToneMapping, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, SRGBColorSpace, LinearSRGBColorSpace, Matrix3 } from 'three/webgpu';
 import {
   pass, mrt, output, velocity, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
   positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min, materialEmissive, distance,
   attribute, vertexColor, normalWorld, normalViewGeometry, positionLocal, positionGeometry, positionPrevious, modelWorldMatrix, modelWorldMatrixInverse,
   materialColor, materialOpacity, materialRoughness, cos, floor, step, fwidth, dFdx, dFdy, normalize, uniformArray, Loop, int, If, sqrt,
-  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix, shadow as shadowOf, texture3D, parallaxDirection, normalMap,
+  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix, shadow as shadowOf, texture3D, parallaxDirection, normalMap, instanceIndex, storageTexture3D, textureStore, mx_noise_float, uvec3, ivec3,
 } from 'three/tsl';
 import { lut3D } from 'three/examples/jsm/tsl/display/Lut3DNode.js';
 import { oitPass } from 'three/examples/jsm/tsl/display/OITPassNode.js';
@@ -445,6 +445,89 @@ export function splitDraw(r, scene, cam, l, mask, keep) {
 }
 /** A target holding a copy of a shadow map's depth. */
 export function splitTarget(r, w, h) { const t = new RenderTarget(w, h, { depthBuffer: true }); t.depthTexture = new DepthTexture(w, h); r.initRenderTarget(t); return t; }
+
+/* ---------- froxel fog (hd3d.js v.fog3d) ---------- */
+// Fog lit by the sun through its shadows and by the lamps nearby, in a grid of small boxes fitted to
+// the view (froxels: 64 x 36 across the screen, 48 deep, deeper slices further away), as Frostbite and
+// Unreal do. One compute pass walks each column from the eye outwards, adding up the light the fog
+// sends back and how much it lets through; every material then reads the grid at its own place
+// (scene.fogNode), so see-through things are fogged right too. Built on three's compute + 3D textures.
+const FX = 64, FY = 36, FZ = 48, FLAMPS = 8;
+export function froxels() {
+  const grid = new Storage3DTexture(FX, FY, FZ); grid.type = HalfFloatType; grid.magFilter = grid.minFilter = LinearFilter; grid.generateMipmaps = false;
+  const U = {
+    invVP: uniform(new Matrix4()), VP: uniform(new Matrix4()), cam: uniform(new Vector3()), nf: uniform(new Vector2(.5, 60)),
+    dens: uniform(new Vector4(.03, 0, .15, .5)),   // density per metre, fog floor y, falloff per metre above it, noise
+    drift: uniform(new Vector3()), col: uniform(new Color()), amb: uniform(new Color()), sunDir: uniform(new Vector3(0, 1, 0)), sunCol: uniform(new Color()),
+    g: uniform(.4), shM: uniform(new Matrix4()), shOn: uniform(0), shSize: uniform(new Vector2(1, 1)),
+    lPos: uniformArray(Array.from({ length: FLAMPS }, () => new Vector4()), 'vec4'), lCol: uniformArray(Array.from({ length: FLAMPS }, () => new Vector4()), 'vec4'), nl: uniform(0),
+  };
+  const shT = texture(NO_SHADOW);
+  // slice edges: exponential in distance from the eye, near to far
+  const sliceAt = k => U.nf.x.mul(pow(U.nf.y.div(U.nf.x), k.div(FZ)));
+  const hg = c => U.g.mul(U.g).oneMinus().div(pow(U.g.mul(U.g).add(1).sub(U.g.mul(2).mul(c)), 1.5)).mul(1 / (4 * Math.PI));
+  const compute = Fn(() => {
+    const x = instanceIndex.mod(FX), y = instanceIndex.div(FX), q = vec2(float(x).add(.5).div(FX), float(y).add(.5).div(FY));
+    const w4 = U.invVP.mul(vec4(q.mul(2).sub(1), .5, 1)), rd = normalize(w4.xyz.div(w4.w).sub(U.cam)).toConst();
+    const sunPh = hg(dot(rd, U.sunDir)).toConst();
+    const acc = vec3(0).toVar(), T = float(1).toVar();
+    Loop({ start: 0, end: FZ }, ({ i }) => {
+      const t0 = sliceAt(float(i)), t1 = sliceAt(float(i).add(1)), len = t1.sub(t0), p = U.cam.add(rd.mul(t0.add(t1).mul(.5))).toConst();
+      // how thick the fog is here: thinning with height above its floor, and patchy, drifting with the wind
+      const n = mx_noise_float(p.mul(.12).add(U.drift)).mul(.5).add(.5);
+      const d = U.dens.x.mul(exp(max(p.y.sub(U.dens.y), 0).mul(U.dens.z).negate())).mul(mix(float(1), n.mul(1.8), U.dens.w)).toConst();
+      // the sun, through its shadow map (read by texel: nearest is plenty at froxel size)
+      const s4 = U.shM.mul(vec4(p, 1)), sc = s4.xyz.div(s4.w);
+      const inside = U.shOn.greaterThan(.5).and(sc.x.greaterThan(0)).and(sc.x.lessThan(1)).and(sc.y.greaterThan(0)).and(sc.y.lessThan(1)).and(sc.z.lessThan(1));
+      const sd = shT.load(ivec2(vec2(sc.x, sc.y.oneMinus()).mul(U.shSize))).x;
+      const lit = select(inside, step(sc.z, sd), float(1));
+      const L = vec3(U.sunCol).mul(lit.mul(sunPh)).add(U.amb).toVar();
+      // lamps: soft round falloff to their range, scattered evenly
+      Loop({ start: 0, end: FLAMPS }, ({ i: j }) => {
+        If(float(j).greaterThanEqual(U.nl), () => { Break(); });
+        const lp = U.lPos.element(j), lc = U.lCol.element(j), v = lp.xyz.sub(p), dd = dot(v, v), r2 = lp.w.mul(lp.w);
+        const f = clamp(dd.div(r2).oneMinus(), 0, 1);
+        L.addAssign(lc.xyz.mul(f.mul(f)).div(dd.add(1)).mul(1 / (4 * Math.PI)));
+      });
+      // add up (energy-conserving over the slice, as Frostbite): light sent back, and what gets through
+      const S = L.mul(U.col).mul(d), tr = exp(d.mul(len).negate());
+      acc.addAssign(T.mul(S.sub(S.mul(tr)).div(max(d, 1e-5))));
+      T.mulAssign(tr);
+      textureStore(grid, uvec3(x, y, i), vec4(acc, T)).toWriteOnly();
+    });
+  })().compute(FX * FY, [64]);
+  // every material: its colour seen through the fog in front of it
+  const nodes = new Map();
+  const node = (inner = null) => {
+    let n = nodes.get(inner); if (n) return n;
+    n = Fn(() => {
+      const base = inner ? vec4(inner) : output;
+      const c4 = U.VP.mul(vec4(positionWorld, 1)), q = c4.xy.div(c4.w).mul(.5).add(.5);
+      const t = length(positionWorld.sub(U.cam)), k = log2(max(t, U.nf.x).div(U.nf.x)).div(log2(U.nf.y.div(U.nf.x))).mul(FZ);
+      const f = texture3D(grid, vec3(q, clamp(k.sub(.5).div(FZ), .5 / FZ, 1 - .5 / FZ)));
+      // nearer than the first slice's middle: fade in from nothing
+      const a = clamp(k.mul(2), 0, 1);
+      return vec4(base.rgb.mul(mix(float(1), f.a, a)).add(f.rgb.mul(a)), base.a);
+    })();
+    nodes.set(inner, n); return n;
+  };
+  const PV = new Matrix4();
+  return {
+    U, node,
+    update(r, cam, o) {
+      cam.updateMatrixWorld(); PV.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      U.VP.value.copy(PV); U.invVP.value.copy(PV).invert(); cam.getWorldPosition(U.cam.value);
+      U.nf.value.set(Math.max(.1, o.near), o.far); U.dens.value.set(o.density, o.height, o.falloff, o.noise);
+      U.drift.value.set(o.wind[0] * o.t * .12, o.t * .02, o.wind[1] * o.t * .12); U.col.value.copy(o.colour); U.amb.value.copy(o.ambient);
+      U.g.value = o.g; U.sunDir.value.copy(o.sunDir); U.sunCol.value.copy(o.sunCol);
+      const sm = o.shadow; U.shOn.value = sm ? 1 : 0; shT.value = sm || NO_SHADOW; if (sm) { U.shM.value.copy(o.shadowM); U.shSize.value.set(sm.image.width, sm.image.height); }
+      const ls = o.lamps; U.nl.value = ls.length;
+      for (let i = 0; i < ls.length; i++) { U.lPos.array[i].copy(ls[i].p); U.lCol.array[i].copy(ls[i].c); }
+      r.compute(compute);
+    },
+    dispose() { grid.dispose(); },
+  };
+}
 export function gpuSunLight(l, AIR, noise) {
   const c = new Color(), col = uniform(c).onRenderUpdate(() => c.copy(l.color).multiplyScalar(l.intensity)), role = uniform(0);
   const wp = positionWorld, S = live(AIR.gsSun), CL = live(AIR.gsCloud), DR = live(AIR.gsDrift);
@@ -864,7 +947,7 @@ export class GpuChain {
     this.V = {
       shM: uniform(new Matrix4()), invProj: uniform(new Matrix4()), camWorld: uniform(new Matrix4()), camPos: uniform(new Vector3()),
       lDir: uniform(new Vector3(0, -1, 0)), lPos: uniform(new Vector3()), lt: uniform(new Vector4()), k: uniform(new Vector4()), steps: uniform(24), tint: uniform(new Color(0, 0, 0)),
-      prevVP: uniform(new Matrix4()), mb: uniform(new Vector4()),
+      prevVP: uniform(new Matrix4()), mb: uniform(new Vector4()), mbObj: uniform(0),
     };
     this.bloomN = null; this.aoN = null;
     // the game on screen (live): each real frame is drawn into a picture and shown by a copy that adds the
@@ -899,7 +982,7 @@ export class GpuChain {
     // (the normals picture's alpha says whether a pixel takes ambient occlusion: see-through things,
     // leaf cards and anything marked noAO write 0, as WebGL's AO leaves them out: noAO() below)
     const nrm = aoOn ? { normal: vec4(normalView, 1) } : {};
-    if (mrtOn) sp.setMRT(frameGenMRT(nrm)); else if (traaOn) sp.setMRT(mrt({ output, velocity: vec4(velocity, 0, 1), ...nrm })); else if (aoOn) sp.setMRT(mrt({ output, ...nrm }));
+    if (mrtOn) sp.setMRT(frameGenMRT(nrm)); else if (traaOn || mbOn) sp.setMRT(mrt({ output, velocity: vec4(velocity, 0, 1), ...nrm }));   // (motion blur: each thing's own move) else if (aoOn) sp.setMRT(mrt({ output, ...nrm }));
     const U = this.U;
     // temporal anti-aliasing (three.js's TRAA, top tiers when the picture isn't upscaled: SGSR 2 does its
     // own): the camera moves by a fraction of a pixel each frame and each pixel blends with where it was
@@ -976,16 +1059,40 @@ export class GpuChain {
     }
     // motion blur (v.motionBlur; hd3d.js MB): each pixel smeared along its move on screen as the camera moved
     if (mbOn) {
-      const S = src, SA = srcAo, mb = V.mb;
+      const S = src, SA = srcAo, mb = V.mb, velT = sp.getTextureNode('velocity'), MBT = this.mbTilePx = uniform(new Vector2(1, 1));
+      // each thing's move on screen (three's velocity picture, in screen units), at most mb.y of the width
+      const moveAt = q => { const v = velT.sample(q).xy.mul(vec2(.5, -.5)).mul(mb.x), l = length(v.mul(vec2(mb.w, 1))), mx = mb.y.mul(mb.w); return select(l.greaterThan(mx), v.mul(mx.div(max(l, 1e-6))), v); };
+      // the fastest move in each 16 x 16 block (4 x 4 looks), so a fast thing smears out over what's behind it
+      // (McGuire et al.'s tile max, simplified)
+      this.mbTile = rtt(Fn(() => {
+        const q = uv(), best = vec2(0).toVar();
+        for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { const v = moveAt(q.add(MBT.mul(vec2((i + .5) / 4 - .5, (j + .5) / 4 - .5)))); If(dot(v, v).greaterThan(dot(best, best)), () => { best.assign(v); }); }
+        return vec4(best, 0, 1);
+      })(), 1, 1, { depthBuffer: false, type: HalfFloatType });
+      const tileT = this.mbTile;
       this.mbT = rtt(Fn(() => {
         const q = uv(), base = S.sample(q).rgb.mul(SA), d = dT.sample(q).r, vp = getViewPosition(q, d, V.invProj);
+        const near = select(d.greaterThanEqual(1), float(1), smoothstep(mb.z, mb.z.mul(1.5).add(.01), vp.z.negate()));   // (mb.z: things this close stay sharp)
+        // the camera's move only (WebGL's way, and the frame after a cut)
         const pc = V.prevVP.mul(V.camWorld.mul(vec4(vp, 1))), pn = pc.xy.div(max(pc.w, 1e-4)), pu = vec2(pn.x.mul(.5).add(.5), pn.y.mul(-.5).add(.5));
         const v0 = q.sub(pu).mul(mb.x), l = length(v0.mul(vec2(mb.w, 1))), mx = mb.y.mul(mb.w);
-        const v1 = select(l.greaterThan(mx), v0.mul(mx.div(max(l, 1e-6))), v0).mul(select(d.greaterThanEqual(1), float(1), smoothstep(mb.z, mb.z.mul(1.5).add(.01), vp.z.negate())));
-        const vel = select(pc.w.lessThanEqual(0), vec2(0), v1);
+        const vel = select(pc.w.lessThanEqual(0), vec2(0), select(l.greaterThan(mx), v0.mul(mx.div(max(l, 1e-6))), v0).mul(near));
         let sum = vec3(0);
         for (let i = 0; i < MB_N; i++) sum = sum.add(S.sample(q.add(vel.mul(i / (MB_N - 1) - .5))).rgb);
-        return vec4(select(length(vel.div(U.px)).lessThan(.75), base, sum.mul(SA).div(MB_N)), 1);
+        const camOnly = select(length(vel.div(U.px)).lessThan(.75), base, sum.mul(SA).div(MB_N));
+        // per thing (V.mbObj): smear along the fastest move nearby; samples of something moving that fast
+        // count, still ones give this pixel's own colour, so a ball flying past blurs over the sky behind
+        // it while the sky itself stays put
+        const tq = floor(q.div(MBT)).add(.5), dom = vec2(0).toVar();
+        for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const v = tileT.sample(tq.add(vec2(i, j)).mul(MBT)).xy; If(dot(v, v).greaterThan(dot(dom, dom)), () => { dom.assign(v); }); }
+        const dv = dom.mul(near), dl2 = dot(dv, dv).mul(.25);
+        let acc = vec3(0);
+        for (let i = 0; i < MB_N; i++) {
+          const p = q.add(dv.mul(i / (MB_N - 1) - .5)), sv = moveAt(p);
+          acc = acc.add(select(dot(sv, sv).greaterThanEqual(dl2), S.sample(p).rgb.mul(SA), base));
+        }
+        const perThing = select(length(dv.div(U.px)).lessThan(.75), base, acc.div(MB_N));
+        return vec4(select(V.mbObj.greaterThan(.5), perThing, camOnly), 1);
       })(), 1, 1, { depthBuffer: false, type: HalfFloatType });
       src = this.mbT; srcAo = float(1);
     }
@@ -1084,7 +1191,7 @@ export class GpuChain {
           V.lDir.value.copy(m.lDir); V.lPos.value.copy(m.lPos); V.lt.value.copy(m.lt); V.k.value.set(m.density, m.far, m.g, m.map ? 1 : 0); V.steps.value = m.steps; V.tint.value.copy(m.tint);
         } else { V.tint.value.setRGB(0, 0, 0); V.steps.value = 1; }
       }
-      if (this.mbT) { this.mbT.setSize(o.w, o.h); const m = o.mb; if (m) { V.prevVP.value.copy(m.prevVP); V.mb.value.copy(m.mb); } else V.mb.value.set(0, 0, 0, 1); }
+      if (this.mbT) { this.mbT.setSize(o.w, o.h); { const tw = Math.max(1, Math.ceil(o.w / 16)), th = Math.max(1, Math.ceil(o.h / 16)); this.mbTile.setSize(tw, th); this.mbTilePx.value.set(1 / tw, 1 / th); } const m = o.mb; if (m) { V.prevVP.value.copy(m.prevVP); V.mb.value.copy(m.mb); V.mbObj.value = m.obj; } else V.mb.value.set(0, 0, 0, 1); }
       if (this.shM) { const bw = Math.max(8, Math.round(o.w / 4)), bh = Math.max(8, Math.round(o.h / 4)); this.shM.setSize(bw, bh); this.shB.setSize(bw, bh); U.shaft.value = o.shaft || 0; if (o.shaftCol) U.shaftTint.value.copy(o.shaftCol);
         const t = Math.max(1.1, o.shaftAt ?? 1.1), lit = t > 1.1; U.shThr.value = t; U.shHi.value = lit ? t * 1.2 : t * 2.2; U.shCap.value = lit ? t * 1.2 : 1e9; U.shGain.value = 1.1 / t; }
     }
