@@ -1563,5 +1563,102 @@ console.log('physics ok');
   console.log('gs.models: finer person ok');
 }
 
+// fixed game tick: the same updates at 30, 60, 90 and 120 fps; alpha between ticks; physics draws smoothly
+{
+  const T = await import('../src/kit/tick.js'), { ownedBy } = await import('../src/kit/cleanup.js');
+  assert.equal(T.tickRate({ tick: true }), 60); assert.equal(T.tickRate({}), 0); assert.equal(T.tickRate({ tick: 5 }), 0);
+  const run = fps => { const card = {}; T.resetTicks(card); const xs = []; let x = 0, v = 0;
+    for (let f = 0; f < fps * 2; f++) T.runTicks(card, 60, 1 / fps, h => { v += 900 * h; x += v * h; xs.push(x); });
+    return xs; };
+  const a = run(60), b = run(120), c = run(30), d = run(90);
+  assert.equal(a.length, 120); assert.deepEqual(b, a, '120 fps runs the same ticks as 60'); assert.deepEqual(c, a, '30 fps too'); assert.deepEqual(d.slice(0, 119), a.slice(0, 119), '90 fps too');
+  { const card = {}; T.resetTicks(card); let k = 0; for (let f = 0; f < 50; f++) k += T.runTicks(card, 60, (1 + (f % 2 ? .2 : -.2)) / 60, () => {}, 1 / 60);
+    assert.equal(k, 50, 'a 60 fps game on a 60 tick runs one update a frame, early or late'); assert.equal(T.tick.alpha, 1, 'and shows the newest tick'); }
+  { const card = {}; T.resetTicks(card); T.runTicks(card, 60, 1 / 120, () => {}); assert.ok(Math.abs(T.tick.alpha - .5) < 1e-6, 'half a tick: alpha .5');
+    assert.equal(T.tick.mix(10, 20), 15); assert.ok(Math.abs(T.tick.turn(3, -3) - Math.PI) < .05, 'turn goes the short way');
+    let n = 0; T.runTicks(card, 60, 1, () => n++); assert.equal(n, T.MAX_STEPS, 'a long hitch runs at most MAX_STEPS'); }
+  { const card = {}; T.resetTicks(card); T.runTicks(card, 0, .016, h => assert.equal(h, .016)); assert.equal(T.tick.alpha, 1); assert.equal(T.tick.on, false); }
+  { const card = {}; const p = new Physics({ gravity: 900 }); const ball = p.circle(50, 0, 5);
+    T.resetTicks(card); T.runTicks(card, 60, 1 / 60, h => p.step(h)); T.runTicks(card, 60, 1 / 120, h => p.step(h));
+    assert.ok(ball.sy > ball._was.y && ball.sy < ball.y, 'Physics sy is between the last two ticks'); }
+  { let blended = null; const card = {}; const o = { blend(a) { blended = a; } };
+    ownedBy(card, () => T.onBlend(o)); T.resetTicks(card); T.runTicks(card, 60, 1.5 / 60, () => {}); T.beforeDraw(card, 60);
+    assert.ok(Math.abs(blended - .5) < 1e-6, 'blend hooks get alpha'); }
+  console.log('gs.tick ok');
+}
+
+// music composer: seeded, every part the same length, every note a real note
+{
+  const { compose, MOODS } = await import('../src/kit/compose.js'), { freq } = await import('../src/kit/sound.js');
+  for (const mood of Object.keys(MOODS)) for (const bars of [4, 8]) {
+    const t = compose({ mood, seed: 'kit-test', bars });
+    assert.equal(JSON.stringify(t), JSON.stringify(compose({ mood, seed: 'kit-test', bars })), 'same seed, same tune');
+    for (const k of ['lead', 'bass', 'pad', 'pad2', 'arp', 'drums', 'drums2', 'lead2']) {
+      const toks = t[k].split(' '); assert.equal(toks.length, bars * 8, `${mood} ${k} is ${bars} bars`);
+      for (const x of toks) if (k.startsWith('drums')) assert.ok(/^([kshc]+|\.)$/.test(x), 'drum ' + x); else assert.ok(x === '.' || x === '-' || freq(x) > 30, `${mood} ${k} note ${x}`);
+    }
+    assert.ok(t.tempo >= 60 && t.tempo <= 180 && t.info.chords.length === bars);
+  }
+  assert.notEqual(compose({ seed: 1 }).lead, compose({ seed: 2 }).lead, 'different seeds, different tunes');
+  console.log('gs.sound.compose ok');
+}
+
+// gs.solve: a one-answer sudoku made, graded and hinted; a tic-tac-toe opponent that wins and blocks
+{
+  const { Puzzle, Search } = await import('../src/kit/solve.js');
+  const p = new Puzzle(); for (let i = 0; i < 81; i++) p.cell(i, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  for (let r = 0; r < 9; r++) { p.allDiff([...Array(9)].map((_, c) => r * 9 + c)); p.allDiff([...Array(9)].map((_, c) => c * 9 + r)); }
+  for (let b = 0; b < 9; b++) { const ids = []; for (let i = 0; i < 9; i++) ids.push(((b / 3 | 0) * 3 + (i / 3 | 0)) * 9 + (b % 3) * 3 + i % 3); p.allDiff(ids); }
+  const full = p.solve({ rng: 7 }).solution;
+  for (let r = 0; r < 9; r++) assert.equal(new Set([...Array(9)].map((_, c) => full[r * 9 + c])).size, 9, 'filled grid rows differ');
+  const easy = p.carve(full, { rng: 3, grade: 'easy' });
+  assert.ok(p.unique(easy) && p.grade(easy).level === 'easy' && Object.keys(easy).length < 40, 'easy sudoku: one answer, deduction alone');
+  assert.ok(!p.unique({}), 'an empty grid has many answers');
+  const open = Object.keys(full).map(Number).find(k => !(k in easy)), bad = full[open] % 9 + 1;
+  const h = p.hint(easy, { [open]: bad });
+  assert.ok(h && h.wrong.includes(open) && h.value === full[h.id], 'hint is right and spots the wrong move');
+  const q = new Puzzle(); for (const x of 'abc') q.cell(x, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  q.allDiff([...'abc']); q.sum([...'abc'], 24); q.rule(['a', 'b'], ([a, b]) => a < b); q.rule(['b', 'c'], ([b, c]) => b < c);
+  assert.deepEqual(q.solve({ limit: 5 }), { solution: { a: 7, b: 8, c: 9 }, count: 1 }, 'sums and rules');
+  const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+  const win = b => { for (const [a, c, d] of lines) if (b[a] && b[a] === b[c] && b[a] === b[d]) return b[a]; return null; };
+  const g = { moves: s => win(s.b) ? [] : s.b.map((v, i) => v ? null : i).filter(x => x !== null), play: (s, m) => { const b = s.b.slice(); b[m] = s.t; return { b, t: s.t === 'X' ? 'O' : 'X' }; },
+    turn: s => s.t, over: s => !!win(s.b) || s.b.every(Boolean), score: (s, who) => { const w = win(s.b); return w ? (w === who ? 100 : -100) : 0; }, winner: s => win(s.b) };
+  const S = new Search(g);
+  for (const mode of ['minimax', 'mcts']) {
+    assert.equal(S.best({ b: ['O', 'O', null, 'X', 'X', null, null, null, null], t: 'X' }, { mode, time: 80, rng: 1 }), 5, mode + ' takes the win');
+    assert.equal(S.best({ b: ['O', 'O', null, 'X', null, null, null, null, 'X'], t: 'X' }, { mode, time: 80, rng: 1 }), 2, mode + ' blocks');
+  }
+  let s = { b: Array(9).fill(null), t: 'X' }; while (!g.over(s)) s = g.play(s, S.best(s, { time: 40 }));
+  assert.equal(win(s.b), null, 'perfect play draws');
+  console.log('gs.solve ok');
+}
+
+// gs.voxels: a world made, meshed (merged faces, shading), dug, picked, walked on, packed
+{
+  const { Voxels, BLOCKS } = await import('../src/kit/voxels.js');
+  const v = new Voxels({ size: [32, 16, 32], worker: false });
+  v.fill(0, 0, 0, 31, 3, 31, BLOCKS.stone);
+  v.build();
+  let tris = 0; v.group.traverse(o => { if (o.isMesh) tris += o.geometry.index.count / 3; });
+  assert.ok(tris > 0 && tris < 400, 'a flat slab merges into few triangles: ' + tris);
+  const r = v.ray({ x: 10.5, y: 10, z: 10.5 }, { x: 0, y: -1, z: 0 }, 20);
+  assert.ok(r && r.y === 3 && r.ny === 1 && r.id === BLOCKS.stone, 'ray finds the top block and its face');
+  const me = { x: 10.5, y: 8, z: 10.5, w: .6, h: 1.7 };
+  let hit = { ground: false }; for (let i = 0; i < 60 && !hit.ground; i++) hit = v.move(me, 0, -0.3, 0);
+  assert.ok(hit.ground && Math.abs(me.y - 4) < 1e-3, 'falls and stands on the top: ' + me.y);
+  v.set(12, 4, 10, BLOCKS.brick);
+  const h2 = v.move(me, 3, 0, 0); assert.ok(h2.x && me.x < 12 - .29 && me.x > 11.6, 'stopped by a wall: ' + me.x);
+  const h3 = v.move(me, 3, 0, 0, { step: 1.01 }); assert.ok(me.x > 12 && me.y >= 5 - 1e-3, 'steps up onto it with step 1');
+  const dug = v.sphere(16, 3, 16, 2.5); assert.ok(dug.changed > 10 && dug.gone[BLOCKS.stone] === dug.changed, 'sphere digs');
+  assert.ok(v.dirty.size > 0); v.build(); assert.equal(v.meshing, 0);
+  const text = v.pack(), w = new Voxels({ size: [32, 16, 32], worker: false }).unpack(text);
+  assert.deepEqual(w.data, v.data, 'pack and unpack'); assert.ok(text.length < 600, 'packed small: ' + text.length);
+  const g = new Voxels({ size: [48, 32, 48], worker: false }).generate({ seed: 'kit', kind: 'hills' }).build();
+  assert.ok(g.top(24, 24) > 4 && g.group.children.length > 4, 'hills generate and mesh');
+  const t0 = performance.now(); const big = new Voxels({ size: [64, 32, 64], worker: false }).generate({ seed: 2 }).build();
+  console.log('gs.voxels ok (64x32x64 made and meshed in', Math.round(performance.now() - t0), 'ms)');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);

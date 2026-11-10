@@ -35,6 +35,9 @@ project(':npu').projectDir = new File('../plugins/npu/android')
 include ':phone-ai'
 project(':phone-ai').projectDir = new File('../plugins/phone-ai/android')
 
+include ':phone-sensors'
+project(':phone-sensors').projectDir = new File('../plugins/phone-sensors/android')
+
 include ':power-state'
 project(':power-state').projectDir = new File('../plugins/power-state/android')
 

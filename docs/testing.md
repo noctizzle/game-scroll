@@ -20,6 +20,7 @@ How to check a change without waiting longer than you need to. Written for peopl
 | One game file | `node scripts/game-lint.mjs <id>`, `npm run games`, then `node scripts/smoke.cjs <id>` and `node scripts/stream-smoke.mjs <id>` | under 20 s |
 | A 3D game (Console, Next Gen, AR) | add `node scripts/sweep.cjs <id>` | 20 s to 2 min |
 | A game's speed | `node scripts/budget.cjs <id>` | about 25 s |
+| Can the goal be reached? | `node scripts/playtest.cjs <id> [--budget 20] [--strict]`: a bot plays faster than real time and tries to win (see below) | about 20 s a game |
 | Layout, cards, folding | `node scripts/fold.cjs [id ...]` | about 12 s |
 | Feed swiping | `node scripts/feed-jank.cjs [swipes] [--filter nextgen]` (compare before and after, not with a phone) | about a minute |
 | A kit in `src/kit/` | `npm run kit-test`, then smoke the games that use it (`node scripts/pick-games.mjs` names the best few per style) | 3 s + games |
@@ -34,8 +35,22 @@ How to check a change without waiting longer than you need to. Written for peopl
 
 The PR check (`.github/workflows/game-pr-check.yml`) runs the node checks (`npm run games`,
 `licences`, `types-check`, `kit-test`, `brains`, `recommend`, `site`) and then smoke, streamed,
-fold, sweep, Tiny Brains and budget on the changed games, split over several machines. When frame
+fold, sweep, Tiny Brains, the AI playtester and budget on the changed games, split over several machines. When frame
 generation's code changes it also runs `framegen-test.cjs --check`.
+
+## The AI playtester: can a player reach the goal?
+
+`node scripts/playtest.cjs <id>` (after `npm run build:bundled`; `npm run playtest -- <id>` does both)
+plays the game with a bot that really tries to win, not one that mashes taps. It runs the game much
+faster than real time with a seeded `Math.random`, so a replay is exact, and every quarter second of
+game time it tries a few taps, holds, drags and keys (and doing nothing), plays each a little further
+in two ways (random moves after, and nothing after), and keeps the best. It prints whether the goal
+was reached and after how much game time.
+
+The flags are signals, not verdicts: a bot that can't sort a puzzle doesn't mean people can't.
+`goal-not-reached`, `goal-in-under-5s` and `random-taps-win` show as warnings on the PR. It fails on
+errors and on `goal-with-no-input` (the goal reached without touching the game); `--strict` also fails
+on a goal it never reached. A game on a fixed tick (`tick: 60`) is played on that tick.
 
 ## Running many games at once
 

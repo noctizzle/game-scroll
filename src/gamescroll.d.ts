@@ -37,8 +37,8 @@ export interface Game {
   reset(): void;
   /** dt in seconds. */
   update(dt: number): void;
-  /** Draw the whole frame in w × h game units. */
-  draw(c: Ctx): void;
+  /** Draw the whole frame in w × h game units. alpha (fixed-tick games): how far between the last two ticks, 0..1; else 1. */
+  draw(c: Ctx, alpha?: number): void;
   down?(x: number, y: number, id: number): void;
   move?(x: number, y: number, pressed: boolean, id: number): void;
   up?(x: number, y: number, id: number): void;
@@ -74,6 +74,8 @@ export interface GameDef {
   scoreRate?: number;
   w: number;
   h: number;
+  /** Fixed game tick: update(1/tick) runs a whole number of times per frame on every screen rate (true = 60). */
+  tick?: number | boolean;
   maxW?: number;
   maxH?: number;
   retro?: boolean;
@@ -117,6 +119,9 @@ export interface SoundPart {
   /** Background music from patterns; start it in update(), not reset(). */
   /** Living music: the tune follows the play (tension from close calls, settles, a loss calms it, tempo leans to the player's pace). */
   follow(song: Loose, o?: { calm?: number; ease?: number; tempo?: [number, number]; pace?: number; brain?: Brain }): { readonly tension: number; readonly speed: number; feel(x?: number): Loose; tap(): Loose; lost(): Loose; won(): Loose; update(dt: number): Loose };
+  /** Writes an original looping tune from a mood and a seed (same seed, same tune): pass it to music(). */
+  compose(o?: { mood?: 'happy' | 'calm' | 'tense' | 'spooky' | 'heroic' | 'sad' | 'silly' | 'chase' | 'puzzle'; seed?: string | number; tempo?: number; key?: string; bars?: 4 | 8 }): { tempo: number; swing: number; layers: Record<string, number>; lead: string; bass: string; pad: string; pad2: string; arp: string; drums: string; drums2: string; lead2: string; info: { mood: string; key: string; mode: string; bars: number; chords: number[]; win: string; lose: string } };
+  MOODS: Record<string, Loose>;
   music(o?: { tempo?: number; vol?: number; swing?: number; lead?: string; bass?: string; drums?: string; layers?: Record<string, number>; [part: string]: Loose }): { start(): Loose; stop(): void; pause(): void; resume(): void; speed(x: number): Loose; layer(name: string, level?: number, fade?: number): Loose; intensity(x: number, fade?: number): Loose; readonly level: number; readonly playing: boolean; [k: string]: Loose };
   /** 3D sound: the listener follows the camera; sounds play at points in the world (HRTF in headphones). */
   Ears: new (o?: { ref?: number; max?: number; rolloff?: number; hrtf?: boolean; flat?: boolean; space?: { tail: AudioNode } | null; send?: number }) => {
@@ -151,6 +156,16 @@ declare const HAPTIC_NAMES: { tap: 1; thud: 1; heartbeat: 1; explosion: 1; charg
 export interface Mic { level(): number; pitch(): { hz: number; note: string; midi: number; clarity: number } | null; blow(): number; clapped(): boolean; whistle(): number; stop(): void }
 export type HapticKind = 'light' | 'medium' | 'heavy' | 'tick' | 'success' | 'warning' | 'error';
 export interface DevicePart {
+  /** Steps walked since the round started (null until the step counter runs and the player allowed it). */
+  steps(): { count: number; new: number; perMinute: number } | null;
+  /** Air pressure and height change (metres) since the round started. */
+  pressure(): { hPa: number; height: number } | null;
+  /** The room's light (Android; some browsers). */
+  light(): { lux: number; dark: boolean } | null;
+  /** Something right over the top of the phone (Android). */
+  near(): boolean | null;
+  /** Does this phone have it? null while still being asked. */
+  hasSensor(kind: 'steps' | 'pressure' | 'light' | 'near'): boolean | null;
   haptic(kind?: HapticKind): void;
   /** Morse-like buzz pattern: 0 short, 1 long. */
   buzz(pattern: (number | boolean)[], short?: number, long?: number, gap?: number): void;
@@ -325,6 +340,14 @@ export interface PhysicsPart { Physics: new (o?: { gravity?: number; walls?: num
 export interface VisionPart {
   Face: new (o?: { preview?: boolean }) => { start(): void; stop(): void; update(): boolean; ready: boolean; found: boolean; backend?: string; picture: HTMLVideoElement | null; x: number; y: number; size: number; yaw: number; pitch: number; roll: number; mouth: number; smile: number; blink: boolean; winkLeft: boolean; winkRight: boolean; brows: number; [k: string]: Loose };
   Hands: new (o?: { max?: number; preview?: boolean }) => { start(): void; stop(): void; update(): boolean; ready: boolean; found: boolean; backend?: string; picture: HTMLVideoElement | null; list: Loose[]; first: Loose | null };
+  /** The whole body (stand back): joints by name, armsUp, leftUp, rightUp, lean, squat, jump, clap. Web view only. */
+  Body: new (o?: { max?: number; preview?: boolean }) => { start(): void; stop(): void; update(): boolean; ready: boolean; found: boolean; picture: HTMLVideoElement | null; x: number; y: number;
+    joints: Record<'nose' | 'leftShoulder' | 'rightShoulder' | 'leftElbow' | 'rightElbow' | 'leftHand' | 'rightHand' | 'leftHip' | 'rightHip' | 'leftKnee' | 'rightKnee' | 'leftFoot' | 'rightFoot', { x: number; y: number; seen: number }>;
+    armsUp: boolean; leftUp: boolean; rightUp: boolean; lean: number; squat: number; jump: boolean; clap: boolean; people: Loose[]; points: Loose[] };
+  /** The player cut out of the camera picture: draw cut.picture (a canvas, see-through round the person). */
+  CutOut: new (o?: { soft?: number; size?: number }) => { start(): void; stop(): void; update(): boolean; ready: boolean; found: boolean; amount: number; soft: number; picture: HTMLCanvasElement | null };
+  /** Hand signs: thumbs-up, thumbs-down, victory, open-palm, fist, point-up, love. */
+  Signs: new (o?: { max?: number; sure?: number }) => { start(): void; stop(): void; update(): boolean; ready: boolean; found: boolean; list: { sign: string; score: number; side: 'left' | 'right'; x: number; y: number }[]; sign: string; made: string | null; showing(name: string): boolean };
   loadVision(): Promise<Loose>;
 }
 
@@ -397,6 +420,54 @@ export interface SensesPart {
 }
 
 /** The player's Reduce motion setting (read only). The kits already apply it. */
+export interface PuzzleSolver {
+  cell(id: string | number, values: Loose[]): this;
+  allDiff(ids: (string | number)[]): this;
+  sum(ids: (string | number)[], total: number): this;
+  rule(ids: (string | number)[], ok: (values: Loose[]) => boolean): this;
+  solve(o?: { known?: Record<string, Loose> | null; limit?: number; rng?: number | string | (() => number) | null }): { solution: Record<string, Loose> | null; count: number };
+  unique(known?: Record<string, Loose>): boolean;
+  grade(known?: Record<string, Loose>): { level: 'easy' | 'medium' | 'hard' | 'expert' | 'none'; guesses: number; open: number };
+  carve(solution: Record<string, Loose>, o?: { rng?: number | string | (() => number); grade?: 'easy' | 'medium' | 'hard' | 'expert'; keep?: number }): Record<string, Loose>;
+  hint(clues: Record<string, Loose>, moves?: Record<string, Loose>): { id: string | number | null; value: Loose; why: 'only' | 'last' | 'sum' | 'rule' | 'guess' | 'wrong'; wrong: (string | number)[] } | null;
+}
+export interface SearchGame<S, M> { moves(s: S): M[]; play(s: S, m: M): S; turn(s: S): Loose; score?(s: S, player: Loose): number; over?(s: S): boolean; winner?(s: S): Loose }
+export interface SolvePart {
+  Puzzle: new () => PuzzleSolver;
+  Search: new <S = Loose, M = Loose>(game: SearchGame<S, M>) => {
+    best(s: S, o?: { time?: number; depth?: number; skill?: number; rng?: number | string | (() => number); mode?: 'minimax' | 'mcts' }): M | null;
+    rank(s: S, o?: { time?: number; depth?: number; mode?: 'minimax' | 'mcts'; rng?: number }): { move: M; value: number; visits?: number }[];
+    readonly nodes: number;
+  };
+}
+export interface VoxelWorld {
+  readonly w: number; readonly h: number; readonly d: number; readonly scale: number; group: Loose; readonly meshing: number;
+  block(name: string, color: string, o?: { see?: boolean }): number; id(b: string | number): number;
+  get(x: number, y: number, z: number): number; solid(x: number, y: number, z: number): boolean; set(x: number, y: number, z: number, b: string | number): boolean;
+  fill(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, b: string | number): this;
+  sphere(cx: number, cy: number, cz: number, r: number, b?: string | number): { changed: number; gone: Record<number, number> };
+  top(x: number, z: number): number;
+  generate(o?: { seed?: string | number; kind?: 'hills' | 'flat' | 'island' | 'caves'; ground?: number; hills?: number; water?: number; trees?: number; caves?: boolean }): this;
+  tree(x: number, y: number, z: number, height?: number): this;
+  update(limit?: number): number; build(): this;
+  ray(from: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number }, far?: number, o?: { solidOnly?: boolean }): { x: number; y: number; z: number; id: number; nx: number; ny: number; nz: number; dist: number } | null;
+  move(box: { x: number; y: number; z: number; w?: number; h?: number; d?: number }, dx: number, dy: number, dz: number, o?: { step?: number }): { x: boolean; y: boolean; z: boolean; ground: boolean; inWater: boolean };
+  pack(): string; unpack(text: string): this; dispose(): void;
+}
+export interface VoxelsPart {
+  Voxels: new (o?: { size?: [number, number, number]; chunk?: number; scale?: number; shadows?: boolean; worker?: boolean; rough?: number }) => VoxelWorld;
+  BLOCKS: Readonly<Record<'air' | 'grass' | 'dirt' | 'stone' | 'sand' | 'water' | 'wood' | 'leaves' | 'snow' | 'brick' | 'glass' | 'lava' | 'gold' | 'coal' | 'plank' | 'ice', number>>;
+}
+export interface TickPart {
+  /** Ticks per second for the game being played; 0 when it runs one update per frame. */
+  readonly rate: number; readonly on: boolean; readonly dt: number;
+  /** How far the frame being drawn is between the last two ticks (0..1; 1 when off). */
+  readonly alpha: number;
+  /** Ticks since the round started. */
+  readonly count: number;
+  mix(before: number, now: number, alpha?: number): number;
+  turn(before: number, now: number, alpha?: number): number;
+}
 export interface PrefsPart { readonly reduceMotion: boolean; /** 1 normally, smaller with Reduce motion: scale your own shakes and flashes by it. */ readonly motion: number }
 
 // ---------- 2D worlds, characters, story, replays and look ----------
@@ -1597,14 +1668,14 @@ export interface GS {
   sound: SoundPart; device: DevicePart; util: UtilPart; math: MathPart; palettes: PalettesPart;
   juice: JuicePart; effects: { Feel: typeof Feel }; controls: ControlsPart; pad: PadPart; moves: MovesPart;
   pixel: PixelPart; gfx: GfxPart; physics: PhysicsPart; vision: VisionPart; geo: GeoPart;
-  things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
+  things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart; tick: TickPart; solve: SolvePart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
   board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; fight: FightPart; bullets: BulletsPart; sand: SandPart; flow: FlowPart; art: ArtPart; sports: SportsPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
-  outdoors: OutdoorsPart; city: CityPart; models: ModelsPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; trivia: TriviaPart; ui: UIPart;
+  outdoors: OutdoorsPart; city: CityPart; models: ModelsPart; voxels: VoxelsPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; trivia: TriviaPart; ui: UIPart;
   hear: HearPart; doodle: DoodlePart; phoneai: PhoneaiPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;

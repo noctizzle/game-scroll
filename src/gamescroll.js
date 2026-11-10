@@ -6,8 +6,8 @@
 //   const { sfx, sounds } = gs.sound, { haptic } = gs.device, { clamp, rnd } = gs.util;
 //
 // What's on it (docs/maker-kit.md has the full guide):
-//   gs.sound     beeps, ready-made sounds, ZzFX designs, music loops, Tone.js synths, the mixer, speech (say)
-//   gs.device    haptics (and rich haptic patterns), tilt, shake, mic (level, pitch, claps, blowing), camera, compass
+//   gs.sound     beeps, ready-made sounds, ZzFX designs, music loops (and compose(): original tunes from a mood and a seed), Tone.js synths, the mixer, speech (say)
+//   gs.device    haptics (and rich haptic patterns), tilt, shake, mic (level, pitch, claps, blowing), camera, compass, steps, air pressure, room light, proximity
 //   gs.util      clamp, rnd, pix, hash, fmt, disc, flickTracker
 //   gs.math      seeded random, daily seed, smooth noise, vectors, overlap tests, Grid, Timers
 //   gs.palettes  the Pocket colour sets (PAL, SHELL, C16)
@@ -57,6 +57,9 @@
 //   gs.party     pass-and-play turns with a hand-over screen, and split-screen halves for two to four
 //   gs.rhythm    a beat clock in step with the music, note charts, Perfect/Good/Miss, tap-lag calibration
 //   gs.strokes   drawn lines and gesture shapes (circle, zigzag, star... or your own), lines into physics
+//   gs.solve     Puzzle (one-answer puzzles: solve, carve clues, grade, fair hints) and Search (turn-based opponents: minimax, MCTS, skill)
+//   gs.voxels    editable 3D block worlds: chunks meshed in a worker, ray picks, a box mover, world makers (3D; lazy)
+//   gs.tick      the fixed game tick (tick: 60 in the definition): rate, alpha for drawing between ticks, mix, turn
 //   gs.paths     smooth paths through points (2D or 3D): steady-speed followers, lanes, nearest point
 //   gs.bones     2D bone characters: parts that hang off each other, poses, clips, reach (IK), wobble
 //   gs.vehicles  arcade Car (top-down drift) and Kart (3D, hops and drift boosts), Laps and places
@@ -148,6 +151,10 @@ import * as strokes from './kit/strokes.js';
 import * as vehicles from './kit/vehicles.js';
 import * as paths from './kit/paths.js';
 import * as bones from './kit/bones.js';
+import { tick } from './kit/tick.js';
+import * as composer from './kit/compose.js';
+import * as solve from './kit/solve.js';
+import * as phoneSensors from './kit/sensors.js';
 import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
@@ -155,7 +162,7 @@ import { StillLoading } from './kit/lazy.js';
 export const HIDDEN = {
   sound: ['sound', 'setSound', 'audio', 'setSfxOut', 'stopMusic', 'pauseMusic', 'resumeMusic'],
   util: ['store', 'deviceId'],
-  device: ['location', 'hapticSettings', 'setHaptics'],
+  device: ['location', 'hapticSettings', 'setHaptics', 'stopSensors'],
   moves: ['stopMoves'],
   pad: ['pollPads'],
   vision: ['stopVision'],
@@ -206,12 +213,12 @@ function readOnly(o) {
 // code). The app loads the parts a streamed game needs before running it, so games don't notice;
 // if a part isn't in yet, reading it throws StillLoading and the app shows "Loading…".
 const GROUPS = {
-  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'level3d', 'sky', 'poses', 'destruction', 'props', 'outdoors', 'city', 'models', 'THREE'],
+  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'level3d', 'sky', 'poses', 'destruction', 'props', 'outdoors', 'city', 'models', 'voxels', 'THREE'],
     // (with WebGPU picked in Settings, its renderer gets ready alongside: src/kit/gpu.js)
     load: () => Promise.all([import('./gs-3d.js').then(m => Promise.all([m.props.simplifyReady, m.models.ready()]).then(() => m)), import('./kit/gpu.js').then(g => g.prepareGPU())]).then(([m]) => ({ toon: pick('toon', m.toon), hd: pick('hd', m.hd), ar: pick('ar', m.ar), bricks: pick('bricks', m.bricks),
       physics3d: pick('physics3d', m.physics3d), fx3d: pick('fx3d', m.fx3d), camera: pick('camera', m.camera), nav3d: pick('nav3d', m.nav3d),
       characters: pick('characters', m.characters), level3d: pick('level3d', m.level3d), sky: pick('sky', m.sky),
-      poses: pick('poses', m.poses), destruction: pick('destruction', m.destruction), props: pick('props', m.props), outdoors: pick('outdoors', m.outdoors), city: pick('city', m.city), models: pick('models', m.models), THREE: m.THREE })) },
+      poses: pick('poses', m.poses), destruction: pick('destruction', m.destruction), props: pick('props', m.props), outdoors: pick('outdoors', m.outdoors), city: pick('city', m.city), models: pick('models', m.models), voxels: pick('voxels', m.voxels), THREE: m.THREE })) },
   ai: { parts: ['ai'], load: () => import('./kit/ai.js').then(m => ({ ai: pick('ai', m) })) },
   action: { parts: ['combat', 'tactics', 'climb', 'missions', 'cutscene', 'prompts', 'stealth', 'gadgets', 'campaign', 'arena'],
     load: () => import('./gs-action.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
@@ -246,8 +253,8 @@ export function offers(names) {
 }
 
 const core = {
-  sound: pick('sound', sound, sfx),
-  device: pick('device', device),
+  sound: pick('sound', sound, sfx, composer),
+  device: pick('device', device, phoneSensors),
   util: pick('util', util),
   math: pick('math', math),
   palettes: pick('palettes', palettes),
@@ -267,6 +274,7 @@ const core = {
   aim: pick('aim', aim),
   senses: pick('senses', senses),
   prefs: prefsKit.prefs,
+  tick,
   camera2d: pick('camera2d', camera2d),
   tiles: pick('tiles', tiles),
   movers: pick('movers', movers),
@@ -298,6 +306,7 @@ const core = {
   vehicles: pick('vehicles', vehicles),
   paths: pick('paths', paths),
   bones: pick('bones', bones),
+  solve: pick('solve', solve),
 };
 const gs = {};
 for (const [k, v] of Object.entries(core)) Object.defineProperty(gs, k, { value: v, enumerable: true });

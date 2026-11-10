@@ -21,7 +21,8 @@ The human-facing guide is [CONTRIBUTING.md](CONTRIBUTING.md); the kit reference 
    node scripts/stream-smoke.mjs <id>        # plays it streamed, the way the store apps run it
    node scripts/fold.cjs <id>                # survives folding / unfolding the screen
    ```
-   For Console and Next Gen games also run `node scripts/sweep.cjs <id>`. `node scripts/budget.cjs <id>`
+   For Console and Next Gen games also run `node scripts/sweep.cjs <id>`. `node scripts/playtest.cjs <id>`
+   has a bot try to reach the goal (warnings only). `node scripts/budget.cjs <id>`
    checks frame time and memory on a slowed CPU (the PR check runs it too).
    Which check fits which change, and how to keep testing fast (`--jobs`, software 3D): [docs/testing.md](docs/testing.md).
 5. Only change files in `src/games/` (and optionally tick the idea in `docs/game-ideas.md`). Shared
@@ -74,6 +75,7 @@ function make(api) {
     move(x, y, pressed, id) {},
     up(x, y, id) {},
     key(k, isDown) {},                                         // optional: desktop keys and controllers
+    // with tick: 60 in the definition, update(dt) gets exactly 1/60 and draw(c, alpha) how far between ticks
   };
 }
 
@@ -122,9 +124,10 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   `score`, `win`, `lose`, `click`: particles + shake + sound + haptics in one call.
 - `gs.juice`: `Juice` (particles, shake, pop-ups, flash, hit-stop, tweens), `Timeline` + `stagger` (anime.js; lazy), `ease`, `lerp`, `approach`, `pulse`.
 - `gs.sound`: `sfx(f, d, type, vol, slide)`, `sounds.coin()` etc., `noise()`, `notes('C5 E5 G5')`,
-  `music({ tempo, lead, bass, drums })`, `zzfx(...numbers)`, `zsound()`, `Tone()` (Tone.js; lazy),
+  `music({ tempo, lead, bass, drums })`, `compose({ mood, seed })` (an original tune for music()), `zzfx(...numbers)`, `zsound()`, `Tone()` (Tone.js; lazy),
   `mixer` (`volume`, `duck`, `room('cave')`, `muffle`), `say(text, { pitch, rate, lang })` (text to speech).
 - `gs.device`: `haptic('light'|'medium'|'heavy'|'tick'|'success'|'warning'|'error')`, `buzz()`,
+  `steps()`, `pressure()` (height change), `light()`, `near()`, `hasSensor(kind)` (null until running; keep a touch way),
   `hapticPattern([{ at, len, strength, sharpness, to }] | 'heartbeat'|'explosion'|'charge'...)`,
   `tilt()` + `want('motion')`, `calibrateTilt()`, `onShake(cb)`, `heading()`, `faceDown()`,
   `startMic()` (`level()`, `pitch()`, `blow()`, `clapped()`, `whistle()`)/`stopMic()`, `startCamera()`/`stopCamera()`.
@@ -184,6 +187,9 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   `gs.craft` (`Plane`, `Boat`, `Hover`, `Floater`), `gs.soft` (`Soft` cloth/rope/jelly with `grab`/`cut`, `Liquid`),
   `gs.cards` (`Deck`, `total`, `groups`, `poker`, `winners`, `stacks`), `gs.dice` (`roll('4d6kh3')`, `odds`, `Dice`, `Dice3D`),
   `gs.words` (lazy: `Words` dictionary, `compare`, `Bag`, `score`), `gs.ui` (lazy: `UI` flexbox layout and input with no look; you draw it).
+- `gs.solve`: `Puzzle` (`cell`, `allDiff`, `sum`, `rule`; `solve`, `unique`, `carve` to one-answer clues, `grade`, `hint`), `Search` (turn-based opponents: `best(state, { time, skill, mode: 'minimax'|'mcts' })`).
+- `gs.tick` (games with `tick: 60`): `alpha` (also `draw(c, alpha)`), `mix(before, now)`, `turn`, `rate`, `count`; Physics `sx`/`sy`/`sangle`, `World3D({ smooth: true })`.
+- `gs.voxels` (3D; lazy): `Voxels({ size })`: `generate({ seed, kind })`, `set`/`get`/`fill`/`sphere`, `update()` meshes changed chunks, `ray`, `move(box, ...)`, `pack`.
 - `gs.tweak(name, { speed: 3, grip: [.8, 0, 1] })`: live sliders in `npm run dev` (starting values elsewhere); read fields where used.
 - `gs.prefs` (read only): the player's Reduce motion setting, `reduceMotion`, `motion`. Shake, flash and
   camera kicks already follow it; scale your own big effects by `gs.prefs.motion`.
@@ -194,14 +200,15 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   `pbr`, `rbox`, `surface`, `speckle`, `Particles`, `sun`, `spot`), `gs.ar` (`ARView`, `FLOOR`, `arNote`), `gs.THREE`.
 - `gs.fx3d` (lazy): `text3d()`, `Particles3D` (`fire`, `smoke`, `sparks`, `boom`, `magic`, `snow`),
   `outline`, `glitch`, `trails`, `focus`, `pixelate`.
-- `gs.vision` (lazy): `Face` (`x`, `y`, `yaw`, `mouth`, `smile`, `blink`...), `Hands` (`pinch`, `open`, `point`...); runs on the phone's AI chip in the apps, so pass `{ preview: true }` if you draw `picture`.
+- `gs.vision` (lazy): `Face` (`x`, `y`, `yaw`, `mouth`, `smile`, `blink`...), `Hands` (`pinch`, `open`, `point`...),
+  `Body` (joints, `armsUp`, `lean`, `squat`, `jump`, `clap`), `CutOut` (the player cut out of the camera), `Signs` (thumbs up, victory...); runs on the phone's AI chip in the apps, so pass `{ preview: true }` if you draw `picture`.
 - `gs.hear` (lazy): `Sounds({ want: ['Dog', 'Whistling'] })` (`start()` from a tap, `update(dt)`, `heard`, `hearing`, `top`),
   `Voice({ words, also })` (`start()`, `said(word)`, `available`). `gs.doodle` (lazy): `Doodle` (`guess(strokes, { among })` of 46 things).
   `gs.phoneai`: `PhoneAI({ persona, words })` `ask(prompt, { fallback })` for flavour lines only; play must never depend on it.
 
 **Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `story.Story`, `look2d.Screen`, `look2d.Batch`, `words.Words`, `trivia.Quiz`, `ui.UI`, `juice.Timeline`, `hear.Sounds`, `doodle.Doodle`): create them in `make()` or `reset()`, never
 later. The app shows "Loading…" and remakes the game once the library is in.
-The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `city`, `models`, `THREE`)
+The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `city`, `models`, `voxels`, `THREE`)
 and `ai`, plus the action kits (`combat`, `tactics`, `climb`, `missions`, `cutscene`, `prompts`, `stealth`, `gadgets`, `campaign`, `arena`) and play kits (`craft`, `soft`, `cards`, `dice`, `words`, `trivia`, `ui`) and smarts (`hear`, `doodle`, `phoneai`), also load on first use, so the app opens fast. The app loads the ones a game uses before it
 runs, so read them as usual (`const { HDView } = gs.hd` at the top of the file is fine).
 

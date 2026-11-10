@@ -22,6 +22,7 @@ import { initWallet, toast, shopHTML, bindShop } from './kit/wallet-ui.js';
 import { haptic, want } from './kit/device.js';
 import { pollPads } from './kit/gamepad.js';
 import { stopAll, pauseAll, resumeAll, ownedBy, release } from './kit/cleanup.js';
+import { tickRate, runTicks, beforeDraw, resetTicks } from './kit/tick.js';
 // Things a game may leave running (music, the camera for face tracking, motion moves): stopped when a round ends or the player leaves.
 const stopKits=stopAll;   // every kit registers its own stop (src/kit/cleanup.js)
 import { remote } from './remote.js';
@@ -65,7 +66,7 @@ let slides=[],active=null,filter='all',lastId=null,io;
 // reset, must not take the feed with it: its card says so and a tap tries again.
 const stubGame=(s,msg)=>({reset(){},update(){},draw(c){const w=s.w||s.def.w,h=s.h||s.def.h;c.fillStyle='#111';c.fillRect(0,0,w,h);c.fillStyle='#bbb';c.font=`${Math.round(Math.min(w,h)/14)}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(msg,w/2,h/2)}});
 function bootGame(s){
-  s.failed=null;
+  s.failed=null;resetTicks(s);
   try{ownedBy(s,()=>{s.game=s.def.make(s.api);s.game.reset()});s.loading=false}
   catch(e){
     if(e&&e.kitLoading){
@@ -79,7 +80,7 @@ function bootGame(s){
 function gameFault(s,e){console.error(s.def.id,e);perf.error(e,s.def.id);broken(s,'This game hit a problem.')}
 function broken(s,why){if(isFull(s))leaveFull();if(s.state==='playing')try{gameOver(s)}catch(_){}try{s.game?.dispose?.()}catch(_){}release(s);s.loading=true;s.failed=why;s.game=stubGame(s,'Tap to try again');s.dirty=true;if(s.state!=='ready'){s.state='ready';s.el.classList.remove('playing','over');feed.classList.remove('locked')}renderOverlay(s)}
 // A new round: false (and the card shows the problem) if the game threw.
-function resetGame(s){try{ownedBy(s,()=>s.game.reset());return true}catch(e){gameFault(s,e);return false}}
+function resetGame(s){resetTicks(s);try{ownedBy(s,()=>s.game.reset());return true}catch(e){gameFault(s,e);return false}}
 function makeSlide(def){
   const el=document.createElement('section');el.className='slide '+(def.retro?'retro':'modern')+(def.era==='console'?' console':def.era==='nextgen'?' console nextgen':def.era==='ar'?' console nextgen ar':'');
   if(def.retro){const p=PAL[def.pal||'moss'];p.forEach((c,i)=>el.style.setProperty('--lcd'+i,c));el.style.setProperty('--shell',SHELL[def.pal||'moss']);}el.setAttribute('aria-label',def.title);
@@ -167,9 +168,9 @@ function updateBest(s){s.el.querySelector('.best').textContent=fmt(best(s.def.id
 // Games that use location say so before Play, so the phone's question doesn't come out of nowhere.
 // ...and so do games that use the camera, mic or motion sensor (worked out from their code), and
 // iPhones get asked for motion access on the Play tap instead of in the middle of a round.
-const SENSOR_WORDS={camera:'camera',mic:'microphone',motion:'motion sensor'};
+const SENSOR_WORDS={camera:'camera',mic:'microphone',steps:'step counter',pressure:'air pressure sensor',light:'light sensor',near:'proximity sensor',motion:'motion sensor'};
 const sensorNote=d=>{const u=(d.uses||[]).filter(k=>SENSOR_WORDS[k]);if(!u.length||d.era==='ar')return'';const w=u.map(k=>SENSOR_WORDS[k]);
-  return`<div class="ov-loc">${u.includes('camera')?'📷':u.includes('mic')?'🎤':'📱'} Uses your ${w.length>1?w.slice(0,-1).join(', ')+' and '+w[w.length-1]:w[0]}${u.includes('camera')||u.includes('mic')?'. Nothing is recorded or leaves your phone':''}.</div>`};
+  return`<div class="ov-loc">${u.includes('camera')?'📷':u.includes('mic')?'🎤':u.includes('steps')?'👟':'📱'} Uses your ${w.length>1?w.slice(0,-1).join(', ')+' and '+w[w.length-1]:w[0]}${u.includes('camera')||u.includes('mic')?'. Nothing is recorded or leaves your phone':''}.</div>`};
 const locNote=d=>d.location?`<div class="ov-loc">📍 Uses your ${d.location==='precise'?'location to walk around':'rough area (about 1 km)'}. It stays on your phone, and you can say no.</div>`:'';
 function renderOverlay(s){
   const d=s.def,cue='<div class="swipe-cue">Swipe up for the next game</div>';
@@ -376,7 +377,7 @@ const usesHD=d=>d.era==='nextgen'||d.era==='ar';
 function paint(s){
   // a game that throws while drawing shows its problem card instead (painting new cards for the feed
   // must never stop at one broken game)
-  const off=s!==active;speed.offscreen=off;try{s.game.draw(s.ctx)}catch(e){speed.offscreen=false;gameFault(s,e);try{s.game.draw(s.ctx)}catch(_){}return}finally{speed.offscreen=false}
+  const off=s!==active;speed.offscreen=off;try{s.game.draw(s.ctx,beforeDraw(s,tickRate(s.def)))}catch(e){speed.offscreen=false;gameFault(s,e);try{s.game.draw(s.ctx,1)}catch(_){}return}finally{speed.offscreen=false}
   if(s.def.era==='console'){s.ctx.save();consolePost(s.ctx,s.w||s.def.w,s.h||s.def.h);s.ctx.restore()}
   // the shared 3D canvas shown on the card being played just drew another card's frame: put its own back
   if(off&&active&&usesHD(s.def)&&usesHD(active.def)&&!active.loading)paint(active);
@@ -612,7 +613,7 @@ function frame(now){
     try{
       let run=true;if(DBG&&DBG.on)({dt,run}=DBG.time(dt));if(LAB&&LAB.frozen)run=false;
       const timed=s.state==='playing'&&!s.paused,t0=timed?performance.now():0;
-      if(timed){if(run)s.game.update(dt);gameRan(s.def.id)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
+      if(timed){if(run)runTicks(s,tickRate(s.def),dt,h=>{if(s.state==='playing'&&!s.paused)s.game.update(h)},DBG&&DBG.on?0:1/fps);gameRan(s.def.id)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
       const t1=performance.now();
       // a Next Gen / AR card scrolling into place already shows its picture: its first live frame (which
       // moves the shared 3D canvas onto it) waits until the swipe has settled
@@ -716,4 +717,4 @@ if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refres
 
 // Test hook used by scripts/smoke.cjs and the other browser tests: dev and test builds, and any build
 // driven by a test browser. Never in the store apps, where a game could use it to reach the wallet.
-if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),feed:()=>feedBrain.stats(),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',lab:v=>frameLab(v),only(id){filter='id:'+id;rebuild()}};
+if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),feed:()=>feedBrain.stats(),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',lab:v=>frameLab(v),only(id){filter='id:'+id;rebuild()},playtest:(id,o)=>import('./playtest.js').then(m=>m.playtest(GAMES.find(g=>g.id===id),active.api,o))};

@@ -85,6 +85,12 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Hear a dog bark, a whistle, clapping; spoken commands | `gs.hear` (YAMNet, the phone's own speech) | [Hearing, doodles and the phone's AI](#hearing-doodles-and-the-phones-ai) |
 | Know what the player drew (sword, bridge, umbrella...) | `gs.doodle` | [Hearing, doodles and the phone's AI](#hearing-doodles-and-the-phones-ai) |
 | Lines that change every time (a shopkeeper, a riddle) | `gs.phoneai` (the phone's built-in AI) | [Hearing, doodles and the phone's AI](#hearing-doodles-and-the-phones-ai) |
+| The same jumps and timings at 30, 60 and 120 fps; exact replays | `tick: 60`, `gs.tick` | [Fixed game tick](#fixed-game-tick) |
+| An original tune for your game without writing notes | `gs.sound.compose({ mood, seed })` | [Music composer](#music-composer) |
+| Puzzles with exactly one answer, graded, with fair hints; computer opponents for board games | `gs.solve` | [Puzzles and opponents](#puzzles-and-opponents) |
+| Play with your whole body; put the player inside the game; thumbs up and other hand signs | `gs.vision.Body`, `CutOut`, `Signs` | [Body, cut-outs and hand signs](#body-cut-outs-and-hand-signs) |
+| Walk to play, lift the phone, a dark room, a hand over the phone | `gs.device.steps()`, `pressure()`, `light()`, `near()` | [Steps, air pressure, light, proximity](#steps-air-pressure-light-proximity) |
+| Block worlds to dig, build and craft in | `gs.voxels` | [Voxel worlds](#voxel-worlds) |
 
 ## What `gs` has, and what it doesn't
 
@@ -94,7 +100,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 `replay`, `look2d`, `brains`, `tweak`, `board`, `battle`, `gen`, `drag`, `idle`, `party`, `rhythm`,
 `strokes`, `vehicles`, `paths`, `bones`, `level3d`, `sky`, `camera`, `nav3d`, `characters`, the action kits (`combat`,
 `tactics`, `climb`, `poses`, `missions`, `cutscene`, `prompts`, `destruction`, `stealth`, `gadgets`,
-`campaign`, `arena`, `props`), `outdoors`, `craft`, `soft`, `cards`, `dice`, `words`, `ui`, `toon` (Classic
+`campaign`, `arena`, `props`), `outdoors`, `craft`, `soft`, `cards`, `dice`, `words`, `ui`, `solve`, `tick`, `voxels`, `toon` (Classic
 Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo` and `THREE`.
 It is the only thing a game may import (`src/game-modules.js`); `npm run games` refuses anything
 else and the PR check flags it.
@@ -1655,3 +1661,116 @@ first), `v.bakeLight([x, y, z], { radius })` bakes the light around a point into
 and caves pick up the colour of their walls and windows (several blend as the camera, or
 `v.probeAt`, moves; bake once after building the level: it returns a promise and joins a frame or two later), `v.bounce(box)` adds bounce light over a level (a grid of probes: a red wall tints the floor, light from a door fills a room; WebGL and WebGPU), `v.room(box)` gives shiny things in a room box-projected reflections of that room, `v.occluders(boxes)` skips drawing what's hidden behind big solid boxes (occlusion culling; `gs.city` does it for its buildings), and `v.shafts = 1` adds sun shafts streaming
 past whatever blocks the sky (not on the lowest tier).
+
+## Fixed game tick
+
+By default `update(dt)` runs once a frame with however long the frame took, so a game plays a little
+differently at 30, 60 and 120 fps (a jump peaks at a slightly different height, a spawn lands a frame
+apart) and a recorded run can't be replayed exactly. Add `tick: 60` (or 30, 120; `true` means 60) to the
+definition and the app calls `update(1 / 60)` a whole number of times each frame instead, whatever the
+screen does: two updates on a 30 fps frame, one on a 60 fps frame, one every other frame at 120 fps.
+After a long hitch it runs at most 8 and lets the game fall behind rather than freeze.
+
+The frame then shows a moment between two ticks: `draw(c, alpha)` gets how far along it is (0..1; always
+1 without a tick), also on `gs.tick.alpha`. Keep where things were before the update and draw
+`gs.tick.mix(before, now)` (and `gs.tick.turn` for angles) so motion stays smooth on 90 and 120 Hz screens.
+The kits do it for you where they can: `gs.physics` things have `sx`, `sy`, `sangle` (and `phys.path()`
+uses them), and `new World3D({ smooth: true })` moves its meshes between ticks just before each frame
+(aim the camera in `draw()` from the meshes then, so they agree). `gs.tick.rate`, `.on`, `.dt` and
+`.count` (ticks this round) are there too. Physics worlds take exactly one step per tick, so a round
+is the same on every phone.
+
+## Music composer
+
+`gs.sound.compose({ mood, seed })` writes an original looping tune: chords from the mood's
+progressions, a bass line, pads, an arpeggio, drums, and a melody built from a two-bar idea that comes
+back fitted to the next chords and ends on the home note. The same seed always gives the same tune, so
+use your game's id and every game gets its own soundtrack. Moods: `happy`, `calm`, `tense`, `spooky`,
+`heroic`, `sad`, `silly`, `chase`, `puzzle`. `tempo`, `key` ('D', 'Bb') and `bars: 8` (a second half
+that answers the first) are optional.
+
+```js
+const tune = music(compose({ mood: 'chase', seed: 'my-game' }));
+update(dt) { if (!tune.playing) tune.start(); tune.intensity(danger); }   // arpeggio, busier drums, harmony
+```
+
+It returns music()'s parts with `layers: { arp, drums2, lead2 }`, so `intensity()` and `follow()` build
+it up. `info` has the key, mode and chords, plus `win` and `lose` jingles for `notes()` in the same key.
+Music theory (scales and modes) comes from Tonal (MIT).
+
+## Puzzles and opponents
+
+`gs.solve.Puzzle`: cells with possible values and rules between them.
+`cell(id, values)`, `allDiff(ids)` (rows, boxes, cages), `sum(ids, total)`, `rule(ids, ok)` (your own
+test of the cells' values). Then:
+
+- `solve({ known, limit, rng })`: `{ solution, count }`; with `rng` a random answer (a fresh filled grid).
+- `unique(clues)`: exactly one answer?
+- `carve(solution, { rng, grade, keep })`: takes clues away while there's still one answer and it's no
+  harder than `grade` (`'easy'` keeps it solvable by working things out alone, no guessing).
+- `grade(clues)`: `{ level: 'easy' | 'medium' | 'hard' | 'expert', guesses, open }`, judged the way
+  people solve: what deduction finds first ("only this fits", "the last place for a 7"), guessing after.
+- `hint(clues, moves)`: a cell the player can work out now and why (`only`, `last`, `sum`, `rule`;
+  `guess` if they're stuck), plus `wrong`: moves that don't match the answer.
+
+`gs.solve.Search`: a computer opponent for turn-based games. Give it `moves(state)`, `play(state, move)`
+(a new state), `turn(state)`, `score(state, player)` and optionally `over(state)` / `winner(state)`.
+`best(state, { time: 60, skill })` looks ahead within the time (minimax with alpha-beta and iterative
+deepening; `mode: 'mcts'` for games with dice, more than two players or huge choice). `skill` below 1
+picks good-but-not-best moves more often, so mistakes look human. `rank(state)` lists every move's value.
+
+## Body, cut-outs and hand signs
+
+More of `gs.vision`, used like `Face` and `Hands` (make in `make()` or `reset()`, `start()` from a tap,
+`update()` each frame). They run in the web view with MediaPipe on the graphics chip; positions are
+0..1 and mirrored like a selfie.
+
+- `Body`: stand back so the camera sees you. `joints` by name (`nose`, `leftHand`, `rightKnee`...: `x`,
+  `y`, `seen`), and moves: `armsUp`, `leftUp`, `rightUp`, `lean` (-1..1), `squat` (0..1), `jump` and
+  `clap` (true on the update they happen). Dance, dodge, exercise and goalkeeper games.
+- `CutOut`: the player cut out of the camera picture. `cut.picture` is a canvas, see-through round
+  the person, to draw inside your game (a face in the spaceship window, yourself on the cover of the
+  level). `soft` sets the edge.
+- `Signs`: `thumbs-up`, `thumbs-down`, `victory`, `open-palm`, `fist`, `point-up`, `love`. `sign` (the
+  first hand's), `showing(name)`, and `made` (the sign that just started, for one-shot actions).
+
+Like every camera game, keep a touch way to play.
+
+## Steps, air pressure, light, proximity
+
+On `gs.device`, each starts the first time you read it and stops when the round ends; each returns
+null until it's running (and allowed), so a game always has a touch way to play.
+
+- `steps()`: `{ count, new, perMinute }` since the round started. Step counters report in bursts every
+  few seconds, so count steps rather than timing jumps by them. Android asks for physical activity
+  access, iPhone for motion and fitness, the first time.
+- `pressure()`: `{ hPa, height }`, height being metres up or down since the round started (a floor is
+  about 3 m; holding the phone high is about 1 m, so smooth it).
+- `light()`: `{ lux, dark }` (Android, and browsers with AmbientLightSensor).
+- `near()`: something right over the top of the phone (Android).
+- `hasSensor(kind)`: true or false (null while the phone is still being asked).
+
+iPhones don't share the light sensor, and their proximity sensor turns the screen off, so those two are
+Android only. The card says which sensors a game uses, as it does for the camera and mic.
+
+## Voxel worlds
+
+`gs.voxels.Voxels` (3D, lazy): an editable world of blocks, drawn with three's standard material so it
+looks the same on WebGL and WebGPU and takes your scene's lights and shadows.
+
+```js
+world = new Voxels({ size: [64, 32, 64] }).generate({ seed: 'my-game', kind: 'hills' });
+view.scene.add(world.group);
+update(dt) { world.update(); me.vy -= 25 * dt; if (world.move(me, vx * dt, me.vy * dt, vz * dt, { step: 1 }).ground) me.vy = 0; }
+```
+
+- Blocks: `get`, `set(x, y, z, BLOCKS.stone)`, `solid`, `fill(box)`, `sphere(x, y, z, r)` (digs or
+  blasts; says which blocks went), `top(x, z)`, `tree(x, y, z)`, and your own types with
+  `world.block('crystal', '#a0f', { see: true })`.
+- Worlds: `generate({ seed, kind: 'hills' | 'island' | 'caves' | 'flat', ground, hills, water, trees })`.
+- Drawing: changed chunks are meshed again in `update()` (greedy meshing with soft corner shading, in a
+  background worker), or all at once with `build()`.
+- Playing: `ray(eye, dir, far)` gives the block you're looking at and the face (`nx`, `ny`, `nz`: add
+  them to place a block on it); `move(box, dx, dy, dz, { step })` walks a box through the blocks
+  (`ground`, `inWater`, and which axes were stopped).
+- `pack()` / `unpack()`: the world as a short string (runs of the same block).

@@ -23,6 +23,7 @@ import { lazy } from './lazy.js';
 import { wasmSimd } from './simd.js';
 import { Box3, Matrix4, Vector3 as V3, Quaternion } from 'three';
 import { own } from './cleanup.js';
+import { onBlend } from './tick.js';
 // The SIMD build where the phone has WebAssembly SIMD (faster: Neon on ARM phones), else the plain one.
 // Same engine and API; only one of the two is ever downloaded.
 const engine = lazy('The 3D physics engine', () => (wasmSimd() ? import('@dimforge/rapier3d-simd-compat') : import('@dimforge/rapier3d-compat')).then(async m => {
@@ -177,8 +178,12 @@ class Vehicle3 {
 }
 
 export class World3D {
-  /** gravity: metres per second² (negative is down), or { x, y, z }. */
-  constructor({ gravity = -20 } = {}) {
+  /**
+   * gravity: metres per second² (negative is down), or { x, y, z }. smooth: for games on a fixed
+   * tick (`tick: 60`), meshes are drawn between the last two ticks so motion stays smooth on 90 and
+   * 120 Hz screens (aim your camera in draw() from the meshes, not the bodies, so they agree).
+   */
+  constructor({ gravity = -20, smooth = false } = {}) {
     R = engine.get();
     this.R = R;
     this.gravity = typeof gravity === 'number' ? V(0, gravity, 0) : vec(gravity);
@@ -186,6 +191,22 @@ export class World3D {
     this.events = new R.EventQueue(true);
     own(this);   // freed when the card leaves the feed (src/kit/cleanup.js)
     this.bodies = []; this.movers = []; this.hits = []; this.joints = []; this.vehicles = [];
+    this.smooth = !!smooth && onBlend(this);
+  }
+  /** (Fixed tick, smooth) puts each mesh between where its body was before the last step and now. */
+  blend(a) {
+    if (!this.smooth) return;
+    for (const t of this.bodies) {
+      const m = t.mesh, p = t._was, c = t._now; if (!m || !p || !c) continue;
+      m.position.set(p.x + (c.x - p.x) * a, p.y + (c.y - p.y) * a, p.z + (c.z - p.z) * a);
+      let { qx, qy, qz, qw } = c; if (p.qx * qx + p.qy * qy + p.qz * qz + p.qw * qw < 0) { qx = -qx; qy = -qy; qz = -qz; qw = -qw; }
+      const x = p.qx + (qx - p.qx) * a, y = p.qy + (qy - p.qy) * a, z = p.qz + (qz - p.qz) * a, w = p.qw + (qw - p.qw) * a, n = Math.hypot(x, y, z, w) || 1;
+      m.quaternion.set(x / n, y / n, z / n, w / n);
+    }
+    for (const t of this.movers) {
+      const m = t.mesh, p = t._was, c = t._now; if (!m || !p || !c) continue;
+      m.position.set(p.x + (c.x - p.x) * a, p.y + (c.y - p.y) * a - t.height / 2, p.z + (c.z - p.z) * a);
+    }
   }
   /** Free the physics engine's memory for this world. The app does this when the card leaves the
    *  feed; a game can call it too, when it drops a world. Don't use the world afterwards. */
@@ -370,6 +391,7 @@ export class World3D {
     const before = new Map();
     if (this.hits.length) for (const t of this.bodies) if (!t.fixed) before.set(t, t.body.linvel());
     const started = [];
+    if (this.smooth) for (const t of [...this.bodies, ...this.movers]) if (t.mesh) t._was = pose(t.body, t._was);
     this.world.timestep = h;
     for (let i = 0; i < n; i++) {
       for (const m of this.movers) m.move(h);
@@ -380,6 +402,7 @@ export class World3D {
     for (const t of this.bodies) t.sync();
     for (const m of this.movers) m.sync();
     for (const v of this.vehicles) v.sync();
+    if (this.smooth) for (const t of [...this.bodies, ...this.movers]) if (t.mesh) t._now = pose(t.body, t._now);
     for (const [h1, h2] of started) {
       const c1 = this.world.getCollider(h1), c2 = this.world.getCollider(h2); if (!c1 || !c2) continue;
       const a = c1.parent()?.userData, b = c2.parent()?.userData; if (!a || !b || a.dead || b.dead) continue;
@@ -389,6 +412,11 @@ export class World3D {
     }
     for (const t of [...this.bodies]) if (!t.fixed && Math.abs(t.pos.y) > 1e4) this.remove(t);
   }
+}
+
+function pose(body, o = {}) {   // where a body is now, kept for smooth drawing between ticks
+  const p = body.translation(), q = body.rotation();
+  o.x = p.x; o.y = p.y; o.z = p.z; o.qx = q.x; o.qy = q.y; o.qz = q.z; o.qw = q.w; return o;
 }
 
 function rotate(v, q) {   // v rotated by quaternion q
