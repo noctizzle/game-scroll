@@ -1069,7 +1069,7 @@ function make(api) {
     streak: ['{streak} in a row. Who IS this?'],
   } });
   const MARR = 'COL. MARR · GREY ORDER';
-  let noises = new Noises(), guard = null, metMarr = false, mistT = 0, mistK = 1, lensDrops = [], lensT = 0, lensAcc = 0;
+  let noises = new Noises(), guard = null, metMarr = false, mistT = 0, mistK = 1, lensDrops = [], lensT = 0, lensAcc = 0, mirX = 0, mirT = 0;
   // The commander also thinks a few seconds ahead (Tiny Brains' Imagine) with a rough sketch of the
   // fight: [heat, your favourite nest, quiet, men left, your health, masked, alerted, time, how close
   // they are, mortar ready]. Pushing closes in but costs men while you're watching; flanking is slower
@@ -1318,6 +1318,8 @@ function make(api) {
     impactSound(h, { x, y, z }, viaCam);
     if (viaCam) { bulletCam.hold = .65; bulletCam.at = { x, y, z }; }
     if (h.s) {
+      { const sc = (h.d || 0) * (h.head ? 1.3 : 1) * (b.masked ? 1.1 : 1);   // the round's best shot, for the replay at the end
+        if (!bestShot || sc > bestShot.sc) { const rel = Math.atan2(wind.z, wind.x) + Math.atan2(-(x - b.x0), -(z - b.z0)); bestShot = { sc, s: h.s, head: h.head, d: Math.round(h.d || 0), from: { x: b.x0, y: b.y0, z: b.z0 }, to: { x, y, z }, wind: Math.cos(rel) * Math.hypot(wind.x, wind.z), covered: b.masked }; } }
       knockOut(h.s, h.head, h.d, viaCam);
       if (firstShotHit == null) firstShotHit = true;
       if (h.s === cs && gun.shotsAtCs === 1) cs.oneShot = true;
@@ -1335,6 +1337,7 @@ function make(api) {
       if (stoneHit) for (let i = 0; i < 6; i++) WD.sparks.emit({ x, y, z, vx: rnd(-3, 3), vy: rnd(0, 3), vz: rnd(-3, 3), life: .25, size: .08, col: [4, 3, 1.4], drag: 1 });
       // a near miss makes them jumpy (and the smack of it is heard round about)
       noises.make(x, z, 28);
+      if (cs && !cs.ko && !(cs.hideT > 0) && Math.hypot(cs.x - x, cs.y - z) < 6) rookHide(cs, .25);   // a near miss sends Rook behind the bell
       for (const s of men) if (!s.ko && Math.hypot(s.x - x, s.y - z) < 8) { s.sus = 1; s.shaken = 1; if (!b.masked || Math.hypot(s.x - x, s.y - z) < 3) wakeUp(s, 'miss'); }
     }
     if (h.drum) drumHit(h.drum);
@@ -1382,7 +1385,27 @@ function make(api) {
     for (let i = 0; i < 9; i++) WD.dust.emit({ x, y: y + .05, z, vx: rnd(-.8, .8) + ux * 1.5, vy: rnd(1, 4.5), vz: rnd(-.8, .8) + uz * 1.5, life: rnd(.8, 1.4), size: rnd(.12, .25), grow: 2.5, col: high ? [.72, .7, .64] : rain.amount > .2 ? [.3, .26, .2] : [.5, .43, .32], a: .75, drag: 2, grav: 4, fadeIn: true });
     for (let i = 0; i < 5; i++) WD.dust.emit({ x, y: y + .05, z, vx: rnd(-3, 3), vy: rnd(3, 6), vz: rnd(-3, 3), life: 1.1, size: .045, col: high ? [.55, .52, .48] : [.24, .2, .15], a: 1, grav: 12, floor: y });
   }
+  // ---- Sgt. Rook, the Grey Order's marksman in the church tower (mission 2)
+  const ROOK = 'SGT. ROOK · GREY ORDER', ROOK_AIM = 1.1;
+  const ROOK_LINES = { dodged: ['Quick. You will not be twice.', 'You felt that one coming.'], moved: ['Not there any more, sniper.', 'Look again.'], hit: ['Got you.'] };
+  function rookSay(k) { if (lineFx && !lineFx.enemy) return; const l = ROOK_LINES[k]; say(l[Math.floor(Math.random() * l.length)], ROOK, 2.2, true); }
+  function rookHide(s, delay = 0) { s.aimT = 0; s.hideAt = t + delay; soon(delay, () => { if (!s.ko && !(s.hideT > 0)) { s.hideT = rnd(4, 6.5); s.see = Math.min(s.see, .3); } }); }
+  function rookAppear(s, eye) {
+    // a different arch: left or right of the bell, on the side that faces Wren
+    const c = WD.churchTop, dx = eye.x - c.x, dz = eye.z - c.z, l = Math.hypot(dx, dz) || 1, fx_ = dx / l, fz = dz / l;
+    s.arch = s.arch === 1 ? -1 : s.arch === -1 ? (Math.random() < .5 ? 1 : 0) : (Math.random() < .5 ? -1 : 1);
+    s.x = c.x + fx_ * 1.4 - fz * 1.3 * s.arch; s.y = c.z + fz * 1.4 + fx_ * 1.3 * s.arch;
+    s.lift = c.y - groundAt(s.x, s.y) + .2; s.see = .15; s.fireT = 1.5;
+    if (Math.random() < .5) rookSay('moved');
+  }
   const enemyShot = (s, target, kind) => {
+    if (kind === 'csDucked') {   // she dropped out of the scope in time: the round cracks over her head
+      const from = { x: s.x, y: s.gy + 1.45, z: s.y }, eye = WD.v.cam.position, d = Math.hypot(from.x - eye.x, from.z - eye.z);
+      { const L = Math.hypot(eye.x - from.x, eye.y - from.y, eye.z - from.z) || 1; muzzle(from.x, from.y, from.z, (eye.x - from.x) / L, (eye.y - from.y) / L, (eye.z - from.z) / L, 1.2); }
+      tracer(from, { x: eye.x + rnd(-1, 1), y: eye.y + 1.6, z: eye.z + rnd(-1, 1) });
+      setTimeout0(d / 600, () => { if (state === 'play' && !move) { snap(); nearMiss(from); haptic('medium'); } });
+      farReport(from, d, 'cs'); return;
+    }
     const from = { x: s.x, y: s.gy + 1.45, z: s.y }, eye = WD.v.cam.position, toMe = target === 'me';
     { // out along the aim to the muzzle, then the flash
       const to = toMe ? eye : { x: target.x, y: target.gy + 1, z: target.y }, L = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z) || 1;
@@ -1730,8 +1753,9 @@ function make(api) {
           soldier({ kind: 'officer', look: 'officer', x: -8, y: -104, yaw: Math.PI, spotter: true }),
         );
       },
+      // the fly-in ends over the rocks in front of her (flying down into the nest went through the zip pole); play cuts to her eye
       intro: () => [
-        { at: 0, cam: [{ x: -90, y: 46, z: -190 }, { x: 10, y: 28, z: -70 }, { x: 60, y: 30, z: 60 }, { ...nestEye(NESTS.ridge), y: nestEye(NESTS.ridge).y + .2, z: NESTS.ridge.z + 3 }], look: (tt) => tt < 4 ? { x: MILL.x, y: 6, z: MILL.z } : { x: 20, y: 6, z: -60 }, time: 7.2, ease: 'inOut' },
+        { at: 0, cam: [{ x: -90, y: 46, z: -190 }, { x: 10, y: 28, z: -70 }, { x: 60, y: 30, z: 60 }, { x: NESTS.ridge.x - 2, y: nestEye(NESTS.ridge).y + 9, z: NESTS.ridge.z - 14 }], look: (tt) => tt < 4 ? { x: MILL.x, y: 6, z: MILL.z } : { x: 20, y: 6, z: -60 }, time: 7.2, ease: 'inOut' },
         { at: .3, say: 'Wren, Oake here. The Grey Order keeps a radio post in the old mill.', who: OAKE, time: 3.3 },
         { at: 3.7, say: 'If their operator calls in the column, our raid is finished. Stop him.', who: OAKE, time: 3.4 },
       ],
@@ -1801,7 +1825,7 @@ function make(api) {
         startMove('chapel', 'climb');
         yield m.until(() => !move);
         m.objective('A marksman watches from the church tower. Find his glint', { at: cs });
-        say('Careful: their marksman is in the church tower. Look for the glint.', OAKE, 3.2);
+        say('Careful: Rook, their best marksman, is in the church tower. If his glint flares, get off the scope!', OAKE, 3.6);
         yield m.until(() => cs.ko);
         m.checkpoint('marksman');
         say('Moving onto the bridge. Cover us, Wren.', HALE, 2.6);
@@ -1846,7 +1870,36 @@ function make(api) {
     for (let i = 0; i < 4; i++) { const s = soldier({ x: 150 + i * 3, y: -72 - i, yaw: -Math.PI / 2 }); s.route = [[60 - i * 6, -86 + i * 2, 2]]; s.late = true; s.sus = .7; men.push(s); }
   }
   function facing(x, z) { const e = WD.v.cam.position; return Math.abs(angDiff(look.yaw, Math.atan2(-(x - e.x), -(z - e.z)))); }
-  function outro(steps) { cut = new Cutscene(steps, { bars: .14 }); cut.on('end', () => { outroDone = true; }); state = 'outro'; scoped = false; glass = false; }
+  // the mission's best shot, played back before the closing shot: the round from her barrel to him,
+  // with the camera running alongside, then a beat on him going down
+  let bestShot = null;
+  function replaySteps() {
+    const r = bestShot; if (!r || r.s.ko === false) return [];
+    const { from: A, to: B } = r, dx = B.x - A.x, dy = B.y - A.y, dz = B.z - A.z, L = Math.hypot(dx, dy, dz) || 1, ux = dx / L, uy = dy / L, uz = dz / L, sx = -uz, sz = ux, T = clamp(L / 120, 1.8, 3.2);
+    const at = u => ({ x: A.x + dx * u, y: A.y + dy * u, z: A.z + dz * u });
+    // a beat on him going down, from the first of a ring of spots round him with a clear view (no wall, no hill)
+    let hold = null; const gy = r.s.gy;
+    for (let i = 0; i < 12 && !hold; i++) {
+      const a = Math.atan2(-ux, -uz) + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * .5 + .9, q = { x: r.s.x + Math.sin(a) * 3.6, y: gy + 1.5, z: r.s.y + Math.cos(a) * 3.6 };
+      if (q.y < WD.land.height(q.x, q.z) + .5) continue;
+      const h = hitTest(q.x, q.y, q.z, r.s.x, gy + .6, r.s.y); if (!h || h.s || h.t > .92) hold = q;
+    }
+    hold ||= { x: B.x - ux * 4.5, y: B.y + .5, z: B.z - uz * 4.5 };
+    const tag = [r.d + ' M', r.head ? 'HEAD' : null, Math.abs(r.wind) > .4 ? 'WIND ' + Math.abs(r.wind).toFixed(1) + (r.wind > 0 ? ' ▸' : ' ◂') : null, r.covered ? 'COVERED' : null].filter(Boolean).join(' · ');
+    return [
+      { at: 0, do: () => { r.s.m.rig.play('idle', { fade: 0 }); WD.bullet.visible = true; } },
+      // the camera rides the round's own path (it was clear: the round flew it), just above and to the side
+      { at: 0, cam: [{ x: A.x - ux * 2 + sx * .3, y: A.y + .3, z: A.z - uz * 2 + sz * .3 }, { x: B.x - ux * 4.5 + sx * .3, y: B.y + .3, z: B.z - uz * 4.5 + sz * .3 }], time: T, ease: 'linear',
+        look: tt => { const p = at(clamp(tt / T, 0, 1)); WD.bullet.position.set(p.x, p.y, p.z); WD.bullet.rotation.set(0, 0, 0); WD.bullet.lookAt(p.x + ux, p.y + uy, p.z + uz); WD.bullet.rotateX(Math.PI / 2); return { x: p.x + ux * 3, y: p.y + uy * 3, z: p.z + uz * 3 }; } },
+      { at: .1, say: tag, who: 'BEST SHOT', time: T + 1.2 },
+      { at: T, do: () => { WD.bullet.visible = false; r.s.m.rig.play('downed', { fade: .2 }); for (let i = 0; i < 14; i++) WD.sparks.emit({ x: B.x, y: B.y, z: B.z, vx: rnd(-2.4, 2.4), vy: rnd(1, 3), vz: rnd(-2.4, 2.4), life: .8, size: .035, col: [2.2, 1.7, .5], drag: 1.5, grav: 6 }); } },
+      { at: T, cam: [{ ...hold, x: hold.x + (hold.x - r.s.x) * .15, z: hold.z + (hold.z - r.s.y) * .15 }, hold], look: { x: r.s.x, y: r.s.gy + .7, z: r.s.y }, time: 1.4, ease: 'out' },
+    ];
+  }
+  function outro(steps) {
+    const rp = replaySteps(), T = rp.length ? rp[rp.length - 1].at + rp[rp.length - 1].time : 0;
+    steps = [...rp, ...steps.map(st => ({ ...st, at: st.at + T }))];
+    cut = new Cutscene(steps, { bars: .14 }); cut.on('end', () => { outroDone = true; }); state = 'outro'; scoped = false; glass = false; }
 
   // ---- moving soldiers
   function walk(s, tx, tz, speed, dt) {
@@ -1943,11 +1996,24 @@ function make(api) {
         m.rig.upper(s.sending ? 'aim' : null);
       } else if (s.kind === 'cs') {
         // the marksman: scans, then settles on you when he sees you looking at him (scope glint both ways)
-        const lookAtMe = Math.atan2(eye.x - s.x, eye.z - s.y);
-        s.yaw = turnTo(s.yaw, lookAtMe + Math.sin(t * .4) * .5 * (1 - s.see), dt * 1.5);
-        const watching = Math.abs(angDiff(s.yaw, lookAtMe)) < .12;
-        s.see = clamp(s.see + (watching && (scoped || glass) ? dt * .45 : -dt * .2), 0, 1);
-        if (s.see >= 1 && (s.fireT -= dt) <= 0) { s.fireT = 3.4; enemyShot(s, 'me', 'cs'); s.see = .55; }
+        // Sgt. Rook hunts you: he settles on your lens, his own glint flares as he takes aim (drop the
+        // scope or glasses then and his shot goes over), and after each shot, or a near miss of yours,
+        // he ducks behind the bell and comes up in another arch
+        if (s.hideT > 0) {
+          s.hideT -= dt;
+          if (s.hideT <= 0) rookAppear(s, eye);
+        } else {
+          const lookAtMe = Math.atan2(eye.x - s.x, eye.z - s.y);
+          s.yaw = turnTo(s.yaw, lookAtMe + Math.sin(t * .4) * .5 * (1 - s.see), dt * 1.5);
+          const watching = Math.abs(angDiff(s.yaw, lookAtMe)) < .12;
+          if (s.aimT > 0) {
+            s.aimT -= dt;
+            if (s.aimT <= 0) { const ducked = !scoped && !glass; enemyShot(s, 'me', ducked ? 'csDucked' : 'cs'); if (ducked) rookSay('dodged'); s.see = .35; rookHide(s, 1.2); }
+          } else {
+            s.see = clamp(s.see + (watching && (scoped || glass) ? dt * .45 : -dt * .2), 0, 1);
+            if (s.see >= 1 && (s.fireT -= dt) <= 0) { s.aimT = ROOK_AIM; s.fireT = 3.4; tone(1500, { len: .08, wave: 'sine', vol: .03 }); haptic('warning'); }
+          }
+        }
         m.rig.play('crouch'); m.rig.upper('aim');
       } else if (s.kind === 'mg' || s.kind === 'mg2') {
         m.rig.play('crouch'); m.rig.upper(s.kind === 'mg' || men.find(o => o.kind === 'mg').ko ? 'aim' : null);
@@ -2023,7 +2089,7 @@ function make(api) {
       s.gy = s.deck ?? groundAt(s.x, s.y) + (s.lift || 0);
       m.position.set(s.x, s.gy, s.y); m.rotation.y = s.yaw;
       // indoors (through the mill's balcony door): out of sight and out of reach
-      s.inside = s.kind === 'radio' && WD.millDoor && s.y < WD.millDoor.z - .05; m.visible = !s.inside;
+      s.inside = (s.kind === 'radio' && WD.millDoor && s.y < WD.millDoor.z - .05) || (s.kind === 'cs' && s.hideT > 0); m.visible = !s.inside;
       // far soldiers animate less often
       const far = Math.hypot(s.x - eye.x, s.y - eye.z) > 160 && !scoped;
       if (!far || (frame + (s.x | 0)) % 3 === 0) m.rig.update(far ? dt * 3 : dt, { speed, aim: s.alert ? -.05 : 0 });
@@ -2157,7 +2223,7 @@ function make(api) {
   function begin(id) {
     mid = id; const def = missions[id];
     for (const s of men || []) endMind(s);
-    freeMen(); men = []; allies = null; shots = []; timers = [];
+    freeMen(); men = []; allies = null; shots = []; timers = []; bestShot = null;
     // Wren herself, seen when she moves between nests
     WD.wren ||= wrenFigure(); WD.wren.visible = false;
     echoFor(missions[id]?.weather === 'rain');   // made here (silent) rather than in the first frame of play
@@ -2285,7 +2351,12 @@ function make(api) {
     camWas.key = key; camWas.step = step; camWas.p.copy(cam.position); camWas.d.copy(camD);
     const blur = key === 'c' || key === 'k' || key[0] === 'm';
     v.motionBlur = blur && gs.prefs.motion > 0 ? (MBLUR.amount = .5 * gs.prefs.motion, MBLUR) : null;
+    // the dusk storm is dark enough that faces vanish up close: cutscenes and the bullet cam open the
+    // picture up a little, the way a film crew would light a night scene (eased, so it never pops)
+    const md = MOODS[mid], lift = mid === 'm2' && (key === 'c' || key === 'h' || key === 'k' || key[0] === 'm') ? 1.4 : 1;
+    if (md) { expLift += (lift - expLift) * .08; v.exposure = md.exposure * expLift; }
   }
+  let expLift = 1;
   const MBLUR = { amount: .5, max: .035, sharp: 3 };
   const fmtT = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 
@@ -2293,7 +2364,7 @@ function make(api) {
     reset() {
       audioDown(); theme?.stop();
       world(); layout();
-      if (!sky) { sky = new Sky(WD.v, { time: MOODS.m1.time, tilt: MOODS.m1.tilt, stars: 300, sun: WD.sl, day: DAY_CLEAR, clouds: MOODS.m1.clouds, gap: MOODS.m1.gap, env: true, fog: false }); rain = new Weather(WD.v, { kind: 'clear', amount: 0, wind: AIR, area: 40 }); rain.onFlash = far => { storm = 1.6; thunder(far); }; }
+      if (!sky) { sky = new Sky(WD.v, { time: MOODS.m1.time, tilt: MOODS.m1.tilt, stars: 300, sun: WD.sl, day: DAY_CLEAR, clouds: MOODS.m1.clouds, gap: MOODS.m1.gap, env: true, fog: false }); rain = new Weather(WD.v, { kind: 'clear', amount: 0, wind: AIR, area: 40 }); rain.onFlash = far => { storm = 1.6; thunder(far); }; if (rain.rainMesh) { rain.rainMesh.material.opacity = .3; rain.rainMesh.material.color.set('#8c9cb0'); } }
       fx.clear(); me.reset(); gun.ammo = gun.mag; gun.reloadLeft = 0; gun.reserve = Infinity; gun.shotsAtCs = 0;
       state = 'brief'; briefT = 0; t = 0; score = 0; heat = 0; located = false; alertedN = 0; frame = 0;
       scoped = false; glass = false; zoom = 7; breath = { v: 1, held: false }; gasp = 0; storm = 0;
@@ -2448,7 +2519,8 @@ function make(api) {
       WD.v.hurt = clamp(1 - me.frac, 0, 1) * .9;
       // the operator's and the marksman's scope glints, nest markers
       if (cs && !cs.ko && !bulletCam && frame % 2 === 0) {   // (not in the bullet cam: in slow motion a glint hangs there, a huge blob up close)
-        const g = .5 + cs.see * 2.5; WD.sparks.emit({ x: cs.x, y: cs.gy + 1.15, z: cs.y + .4, life: .1, size: .3 + cs.see * .6, col: [g * 2, g * 2, g * 1.6] }); }
+        const aiming = cs.aimT > 0, fl = aiming ? 1.6 + Math.sin(t * 40) * .6 : 0, g = .5 + cs.see * 2.5 + fl * 2;
+        if (!(cs.hideT > 0)) { const e = WD.v.cam.position, dx = e.x - cs.x, dz = e.z - cs.y, l = Math.hypot(dx, dz) || 1; WD.sparks.emit({ x: cs.x + dx / l * .4, y: cs.gy + 1.15, z: cs.y + dz / l * .4, life: .1, size: .3 + cs.see * .6 + fl * .5, col: [g * 2, g * 2, g * 1.6] }); } }
       if (spotting) for (const s of men) if (s.spotter && !s.ko && frame % 3 === 0) WD.sparks.emit({ x: s.x, y: s.gy + 1.6, z: s.y + .3, life: .1, size: .25, col: [2, 2, 1.6] });
       if (!move && nextNest() && (located || mission.time > 20) && frame % 4 === 0) { const n = NESTS[nextNest()], e = nestEye(n); WD.marks.emit({ x: e.x, y: e.y + 2.5, z: e.z, life: .2, size: 1.6, col: [3, 2.6, 1.2] }); }
       WD.marks.update(dtReal);
@@ -2654,6 +2726,12 @@ function make(api) {
     koPops(c);
     if (sc) scopeView(c, brass, red); else if (gl) glassView(c, brass);
     else crosshair(c);
+    // Rook is about to fire: his glint flares; dropping the scope or glasses now makes him miss
+    if (cs && !cs.ko && cs.aimT > 0) {
+      const k = .6 + .4 * Math.sin(t * 30); c.save(); c.textAlign = 'center'; c.font = '800 13px Rubik, sans-serif';
+      c.fillStyle = `rgba(184,65,46,${(sc || gl ? .9 : .5) * k})`; roundRect(c, W / 2 - 92, H * .3 - 15, 184, 24, 12); c.fill();
+      c.fillStyle = '#fff'; c.fillText(sc || gl ? 'GLINT! DROP THE SCOPE' : 'KEEP YOUR HEAD DOWN', W / 2, H * .3 + 2); c.restore();
+    }
     // hit direction arrows
     for (const h of hits) { const a = h.angle - Math.PI / 2; c.save(); c.translate(W / 2 + Math.cos(a) * 70, H / 2 + Math.sin(a) * 70); c.rotate(a + Math.PI / 2); c.globalAlpha = clamp(h.life, 0, 1); c.fillStyle = red; c.beginPath(); c.moveTo(0, -14); c.lineTo(9, 4); c.lineTo(-9, 4); c.fill(); c.restore(); }
     const slipB = objectiveSlip(c, ink, paper, red, sc || gl);
@@ -2759,6 +2837,24 @@ function make(api) {
   function crosshair(c) {
     c.strokeStyle = '#ffffffaa'; c.lineWidth = 1.5; c.beginPath(); c.arc(W / 2, H / 2, 3, 0, TAU); c.stroke();
   }
+  // mirage: on a warm, dry morning the air over the fields shimmers in the scope, and the shimmer runs
+  // the way the wind blows and as fast (the old way to read the wind at range: watch the boil)
+  function mirage(c, cx, cy, R) {
+    const dt = clamp(t - mirT, 0, .1); mirT = t;
+    const dry = 1 - clamp((rain ? rain.amount : 0) * 4, 0, 1), sun = mid === 'm1' ? 1 : .25, a = .06 * dry * sun * clamp(zoom / 8, .4, 1.2);
+    if (a < .01) return;
+    const rel = Math.atan2(wind.z, wind.x) + look.yaw, cross = Math.cos(rel) * Math.hypot(wind.x, wind.z);
+    mirX += cross * dt * 9;
+    c.save(); c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.clip();
+    c.lineWidth = 1.4;
+    for (let i = 0; i < 9; i++) {
+      const y0 = cy - R * .2 + i * R * .09, ph = i * 1.7;
+      c.strokeStyle = `rgba(255,250,235,${a * (1 - Math.abs(i - 4) / 6)})`; c.beginPath();
+      for (let x = -R; x <= R; x += 6) { const y = y0 + Math.sin((x - mirX) * .08 + ph + Math.sin(t * 1.3 + i) * .6) * 2.2; x === -R ? c.moveTo(cx + x, y) : c.lineTo(cx + x, y); }
+      c.stroke();
+    }
+    c.restore();
+  }
   // rain on the scope's front glass: beads land, swell, and the big ones run down and off
   function lens(c, cx, cy, R) {
     const wet = rain ? rain.amount : 0, dt = clamp(t - lensT, 0, .1); lensT = t;
@@ -2782,6 +2878,7 @@ function make(api) {
     c.save();
     c.fillStyle = '#050505'; c.beginPath(); c.rect(0, 0, W, H); c.arc(cx, cy, R, 0, TAU, true); c.fill('evenodd');
     const g = c.createRadialGradient(cx, cy, R * (.7 - beat * .08 * gs.prefs.motion), cx, cy, R); g.addColorStop(0, '#0000'); g.addColorStop(1, '#000d'); c.fillStyle = g; c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.fill();
+    mirage(c, cx, cy, R);
     lens(c, cx, cy, R);
     c.strokeStyle = '#8a7a50'; c.lineWidth = 3; c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.stroke();
     // the Wren reticle: fine cross with an open centre, drop chevrons below, wind dots to the sides
