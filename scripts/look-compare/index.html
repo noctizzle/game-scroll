@@ -12,7 +12,7 @@ await loadParts();
 if (GPU && !await prepareGPU()) { window.result = { error: 'WebGPU did not start in this browser' }; throw new Error(window.result.error); }
 const T = gs.THREE, out = {}, backends = {};
 // ?dbg: every 3 s, what the renderer holds and has drawn (look-compare.cjs prints it with ALLWARN=1)
-if (new URLSearchParams(location.search).has('dbg')) { const g = GPU ? await prepareGPU() : null; setInterval(() => { const r = g?.r, i = r?.info; const dev = r?.backend?.device; if (dev) { let ok = false; dev.queue.onSubmittedWorkDone().then(() => { ok = true; }); setTimeout(() => { if (!ok) console.warn('DBG queue stuck 2.5 s'); }, 2500); } console.warn('DBG', JSON.stringify({ comp: r?._gsComp,  tex: i?.memory?.textures, geo: i?.memory?.geometries, frame: i?.render?.frame, calls: i?.render?.calls, held: window.__hd.info.held, still: window.__hd.info.still, be: window.__hd.info.backend })); }, 3000); }
+if (new URLSearchParams(location.search).has('dbg')) { const g = GPU ? await prepareGPU() : null; setInterval(() => { const r = g?.r, i = r?.info; const dev = r?.backend?.device; if (dev) { let ok = false; dev.queue.onSubmittedWorkDone().then(() => { ok = true; }); setTimeout(() => { if (!ok) console.warn('DBG queue stuck 2.5 s'); }, 2500); } console.warn('DBG', JSON.stringify({ packed: window.__hd.packed,  tex: i?.memory?.textures, geo: i?.memory?.geometries, frame: i?.render?.frame, calls: i?.render?.calls, held: window.__hd.info.held, still: window.__hd.info.still, be: window.__hd.info.backend })); }, 3000); }
 const frame = () => new Promise(r => requestAnimationFrame(r));
 // every scene's view, freed when the next one starts: a long run would otherwise keep every scene's
 // meshes and pictures on the graphics chip (SwiftShader's WebGPU stopped drawing after about 30 scenes)
@@ -24,7 +24,7 @@ function free() { if (new URLSearchParams(location.search).has('nofree')) return
     for (const m of [].concat(o.material || [])) { for (const k in m) if (m[k]?.isTexture) m[k].dispose(); m.dispose(); }
   });
 }
-window.__hd.force = 3; window.__hd.upscale = false; if (new URLSearchParams(location.search).has('nonear')) window.__hd.closeUp = false;
+window.__hd.force = 3; window.__hd.upscale = false; if (new URLSearchParams(location.search).has('nonear')) window.__hd.closeUp = false; if (new URLSearchParams(location.search).has('nopack')) window.__hd.pack = false;
 async function nextgen(tier, wet = 0, look = null) {
   window.__hd.force = tier;
   const v = new HV({ bg: '#9ab4d0', fog: .002, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');

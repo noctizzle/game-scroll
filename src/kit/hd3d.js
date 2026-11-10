@@ -50,6 +50,7 @@ import { SGSR } from './sgsr.js';
 import { SGSR2, SgsrFrame } from './sgsr2.js';
 import { lookPatch, looksOf, lookSpec } from './looks.js';
 import { copyFrame, webgpu, setGpuPick, prepareGPU } from './gpu.js';
+import { packing } from './pack.js';
 import { makeRenderer } from './renderer.js';
 import { MeshoptSimplifier } from 'three/examples/jsm/libs/meshopt_simplifier.module.js';
 import { Occlusion } from './occlusion.js';
@@ -173,6 +174,8 @@ export const HD = {
   info: { gpuMs: null, calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0, fgSteps: 0, still: false, rw: 0, rh: 0, ow: 0, oh: 0 },
   /** Things needing a shader not built yet wait (hidden) at most this long while it builds in the background (v.holdNew); hold = false: build it in the frame instead. */
   holdMs: 500, hold: true,
+  /** WebGPU: the kit's code-made textures packed into the chip's compressed formats (spark.js); false: plain (tests). */
+  get pack() { return packing.on; }, set pack(v) { packing.on = v !== false; }, get packed() { return { textures: packing.packed, savedMB: +(packing.saved / 1048576).toFixed(1), failed: packing.failed }; },
   /** Upscale when the 3D is drawn below the screen's size (false: plain stretch). */
   upscale: true,
   /** Which upscaler: 'sgsr2' (Snapdragon GSR 2, temporal; Next Gen without reflections) or 'sgsr1' (one frame). AR and the rest use SGSR 1. */
@@ -768,8 +771,8 @@ export function surface(size, paint, { strength = 2.5, metal = false } = {}) {
     const i = (y * size + x) * 4; out.data[i] = (nx * .5 + .5) * 255; out.data[i + 1] = (ny * .5 + .5) * 255; out.data[i + 2] = (nz * .5 + .5) * 255; out.data[i + 3] = 255;
   }
   nc.putImageData(out, 0, 0);
-  const tx = (cv, srgb) => { const t = new CanvasTexture(cv); t.wrapS = t.wrapT = RepeatWrapping; t.colorSpace = srgb ? SRGBColorSpace : NoColorSpace; t.anisotropy = 4; t.minFilter = LinearMipmapLinearFilter; return t; };
-  const base = { map: tx(C, true), normal: tx(N), rough: roughMips(tx(Rc), g.r.getImageData(0, 0, size, size).data, nf, size), height: tx(Hc), nf, size, rd: g.r.getImageData(0, 0, size, size).data, ...(Mc ? { metal: tx(Mc) } : {}), canvases: { col: C, h: Hc, r: Rc, ...(Mc ? { m: Mc } : {}) } };
+  const tx = (cv, srgb, pack = true) => { const t = new CanvasTexture(cv); t.wrapS = t.wrapT = RepeatWrapping; t.colorSpace = srgb ? SRGBColorSpace : NoColorSpace; t.anisotropy = 4; t.minFilter = LinearMipmapLinearFilter; if (pack) t.userData.gsPack = srgb ? 'srgb' : 'linear'; return t; };
+  const base = { map: tx(C, true), normal: tx(N), rough: roughMips(tx(Rc, false, false), g.r.getImageData(0, 0, size, size).data, nf, size), height: tx(Hc), nf, size, rd: g.r.getImageData(0, 0, size, size).data, ...(Mc ? { metal: tx(Mc) } : {}), canvases: { col: C, h: Hc, r: Rc, ...(Mc ? { m: Mc } : {}) } };
   const set = (u, v, b = base) => {
     if (u === 1 && v === 1) return { ...b, repeat: set };
     const cl = {}; for (const k of ['map', 'normal', 'rough', 'height', 'metal']) { if (!b[k]) continue; cl[k] = b[k].clone(); cl[k].repeat.set(u, v); cl[k].needsUpdate = true; }
@@ -795,7 +798,7 @@ export function detail(big, fine, { times = 4, strength = .7 } = {}) {
     const k = (y * n + X) * 4; im.data[k] = (nx * .5 + .5) * 255; im.data[k + 1] = (ny * .5 + .5) * 255; im.data[k + 2] = (nz * .5 + .5) * 255; im.data[k + 3] = 255;
   }
   x.putImageData(im, 0, 0);
-  const t = new CanvasTexture(c); t.wrapS = t.wrapT = RepeatWrapping; t.colorSpace = NoColorSpace; t.anisotropy = 4; t.minFilter = LinearMipmapLinearFilter;
+  const t = new CanvasTexture(c); t.wrapS = t.wrapT = RepeatWrapping; t.colorSpace = NoColorSpace; t.anisotropy = 4; t.minFilter = LinearMipmapLinearFilter; t.userData.gsPack = 'linear';
   const base = { ...big, normal: t, nf: out, rough: big.rd ? roughMips(big.rough.clone(), big.rd, out, n) : big.rough };
   const set = (u, v, b = base) => {
     if (u === 1 && v === 1) return { ...b, repeat: set };
