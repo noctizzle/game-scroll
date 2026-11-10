@@ -22,7 +22,7 @@ export function installPack(r) {
     if (!textures || !device || r.gsPack) return;
     const per = new WeakMap(); r.gsPack = per;
     let spark = null, sparkLoad = null, busy = false; const queue = [];
-    const load = () => sparkLoad ||= import('@ludicon/spark.js').then(({ Spark }) => Spark.create(device, { cacheTempResources: { minSize: 1024 } })).then(s => (spark = s), e => { console.warn('Texture packing off:', e?.message || e); return null; });
+    const load = () => sparkLoad ||= import('@ludicon/spark.js').then(({ Spark }) => Spark.create(device)).then(s => (spark = s), e => { console.warn('Texture packing off:', e?.message || e); return null; });
     // one at a time, so a level full of new textures doesn't load the chip all at once
     const next = async () => {
       if (busy || !queue.length) return; busy = true;
@@ -35,24 +35,41 @@ export function installPack(r) {
         const gpu = await s.encodeTexture(img, { format: 'rgb', srgb: e.kind === 'srgb', mips: true, flipY: !!t.flipY });
         if (!e.users.size) { gpu.destroy(); e.queued = false; return; }   // (all let go while it was packed)
         e.gpu = gpu; e.saved = img.width * img.height * 4 * 4 / 3 * (1 - (/^(bc1|etc2)/.test(gpu.format) ? .125 : .25)); stats.packed++; stats.saved += e.saved;
-        // each texture using it drops its plain copy; the next frame binds the packed one (bind groups rebuilt)
-        e.swap = true; for (const u of e.users) if (textures.has(u)) textures._destroyTexture(u); e.swap = false;
+        // each texture using it moves on a version, so three binds it again: on its next use it swaps
+        // its plain copy for the packed one (three only rebuilds bind groups for a texture whose version moved)
+        for (const u of e.users) { u.needsUpdate = true; ours.set(u, u.version); }
       } catch (err) { e.gpu = null; stats.failed++; if (stats.failed === 1) console.warn('Texture packing failed:', err?.message || err); }
       finally { busy = false; next(); }
     };
-    const unpack = e => {
-      e.swap = true; for (const u of e.users) if (textures.has(u)) textures._destroyTexture(u); e.swap = false;
-      e.gpu.destroy(); e.gpu = undefined; e.queued = false; stats.packed--; stats.saved -= e.saved;
+    // forget a texture's GPU copy without destroying anything in the middle of a frame (bind groups drawn
+    // earlier in it still hold the old copy until it's sent): three makes it again on its next use
+    const later = g => { if (g) setTimeout(() => g.destroy(), 0); };
+    const drop = t => {
+      if (!textures.has(t)) return null;
+      const td = textures.get(t), old = backend.get(t).texture;
+      if (td.onDispose) t.removeEventListener('dispose', td.onDispose);
+      if (td.ref) { textures._tracked?.delete(td.ref); textures._registry?.unregister(td.ref); }
+      backend.delete(t); textures.delete(t);
+      return old;
     };
+    // back to plain (painted again, or the last user let go): users upload again
+    const unpack = e => {
+      for (const u of e.users) { drop(u); u.needsUpdate = true; }
+      later(e.gpu); e.gpu = undefined; e.queued = false; stats.packed--; stats.saved -= e.saved;
+    };
+    const ours = new WeakMap();   // texture -> the version packing moved it to
     const update = textures.updateTexture.bind(textures);
     textures.updateTexture = (t, o = {}) => {
       const kind = t.userData?.gsPack, src = t.source;
       if (!kind || !src || t.isRenderTargetTexture || !stats.on) return update(t, o);
       let e = per.get(src);
-      if (!e) { per.set(src, e = { gpu: undefined, kind, users: new Set() }); }
+      if (!e) per.set(src, e = { gpu: undefined, kind, users: new Set() });
       e.users.add(t);
-      // painted again (needsUpdate) after it was packed: every user goes back to plain, and it's packed again
-      if (e.gpu) { const td = textures.has(t) && textures.get(t); if (td?.initialized && td.version !== t.version) unpack(e); }
+      const td = textures.has(t) ? textures.get(t) : null, moved = td?.initialized && td.version !== t.version;
+      if (e.gpu && moved) {
+        if (ours.get(t) === t.version) { const old = drop(t); if (old !== e.gpu) later(old); }   // plain -> packed
+        else unpack(e);   // painted again since: plain, and packed again
+      }
       if (e.gpu === undefined && !e.queued && t.version > 0) { e.queued = true; queue.push(src); next(); }
       if (!e.gpu) return update(t, o);
       // the packed copy, handed to three the way an outside texture is (three/src: Textures.updateTexture)
@@ -64,10 +81,7 @@ export function installPack(r) {
     backend.destroyTexture = (t, isDefault) => {
       const e = t.source && per.get(t.source), d = backend.get(t);
       if (e?.gpu && d.texture === e.gpu) d.texture = undefined;   // (shared: not this texture's to destroy)
-      if (e && !e.swap) {
-        e.users.delete(t);
-        if (!e.users.size && e.gpu) unpack(e);
-      }
+      if (e) { e.users.delete(t); if (!e.users.size && e.gpu) unpack(e); }
       return destroy(t, isDefault);
     };
   } catch (e) { console.warn('Texture packing not installed:', e?.message || e); }

@@ -18,6 +18,9 @@ ceilings), `neon-drift.js` (drift racer on a wet neon street circuit), `storm-ho
   reflections (a studio environment map, strength set per view with `env`).
 - **Procedural surface textures** (`surface(size, paint)`): you paint colour, height and
   roughness on canvases in code, and the kit derives a normal map from the height. No image files.
+  On WebGPU the colour, normal, height and metal maps are packed into the phone's own compressed
+  formats (ASTC or ETC2; BC on desktops) on the graphics chip by spark.js, so they take about a quarter
+  of the memory; each draws plain for its first few frames until its packed copy is ready.
   `speckle()` adds grime and noise.
 - **Bevelled boxes** (`rbox(w, h, d, r)`): rounded edges catch highlights, which reads as
   "modern" far more than sharp boxes.
@@ -374,6 +377,10 @@ else they use WebGL. There is no setting. Nothing changes in a game: a view that
 ported yet (see `docs/webgpu-move.md`) stays on WebGL by itself. `node scripts/gpu-games.cjs <id>`
 plays a game on both and says which it drew on. Everything in Long Shadow (outdoor looks, sky, shafts,
 focus, cascades, Props trees) and Deep Pressure has a WebGPU version.
+
+Code-made textures (`surface()`, `gs.models` recipes, `detail()`) are packed into compressed GPU
+formats on WebGPU by spark.js (Ludicon), one at a time in the background. `HD.packed` says how many
+and how much memory that saved; `HD.pack = false` keeps them plain (tests).
 
 ### Frame generation
 
