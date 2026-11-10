@@ -558,6 +558,16 @@ function hotSwap(d){
 
 // Debug overlay for makers (src/debug.js): dev and test builds only, never in the store apps.
 const DBG=import.meta.env.MODE==='bundled'?makeDebug():null;
+// Frame lab (src/framelab.js): Digital Foundry-style frame timing, hitch causes and picture checks, loaded
+// only when turned on (QA panel, F3, ?lab, __gs.lab()). It sees each refresh through LAB.tick below.
+let LAB=null,labLoad=null;
+function frameLab(on){
+  if(on==null)on=!LAB;
+  if(!on){LAB?.close();return Promise.resolve(null)}
+  return LAB?Promise.resolve(LAB):labLoad||=import('./framelab.js').then(m=>{LAB=m.openLab({onClose:()=>{LAB=null;labLoad=null}});return LAB}).catch(e=>{labLoad=null;console.warn('frame lab',e);return null});
+}
+addEventListener('gs-framelab',()=>frameLab());
+addEventListener('keydown',e=>{if(e.key==='F3'){frameLab();e.preventDefault()}});
 let lastT=performance.now(),nextAt=0,realAt=0;
 // A 2D game on a big screen (a foldable opened up) draws twice a phone's pixels each frame. If it can't keep
 // up (two windows of 45 frames a quarter over the frame budget), its canvas drops to at most LITE_PX and the
@@ -588,7 +598,7 @@ function frame(now){
   if(s){
     // a refresh between two real frames: a Next Gen or AR game making frames in between (frame generation,
     // src/kit/framegen.js) shows the moment due then (last: the next refresh draws a real frame)
-    if(now<nextAt-.4*rf){const b=speed.between;if(b)try{b(now+1.4*rf>=nextAt,now)}catch(e){speed.between=null;console.warn('frame generation',e)}return}
+    if(now<nextAt-.4*rf){const b=speed.between;if(b)try{b(now+1.4*rf>=nextAt,now)}catch(e){speed.between=null;console.warn('frame generation',e)}if(LAB)LAB.tick(now,s,b?'between':'idle');return}
     nextAt=now-nextAt>step?now+step:nextAt+step;   // fell behind (hidden, a long frame): restart the beat
     speed.between=null;   // (the 3D kit sets it again while this frame draws)
     // stutter shield (src/kit/speed.js): a 3D game drawing every refresh whose frame came a refresh or more late
@@ -600,7 +610,7 @@ function frame(now){
   if(s){
     // one broken game must never stop the loop (that froze every game): end its round instead
     try{
-      let run=true;if(DBG&&DBG.on)({dt,run}=DBG.time(dt));
+      let run=true;if(DBG&&DBG.on)({dt,run}=DBG.time(dt));if(LAB&&LAB.frozen)run=false;
       const timed=s.state==='playing'&&!s.paused,t0=timed?performance.now():0;
       if(timed){if(run)s.game.update(dt);gameRan(s.def.id)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
       const t1=performance.now();
@@ -609,13 +619,14 @@ function frame(now){
       // (nor does a finished one keep drawing its game-over scene while it's being swiped away: a whole
       // 3D frame each refresh, on the same graphics chip that's moving the feed)
       const hold=usesHD(s.def)&&(s.state==='ready'&&s.dirty&&settling()||s.state==='over'&&performance.now()-scrollAt<150);
-      if(!hold&&(s.state!=='ready'||s.dirty||(DBG&&DBG.on))){paint(s);s.dirty=false}
+      const painted=!hold&&(s.state!=='ready'||s.dirty||(DBG&&DBG.on));if(painted){paint(s);s.dirty=false}
       if(DBG&&DBG.on)DBG.after(s,timed?t1-t0:0,performance.now()-t1,now);
+      if(LAB)LAB.tick(now,s,painted?'frame':'idle',timed?t1-t0:0,performance.now()-t1);
       // frame timing for the anonymous stutter reports (src/perf.js)
       if(timed&&s.state==='playing'&&!usesHD(s.def))lite2d(s,now,step);
       if(timed&&s.state==='playing')perf.frame(s.def.id,now,performance.now()-t0,1000/fps);else perf.gap();
     }catch(e){console.error(s.def.id,e);perf.error(e,s.def.id);s.dirty=false;if(s.state==='playing')try{gameOver(s)}catch(_){}}
-  }
+  }else if(LAB)LAB.tick(now,null,'idle');
 }
 
 /* keyboard (desktop preview) and game controllers (src/kit/gamepad.js turns pads into these keys) */
@@ -683,7 +694,7 @@ feedMenu.addEventListener('keydown',e=>{const i=feedOpts.indexOf(document.active
   else if(e.key==='Escape'||e.key==='Tab'){feedOpen(false);feedBtn.focus()}});
 document.addEventListener('pointerdown',e=>{if(!feedMenu.hidden&&!e.target.closest('.feedpick'))feedOpen(false)},true);
 
-function boot(){initWallet(GAMES);services.init(GAMES);booted=true;playstats.load(true).then(()=>rerank(3));perf.load(true);
+function boot(){initWallet(GAMES);services.init(GAMES);booted=true;if(store.get('gs_lab',false)||/[?&]lab\b/.test(location.search))frameLab(true);playstats.load(true).then(()=>rerank(3));perf.load(true);
   hearts.reconcile(GAMES.map(g=>g.id),id=>rating(id)>0||(rating(id)===0&&store.get('gs_like_'+id,false)));hearts.load(true);rebuild();onSharedGame(openShared);requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
 // Streaming: with a saved catalogue, start at once and check for updates in the background.
 // First launch has to fetch the catalogue before there is anything to show.
@@ -705,4 +716,4 @@ if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refres
 
 // Test hook used by scripts/smoke.cjs and the other browser tests: dev and test builds, and any build
 // driven by a test browser. Never in the store apps, where a game could use it to reach the wallet.
-if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),feed:()=>feedBrain.stats(),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',only(id){filter='id:'+id;rebuild()}};
+if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),feed:()=>feedBrain.stats(),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',lab:v=>frameLab(v),only(id){filter='id:'+id;rebuild()}};

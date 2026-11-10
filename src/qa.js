@@ -5,7 +5,8 @@
 // - Every finished round is logged (plays, total seconds, best), so the report shows which
 //   games people actually stick with.
 // - Tap the GAME SCROLL logo to open the QA panel: every game with your rating and play stats,
-//   unhide buttons, and "Copy report" to paste into chat.
+//   unhide buttons, "Copy report" to paste into chat, and "Frame lab" (src/framelab.js) for frame
+//   timing, hitch causes and picture checks over the game.
 // - BENCHED games are hidden for everyone (still in the code, waiting for a fix or a delete).
 import { store } from './util.js';
 import { progress } from './kit/progress.js';
@@ -120,10 +121,12 @@ export function openPanel(games, best, onChange) {
   }).join('');
   el.innerHTML = `<div class="qa-head"><b>QA</b><span>${played}/${games.length} played · ${rated} rated</span><button class="qa-x" aria-label="Close">✕</button></div>
     <p class="qa-help">👎 Meh on a game hides it from your feed. Copy the report and paste it into chat to flag games for removal.</p>
-    <div class="qa-actions"><button class="qa-copy">Copy report</button>${perf.reportUrl ? `<a class="qa-perf" href="${perf.reportUrl}" target="_blank" rel="noopener">Crashes &amp; stutters ↗</a>` : ''}</div>
+    <div class="qa-actions"><button class="qa-copy">Copy report</button><button class="qa-lab">Frame lab</button>${perf.reportUrl ? `<a class="qa-perf" href="${perf.reportUrl}" target="_blank" rel="noopener">Crashes &amp; stutters ↗</a>` : ''}</div>
     <ul>${rows}</ul>`;
   document.body.appendChild(el);
   el.querySelector('.qa-x').onclick = () => el.close();
+  // Frame lab (src/framelab.js): frame timing, hitch causes and picture checks over the game, on or off
+  el.querySelector('.qa-lab').onclick = () => { el.close(); dispatchEvent(new Event('gs-framelab')); };
   el.addEventListener('close', () => el.remove());
   el.querySelector('.qa-copy').onclick = async e => {
     const txt = report(games, best);
