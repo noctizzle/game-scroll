@@ -31,7 +31,9 @@ import {
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
   OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4, DataTexture, RGBAFormat, ShaderChunk,
   LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion, DepthTexture, WebGLCoordinateSystem, Box3, Sphere, UnsignedIntType,
+  Data3DTexture, UnsignedByteType,
 } from 'three';
+import { LUTCubeLoader } from 'three/examples/jsm/loaders/LUTCubeLoader.js';
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
 import { LightProbeGridWebGL } from 'three/examples/jsm/lighting/LightProbeGridWebGL.js';
@@ -263,6 +265,9 @@ const UP = `uniform sampler2D tDiffuse; uniform vec2 px; uniform float k; varyin
 export const FINAL_EFFECTS = [
   { name: 'head', what: 'uniforms, the tone mapping three leaves out under SGSR, helpers', glsl: `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, bloom; uniform vec2 px; varying vec2 vUv;
   uniform float gradeOn, sat, con, glare, aspect; uniform vec3 lo, hi, sunCol; uniform vec2 sunUV;
+  #ifdef LUT
+  uniform highp sampler3D tLut; uniform float lutS, lutO, lutK;
+  #endif
   // (three.js adds its tone mapping and sRGB helpers to every ShaderMaterial drawn to the screen; when
   // SGSR upscales after this pass, it draws into a buffer and three leaves tone mapping out, so here it is)
   #ifndef TONE_MAPPING
@@ -317,6 +322,10 @@ ${ShaderChunk.tonemapping_pars_fragment}
   { name: 'tone', what: 'tone mapping (v.tone: ACES, Khronos Neutral or AgX; three.js\'s own) and sRGB', glsl: `    col = TONE_FN(col);
     col = sRGBTransferOETF(vec4(col, 1.)).rgb;
 ` },
+  { name: 'lut', what: 'colour look (v.lut: a 3D lookup table, gs.hd.lut)', glsl: `  #ifdef LUT
+    col = mix(col, texture(tLut, clamp(col, 0., 1.) * lutS + lutO).rgb, lutK);
+  #endif
+` },
   { name: 'vignette', what: 'vignette', glsl: `    col *= 1. - vig * smoothstep(.12, .62, r2 * 1.6);
 ` },
   { name: 'grain', what: 'film grain', glsl: `    col += (h(vUv / px + t) - .5) * .035;
@@ -340,7 +349,7 @@ class FinalPass extends Pass {
     this.down = qmat(DOWN, { tDiffuse: { value: null }, px: { value: new Vector2() } });
     this.up = qmat(UP, { tDiffuse: { value: null }, px: { value: new Vector2() }, k: { value: 1 } }, { blending: ADD });
     this.final = qmat(FINAL, { tDiffuse: { value: null }, tBloom: { value: null }, t: { value: 0 }, hurt: { value: 0 }, vig: { value: .32 }, bloom: { value: .7 }, px: { value: new Vector2(1, 1) }, toneMappingExposure: { value: 1 },
-      gradeOn: { value: 0 }, sat: { value: 1 }, con: { value: 1 }, lo: { value: new Vector3(1, 1, 1) }, hi: { value: new Vector3(1, 1, 1) }, glare: { value: 0 }, sunUV: { value: new Vector2() }, sunCol: { value: new Color() }, aspect: { value: 1 } }, { defines: { SRGB_TRANSFER: '', TONE_FN: TONE_FN.aces } });
+      gradeOn: { value: 0 }, sat: { value: 1 }, con: { value: 1 }, lo: { value: new Vector3(1, 1, 1) }, hi: { value: new Vector3(1, 1, 1) }, glare: { value: 0 }, sunUV: { value: new Vector2() }, sunCol: { value: new Color() }, aspect: { value: 1 }, tLut: { value: null }, lutS: { value: 1 }, lutO: { value: 0 }, lutK: { value: 1 } }, { defines: { SRGB_TRANSFER: '', TONE_FN: TONE_FN.aces } });
     this.quad = new FullScreenQuad(null); this.mips = []; this.scale = .5; this.w = 0; this.h = 0; this.fxaa = false; this.strength = .7;
   }
   setSize(w, h) {
@@ -352,6 +361,14 @@ class FinalPass extends Pass {
       this.mips.push(new WebGLRenderTarget(x, y, { type: HalfFloatType, depthBuffer: false, minFilter: LinearFilter, magFilter: LinearFilter }));
   }
   setTone(t) { const f = TONE_FN[t] || TONE_FN.aces; if (this.final.defines.TONE_FN === f) return; this.final.defines.TONE_FN = f; this.final.needsUpdate = true; }
+  // v.lut: the look's table (null: none) and how much of it (0..1)
+  setLut(t, k = 1) {
+    const u = this.final.uniforms, on = !!t && k > 0;
+    if (on) { const n = t.image.width; u.tLut.value = t; u.lutS.value = (n - 1) / n; u.lutO.value = .5 / n; u.lutK.value = Math.min(1, k); }
+    if (on === ('LUT' in this.final.defines)) return;
+    if (on) this.final.defines.LUT = ''; else delete this.final.defines.LUT;
+    this.final.needsUpdate = true;
+  }
   setFxaa(on) { if (this.fxaa === on) return; this.fxaa = on; if (on) this.final.defines.FXAA = ''; else delete this.final.defines.FXAA; this.final.needsUpdate = true; }
   pass(r, mat, target) { this.quad.material = mat; r.setRenderTarget(target); this.quad.render(r); }
   render(r, writeBuffer, readBuffer) {
@@ -711,6 +728,48 @@ function roughMips(t, rd, nf, size) {
   t.mipmaps = mips; t.generateMipmaps = false; return t;
 }
 /** Speckle noise helper for surface painters: n dots of colour col, radius up to r. */
+// Colour looks (v.lut): a 3D lookup table, the way films and big games grade their pictures. It
+// changes the finished screen colours (after tone mapping), so any recipe of curves, tints and channel
+// mixing costs one texture read. Made in code: a look's name, your own function, or the text of a
+// .cube file pasted into the game (three.js's LUTCubeLoader reads it; the free looks online are .cube).
+const L_LUM = (r, g, b) => .2126 * r + .7152 * g + .0722 * b;
+const L_S = (x, k) => { const y = x - .5; return Math.min(1, Math.max(0, .5 + y * k / (1 + Math.abs(y) * (k - 1) * 2))); };   // S-curve round mid grey
+const L_SAT = (c, l, k) => c.map(x => l + (x - l) * k);
+const LOOKS = {
+  film: (r, g, b) => { const l = L_LUM(r, g, b), w = L_S(l, 1.15), t = w * w * (3 - 2 * w); return L_SAT([r, g, b], l, 1.08).map((x, i) => L_S(x, 1.1) + [(t - .5) * .08, (t - .5) * .01, (.5 - t) * .09][i]); },   // teal shadows, warm highlights
+  bleach: (r, g, b) => { const l = L_LUM(r, g, b); return L_SAT([r, g, b], l, .45).map(x => L_S(x * .5 + l * .5, 1.45)); },   // bleach bypass: hard, silvery, washed colour
+  noir: (r, g, b) => { const l = L_S(L_LUM(r, g, b), 1.6); return [l, l, l * .97]; },
+  sepia: (r, g, b) => { const l = L_S(L_LUM(r, g, b), 1.1); return [l * 1.07 + .03, l * .9 + .02, l * .7]; },
+  warm: (r, g, b) => [r * 1.06 + .015, g * 1.01 + .005, b * .9],
+  cold: (r, g, b) => [r * .9, g * .99 + .005, b * 1.07 + .02],
+  faded: (r, g, b) => { const l = L_LUM(r, g, b); return L_SAT([r, g, b], l, .78).map(x => .07 + x * .86); },   // lifted blacks, softer colour
+  vivid: (r, g, b) => { const l = L_LUM(r, g, b); return L_SAT([r, g, b], l, 1.3).map(x => L_S(x, 1.12)); },
+  night: (r, g, b) => { const l = Math.pow(L_LUM(r, g, b), .7); return [l * .25, Math.min(1, l * 1.15 + .04), l * .3]; },   // night vision
+};
+const LUT_CACHE = new Map();
+/** A colour look for v.lut: lut('film' | 'bleach' | 'noir' | 'sepia' | 'warm' | 'cold' | 'faded' | 'vivid' | 'night'),
+ * lut((r, g, b) => [r, g, b]) with screen colours 0..1, or lut(cubeFileText). { size } (32) points per side. */
+export function lut(look, { size = 32 } = {}) {
+  if (look?.isData3DTexture) return look;
+  const key = typeof look === 'string' ? look + '|' + size : null;
+  if (key && LUT_CACHE.has(key)) return LUT_CACHE.get(key);
+  let t;
+  if (typeof look === 'string' && /LUT_3D_SIZE/.test(look)) t = new LUTCubeLoader().setType(UnsignedByteType).parse(look).texture3D;
+  else {
+    const f = typeof look === 'function' ? look : LOOKS[look];
+    if (!f) throw new Error(`gs.hd.lut: no look called ${look} (${Object.keys(LOOKS).join(', ')})`);
+    const n = size, d = new Uint8Array(n * n * n * 4);
+    for (let b = 0, i = 0; b < n; b++) for (let g = 0; g < n; g++) for (let r = 0; r < n; r++, i += 4) {
+      const c = f(r / (n - 1), g / (n - 1), b / (n - 1));
+      for (let k = 0; k < 3; k++) d[i + k] = Math.round(Math.min(1, Math.max(0, c[k])) * 255);
+      d[i + 3] = 255;
+    }
+    t = new Data3DTexture(d, n, n, n); t.type = UnsignedByteType;
+  }
+  t.format = RGBAFormat; t.minFilter = t.magFilter = LinearFilter; t.generateMipmaps = false; t.unpackAlignment = 1; t.needsUpdate = true;
+  if (key) LUT_CACHE.set(key, t);
+  return t;
+}
 export function speckle(ctx, size, n, col, r = 1.5, a = .2) {
   ctx.save(); ctx.fillStyle = col;
   for (let i = 0; i < n; i++) { ctx.globalAlpha = Math.random() * a; ctx.beginPath(); ctx.arc(Math.random() * size, Math.random() * size, Math.random() * r + .3, 0, 7); ctx.fill(); }
@@ -1061,7 +1120,7 @@ export class HDView {
     if (fog) this.scene.fog = new FogExp2(bg, fog);
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
-    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null;
+    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null; this.lut = null; this.lutAmount = 1;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
     this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null; this.beams = null; this.motionBlur = null;
@@ -1453,6 +1512,12 @@ export class HDView {
     let p; try { p = read(); } catch (e) { p = null; }
     Promise.resolve(p).then(px => { if (px) eye.take(px, this.autoExposure || {}); }, () => {}).finally(() => { eye.busy = false; });
   }
+  // v.lut as a texture: a look's name, a function, a .cube text or a table from gs.hd.lut (made once)
+  lutTex() {
+    const l = this.lut; if (!l) return null;
+    if (this._lutOf !== l) { this._lutOf = l; try { this._lutT = lut(l); } catch (e) { console.warn(e.message); this._lutT = null; } }
+    return this._lutT;
+  }
   /** Size the camera to the game's W x H (call from draw before render). */
   fit(W, H) { if (W !== this.W || H !== this.H || this.cam.aspect !== W / H) { this.W = W; this.H = H; this.cam.aspect = W / H; this.cam.updateProjectionMatrix(); } return this; }
   /** Logical screen position of a world point: [x, y, depth] (depth > 1 = behind the camera). */
@@ -1626,7 +1691,7 @@ export class HDView {
     for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
     // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
     const pw = up ? up.pw : r.domElement.width, ph = up ? Math.max(1, Math.floor(up.fh * (pw + .5) / up.fw)) : r.domElement.height;
-    const o = { tone: this.tone, w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, s1: !!up?.s1, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
+    const o = { tone: this.tone, w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, s1: !!up?.s1, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, lut: this.lutAmount > 0 ? this.lutTex() : null, lutK: this.lutAmount, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
       dofOn: false, lens: null, near: this.cam.near, far: this.cam.far, shaftsOn: false, shaft: 0, shaftCol: null };
     // temporal anti-aliasing in place of MSAA (three.js's TRAA) where the tier pays for smooth edges and the
     // picture isn't upscaled (SGSR 2 is temporal itself); card pictures keep MSAA (one frame has no history)
@@ -1881,7 +1946,7 @@ export class HDView {
     if (!baking && !off) this.t += 1 / 60;
     if (!this.clearBg) {
       const F = P.final; P.ao.enabled = T.ao > 0; if (T.ao > 0 && P.ao.scale !== T.ao) { P.ao.scale = T.ao; P.ao.setSize(P.ao.fw || pw, P.ao.fh || ph); }
-      F.strength = this.bloom; F.scale = T.bloom; F.setTone(this.tone); F.eyeView = baking || off ? null : this; F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
+      F.strength = this.bloom; F.scale = T.bloom; F.setTone(this.tone); F.setLut(this.lutTex(), this.lutAmount); F.eyeView = baking || off ? null : this; F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
       const u = F.final.uniforms; u.t.value = this.t % 10; u.hurt.value = this.hurt;
       const g = this.grade; u.gradeOn.value = g ? 1 : 0;
       if (g) { u.sat.value = g.saturation ?? 1; u.con.value = g.contrast ?? 1; toRGB(g.shadows, u.lo.value); toRGB(g.highlights, u.hi.value); }

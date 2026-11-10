@@ -119,6 +119,11 @@ so its next round starts there instead of stuttering down again.
   screen colours. ACES (the default, the film look) pushes very bright colours towards yellow and
   white; Neutral (Khronos PBR Neutral) keeps colours true to the material, good for neon, paint and
   products; AgX (Blender's) keeps their hue in bright light and rolls off softly.
+- `v.lut = 'film' | 'bleach' | 'noir' | 'sepia' | 'warm' | 'cold' | 'faded' | 'vivid' | 'night'`: a colour
+  look, the way films grade their pictures (a 3D lookup table on the finished colours: one texture
+  read, three.js's LUTPass maths and Lut3DNode). Also your own recipe, `v.lut = (r, g, b) => [r, g, b]`
+  with screen colours 0..1 (made once), or the text of a `.cube` file pasted into the game as a
+  string. `v.lutAmount` (1) blends it in; `gs.hd.lut(look)` makes the table to swap between.
 - `v.autoExposure = true | { amount, min, max, speed, darken, key }`: the eye adapts, like walking out
   of a bunker into sunlight: it dazzles a moment, then settles. A light meter reads the picture every
   few frames (read back without waiting) and the exposure drifts so the scene's brightness stays near

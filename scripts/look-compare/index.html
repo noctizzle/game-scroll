@@ -13,7 +13,7 @@ if (GPU && !await prepareGPU()) { window.result = { error: 'WebGPU did not start
 const T = gs.THREE, out = {}, backends = {};
 const frame = () => new Promise(r => requestAnimationFrame(r));
 window.__hd.force = 3; window.__hd.upscale = false;
-async function nextgen(tier, wet = 0) {
+async function nextgen(tier, wet = 0, look = null) {
   window.__hd.force = tier;
   const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .002, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 4, 9); v.cam.lookAt(0, 1, 0); v.cam.updateMatrixWorld();
@@ -22,7 +22,7 @@ async function nextgen(tier, wet = 0) {
   const cols = ['#c44', '#4a8', '#48c', '#cc4', '#a6c'];
   for (let i = 0; i < 5; i++) { const m = new T.Mesh(gs.hd.rbox(1, 1.6, 1), gs.hd.pbr(cols[i], { rough: .3 + i * .1, metal: i % 2 })); m.position.set(-3 + i * 1.5, .8, -i * .7); m.rotation.y = i * .4; m.castShadow = m.receiveShadow = true; v.scene.add(m); }
   const glow = new T.Mesh(new T.SphereGeometry(.4, 24, 16), gs.hd.pbr('#fff', { glow: 3, glowCol: '#ffb040' })); glow.position.set(1.5, 2.5, 0); v.scene.add(glow);
-  v.air({ haze: .002, mist: .004, mistFall: .3, wet }); v.grade = { saturation: 1.1, contrast: 1.05, shadows: '#e8f0ff', highlights: [1.06, 1, .92] }; v.glare = .6;
+  v.air({ haze: .002, mist: .004, mistFall: .3, wet }); v.grade = { saturation: 1.1, contrast: 1.05, shadows: '#e8f0ff', highlights: [1.06, 1, .92] }; v.glare = .6; if (look) v.lut = look;
   for (let i = 0; i < 3; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend];
@@ -256,6 +256,7 @@ try {
   const only = new URLSearchParams(location.search).get('only');
   for (const t of only ? [+only] : [0, 1, 2, 3]) [out['nextgen-tier' + t], backends['nextgen-tier' + t]] = await nextgen(t);
   [out['nextgen-wet'], backends['nextgen-wet']] = await nextgen(3, .3);
+  [out['nextgen-lut'], backends['nextgen-lut']] = await nextgen(3, 0, 'film');   // a colour look (v.lut)
   for (const t of [0, 3]) [out['dark-tier' + t], backends['dark-tier' + t]] = await dark(t);   // rain on the air: WebGL only so far
   [out.pulse, backends.pulse] = await pulseScene();
   [out.sparks, backends.sparks] = await sparksScene();
