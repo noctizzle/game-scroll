@@ -119,6 +119,11 @@ so its next round starts there instead of stuttering down again.
   screen colours. ACES (the default, the film look) pushes very bright colours towards yellow and
   white; Neutral (Khronos PBR Neutral) keeps colours true to the material, good for neon, paint and
   products; AgX (Blender's) keeps their hue in bright light and rolls off softly.
+- `gs.hd.panel(colour, intensity, w, h, { glow })`: an area light, a glowing rectangle (window, TV,
+  striplight, softbox) with the soft, stretched highlights a point light can't make (three.js's
+  RectAreaLight, both backends). It shines out of its front (-z): place it and `lookAt` the target.
+  `glow: true` also shows the rectangle. No shadows (add a `spot` for those); its tables load the first
+  time a game makes one, and it lights up a moment later.
 - `v.lut = 'film' | 'bleach' | 'noir' | 'sepia' | 'warm' | 'cold' | 'faded' | 'vivid' | 'night'`: a colour
   look, the way films grade their pictures (a 3D lookup table on the finished colours: one texture
   read, three.js's LUTPass maths and Lut3DNode). Also your own recipe, `v.lut = (r, g, b) => [r, g, b]`

@@ -31,7 +31,7 @@ import {
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
   OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4, DataTexture, RGBAFormat, ShaderChunk,
   LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion, DepthTexture, WebGLCoordinateSystem, Box3, Sphere, UnsignedIntType,
-  Data3DTexture, UnsignedByteType,
+  Data3DTexture, UnsignedByteType, RectAreaLight,
 } from 'three';
 import { LUTCubeLoader } from 'three/examples/jsm/loaders/LUTCubeLoader.js';
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
@@ -2062,6 +2062,7 @@ function swapTwins(scene, G) {
 }
 function gpuSwap(v, G) {
   swapTwins(v.scene, G);
+  if (AREA_LTC && G && !AREA_GPU) { G.fx.areaLTC(AREA_LTC); AREA_GPU = true; }   // area lights' tables for WebGPU (panel)
   // shadow maps: each renderer keeps its own. WebGL drew into WebGPU's map when it found one on the light
   // (and the other way round), which made WebGPU remake it in the middle of a frame that still used it:
   // that frame was lost, and every frame after it while the old one stayed bound
@@ -2379,6 +2380,23 @@ function fitShadow(s, view, { far = 250, ground = null, low = -5, high = 30, tal
   return { width: hx * 2, height: hy * 2, texel: tex };
 }
 /** A shadow-casting spotlight (torch, searchlight) whose shadow follows the quality tier. */
+// Area lights (gs.hd.panel): light from a glowing rectangle (a window, a TV, a striplight, a softbox),
+// with the soft, stretched highlights a point light can't make. three.js's RectAreaLight, lit by
+// the LTC method (Heitz et al.) on both backends; its 300 KB of tables load the first time a game
+// makes one (the light stays dark until then, a moment). No shadows: pair with a spot for those.
+let AREA = null, AREA_LTC = null, AREA_GPU = false; const AREA_WAIT = [];
+function areaTables() {
+  return AREA ||= Promise.all([import('three/examples/jsm/lights/RectAreaLightUniformsLib.js'), import('three/examples/jsm/lights/RectAreaLightTexturesLib.js')])
+    .then(([u, t]) => { u.RectAreaLightUniformsLib.init(); AREA_LTC = t.RectAreaLightTexturesLib; for (const l of AREA_WAIT) l.visible = true; AREA_WAIT.length = 0; }, () => { AREA = null; });
+}
+/** A glowing rectangle of light, w x h metres, shining out of its front (-z; aim it with lookAt).
+ * { glow: true } also shows the rectangle itself, in the light's colour. */
+export function panel(col = '#fff4e6', i = 8, w = 1, h = 1, { glow = false } = {}) {
+  const l = new RectAreaLight(col, i, w, h);
+  if (!AREA_LTC) { l.visible = false; AREA_WAIT.push(l); areaTables(); }
+  if (glow) { const m = new Mesh(new PlaneGeometry(w, h), new MeshBasicMaterial({ color: col, side: 2 })); m.material.color.multiplyScalar(Math.min(4, i / 4)); m.userData.noLod = true; l.add(m); }
+  return l;
+}
 export function spot(col = '#fff2e0', i = 30, dist = 16, angle = .5) {
   const s = new SpotLight(col, i, dist, angle, .55, 1.6);
   s.castShadow = true; s.shadow.bias = -.0004; s.shadow.normalBias = .02; s.shadow.camera.near = .2; s.shadow.radius = 3;

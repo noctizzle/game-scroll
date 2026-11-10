@@ -102,6 +102,22 @@ async function peopleScene() {
 }
 // a room lit through a window: bounce light (v.bounce) off a red wall and a sunlit floor, and a polished
 // floor and chrome ball with box-projected room reflections (v.room); ?feat=-gi,-room turns them off
+// a dark studio lit by two area lights (gs.hd.panel): a softbox above and a striplight behind
+async function areaScene() {
+  window.__hd.force = 2;
+  const v = new gs.hd.HDView({ bg: '#101014', fog: 0, env: .05, amb: .02 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 1.6, 3.6); v.cam.lookAt(0, .6, -1); v.cam.updateMatrixWorld();
+  const W = (w, h, d, col, px, py, pz, o = {}) => { const m = new T.Mesh(new T.BoxGeometry(w, h, d), gs.hd.pbr(col, o)); m.position.set(px, py, pz); v.scene.add(m); return m; };
+  W(8, .1, 8, '#6a6a70', 0, -.05, 0, { rough: .25 }); W(8, 4, .1, '#505058', 0, 2, -3, { rough: .7 });
+  const ball = new T.Mesh(new T.SphereGeometry(.45, 32, 20), gs.hd.pbr('#ffffff', { rough: .2, metal: 1 })); ball.position.set(-.6, .45, -.8); v.scene.add(ball);
+  W(.7, .7, .7, '#d55a3a', .8, .35, -1, { rough: .4 });
+  const a = gs.hd.panel('#fff0dc', 10, 2, 1, { glow: true }); a.position.set(0, 2.6, 0); a.lookAt(0, 0, -.5); v.scene.add(a);
+  const b = gs.hd.panel('#7ab8ff', 14, 3, .15, { glow: true }); b.position.set(0, .8, -2.9); b.lookAt(0, .8, 1); v.scene.add(b);
+  for (let i = 0; i < 40 && !a.visible; i++) await frame();   // the area light tables load on first use
+  for (let i = 0; i < 3; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
 async function roomScene() {
   window.__hd.force = 2;
   const F = new Set((new URLSearchParams(location.search).get('feat') || '').split(',')), on = k => !F.has('-' + k);
@@ -262,6 +278,7 @@ try {
   [out.sparks, backends.sparks] = await sparksScene();
   [out.people, backends.people] = await peopleScene();
   [out.room, backends.room] = await roomScene();
+  [out.area, backends.area] = await areaScene();
   { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; }
   [out.river, backends.river] = await riverScene();
   [out.flood, backends.flood] = await floodScene();
