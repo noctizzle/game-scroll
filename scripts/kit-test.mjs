@@ -1470,7 +1470,14 @@ console.log('physics ok');
   sp.setFrameGenPick('auto'); sp.speed.gpu = false;
   assert.equal(sp.screenWant(ng), 60, 'on WebGL (no frame generation): its own rate');
   screen.rates = []; screen.top = 0;
-  console.log('frame generation: exact camera turns, battery and heat, pacing by the clock, screen rate ok');
+  // automatic 3D quality: Rob's Fold reports (2026-11-10) averaged 57 fps at 60 but dropped a frame 3 times a second
+  const B = 1000 / 60;
+  assert.equal(sp.qualityVerdict(B * 1.3, 0, B), 'slow', 'a slow average steps down');
+  assert.equal(sp.qualityVerdict(1000 / 57, 3, B), 'slow', 'a good average with frames a refresh late steps down');
+  assert.equal(sp.qualityVerdict(B, 1, B), 'ok', 'one late frame in a window (a hitch) is not enough');
+  assert.equal(sp.qualityVerdict(B, 1, B) === 'fast', false, 'and is never room to climb');
+  assert.equal(sp.qualityVerdict(B, 0, B), 'fast', 'on the beat with none late: room to climb');
+  console.log('frame generation: exact camera turns, battery and heat, pacing by the clock, screen rate, stutter-aware quality ok');
 }
 
 // gs.props on WebGPU: each copy keeps its slot in the drawn list while it stays in view (three's motion,

@@ -510,10 +510,20 @@ export function summary(R = lastRec) {
     c.tier ? `${c.backend} · ${c.tier} · 3D ${c.rw}x${c.rh} → ${c.ow}x${c.oh} (${c.ow ? Math.round(100 * c.rw / c.ow) : '?'}%) · upscaler ${c.upscaler} · frame gen ${c.fg || 'off'}${c1.tier !== c.tier || c1.rw !== c.rw ? ` · ended ${c1.tier} 3D ${c1.rw}x${c1.rh}` : ''}` : `${c.backend} · canvas ${c.rw}x${c.rh}${c.lite ? ' (eased)' : ''}`,
     `screen ${c.hz} Hz${c.rates ? ` (offers ${c.rates}, asked ${c.asked || 'none'})` : ''} · game ${c.fps} fps · phone class ${c.cls} · ${c.gpu || 'gpu ?'}`,
     m ? `avg ${m.fps.toFixed(1)} fps · 1% low ${m.low1.toFixed(0)} · 0.1% low ${m.low01 ? m.low01.toFixed(0) : '–'} · worst ${m.worst.toFixed(0)} ms · pacing ${(m.pacing * 100).toFixed(0)}% on the beat · ${m.stutters} stutters (${(m.stutters / Math.max(1, m.secs)).toFixed(2)}/s) · ${m.skipped} refreshes skipped${m.made ? ` · ${m.made} made + ${m.real} real` : ''}` : 'not enough frames in play',
+    cpuLine(R),
     hit.length ? 'Hitch causes: ' + Object.entries(groups).sort((a, b) => b[1].n - a[1].n).slice(0, 6).map(([k, g]) => `${g.n}× ${k} (worst ${g.worst.toFixed(0)} ms)`).join('; ') : 'No hitches.',
     s0 && s1 ? `Heat ${['cool', 'warm', 'hot'][s0.heat]} → ${['cool', 'warm', 'hot'][s1.heat]}${s1.headroom != null && s1.headroom >= 0 ? ` (headroom ${s1.headroom.toFixed(2)})` : ''} · CPU speed ${Math.round(s0.cpu * 100)}% → ${Math.round(s1.cpu * 100)}% · battery ${Math.round(s0.level * 100)}% → ${Math.round(s1.level * 100)}%${s1.charging ? ' charging' : ''}${s1.heap ? ` · heap ${s1.heap} MB` : ''}` : '',
   ];
   return lines.filter(Boolean).join('\n');
+}
+// CPU per real frame while playing, middle and 95th percentile: the game's update(), its draw() (which
+// includes the 3D kit's work on the CPU), the 3D render on its own, frame generation, GPU where known
+function cpuLine(R) {
+  const r = R.rows, pick = col => r.ft.map((ti, j) => r.p[ti] ? col[j] : null).filter(v => v != null).sort((a, b) => a - b);
+  const q = (a, f) => a.length ? a[Math.min(a.length - 1, Math.floor(f * a.length))] : 0;
+  const part = (name, col) => { const a = pick(col); return a.length && q(a, .95) > 0 ? `${name} ${q(a, .5).toFixed(1)}/${q(a, .95).toFixed(1)}` : ''; };
+  const parts = [part('update', r.upd), part('draw', r.drw), part('3D', r.cpu3d), part('frame gen', r.fg), part('GPU', r.gpu)].filter(Boolean);
+  return parts.length ? `CPU per frame in ms (middle/95%): ${parts.join(' · ')}` : '';
 }
 let model = '';
 (async () => { try { const { Device } = await import('@capacitor/device'); const d = await Device.getInfo(); model = `${d.manufacturer || ''} ${d.model || ''}`.trim(); } catch (_) {} })();

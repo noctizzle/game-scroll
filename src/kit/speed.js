@@ -255,3 +255,19 @@ export function stepUp(def) {
   if (next >= autoFps(def)) { const { fps, ...rest } = s; settled[def.id] = rest; store.set(SETTLE_KEY, settled); } else settle(def.id, { fps: next });
   return true;
 }
+
+/**
+ * How a window of frames went, for the 3D kit's automatic quality (hd3d.js adapt): 'slow' (step down),
+ * 'fast' (room to step up) or 'ok'. avg: the average gap between frames (ms); late: how many frames in the
+ * window came a whole refresh or more late (1.5 times the budget); budget: ms a frame at the game's rate.
+ * A window can average close to the budget and still drop a frame every few dozen: on a busy or warm
+ * phone a 60 fps game that misses one refresh in fifteen averages 57 fps but stutters three times a
+ * second. So LATE_SLOW late frames in a window count as slow, and a window with any late frame is never
+ * room to climb (it would step straight back up into the stutter).
+ */
+export const LATE_SLOW = 2;
+export function qualityVerdict(avg, late, budget) {
+  if (avg > budget * 1.26 || late >= LATE_SLOW) return 'slow';
+  if (avg < budget * 1.044 && late === 0) return 'fast';
+  return 'ok';
+}
