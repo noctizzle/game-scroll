@@ -269,6 +269,27 @@ async function propsScene() {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend + ', ' + names.length + ' props in ' + Math.round(ms) + ' ms (again ' + Math.round(again) + ' ms' + (new URLSearchParams(location.search).has('each') ? ': ' + each.join(', ') : '') + ')'];
 }
+// gs.models.sculpt: shapes melted together and carved: a snowman (coloured parts), a rock carved with a
+// hole, a blobby creature from capsules, a rounded mug with a torus handle, and how long each took
+async function sculptScene() {
+  window.__hd.force = 2;
+  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: 0, env: .4, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 2.4, 4.2); v.cam.lookAt(0, .6, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 6, [-.5, .8, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(12, 12).rotateX(-Math.PI / 2), gs.hd.pbr('#a8a090', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const ms = [], put = (geo, mat, px, pz) => { const m = new T.Mesh(geo, mat); m.position.set(px, 0, pz); m.castShadow = m.receiveShadow = true; v.scene.add(m); return m; };
+  const time = f => { const a = performance.now(), g = f(); ms.push(Math.round(performance.now() - a) + ' ms/' + g.attributes.position.count); return g; };
+  const S = gs.models.sculpt, white = gs.hd.pbr('#ffffff', { rough: .7, vertexColors: true });
+  put(time(() => S([{ ball: .35, at: [0, .32, 0], colour: '#dde3ea' }, { ball: .26, at: [0, .78, 0], colour: '#dde3ea' }, { ball: .18, at: [0, 1.12, 0], colour: '#dde3ea' },
+    { cone: [.04, .22], at: [0, 1.13, .14], rot: [Math.PI / 2, 0, 0], colour: '#e8641c', blend: .01 }, { cylinder: [.16, .2], at: [0, 1.32, 0], colour: '#222222', blend: .02, round: .02 }], { blend: .1 })), white, -1.2, 0);
+  put(time(() => S([{ box: [.9, .6, .7], round: .15, at: [0, .3, 0], rot: [.1, .4, .05] }, { ball: .35, at: [.35, .45, .2] }, { cylinder: [.14, 1], at: [0, .35, 0], rot: [Math.PI / 2, 0, 0], cut: true, blend: .05 }], { blend: .15 })), gs.models.material('stone'), 0, -.6);
+  put(time(() => S([{ capsule: [[-.3, .35, 0], [.3, .4, 0]], r: .22, colour: '#6a9a3a' }, { ball: .18, at: [.45, .6, 0], colour: '#6a9a3a' },
+    ...[[-.25, .12], [.2, .12], [-.25, -.12], [.2, -.12]].map(([lx, lz]) => ({ capsule: [[lx, .3, lz], [lx, 0, lz * 1.3]], r: .06, colour: '#5a8a2a' })), { ball: .05, at: [.58, .68, .09], colour: '#111111', blend: .01 }, { ball: .05, at: [.58, .68, -.09], colour: '#111111', blend: .01 }], { blend: .08 })), white, 1.2, 0);
+  put(time(() => S([{ cylinder: [.18, .4], round: .03, at: [0, .2, 0] }, { cylinder: [.15, .4], at: [0, .26, 0], cut: true, blend: .02 }, { torus: [.1, .025], at: [.2, .2, 0], rot: [Math.PI / 2, 0, 0] }], { blend: .03, res: 64 })), gs.hd.pbr('#c8584a', { rough: .25, clear: .6 }), .3, .9);
+  const t1 = performance.now(); while (performance.now() - t1 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + ', ' + ms.join(', ')];
+}
 // soft shadows (sun().softShadows): a post, a raised slab and a crate sitting on the ground: the
 // crate's shadow sharp at its foot, the post's and slab's spreading the further they fall
 async function pcssScene() {
@@ -466,7 +487,7 @@ function consoleScene() {
   return c.toDataURL();
 }
 // ?pick=materials,gpu-pcss draws only those (a quick look while working on one)
-const SCENES = { area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene(), 'gpu-fog': () => fogScene(), 'gpu-mblur': () => objBlurScene(), 'gpu-gi-none': () => giScene(null), 'gpu-gi-screen': () => giScene('screen'), 'gpu-gi-voxel': () => giScene('voxel'), recipes: () => recipesScene(), 'gpu-recipes-near': () => recipesScene(true), wear: () => wearScene(), props: () => propsScene() };
+const SCENES = { area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene(), 'gpu-fog': () => fogScene(), 'gpu-mblur': () => objBlurScene(), 'gpu-gi-none': () => giScene(null), 'gpu-gi-screen': () => giScene('screen'), 'gpu-gi-voxel': () => giScene('voxel'), recipes: () => recipesScene(), 'gpu-recipes-near': () => recipesScene(true), wear: () => wearScene(), props: () => propsScene(), sculpt: () => sculptScene() };
 const PICK = new URLSearchParams(location.search).get('pick');
 if (PICK) try { for (const n of PICK.split(',')) [out[n], backends[n]] = await SCENES[n](); } catch (e) { out.error = String(e && e.stack || e); }
 else try {
@@ -494,6 +515,7 @@ else try {
   [out['gpu-recipes-near'], backends['gpu-recipes-near']] = await recipesScene(true);
   [out.wear, backends.wear] = await wearScene();
   [out.props, backends.props] = await propsScene();
+  [out.sculpt, backends.sculpt] = await sculptScene();
   { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; }
   [out.river, backends.river] = await riverScene();
   [out.flood, backends.flood] = await floodScene();

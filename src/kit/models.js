@@ -6,3 +6,4 @@ export { material, NAMES as materials } from './models/materials.js';
 export { warm as ready } from './models/cache.js';
 export { wear, curvature } from './models/wear.js';
 export { prop, PROP_NAMES as props } from './models/props.js';
+export { sculpt } from './models/sculpt.js';

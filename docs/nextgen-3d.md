@@ -626,3 +626,19 @@ wear(wall, { moss: .7 });                                                    // 
   metres), `colour` (its main material), `wear` (options for `wear`, or `false` for new), `lit` (lamp glow).
   Asking again with the same options gives a copy that shares shapes and materials, so a hundred crates
   cost one to make, and copies that keep still merge into one draw.
+- **`sculpt(shapes, o)`**: soft shapes melted together or carved away, the way sculptors block things
+  out, turned into a mesh with surface nets: `{ ball: r }`, `{ box: [w, h, d], round }`, `{ cylinder: [r, h], round }`,
+  `{ torus: [R, r] }`, `{ cone: [r, h] }`, `{ capsule: [[x, y, z], [x, y, z]], r }`, each with `at`, `rot`, `scale`,
+  `blend` (how softly it melts in, metres), `cut: true` (carved away) and `colour` (vertex colours: give the
+  mesh a material with `vertexColors: true`). Or pass a distance function `(x, y, z) => d` with `bounds`.
+  Options `blend` (.08), `res` (cells along the longest side, 48, up to 128). About 0.1 s each, so make them
+  in `make()` or `reset()`; the same shapes again give back the same geometry.
+
+```js
+const snowman = gs.models.sculpt([
+  { ball: .35, at: [0, .32, 0] }, { ball: .26, at: [0, .78, 0] }, { ball: .18, at: [0, 1.12, 0] },
+  { cone: [.04, .22], at: [0, 1.13, .14], rot: [Math.PI / 2, 0, 0], colour: '#e8641c', blend: .01 },
+], { blend: .1, colour: '#dde3ea' });
+v.scene.add(new THREE.Mesh(snowman, gs.hd.pbr('#ffffff', { vertexColors: true })));
+const rock = gs.models.sculpt([{ box: [.9, .6, .7], round: .15 }, { cylinder: [.14, 1], rot: [Math.PI / 2, 0, 0], cut: true }]);
+```

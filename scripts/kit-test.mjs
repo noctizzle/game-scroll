@@ -1536,6 +1536,20 @@ console.log('physics ok');
   for (let i = 0; i < Q.count; i++) { const l = C.getX(i) + C.getY(i) + C.getZ(i); if (Q.getY(i) > .49 && Math.abs(Q.getX(i)) < .3 && Math.abs(Q.getZ(i)) < .3) top = Math.max(top, l); if (Q.getY(i) < -.45) foot = Math.min(foot, l); }
   assert.ok(top > 3 && foot < 2, `snow on top (${top}), grime at the foot (${foot})`);
   console.log('gs.models: wear ok');
+  // sculpt: a ball comes out round (every point about r from the middle, normals pointing out), a carved hole is a hole
+  const { sculpt } = await import('../src/kit/models/sculpt.js');
+  const sg = sculpt([{ ball: .5, at: [0, 1, 0] }], { res: 32 }), SP = sg.attributes.position, SN = sg.attributes.normal;
+  for (let i = 0; i < SP.count; i += 7) {
+    const x = SP.getX(i), y = SP.getY(i) - 1, z = SP.getZ(i), r = Math.hypot(x, y, z);
+    assert.ok(Math.abs(r - .5) < .02, `sculpted ball radius ${r}`); assert.ok((x * SN.getX(i) + y * SN.getY(i) + z * SN.getZ(i)) / r > .95, 'sculpt normals point out');
+  }
+  { const a = sg.index.array, P = SP; let out = 0; for (let t = 0; t < a.length; t += 3) { const [i, j, k] = [a[t], a[t + 1], a[t + 2]], ux = P.getX(j) - P.getX(i), uy = P.getY(j) - P.getY(i), uz = P.getZ(j) - P.getZ(i), vx = P.getX(k) - P.getX(i), vy = P.getY(k) - P.getY(i), vz = P.getZ(k) - P.getZ(i);
+    out += (uy * vz - uz * vy) * P.getX(i) + (uz * vx - ux * vz) * (P.getY(i) - 1) + (ux * vy - uy * vx) * P.getZ(i) > 0 ? 1 : -1; } assert.ok(out === a.length / 3, 'sculpt faces turned out'); }
+  assert.ok(sculpt([{ ball: .5, at: [0, 1, 0] }], { res: 32 }) === sg, 'sculpt reuses the same shapes');
+  const holed = sculpt([{ box: [1, 1, .4] }, { cylinder: [.2, 1], rot: [Math.PI / 2, 0, 0], cut: true }], { res: 40 }), HP = holed.attributes.position;
+  let inHole = 0; for (let i = 0; i < HP.count; i++) if (Math.hypot(HP.getX(i), HP.getY(i)) < .15) inHole++;
+  assert.ok(inHole === 0, 'carved hole is empty');
+  console.log('gs.models: sculpt ok');
 }
 
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits

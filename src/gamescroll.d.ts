@@ -1352,6 +1352,12 @@ export interface CitySpot { x: number; y: number; z: number; nx?: number; nz?: n
 export interface CityCar { id: number; kind: 'car' | 'van'; taxi: boolean; colour: string; x: number; z: number; heading: number; v: number; vmax: number; braking: boolean; stun: number; edge: Loose; lane: number }
 export interface CityPerson { id: number; x: number; z: number; heading: number; speed: number; panic: number; down: number; shirt: string; block: Loose }
 /** gs.models: things made in code for Next Gen scenes (no image or model files). */
+export interface SculptShape {
+  ball?: number; box?: [number, number, number]; cylinder?: [number, number]; torus?: [number, number]; cone?: [number, number];
+  capsule?: [[number, number, number], [number, number, number]]; r?: number; round?: number;
+  at?: [number, number, number]; rot?: [number, number, number]; scale?: number | [number, number, number];
+  blend?: number; cut?: boolean; colour?: string; color?: string;
+}
 export interface ModelsPart {
   /** A material from a recipe: 'wood' | 'planks' | 'bark' | 'brick' | 'stone' | 'cobbles' | 'tiles' | 'concrete' | 'metal' | 'rust' | 'paint' | 'fabric' | 'leather' | 'marble' | 'dirt' | 'sand' | 'snow'. Options: the recipe's colours (colour, dark, mortar, gap, rust, deep, under, vein, grout), seed, repeat [u, v], size (texture pixels, 256), depth (parallax, WebGPU); WebGPU: closeUp (sharp detail near the camera, default on), solid (laid on by world position, metres per tile), scatter (no visible repeat). Others go to gs.hd.pbr. */
   material(name: string, o?: { colour?: string; color?: string; seed?: number; repeat?: [number, number]; size?: number; depth?: number; closeUp?: boolean; solid?: boolean | number; scatter?: boolean; [k: string]: Loose }): Loose;
@@ -1363,6 +1369,8 @@ export interface ModelsPart {
   prop(name: 'crate' | 'barrel' | 'drum' | 'pallet' | 'table' | 'chair' | 'bench' | 'shelf' | 'lamp' | 'fence' | 'sign' | 'bucket' | 'sack' | 'chest' | 'cone' | 'bin' | 'door' | 'pipe', o?: { seed?: number; size?: number; colour?: string; color?: string; wear?: false | Record<string, Loose>; tile?: number; lit?: number }): Loose;
   /** The prop names. */
   readonly props: readonly string[];
+  /** A mesh from soft shapes melted together or carved away, made with surface nets: each { ball: r } | { box: [w, h, d], round } | { cylinder: [r, h], round } | { torus: [R, r] } | { cone: [r, h] } | { capsule: [[x, y, z], [x, y, z]], r }, with at, rot, scale, blend (metres), cut, colour (vertex colours: use a material with vertexColors). Or a distance function (x, y, z) => d with o.bounds. Options: blend (.08), res (48, up to 128), colour. Returns a BufferGeometry (shared for the same shapes: clone before changing). */
+  sculpt(shapes: SculptShape[] | ((x: number, y: number, z: number) => number), o?: { blend?: number; res?: number; bounds?: [[number, number, number], [number, number, number]]; colour?: string; color?: string }): Loose;
   /** Per-vertex curvature of a geometry (convex > 0, concave < 0) and how much each vertex faces up. */
   curvature(geometry: Loose): { curve: Float32Array; up: Float32Array };
 }
