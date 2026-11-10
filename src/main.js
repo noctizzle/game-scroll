@@ -112,6 +112,7 @@ function makeSlide(def){
     ...awayFor(def.id),                                 // away(): seconds since this game last ran (idle games)
     brains:brainsFor(def.id),                            // where this game's Tiny Brains keep what they learned (src/brainstore.js)
     ...geoFor(def),                                     // location() / watchLocation(cb): rounded, only during a round (src/geo.js)
+    scoreArea:()=>scoreArea(s),                         // where the app's score badge sits, in game units, so HUDs can keep clear of it
   };
   bootGame(s);
   // like
@@ -374,6 +375,27 @@ history.onChange((id,w)=>{if(w&&!rerankDue){rerankDue=true;whenCalm(()=>{rerankD
 // speed.offscreen tells the 3D kits this card isn't the one being played: draw it without taking the shared
 // 3D canvas or the frame-rate tuning away from the card on screen (src/kit/hd3d.js).
 const usesHD=d=>d.era==='nextgen'||d.era==='ar';
+// The score badge's box in the game's own units, roomy enough for a 4-digit score, so a game can keep
+// its HUD out from under it: { x, y, w, h, bottom }. Measured from the page (it moves with the style,
+// the screen size and folding), kept for a quarter second, with a guess when the card isn't laid out.
+function scoreArea(s){
+  const W=s.w||s.def.w,H=s.h||s.def.h,now=performance.now(),c=s._scoreArea;
+  if(c&&now-c.at<250&&c.W===W&&c.H===H)return{...c.box};
+  const cr=s.canvas.getBoundingClientRect(),el=s.scoreEl,br=el.getBoundingClientRect();
+  let box;
+  if(cr.width>0&&cr.height>0&&br.width>0&&br.height>0){
+    const cs=getComputedStyle(el),pad=(parseFloat(cs.paddingLeft)||0)+(parseFloat(cs.paddingRight)||0),digits=Math.max(1,String(el.textContent||'0').length);
+    const wpx=Math.max(br.width,pad+(br.width-pad)/digits*4),kx=W/cr.width,ky=H/cr.height,mid=(br.left+br.right)/2-cr.left;
+    box={x:(mid-wpx/2)*kx-2,y:Math.max(0,(br.top-cr.top)*ky-2),w:wpx*kx+4,h:br.height*ky+4};
+  }else{
+    // not on screen yet: what the badge usually covers on a 390-point-wide phone
+    const k=W/390,hpx=s.def.retro?30:34,wpx=s.def.retro?78:70,top=s.def.retro?8:10;
+    box={x:W/2-wpx*k/2-2,y:Math.max(0,top*k-2),w:wpx*k+4,h:hpx*k+4};
+  }
+  if(s.def.retro){const x0=Math.floor(box.x),y0=Math.floor(box.y);box={x:x0,y:y0,w:Math.ceil(box.x+box.w)-x0,h:Math.ceil(box.y+box.h)-y0}}
+  box.x=Math.max(0,box.x);box.y=Math.max(0,box.y);box.bottom=box.y+box.h;
+  s._scoreArea={at:now,W,H,box};return{...box};
+}
 function paint(s){
   // a game that throws while drawing shows its problem card instead (painting new cards for the feed
   // must never stop at one broken game)

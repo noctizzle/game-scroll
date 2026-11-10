@@ -278,10 +278,16 @@ export class Juice {
   }
   /** Call before drawing the world: applies the shake. */
   begin(c) { this.shaker.apply(c); }
-  /** Call after drawing the world: draws particles and popups, undoes the shake, draws the flash. */
+  /**
+   * Call after drawing the world: draws particles and popups, undoes the shake, draws the flash.
+   * Text settings the world set (textAlign, textBaseline, font, direction) carry on past end(), so a
+   * HUD drawn after it gets what the game last set, not what was set before begin().
+   */
   end(c, W = c.canvas.width, H = c.canvas.height) {
+    const ta = c.textAlign, tb = c.textBaseline, f = c.font, dir = c.direction;
     this.parts.draw(c); this.pops.draw(c);
     c.restore();
+    c.textAlign = ta; c.textBaseline = tb; c.font = f; c.direction = dir;
     if (this.fl) {
       c.save(); c.globalAlpha = this.fl.a * (1 - this.fl.t / this.fl.dur); c.fillStyle = this.fl.color;
       c.fillRect(-20, -20, W + 40, H + 40); c.restore();

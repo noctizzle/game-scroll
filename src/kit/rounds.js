@@ -19,8 +19,56 @@
 // wipe, an iris, anything); scenes.progress goes 0 → 1. scenes.time is seconds in the current scene,
 // scenes.data what was passed in, scenes.prev the scene before. scenes.after(2, 'play') changes later.
 //
+// Ready: waits for the player's first touch (or key) before the round really starts, so nothing falls,
+// scores or ends while they read the screen. One object instead of a hand-written "started" flag:
+//
+//   const ready = new Ready();                      // in make()
+//   reset()      { ready.reset(); ... }
+//   update(dt)   { if (!ready.update(dt)) return; ...the game... }
+//   down(x, y)   { if (ready.go()) return; ... }   // the first tap only starts (pass { eat: false } to
+//   key(k, down) { if (down && ready.go()) return; ... }   // let it also act, e.g. a flap game's first flap)
+//   draw(c)      { ...the game...; ready.draw(c, W, H); }   // optional pulsing "Tap to start"; or draw your own
+//
+// ready.waiting is true until then, ready.t counts seconds waited (for your own idle animation), and
+// ready.since seconds since the start. ready.go() from a tilt or a shout starts it the same way.
+//
 // Levels: new Levels(list) walks a list of your level data: levels.now, levels.index, levels.next()
 // (false after the last, or wraps with { loop: true } and counts levels.lap for harder repeats).
+
+import { text as pixelText } from './pixel.js';
+
+export class Ready {
+  /** eat: the starting touch does nothing else (true) or also reaches the game (false). text: the prompt draw() shows. */
+  constructor({ eat = true, text = 'Tap to start' } = {}) { this.eat = eat; this.text = text; this.reset(); }
+  reset() { this.waiting = true; this.t = 0; this.since = 0; return this; }
+  /** Counts time; returns true once the round has started (so `if (!ready.update(dt)) return;`). */
+  update(dt) { if (this.waiting) this.t += dt; else this.since += dt; return !this.waiting; }
+  /** Starts the round. Returns true when this touch should do nothing else (the first one, with eat). */
+  go() { if (!this.waiting) return false; this.waiting = false; this.since = 0; return this.eat; }
+  get playing() { return !this.waiting; }
+  /**
+   * Draws the prompt while waiting (and fades it out just after): a gently pulsing line of text.
+   * Options: text, x, y (its middle; default the centre, two thirds down), color, size, font, shadow,
+   * pixel: true draws gs.pixel text that blinks instead of fading (pixel styles keep their exact shades;
+   * pass a palette colour, and a shadow only if you want one).
+   */
+  draw(c, W, H, { text = this.text, x = W / 2, y = Math.round(H * .66), color = '#ffffff', size, font = 'Rubik, sans-serif', pixel = false, shadow = pixel ? null : '#000000a0' } = {}) {
+    if (!text) return this;
+    if (pixel) {
+      if (!this.waiting || this.t % 1 > .7) return this;
+      const k = Math.max(1, Math.round(size || 1));
+      pixelText(c, text, Math.round(x), Math.round(y - 2.5 * k), { color, align: 'center', size: k, shadow });
+      return this;
+    }
+    const a = this.waiting ? .65 + .35 * Math.sin(this.t * 4) : 1 - this.since / .25;
+    if (a <= 0) return this;
+    c.save(); c.globalAlpha = Math.min(1, a);
+    c.font = `800 ${size || Math.round(W / 18)}px ${font}`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    if (shadow) { c.fillStyle = shadow; c.fillText(text, x + 1, y + 2); }
+    c.fillStyle = color; c.fillText(text, x, y);
+    c.restore(); return this;
+  }
+}
 
 export class Scenes {
   constructor(scenes, start, { fade = 0 } = {}) {

@@ -52,6 +52,16 @@ The flags are signals, not verdicts: a bot that can't sort a puzzle doesn't mean
 errors and on `goal-with-no-input` (the goal reached without touching the game); `--strict` also fails
 on a goal it never reached. A game on a fixed tick (`tick: 60`) is played on that tick.
 
+The bot swipes like a thumb (quick straight flicks in the four directions) as well as tapping,
+holding and dragging, and while it plays, `performance.now()` and `Date.now()` follow game time, so
+holds, double taps and swipe speeds in `gs.controls` read the same as on a phone. It can't solve
+puzzles, so on a **thinking game** (a tag with Puzzle, Word, Logic, Memory, Strategy, Cards, Match,
+Merge, Sort, Maze, Trivia...) "goal not reached" is a note, not a warning, and `--strict` ignores it.
+
+**Emoji in the test browser.** Emoji show on phones, but a test machine without a colour emoji font
+draws them as empty boxes. On Debian or Ubuntu, `sudo apt-get install fonts-noto-color-emoji` fixes
+it; `smoke.cjs` says when the font is missing. Drawing icons yourself works everywhere too.
+
 ## Running many games at once
 
 `smoke.cjs`, `stream-smoke.mjs`, `fold.cjs` and `sweep.cjs` play several games side by side, one

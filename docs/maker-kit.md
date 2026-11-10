@@ -16,6 +16,8 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | A working game to start from | `npm run new my-game --style pocket` | [Starter templates](#starter-templates) |
 | To remember things between plays | `api.save(data)`, `api.load(fallback)` | [Save slots](#save-slots) |
 | To pause cleanly | `pause()` / `resume()` hooks | [Pause and resume](#pause-and-resume) |
+| To wait for the first tap before the round starts | `gs.rounds.Ready` | [Rounds and scenes](#rounds-and-scenes) |
+| To keep a HUD out from under the score badge | `api.scoreArea()` | [The score badge](#the-score-badge) |
 | A level from where the player is, or walking to play | `api.location()`, `gs.geo` | [Location](#location) |
 | Coin, hit, boom, hurt... in one line | `gs.effects.Feel` | [Effects](#effects) |
 | Particles, screen shake, smooth movement, "+10" pop-ups | `gs.juice` | [Juice](#juice) |
@@ -384,6 +386,10 @@ debug(c) { phys.debugDraw(c); }
 - **Joints**: `hinge(a, b, x, y, { min, max, motor })`, `spring(a, b, ax, ay, bx, by, { stiffness, damping })`,
   `leash(...)`, `weld(a, b, x, y)`, `slider(a, b, x, y, dx, dy, { min, max, motor })`,
   `wheel(car, tyre, x, y)`, `rope(a, x1, y1, b, x2, y2, { links })`. Each returns a handle with `remove()`.
+- **2D ragdoll**: `rag = phys.ragdoll(x, y, { size: 60, face: 1 })` is a floppy person of 10 hinged
+  parts with its hips at `x, y` (`size` = height). `rag.parts.head` / `chest` / `armL` / `foreL` / `legL` /
+  `shinL` (and `R`), `rag.list`, `rag.push(vx, vy)` throws it, `rag.draw(c, colour)` or your own drawing
+  with `phys.path(c, part)`, `rag.remove()`.
 - **Drag with a finger**: `g = phys.grab(x, y)` in `down`, `g.move(x, y)` in `move`, `g.release()` in `up`.
 - **Ask the world**: `at(x, y)`, `inBox(x, y, w, h)`, `ray(x1, y1, x2, y2)` → `{ thing, x, y, nx, ny, distance }`,
   `blast(x, y, radius, strength)`. Things made this frame show up in these after the next `step()`.
@@ -543,7 +549,24 @@ feel.jump(x, y); feel.land(x, y, speed); feel.shoot(x, y); feel.powerup(x, y); f
 feel.score(x, y, 50); feel.win(x, y); feel.lose(); feel.click(); feel.play(zzfxNumbers);
 ```
 
-`feel.juice` is the Juice underneath, for your own particles and tweens.
+`feel.juice` is the Juice underneath, for your own particles and tweens. `feel.end()` undoes the shake
+(a canvas `restore()`) but keeps the text settings you set while drawing the world (`textAlign`,
+`textBaseline`, `font`), so a HUD drawn after it doesn't need to set them again.
+
+## The score badge
+
+The app draws the score at the top centre of the game. `api.scoreArea()` says where, in your game's
+units: `{ x, y, w, h, bottom }`, wide enough for a 4-digit score. Keep your HUD out of it: put lives
+on the left, a timer on the right, or a bar below it at `api.scoreArea().bottom + 4`. The box moves
+with the style and the screen size (folding a phone changes it), so read it while drawing; it's cheap
+(measured at most four times a second). Pixel styles get whole pixels.
+
+```js
+draw(c) {
+  const top = api.scoreArea().bottom + 4;
+  drawTimerBar(c, 10, top, W - 20);    // under the badge, not behind it
+}
+```
 
 ## Pixel text and sprites
 
@@ -617,6 +640,23 @@ draw(c) { for (const e of things.all('enemy')) drawEnemy(c, e); }
 - 3D games: `new Things({ plane: 'xz' })` uses x and z.
 
 ## Rounds and scenes
+
+**Waiting for the first touch.** After Play, the round starts at once; a game where things fall,
+score or end on their own should wait for the player's first tap, or it scores with no input (the
+PR check's bot notices). `Ready` is that wait in one object:
+
+```js
+const ready = new gs.rounds.Ready();            // in make(); { eat: false } lets the first tap also act
+reset()      { ready.reset(); ... }
+update(dt)   { if (!ready.update(dt)) return; ...the game... }
+down(x, y)   { if (ready.go()) return; ... }    // the starting tap does nothing else
+key(k, down) { if (down && ready.go()) return; ... }
+draw(c)      { ...the game...; ready.draw(c, W, H); }   // a pulsing "Tap to start" (or draw your own)
+```
+
+`ready.waiting`, `ready.t` (seconds waited, for an idle animation), `ready.since` (seconds playing).
+`ready.draw(c, W, H, { text, x, y, color, size, pixel: true })`: pixel styles blink gs.pixel text in
+a palette colour you pass. Call `ready.go()` from a tilt or a shout to start the same way.
 
 `const { Scenes, Levels } = gs.rounds;` The parts of a round (intro, play, clear, boss) as scenes
 with their own update and draw, and timed changes between them that you draw your own way.
@@ -734,7 +774,7 @@ steps.update(dt, hero);                                       // feet[i].pos, .l
 wobble.hit(1); wobble.update(dt); body.rotation.x = wobble.value * .4;   // springy hit reaction
 ```
 
-Ragdolls are part of 3D physics: `rag = phys.ragdoll(guard, { limbs: [head, armL, armR, legL, legR], push: [0, 2, -5] })`
+In 3D, ragdolls are part of 3D physics (2D games use `gs.physics` `phys.ragdoll(x, y)`, above): `rag = phys.ragdoll(guard, { limbs: [head, armL, armR, legL, legR], push: [0, 2, -5] })`
 turns the character floppy (each limb swings at its origin). `rag.push()`, `rag.hit(part, ...)`, `rag.remove()`.
 
 ### Skinned people, faces and lip sync
@@ -1247,7 +1287,9 @@ slots and limits, and `gs.story` for conversations.
 
 **Hex maps and isometric views** (`gs.hex`, hex maths from honeycomb-grid): `HexMap({ size, pointy, shape:
 'rect' | 'hex', w, h, radius, x, y })` gives cells with `q, r`, centre `x, y`, `corners` to draw and your
-own `data`. `at(x, y)` is the hex under a tap; `neighbours`, `distance`, `line`, `range`, `ring`;
+own `data`. The map's `x, y` is its **top left corner**, not its middle: pass `cx, cy` instead (e.g.
+`cx: W / 2, cy: H / 2`) to centre it, or call `map.centre(x, y)` / `map.shift(dx, dy)` later; `map.bounds`
+is its `{ x, y, w, h }` box. `at(x, y)` is the hex under a tap; `neighbours`, `distance`, `line`, `range`, `ring`;
 `reach(from, moves, cost)` is everywhere a unit can move (a Map of cell to points spent, `cost(cell)`
 Infinity for blocked); `path(a, b, cost)` the cheapest route; `sees(a, b, blocks)` line of sight.
 `Iso({ tw, th, x, y })`: `toScreen(tx, ty, z)`, `toTile(x, y)` for taps, `corners`, `sort(things)` back to front.

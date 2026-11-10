@@ -38,7 +38,7 @@ const RULES = [
   [/\beval\s*\(|\bFunction\s*\(|\bconstructor\s*\.\s*constructor\b|\[\s*['"`]constructor['"`]\s*\]/, 'runs code from a string'],
   [/\bsetTimeout\s*\(\s*['"`]|\bsetInterval\s*\(\s*['"`]/, 'runs code from a string (setTimeout/setInterval)'],
   [/\b(globalThis)\b|\b(?:window|self|document)\s*\[/, 'reaches global objects indirectly ($1)'],
-  [/\b(atob|btoa|fromCharCode|fromCodePoint|unescape|decodeURIComponent)\b/, 'decodes hidden strings ($1)'],
+  [/\b(atob|btoa|unescape|decodeURIComponent)\b/, 'decodes hidden strings ($1)'],
   [/\\x[0-9a-f]{2}|\\u\{?[0-9a-f]{4}/i, 'escaped characters in a string (often used to hide code)'],
   [/\b(Reflect|Proxy|__proto__|defineProperty|getOwnPropertyDescriptor)\b/, 'changes how objects work ($1)'],
   [/\bimport\b[^;]*?\bfrom\s*['"`](?!\.\.?\/)/, 'imports a package from outside the app (only ../gamescroll.js is allowed)'],
@@ -49,6 +49,8 @@ const RULES = [
 ];
 // Warnings: allowed, but worth a look. They don't fail the check.
 const WARN_RULES = [
+  // letters from numbers are normal in word and grid games, but the same call can spell out hidden code
+  [/\b(fromCharCode|fromCodePoint)\b/, "builds text from character numbers ($1). Fine for letters (gs.util.letter(i) gives 'A' + i without it); a maintainer checks it doesn't spell out hidden code"],
   // the 3D is moving to WebGPU later (docs/webgpu-move.md); shaders written for WebGL won't move with it
   [/\b(ShaderMaterial|RawShaderMaterial|onBeforeCompile|ShaderChunk|ShaderLib)\b/, "writes its own WebGL shader ($1). It won't carry over to WebGPU: prefer the kit's materials (gs.hd.pbr, gs.toon, stock three.js materials) and its looks (v.air, v.grade, gs.outdoors)"],
 ];

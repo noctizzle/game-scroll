@@ -1,7 +1,7 @@
 // AI playtester: a bot that really tries to win a game, for the PR check (scripts/playtest.cjs).
 // The QA bots only sit still or mash taps; this one runs the game much faster than real time with
 // a seeded Math.random and looks ahead: every quarter second of game time it tries a few taps,
-// holds, drags and keys (and doing nothing), plays each out a little, and keeps the best. It reports
+// holds, swipes, drags and keys (and doing nothing), plays each out a little, and keeps the best. It reports
 // whether the goal was reached and after how much game time, so a goal nobody can reach (or one
 // reached by doing nothing) shows up before Rob plays it.
 //
@@ -12,6 +12,11 @@ import { rng as makeRng } from './kit/math.js';
 import { tickRate } from './kit/tick.js';
 
 const KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '];
+const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const clampTo = (v, max) => Math.max(max * .03, Math.min(max * .97, v));
+// Games the bot can't judge: winning them takes thinking (a puzzle, words, memory, a plan), not
+// reactions, so "goal not reached" from it says nothing. Read from the game's tag.
+export const THINKING = /\b(puzzle|word|logic|brain|memory|trivia|quiz|riddle|sudoku|maze|merge|sort|match|cards?|chess|board game|strategy|tactics?|deduction|spelling|maths?|codes?)/i;
 
 /**
  * playtest(def, baseApi, { budget, maxSec, seed }) -> report.
@@ -39,6 +44,10 @@ export async function playtest(def, baseApi, { budget = 20000, maxSec = 180, see
     let t = 0;
     Math.random = R; evals++;
     const t0 = performance.now();
+    // The game's own clock: kits that time touches with performance.now() (holds, swipe speed, double
+    // taps) and games that read Date.now() see game time, not the much faster real time of the run.
+    const realNow = performance.now, realDate = Date.now, base = realDate();
+    performance.now = () => t0 + t * 1000; Date.now = () => base + Math.round(t * 1000);
     try {
       ownedBy(owner, () => { game = def.make(api); game.reset(); });
       let i = 0, held = null, ticks = 0;
@@ -59,10 +68,10 @@ export async function playtest(def, baseApi, { budget = 20000, maxSec = 180, see
         }
         if (held && t >= held.end) { const u = held.up; held = null; u(); }
         game.update(h); t += h; ticks++;
-        if (ticks % 15 === 0) { game.draw(ctx, 1); if (performance.now() - t0 > realLimit) break; }
+        if (ticks % 15 === 0) { game.draw(ctx, 1); if (realNow.call(performance) - t0 > realLimit) break; }
       }
     } catch (e) { errors.add(String(e && e.message || e)); }
-    finally { Math.random = realRandom; try { stopAll(); } catch (_) { /* nothing playing */ } release(owner); }
+    finally { Math.random = realRandom; delete performance.now; Date.now = realDate; if (performance.now !== realNow) performance.now = realNow; try { stopAll(); } catch (_) { /* nothing playing */ } release(owner); }
     return { score: best, goalAt, ended, sec: t, win: goalAt != null };
   }
 
@@ -71,8 +80,12 @@ export async function playtest(def, baseApi, { budget = 20000, maxSec = 180, see
   const move = at => {
     const k = r(), p = pt();
     if (k < .08) return { at, kind: 'key', key: r.pick(KEYS), len: r.range(.05, .8) };
-    if (k < .55) return { at, kind: 'tap', ...p, len: r.range(.03, .12) };
-    if (k < .75) return { at, kind: 'hold', ...p, len: r.range(.2, 1.5) };
+    if (k < .45) return { at, kind: 'tap', ...p, len: r.range(.03, .12) };
+    if (k < .6) return { at, kind: 'hold', ...p, len: r.range(.2, 1.5) };
+    if (k < .82) {   // a real swipe: a quick straight flick one way, as fast and as far as a thumb does it
+      const [dx, dy] = r.pick(DIRS), d = Math.min(W, H) * r.range(.15, .35), sx = clampTo(p.x, W), sy = clampTo(p.y, H);
+      return { at, kind: 'drag', x: sx, y: sy, x2: clampTo(sx + dx * d, W), y2: clampTo(sy + dy * d, H), len: r.range(.06, .14) };
+    }
     const q = pt(); return { at, kind: 'drag', ...p, x2: q.x, y2: q.y, len: r.range(.1, .6) };
   };
   const randomPlan = (gap = r.range(.12, .7)) => { const out = []; for (let at = r.range(0, .5); at < maxSec; at += gap * r.range(.5, 1.5)) out.push(move(at)); return out; };
@@ -107,7 +120,7 @@ export async function playtest(def, baseApi, { budget = 20000, maxSec = 180, see
   if (value(firstGen.reduce((a, b) => value(b) > value(a) ? b : a, firstGen[0])) > value(top.res)) top.res = firstGen.reduce((a, b) => value(b) > value(a) ? b : a);
     sound.muted = wasMuted;
   return {
-    id: def.id, goal, tick: tickRate(def) || null,
+    id: def.id, goal, tick: tickRate(def) || null, thinking: THINKING.test(def.tag || ''),
     reached: top.res.win, goalAt: top.res.win ? +top.res.goalAt.toFixed(1) : null, best: top.res.score,
     idleScore: idle.score, idleWin: idle.win, idleEndsAt: idle.ended ? +idle.sec.toFixed(1) : null,
     randomBest: Math.max(...firstGen.map(x => x.score)), randomWin: firstGen.some(x => x.win),

@@ -5,7 +5,8 @@
 //   npm run build:bundled && node scripts/playtest.cjs [id ...] [--budget 20] [--jobs n] [--strict]
 //
 // Signals, not verdicts: a bot that can't win a word puzzle doesn't mean people can't. The PR check
-// shows them as warnings. It fails on errors, on a goal reached by doing nothing, and (--strict) on
+// shows them as warnings, except "goal not reached" on thinking games (a tag with Puzzle, Word, Logic,
+// Memory, Strategy...), which is only a note. It fails on errors, on a goal reached by doing nothing, and (--strict) on
 // a goal the bot never reached.
 const { chromium, devices } = require('playwright');
 const { jobs, pool } = require('./lib/pool.cjs');
@@ -37,16 +38,19 @@ const { jobs, pool } = require('./lib/pool.cjs');
     if (errs.length) flags.push('ERRORS');
     if (rep.idleWin) flags.push('goal-with-no-input');
     else if (rep.idleScore > 0) flags.push('scores-with-no-input');
-    if (rep.reached === false) flags.push('goal-not-reached');
+    // thinking games (puzzles, words, memory...: the game's tag says so): the bot can't solve them, so
+    // not reaching the goal is a note, not a warning
+    const notes = [];
+    if (rep.reached === false) (rep.thinking ? notes : flags).push(rep.thinking ? 'goal not reached (a thinking game: the bot can\'t solve these, so this means nothing)' : 'goal-not-reached');
     if (rep.reached && rep.goalAt < 5) flags.push('goal-in-under-5s');
     if (rep.randomWin) flags.push('random-taps-win');
-    const bad = errs.length || rep.idleWin || (strict && rep.reached === false);
+    const bad = errs.length || rep.idleWin || (strict && rep.reached === false && !rep.thinking);
     if (bad) failed++;
     const line = `${bad ? 'FAIL' : flags.length ? 'WARN' : ' ok '} ${id.padEnd(16)} goal ${String(rep.goal).padStart(5)}  ${rep.reached ? `reached at ${rep.goalAt}s` : `best ${rep.best}`}`
-      + `  (played to ${rep.playedTo}s; ${rep.evals} rounds tried)${flags.length ? '  ' + flags.join(', ') : ''}`;
+      + `  (played to ${rep.playedTo}s; ${rep.evals} rounds tried)${flags.length ? '  ' + flags.join(', ') : ''}${notes.length ? '  note: ' + notes.join(', ') : ''}`;
     console.log(line); for (const e of errs) console.log('      ' + e);
     if (gh && flags.length) console.log(`::${bad ? 'error' : 'warning'} file=src/games/${id}.js::playtest bot: ${flags.join(', ')} (${rep.reached ? 'goal at ' + rep.goalAt + ' s' : 'best ' + rep.best + ' of ' + rep.goal})`);
-    rows.push({ ...rep, flags });
+    rows.push({ ...rep, flags: [...flags, ...notes.map(() => 'thinking game')] });
   });
   if (process.env.GITHUB_STEP_SUMMARY) require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY,
     `### AI playtester\n\n| game | goal | reached | best | played to | flags |\n|---|---|---|---|---|---|\n${rows.map(r => `| ${r.id} | ${r.goal} | ${r.reached ? r.goalAt + ' s' : 'no'} | ${r.best ?? '-'} | ${r.playedTo ?? '-'} s | ${r.flags.join(', ')} |`).join('\n')}\n`);

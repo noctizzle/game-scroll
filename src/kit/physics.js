@@ -256,6 +256,46 @@ export class Physics {
     return { links: parts, joints, remove: () => { joints.forEach(j => j.remove()); parts.forEach(p => this.remove(p)); } };
   }
   /**
+   * A floppy person of 10 parts (head, chest, two-part arms and legs) joined by hinges with
+   * human-ish limits, standing with its middle (the hips) at (x, y). size: head-to-toe height in game
+   * units. face: 1 faces right, -1 left (which way knees and elbows bend). Parts never hit each other
+   * (they share `group`); other options (density, friction, bounce, drag...) go to every part.
+   * Returns { parts: { head, chest, armL, foreL, armR, foreR, legL, shinL, legR, shinR }, list,
+   * joints, push(vx, vy), remove() }. Draw it yourself (phys.path(c, part) gives each part's outline)
+   * or with rag.draw(c, colour). Make it stand up again by removing it and making a new one.
+   */
+  ragdoll(x, y, { size = 60, face = 1, group = 13, density = 1, friction = .6, bounce = .05, tag = 'ragdoll', ...o } = {}) {
+    const h = size, f = face < 0 ? -1 : 1, opt = { density, friction, bounce, group, spinDrag: .4, tag, ...o };
+    const part = (name, px, py, w, l) => this.box(x + px * h, y + py * h, w * h, l * h, opt);
+    const parts = {
+      chest: part('chest', 0, -.16, .2, .32),
+      head: this.circle(x, y - .41 * h, .085 * h, opt),
+      armL: part('arm', -.13, -.21, .07, .16), foreL: part('arm', -.13, -.06, .06, .15),
+      armR: part('arm', .13, -.21, .07, .16), foreR: part('arm', .13, -.06, .06, .15),
+      legL: part('leg', -.05, .11, .08, .22), shinL: part('leg', -.05, .34, .07, .23),
+      legR: part('leg', .05, .11, .08, .22), shinR: part('leg', .05, .34, .07, .23),
+    };
+    const P = parts, j = (a, b, px, py, min, max) => this.hinge(a, b, x + px * h, y + py * h, { min, max });
+    // limits: an angle is the child's turn against its parent, clockwise +; knees bend back, elbows forward
+    const knee = f > 0 ? [0, 2.4] : [-2.4, 0], elbow = f > 0 ? [-2.4, 0] : [0, 2.4], hip = f > 0 ? [-2, .5] : [-.5, 2];
+    const joints = [
+      j(P.chest, P.head, 0, -.32, -.6, .6),
+      j(P.chest, P.armL, -.13, -.29, -3, 3), j(P.armL, P.foreL, -.13, -.13, ...elbow),
+      j(P.chest, P.armR, .13, -.29, -3, 3), j(P.armR, P.foreR, .13, -.13, ...elbow),
+      j(P.chest, P.legL, -.05, 0, ...hip), j(P.legL, P.shinL, -.05, .22, ...knee),
+      j(P.chest, P.legR, .05, 0, ...hip), j(P.legR, P.shinR, .05, .22, ...knee),
+    ];
+    const list = Object.values(parts);
+    return {
+      parts, list, joints,
+      /** Throws the whole body (game units per second), like a hit or an explosion. */
+      push: (vx, vy) => { for (const t of list) t.push(vx, vy); },
+      remove: () => { for (const jt of joints) jt.remove(); for (const t of list) this.remove(t); },
+      /** A plain filled drawing: limbs behind, then chest and head. */
+      draw: (c, colour = '#f2d0a0') => { c.fillStyle = colour; for (const t of [P.armL, P.foreL, P.legL, P.shinL, P.legR, P.shinR, P.chest, P.armR, P.foreR, P.head]) { this.path(c, t); c.fill(); } },
+    };
+  }
+  /**
    * Drag a thing with a finger: in down(), const g = phys.grab(x, y) (null if nothing's there);
    * in move(), g.move(x, y); in up(), g.release(). It pulls on a spring rather than teleporting,
    * so the thing still collides. strength: how hard it pulls.

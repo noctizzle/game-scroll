@@ -92,7 +92,7 @@ export default {
 };
 ```
 
-`api`: `score(n)`, `over()`, `win()`, `has(itemId)`, `away()` (seconds since it last ran), `save(data)` / `load(fallback)` / `clearSave()`
+`api`: `score(n)`, `over()`, `win()`, `has(itemId)`, `away()` (seconds since it last ran), `scoreArea()` (where the app's score badge sits: keep HUDs out of it), `save(data)` / `load(fallback)` / `clearSave()`
 (2 KB JSON; changing its shape? add `save: { version, migrate(data, from) }` to the definition), `location()` / `watchLocation(cb)` (needs `location: 'coarse'` or `'precise'` in the
 definition). Optional game methods: `snapshot()` / `restore(data)` (keep a round across hot reload), `fx(dt)` (effects behind the game-over screen), `resize(w, h)`
 (fluid games with `maxW`, `maxH`), `debug(c)`, `pause()`, `resume()`.
@@ -137,7 +137,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.pixel`: `text(c, str, x, y, { size, font: 'small'|'big', align, color, outline })`,
   `sprite(art, palette)`, `anim(frames, palette, fps)`, `tiles()`.
 - `gs.physics.Physics` (Rapier 2D; lazy): `circle`, `box`, `poly`, `line`, `walls`, `hinge`, `spring`,
-  `rope`, `weld`, `slider`, `wheel`, `grab`, `ray`, `at`, `blast`, `onHit`, `step(dt)`, `path(c, t)`.
+  `rope`, `ragdoll(x, y, { size })`, `weld`, `slider`, `wheel`, `grab`, `ray`, `at`, `blast`, `onHit`, `step(dt)`, `path(c, t)`.
 - `gs.physics3d.World3D` (Rapier 3D; lazy): `ball`, `box`, `capsule`, `hull`, `ground(mesh)`,
   `floor`, `mover()` (walking character), `ragdoll()`, `ray`, joints, `step(dt)` syncs meshes.
 - `gs.ai`: `Crowd` (`add(x, y).chase(t) / flee / wander / follow(route) / flock / hunt(t, nav)`),
@@ -146,7 +146,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   graphics chip where the phone can: `pull(x, y, { strength, radius })`, `obstacle`, `near`, `kill`, `x`/`y` arrays; `Swarm.max()`).
 - `gs.things.Things` (game objects): `add(obj, tag)`, `hit(obj, tag)`, `hits(tagA, tagB, fn)`, `near`, `nearest`, `kill`, `reuse`, `each`, `all`.
   `gs.things.Node`: parent and child places (`add`, `update()`, `wx`/`wy`/`wangle`, `toWorld`, `hit`, `pick`, `attach`, `draw`).
-- `gs.rounds`: `Scenes({ name: { enter, update, draw } }, start)` with `go(name, { fade })`, `cover`, `after()`; `Levels(list)`.
+- `gs.rounds`: `Ready` (wait for the first tap: `if (!ready.update(dt)) return;`, `if (ready.go()) return;` in `down`), `Scenes({ name: { enter, update, draw } }, start)` with `go(name, { fade })`, `cover`, `after()`; `Levels(list)`.
 - `gs.pacing`: `Spawner({ every, fastest, over })`, `Waves([...], { breather })`, `Director` (difficulty that eases off), `ramp`.
 - `gs.aim.AimAssist`: sticky aim, pull onto targets, auto fire (2D angle or 3D direction).
 - `gs.senses`: `Senses` (sight cones, hearing, memory; moods calm/suspicious/alert/searching), `Noises`.
@@ -167,7 +167,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.brains` (Tiny Brains): `Brain(api, { inputs, actions, teacher, limits, rules })` learns as you play with guard rails (`act`, `feel`, `result`), `Wave` (each enemy an experiment, `unsure(see)`), `Imagine` (tries moves ahead; `fixed: true` for replays), `Predict` (learns the player's habits: `see`, `guess`, `sure`), `Player` (one private profile across games: `skill`, `note`), `Nemesis` (a rival who remembers you), `Shadow` (copies how you play; `pack()` for `start`), `tune()`; brain options `styles`, `tells`, `start`.
 - `gs.board.Board` (match, fall, refill, `slide` 2048-style, `flood`, `hint`), `gs.battle` (`Fighter`, `Battle`
   turn order + types + statuses, `Bag`, `gainXp`, `loot`), `gs.gen` (lazy: `dungeon`, `cave`, `maze`, `islands`,
-  `pattern`, `fov`, `proven` + `reach`; seeded, same text as TileMap), `gs.drag.Drag` (pieces, slots, snap, lists), `gs.history.History` (undo/redo: `push`, `undo`, `redo`, `merge`, `group`), `gs.items` (`Inventory` slots/stacks/equip slots, `Recipes` with `can`, `missing`, stations, timed making), `gs.adventure.Adventure` (point-and-click rooms, hotspots, use X on Y, exits, flags, auto-map), `gs.hex` (`HexMap`: taps, neighbours, `reach` with terrain costs, `path`, `sees`; `Iso` views), `gs.rts` (`Select` tap/box/double tap, `formation`, `FlowField`, `BuildGrid`, tower `target`), `gs.fight` (`Reader` motion inputs + buffer, `Fighter` frame data, hit/hurt boxes, cancels, `clash`), `gs.bullets` (`Bullets` thousands in arrays, hit + graze, `Emitter` ring/spread/spiral/burst), `gs.sand` (`Sand` falling sand, liquids, fire, lava, `blast` holes in ground, `solid`, `picture`), `gs.flow` (`Streams`: rivers with current round rocks, waterfalls, whirlpools, lava/acid `hurt` zones; `Flood` shallow water that fills hollows), `gs.art` (seeded `creature`, `face`, `item` with rarity, `building`, pixel `sprite`, `name`), `gs.sports` (`Pitch`, `Team.think`: formations, chase, mark, support, shoot/pass/dribble), `gs.trivia` (lazy: `Quiz` of 2,700 questions, seeded, no repeats, `climb`, `fifty`; show `CREDIT`), `gs.idle`
+  `pattern`, `fov`, `proven` + `reach`; seeded, same text as TileMap), `gs.drag.Drag` (pieces, slots, snap, lists), `gs.history.History` (undo/redo: `push`, `undo`, `redo`, `merge`, `group`), `gs.items` (`Inventory` slots/stacks/equip slots, `Recipes` with `can`, `missing`, stations, timed making), `gs.adventure.Adventure` (point-and-click rooms, hotspots, use X on Y, exits, flags, auto-map), `gs.hex` (`HexMap`: x, y is its top left, `cx, cy` centres it; taps, neighbours, `reach` with terrain costs, `path`, `sees`; `Iso` views), `gs.rts` (`Select` tap/box/double tap, `formation`, `FlowField`, `BuildGrid`, tower `target`), `gs.fight` (`Reader` motion inputs + buffer, `Fighter` frame data, hit/hurt boxes, cancels, `clash`), `gs.bullets` (`Bullets` thousands in arrays, hit + graze, `Emitter` ring/spread/spiral/burst), `gs.sand` (`Sand` falling sand, liquids, fire, lava, `blast` holes in ground, `solid`, `picture`), `gs.flow` (`Streams`: rivers with current round rocks, waterfalls, whirlpools, lava/acid `hurt` zones; `Flood` shallow water that fills hollows), `gs.art` (seeded `creature`, `face`, `item` with rarity, `building`, pixel `sprite`, `name`), `gs.sports` (`Pitch`, `Team.think`: formations, chase, mark, support, shoot/pass/dribble), `gs.trivia` (lazy: `Quiz` of 2,700 questions, seeded, no repeats, `climb`, `fifty`; show `CREDIT`), `gs.idle`
   (`cost`, `afford`, `short`, `Earner`; `api.away()` for time away), `gs.party` (`Turns` with hand-over, `Split`
   screens), `gs.rhythm` (`Beat`, `Chart`, `Calibrate`), `gs.strokes` (`Stroke`, `Shapes` recogniser, `toPhysics`),
   `gs.vehicles` (`Car`, `Kart`, `Laps`; `World3D.vehicle()` for suspension), `gs.level3d.Level3D(text)`, `gs.sky`
@@ -194,7 +194,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.prefs` (read only): the player's Reduce motion setting, `reduceMotion`, `motion`. Shake, flash and
   camera kicks already follow it; scale your own big effects by `gs.prefs.motion`.
 - `gs.math`: `rng(seed)`, `daily(salt)`, `noise2`, `noise3`, `fbm`, `vec`, `overlap`, `Grid`, `Timers`, `angleDiff`, `wrap`.
-- `gs.util`: `clamp`, `rnd`, `pix`, `disc`, `hash`, `fmt`, `flickTracker`. `gs.palettes`: `PAL`, `SHELL`, `C16`.
+- `gs.util`: `clamp`, `rnd`, `pix`, `disc`, `hash`, `fmt`, `letter(i)` ('A' + i), `flickTracker`. `gs.palettes`: `PAL`, `SHELL`, `C16`.
 - `gs.gfx` (shaded 2D shapes, glow, backdrops), `gs.bricks` (toy bricks), `gs.geo` (location maths).
 - `gs.toon` (Console 3D: `View`, `G`, `part`, `grp`, `blob`, `toon`), `gs.hd` (Next Gen: `HDView` with `decal`, `bounce` (bounce light), `room` (room reflections), `occluders` (occlusion culling), `beams` (volumetric light), `motionBlur`, `bakeLight`, `shafts`,
   `pbr`, `rbox`, `surface`, `speckle`, `Particles`, `sun`, `spot`), `gs.ar` (`ARView`, `FLOOR`, `arNote`), `gs.THREE`.
@@ -223,6 +223,8 @@ Add `/** @type {import('../gamescroll.js').GameDef} */` above `export default` t
 - Making the kits decide the look: kits give answers (hits, timings, where to aim or look); your game draws and sets the rules.
 
 - Round state set in `make()` instead of `reset()`, so "Play again" doesn't start clean.
+- A round that starts moving (or scoring) before the player touches it: wait with `gs.rounds.Ready`.
+- A HUD drawn under the app's score badge (top centre): keep it out of `api.scoreArea()`.
 - Using `Date.now()` or `setTimeout` for game timing: use `dt` and `gs.math.Timers` (they pause with the game).
 - Starting music in `reset()` (it also runs while the card waits in the feed): start it in `update()`.
 - Drawing in screen pixels: always draw in `w` × `h` game units; input is already converted.

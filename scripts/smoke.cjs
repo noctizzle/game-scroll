@@ -16,6 +16,9 @@ const { jobs, pool } = require('./lib/pool.cjs');
     return w;
   };
   const first = await open();
+  // a test machine without a colour emoji font draws emoji as empty boxes (phones are fine)
+  const emoji = await first.p.evaluate(() => { const c = document.createElement('canvas'); c.width = c.height = 24; const g = c.getContext('2d'); g.font = '20px sans-serif'; g.textBaseline = 'top'; g.fillText('\u{1F34E}', 0, 0); const d = g.getImageData(0, 0, 24, 24).data; for (let i = 0; i < d.length; i += 4) if (d[i + 3] && Math.abs(d[i] - d[i + 1]) > 40) return true; return false; });
+  if (!emoji) console.log('note: this browser has no colour emoji font, so emoji draw as boxes here (they are fine on phones). Fix: sudo apt-get install fonts-noto-color-emoji');
   const ids = argv.length ? argv : await first.p.evaluate(() => __gs.GAMES.map(g => g.id));
   let failed = 0;
   // Every game must pay credits for a win, so every game needs a goal score.
