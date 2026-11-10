@@ -31,8 +31,9 @@ import {
   WebGLRenderTarget, Vector2, Vector3, PMREMGenerator, LinearMipmapLinearFilter, Mesh, BoxGeometry, LinearFilter, AdditiveBlending as ADD,
   OrthographicCamera, PlaneGeometry, MeshBasicMaterial, MeshDepthMaterial, Group, Vector4, DataTexture, RGBAFormat, ShaderChunk,
   LightProbe, CubeCamera, WebGLCubeRenderTarget, Euler, Matrix4, Quaternion, DepthTexture, WebGLCoordinateSystem, Box3, Sphere, UnsignedIntType,
-  Data3DTexture, UnsignedByteType, RectAreaLight, DoubleSide,
+  Data3DTexture, UnsignedByteType, RectAreaLight, DoubleSide, Raycaster, Object3D,
 } from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { LUTCubeLoader } from 'three/examples/jsm/loaders/LUTCubeLoader.js';
 import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
@@ -1664,7 +1665,7 @@ export class HDView {
         + (c.left ?? 0) * 17 + (c.right ?? 0) * 19 + (c.top ?? 0) * 23 + (c.bottom ?? 0) * 29 + c.near * 31 + c.far * 37 + (c.fov ?? 0) * 41 + sh.bias * 43 + (sh.map ? 0 : Math.random());
     }
     this.scene.traverseVisible(o => {
-      if (o.isLight) return;
+      if (o.isLight || o.layers.mask === BATCH_BIT) return;   // (a merged piece: its group's mesh casts for it)
       if (!o.castShadow) { if (o.layers.mask & SH_BITS) o.layers.mask &= ~SH_BITS; return; }
       const e = o.matrixWorld.elements, w = (o.id % 89) + 1, held = (o.layers.mask & HOLD_BIT) !== 0;
       let h = ((o.geometry?.id ?? 0) % 97 * .37 + e[0] * 1.3 + e[1] * 1.7 + e[2] * 2.3 + e[4] * 2.9 + e[5] * 3.1 + e[6] * 3.7 + e[8] * 4.1 + e[9] * 4.3 + e[10] * 4.7 + e[12] * 5.3 + e[13] * 5.9 + e[14] * 6.1 + (held ? .5 : 0)) * w;
@@ -1777,7 +1778,7 @@ export class HDView {
         if (o.shaftsOn) { o.shaft = Math.min(2, this.shafts) * seen; o.shaftCol = this.sun?.color || C_WARM; o.shaftAt = this.shaftsAt; }
       }
     }
-    if (!baking && !off) autoLod(this, r.domElement.height);
+    if (!baking && !off) { autoLod(this, r.domElement.height); if (this.batches?.list.length) unbatchAll(this); }   // (static batching: WebGL only, see autoBatch)
     // shadows: each light's map is drawn again only when it or a caster it sees moved (shadowLights)
     r.shadowMap.enabled = T.shadow > 0; r.shadowMap.type = PCFShadowMap;
     if (T.shadow > 0) {
@@ -2039,7 +2040,7 @@ export class HDView {
     if (!this.warmed && !off) this.warm();
     // shadows: redraw the maps only when a shadow caster or a shadow light moved (or the tier, view or map changed)
     this.scene.updateMatrixWorld();
-    if (!baking && !off) autoLod(this, r.domElement.height);
+    if (!baking && !off) { autoLod(this, r.domElement.height); autoBatch(this, now); }
     r.shadowMap.enabled = T.shadow > 0;
     let shadows = false; const cut = lastView !== this || this._cut; this._cut = false;
     if (T.shadow > 0 && this.shadowLights(lastView !== this)) r.shadowMap.needsUpdate = shadows = true;
@@ -2313,6 +2314,84 @@ class Eye {
   want() { return !this.busy && ++this.n % 6 === 0; }
 }
 const OCC_LAYER = 30;
+// Automatic static batching (HD.batch, on by default): the many small still things of a level (crates,
+// posts, rocks, walls, lamps) that share a material are merged into one mesh per material and area, one
+// draw call (and one shadow draw) where there were dozens: Unity's static batching, done by itself.
+// Merged meshes use the same shaders as the pieces (nothing new to build, so no stutter) and no work
+// per frame. WebGL only: there each draw call costs the phone's driver real time, while on WebGPU draws are
+// cheap and merging measured slower (bigger meshes fall in more of the lamps' shadow views). A mesh joins once it has kept still for about 1.5 s; the moment one moves, hides, changes
+// material or geometry, or leaves the scene, its group goes back to drawing piece by piece (and the
+// others merge again later without it), so a game never has to know. Not merged: skinned, morphing,
+// instanced, see-through, multi-material and big meshes (those get automatic LOD instead), kit twins,
+// and mesh.userData.noBatch. The pieces stay in the scene for the game, and for raycasts (three's
+// Raycaster also sees the batch layer they move to), just off the camera's layer.
+const BATCH_LAYER = 26, BATCH_BIT = 1 << BATCH_LAYER, BATCH_SCAN = 500, BATCH_STILL = 3, BATCH_MIN = 4, BATCH_MAX_TRIS = LOD_MIN_TRIS, BATCH_CELL = 24, BATCH_WORK = 12000;
+for (const k of ['intersectObject', 'intersectObjects']) {   // (a batched mesh is still hit by raycasts that look at the default layer)
+  const f = Raycaster.prototype[k];
+  Raycaster.prototype[k] = function (...a) { const m = this.layers.mask; if (m & 1) this.layers.mask = m | BATCH_BIT; try { return f.apply(this, a); } finally { this.layers.mask = m; } };
+}
+const BATCH_SNAP = new WeakMap(), NO_RAY = () => {};
+function batchable(o) {
+  if (!o.isMesh || o.isInstancedMesh || o.isInstancedMesh2 || o.isBatchedMesh || o.isSkinnedMesh || o.morphTargetInfluences || o.userData.noBatch || o.userData.gsTwin || o.userData.gsLod) return false;
+  const m = o.material, g = o.geometry;
+  if (!m || Array.isArray(m) || m.transparent || m.userData?.gsGpu || !g || g.morphAttributes?.position || g.attributes.position?.isInterleavedBufferAttribute) return false;   // (groups are ignored with one material)
+  if ((o.layers.mask & ~SH_BITS) !== 1 || !o.frustumCulled || o.onBeforeRender !== Object3D.prototype.onBeforeRender) return false;
+  return (g.index ? g.index.count : g.attributes.position.count) / 3 < BATCH_MAX_TRIS;
+}
+function batchKey(o) {
+  const g = o.geometry, e = o.matrixWorld.elements, cell = Math.floor(e[12] / BATCH_CELL) + ',' + Math.floor(e[14] / BATCH_CELL);   // (by area too, so off-screen groups are still skipped whole)
+  return o.material.id + '|' + Object.keys(g.attributes).sort().map(k => k + g.attributes[k].itemSize).join(',') + (g.index ? '+i' : '') + '|' + (o.castShadow ? 1 : 0) + (o.receiveShadow ? 1 : 0) + '|' + cell;
+}
+function sameMatrix(a, b) { for (let i = 0; i < 16; i++) if (a[i] !== b[i]) return false; return true; }
+function shownInScene(o, scene) { for (let x = o; x; x = x.parent) { if (x === scene) return true; if (!x.visible) return false; } return false; }
+function autoBatch(v, now) {
+  const B = v.batches ||= { list: [] };
+  if (HD.batch === false) { if (B.list.length) unbatchAll(v); return; }
+  // every frame: a group with a piece the game changed goes back to drawing piece by piece
+  for (let i = B.list.length - 1; i >= 0; i--) {
+    const b = B.list[i];
+    for (const [o, e] of b.items) {
+      o.updateWorldMatrix(true, false);   // (moved in this frame's update: split before the frame is drawn)
+      if (o.material === b.mesh.material && o.geometry === e.g && sameMatrix(o.matrixWorld.elements, e.m) && shownInScene(o, v.scene)) continue;
+      const sn = BATCH_SNAP.get(o); if (sn) { sn.left = (sn.left || 0) + 1; sn.n = sn.left > 1 ? -1e9 : -20; }   // (moves now and then: ~10 s before it tries again; twice: a mover, left be)
+      unbatch(B, b); break;
+    }
+  }
+  // now and then: what has kept still for a while is merged (one group a time, to spread the work)
+  if (now - (B.t || 0) < BATCH_SCAN) return; B.t = now;
+  const groups = new Map();
+  v.scene.traverseVisible(o => {
+    if (!batchable(o)) return;
+    const el = o.matrixWorld.elements; let s = BATCH_SNAP.get(o);
+    if (!s) { BATCH_SNAP.set(o, { m: Float64Array.from(el), n: 0 }); return; }
+    if (!sameMatrix(el, s.m)) { s.m.set(el); s.n = Math.min(s.n, 0); return; }
+    if (++s.n < BATCH_STILL) return;
+    const k = batchKey(o); let a = groups.get(k); if (!a) groups.set(k, a = []); a.push(o);
+  });
+  for (const a of groups.values()) if (a.length >= BATCH_MIN) { makeBatch(v, B, a); return; }
+}
+function makeBatch(v, B, list) {
+  const parts = []; let verts = 0;
+  for (const o of list) { const n = o.geometry.attributes.position.count; if (verts + n > BATCH_WORK) break; verts += n; parts.push(o); }   // (a little at a time: no hitch while it merges)
+  if (parts.length < BATCH_MIN) return;
+  const geos = parts.map(o => { const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); g.clearGroups(); g.morphAttributes = {}; return g; });
+  let g; try { g = mergeGeometries(geos, false); } catch (e) { g = null; } for (const x of geos) x.dispose();
+  if (!g) { for (const o of parts) BATCH_SNAP.get(o).n = -1e9; return; }   // (pieces that won't merge: left be)
+  g.computeBoundingSphere(); g.computeBoundingBox();
+  const o0 = parts[0], mesh = new Mesh(g, o0.material);
+  mesh.castShadow = o0.castShadow; mesh.receiveShadow = o0.receiveShadow; mesh.matrixAutoUpdate = false; mesh.raycast = NO_RAY;
+  mesh.name = 'gs-batch'; mesh.userData.noBatch = mesh.userData.noLod = mesh.userData.noHold = true;
+  const b = { mesh, items: new Map() };
+  for (const o of parts) { b.items.set(o, { g: o.geometry, m: Float64Array.from(o.matrixWorld.elements), mask: o.layers.mask }); o.layers.mask = BATCH_BIT; }   // off the camera's (and the shadow passes') layers, still in the scene
+  v.scene.add(mesh); B.list.push(b);
+  HD.info.batched = (HD.info.batched || 0) + parts.length; HD.info.batches = (HD.info.batches || 0) + 1;
+}
+function unbatch(B, b) {
+  for (const [o, e] of b.items) { o.layers.mask = (o.layers.mask & ~BATCH_BIT) | e.mask; const sn = BATCH_SNAP.get(o); if (sn) { sn.m.set(o.matrixWorld.elements); sn.n = Math.min(sn.n, 0); } }
+  HD.info.batched = Math.max(0, (HD.info.batched || 0) - b.items.size);
+  b.mesh.removeFromParent(); b.mesh.geometry.dispose(); B.list.splice(B.list.indexOf(b), 1);
+}
+function unbatchAll(v) { const B = v.batches; while (B.list.length) unbatch(B, B.list[0]); }
 // shadowLights(): scratch (no garbage per frame)
 let SH_H = new Float64Array(40); const SH_S = new Sphere(), SH_P = new Vector3(), SH_LAST = new WeakMap();
 // the still/moving shadow split: frames before a thing counts as still, the layers that pick still or

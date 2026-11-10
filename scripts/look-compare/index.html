@@ -170,6 +170,21 @@ async function pomScene() {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend];
 }
+// automatic static batching: a yard of crates, posts and rocks sharing a few materials, kept still long
+// enough to be batched (?nobatch draws them one by one: the two pictures must match)
+async function batchScene() {
+  window.__hd.force = 2; window.__hd.batch = !new URLSearchParams(location.search).has('nobatch');
+  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .01, env: .3, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 4, 9); v.cam.lookAt(0, 0, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 14, [-.5, 1, .4]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(30, 30).rotateX(-Math.PI / 2), gs.hd.pbr('#6a7a58', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const mats = ['#a0703a', '#808890', '#5a5048'].map(cl => gs.hd.pbr(cl, { rough: .7 })), geos = [new T.BoxGeometry(.8, .8, .8), new T.CylinderGeometry(.12, .12, 1.6, 8), new T.DodecahedronGeometry(.5)];
+  for (let i = 0; i < 60; i++) { const k = i % 3, m = new T.Mesh(geos[k], mats[k]); m.position.set(((i * 37) % 13) - 6, k === 1 ? .8 : .4, ((i * 17) % 11) - 7); m.rotation.y = i * .7; m.castShadow = m.receiveShadow = true; v.scene.add(m); }
+  for (let i = 0; i < 130; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  const info = window.__hd.info.calls + ' calls, ' + (window.__hd.info.batched || 0) + ' batched'; window.__hd.batch = true;
+  return [c.toDataURL(), window.__hd.info.backend + ', ' + info];
+}
 async function roomScene() {
   window.__hd.force = 2;
   const F = new Set((new URLSearchParams(location.search).get('feat') || '').split(',')), on = k => !F.has('-' + k);
@@ -335,6 +350,7 @@ try {
   [out['gpu-oit'], backends['gpu-oit']] = await oitScene();
   [out.flare, backends.flare] = await flareScene();
   [out['gpu-pom'], backends['gpu-pom']] = await pomScene();
+  [out.batch, backends.batch] = await batchScene();
   { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; }
   [out.river, backends.river] = await riverScene();
   [out.flood, backends.flood] = await floodScene();

@@ -3,7 +3,7 @@
 // passes and handing the work to the GPU), draw calls, triangles, how long the card took to load
 // and how much memory it kept. The GPU itself is SwiftShader here (software), so frame rates say
 // nothing about phones; the CPU numbers are what to compare before and after an engine change.
-//   npm run build:bundled && node scripts/perf-bench.cjs [id ...] [--gl | --gpu] [--secs 8] [--json out.json] [--vs base.json] [--still 3] [--no-shadow-cache]
+//   npm run build:bundled && node scripts/perf-bench.cjs [id ...] [--gl | --gpu] [--secs 8] [--json out.json] [--vs base.json] [--still 3] [--no-shadow-cache] [--no-batch]
 // No ids: every Next Gen game. --vs prints the change against a saved run (same machine only).
 const { chromium, devices } = require('playwright');
 const fs = require('fs'), path = require('path');
@@ -11,7 +11,7 @@ const fs = require('fs'), path = require('path');
   const argv = process.argv.slice(2), opt = k => { const i = argv.indexOf(k); return i >= 0 ? argv.splice(i, 2)[1] : null; };
   const secs = +(opt('--secs') || 8), out = opt('--json'), vs = opt('--vs'), warm = +(opt('--warm') || 0);
   const backs = argv.includes('--gl') ? ['webgl'] : argv.includes('--gpu') ? ['webgpu'] : ['webgl', 'webgpu'];
-  const still = opt('--still'), noCache = argv.includes('--no-shadow-cache');
+  const still = opt('--still'), noCache = argv.includes('--no-shadow-cache'), noBatch = argv.includes('--no-batch');
   const ids0 = argv.filter(a => !a.startsWith('--'));
   const prof = argv.includes('--profile') || argv.includes('--alloc'), alloc = argv.includes('--alloc');   // --alloc: which functions allocate the most memory while playing (garbage the phone must collect)   // also name the slowest functions (runs the dev server, so names and lines are real)
   const vite = await import('vite');
@@ -28,7 +28,7 @@ const fs = require('fs'), path = require('path');
   await p.evaluate(() => { __hd.force = 3; });   // the top tier: Rob's Fold 8 is a top-class phone
   // --no-shadow-cache: the still/moving shadow split off (to measure it); --still n: frames before a thing
   // counts as still (SwiftShader draws a handful of frames a second, so a few frames here is a phone's second)
-  await p.evaluate(([s, n]) => { if (s) __hd.shadowStill = +s; if (n) __hd.shadowCache = false; }, [still, noCache]);
+  await p.evaluate(([s, n, nb]) => { if (s) __hd.shadowStill = +s; if (n) __hd.shadowCache = false; if (nb) __hd.batch = false; }, [still, noCache, noBatch]);
   const pick = v => p.evaluate(async v => { while (!window.__gpu) await new Promise(r => setTimeout(r, 50)); window.__gpu.pick(v); return v === 'webgpu' ? !!(await window.__gpu.ready()) : true; }, v);
   const p50 = a => a.length ? [...a].sort((x, y) => x - y)[a.length >> 1] : 0;
   const p95 = a => a.length ? [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * .95))] : 0;
@@ -64,14 +64,14 @@ const fs = require('fs'), path = require('path');
       }
       const profile = prof && !alloc ? (await cdp.send('Profiler.stop')).profile : null;
       const allocs = alloc ? (await cdp.send('HeapProfiler.stopSampling')).profile : null;
-      const T = await p.evaluate(() => { const t = window.__bench; window.__bench = null; return { u: t.u.slice(3), r: t.r.slice(3), calls: t.calls, tris: t.tris, back: t.back, sh: (__hd.info.shDraws || 0) - t.sh0, sp: (__hd.info.shSplit || 0) - t.sp0 }; });
+      const T = await p.evaluate(() => { const t = window.__bench; window.__bench = null; return { u: t.u.slice(3), r: t.r.slice(3), calls: t.calls, tris: t.tris, back: t.back, sh: (__hd.info.shDraws || 0) - t.sh0, sp: (__hd.info.shSplit || 0) - t.sp0, batched: __hd.info.batched || 0, batches: __hd.info.batches || 0 }; });
       await cdp.send('HeapProfiler.collectGarbage');
       const heap1 = (await cdp.send('Runtime.getHeapUsage')).usedSize;
-      const row = { back: T.back, load, frames: T.r.length, upd50: p50(T.u), upd95: p95(T.u), cpu50: p50(T.r), cpu95: p95(T.r), calls: p50(T.calls), tris: p50(T.tris), shadowPct: T.r.length ? Math.round(100 * T.sh / T.r.length) : 0, splitPct: T.r.length ? Math.round(100 * T.sp / T.r.length) : 0, heapMB: (heap1 - heap0) / 1048576 };
+      const row = { back: T.back, load, frames: T.r.length, upd50: p50(T.u), upd95: p95(T.u), cpu50: p50(T.r), cpu95: p95(T.r), calls: p50(T.calls), tris: p50(T.tris), shadowPct: T.r.length ? Math.round(100 * T.sh / T.r.length) : 0, splitPct: T.r.length ? Math.round(100 * T.sp / T.r.length) : 0, heapMB: (heap1 - heap0) / 1048576, batched: T.batched, batches: T.batches };
       (res[back] ||= {})[id] = row;
       const base = vs && JSON.parse(fs.readFileSync(vs, 'utf8'))[back]?.[id];
       const d = (k, f = 1) => base ? ` (${row[k] - base[k] >= 0 ? '+' : ''}${(row[k] - base[k]).toFixed(f)})` : '';
-      const line = `${back.padEnd(6)} ${id.padEnd(16)} on ${T.back.padEnd(6)} load ${load} ms${d('load', 0)}  update p50 ${row.upd50.toFixed(2)}${d('upd50', 2)} p95 ${row.upd95.toFixed(2)}${d('upd95', 2)}  3D cpu p50 ${row.cpu50.toFixed(2)}${d('cpu50', 2)} p95 ${row.cpu95.toFixed(2)}${d('cpu95', 2)} ms  calls ${row.calls}${d('calls', 0)}  tris ${row.tris}  frames ${row.frames}  shadow redraws ${row.shadowPct}% (split ${row.splitPct}%)  heap ${row.heapMB >= 0 ? '+' : ''}${row.heapMB.toFixed(1)} MB`;
+      const line = `${back.padEnd(6)} ${id.padEnd(16)} on ${T.back.padEnd(6)} load ${load} ms${d('load', 0)}  update p50 ${row.upd50.toFixed(2)}${d('upd50', 2)} p95 ${row.upd95.toFixed(2)}${d('upd95', 2)}  3D cpu p50 ${row.cpu50.toFixed(2)}${d('cpu50', 2)} p95 ${row.cpu95.toFixed(2)}${d('cpu95', 2)} ms  calls ${row.calls}${d('calls', 0)}  tris ${row.tris}  frames ${row.frames}  shadow redraws ${row.shadowPct}% (split ${row.splitPct}%)  heap ${row.heapMB >= 0 ? '+' : ''}${row.heapMB.toFixed(1)} MB  batched ${row.batched} (${row.batches} made)`;
       console.log(line);
       if (profile) for (const t of hot(profile)) console.log('    ' + t);
       if (allocs) for (const t of allocated(allocs, secs)) console.log('    ' + t);

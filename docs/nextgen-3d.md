@@ -111,6 +111,12 @@ so its next round starts there instead of stuttering down again.
   same. The copies share the original's points, so normals, UVs and bone weights stay exact. Off for
   instanced and multi-material meshes, see-through ones and `mesh.userData.noLod = true`;
   `__hd.autoLod = false` turns it off. (gs.props makes LODs for instanced props.)
+- Static batching (WebGL, by itself): small still things that share a material (crates, posts, rocks,
+  walls) are merged into one mesh per material and area after about 1.5 s still, one draw call where
+  there were dozens (Unity's static batching). A piece that moves, hides or changes material goes back
+  to drawing itself that frame, so the game never has to know, and raycasts still hit the pieces.
+  `mesh.userData.noBatch = true` keeps a mesh out; `__hd.batch = false` turns it off. WebGPU draws are
+  cheap enough that merging measured slower there, so it stays off on WebGPU.
 - On WebGPU, lights use three.js's clustered (Forward+) lighting: each pixel only adds up the point
   and spot lights that reach it, so `v.lampLights()` / `v.placeLamps()` light 8 times as many of the
   nearest lamps (up to 32) for about the same cost, and lamps coming and going build no shaders.
