@@ -103,22 +103,22 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 ## Casual action 📱
 
 - [x] Dart Wheel — throw darts into a spinning target without hitting other darts
-- [ ] Ball Bounce Helix — tap to drop a ball through gaps in rotating rings
+- [x] Ball Bounce Helix — tap to drop a ball through gaps in rotating rings
 - [x] Paper Plane — tilt or drag to glide a paper plane through a windy city
 - [x] Bowling Swipe — swipe and curve a ball into ten pins
 - [x] Mini Golf One Hole — drag back to putt on a random one-hole course
 - [x] Bottle Flip — flick to flip a bottle so it lands upright
 - [x] Skate Ollie — ollie over obstacles and chain kickflips and grabs in the air
-- [ ] Archery Wind — aim with wind drift at distant targets
+- [x] Archery Wind — aim with wind drift at distant targets
 - [x] Penalty Keeper — swipe to dive and save penalty kicks
-- [ ] Penalty Striker — swipe a curved shot past a moving keeper
+- [x] Penalty Striker — swipe a curved shot past a moving keeper
 - [x] Rhythm Drums — tap three pads in time with falling notes
 - [x] Juggle Kick — keep a ball up by tapping under it
 - [x] Ski Slalom — steer between gates on a downhill run
 - [ ] Surf Wave — ride a wave's face, pump for speed, avoid wipeout
 - [ ] Boxing Dodge — swipe to dodge punches, tap to counter
 - [x] Laser Dodge — drag a dot through sweeping laser beams
-- [ ] Popcorn Pan — shake or tap to pop kernels without burning them
+- [x] Popcorn Pan — shake or tap to pop kernels without burning them
 - [x] Ping Pong Rally — swipe to return the ball, angle by swipe direction
 - [x] Trampoline Tricks — tap in the air to flip, land upright
 - [x] Gravity Runner — flip gravity between floor and ceiling to dodge spikes on both
@@ -126,7 +126,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Hammer Strength — time the power meter for the carnival bell
 - [ ] Fruit Stacker — stack wobbling fruit as high as possible
 - [x] Cup Shuffle — follow the cup hiding the ball
-- [ ] Spinner Keep-up — flick a fidget spinner to keep it spinning past targets
+- [x] Spinner Keep-up — flick a fidget spinner to keep it spinning past targets
 
 ## Casual puzzle 📱
 
@@ -217,7 +217,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 
 ## Physics toys 📱
 
-- [ ] Ragdoll Drop — drop a ragdoll down stairs for points
+- [x] Ragdoll Drop — drop a ragdoll down stairs for points
 - [x] Jelly Bounce — tap as a jelly squashes into a trampoline to bounce higher and grab stars
 - [x] Domino Chain — draw a domino line past every bell, round rocks, with a limited count
 - [x] Rubber Band Shot — stretch and fire a rubber band at tins sliding along shelves
@@ -343,3 +343,5 @@ Ten batches toward 1000, mostly from the open ideas above (ticked where they wer
 - [x] Tally Count — count only the sheep the card asks for as the flock runs past
 - [x] Plate Spinner — tap wobbling plates on sticks to keep them all spinning
 - [x] Lasso Loop — circle your finger over a running calf, let go to drop the loop there
+- [x] Yo-Yo Tricks — flick to throw, swipe the trick shown while it sleeps, tap to catch before it stops
+- [x] Skip Stone — swipe fast and flat to skim stones; lily pads kick, ducks stop it

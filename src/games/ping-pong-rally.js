@@ -12,7 +12,7 @@ let W = 360, H = 640;
 
 function make(api) {
   const feel = new Feel();
-  let bat, bot, ball, score, balls, rally, t, vxBat, lastX, msg, ml, wait;
+  let started, bat, bot, ball, score, balls, rally, t, vxBat, lastX, msg, ml, wait;
   const T = () => ({ l: 44, r: W - 44, top: 110, bot: H - 150 });
   const youY = () => T().bot + 26, botY = () => T().top - 26;
 
@@ -31,12 +31,13 @@ function make(api) {
   const bz = () => { const k = ball.k, b = ball.by; return k < b ? Math.sin(k / b * Math.PI) * 40 : Math.sin((k - b) / (1 - b) * Math.PI) * 22; };
 
   return {
-    reset() { bat = { x: W / 2 }; bot = { x: W / 2 }; score = 0; balls = 3; t = 0; vxBat = 0; lastX = null; msg = ''; ml = 0; serve(); feel.clear(); },
+    reset() { started = false; bat = { x: W / 2 }; bot = { x: W / 2 }; score = 0; balls = 3; t = 0; vxBat = 0; lastX = null; msg = ''; ml = 0; serve(); feel.clear(); },
     resize(w, h) { W = w; H = h; },
     update(dt) {
       feel.update(dt); if (feel.frozen) return;
       t += dt; if (ml > 0) ml -= dt;
       vxBat *= Math.pow(.02, dt);
+      if (!started) return;
       if (wait > 0) { wait -= dt; return; }
       const tb = T();
       ball.k += dt / ball.dur;
@@ -93,12 +94,12 @@ function make(api) {
       c.textAlign = 'right'; c.font = '600 14px Rubik, sans-serif'; c.fillText(`rally ${rally}`, W - 16, H - 24);
       c.textAlign = 'center';
       if (ml > 0) { c.font = '800 26px Rubik, sans-serif'; c.fillStyle = '#ffd166'; c.fillText(msg, W / 2, H * .45); }
-      if (t < 4) { c.font = '600 15px Rubik, sans-serif'; c.fillStyle = '#fff'; c.fillText('Drag to move your bat', W / 2, H - 60); }
+      if (!started || t < 4) { c.font = '600 15px Rubik, sans-serif'; c.fillStyle = '#fff'; c.fillText('Drag to move your bat', W / 2, H - 60); }
     },
-    down(x) { lastX = x; },
-    move(x, y, pr) { if (lastX == null) lastX = x; const dx = x - lastX; vxBat = vxBat * .5 + dx * 30; bat.x = clamp(x, 34, W - 34); lastX = x; },
+    down(x) { started = true; lastX = x; },
+    move(x, y, pr) { if (pr) started = true; if (lastX == null) lastX = x; const dx = x - lastX; vxBat = vxBat * .5 + dx * 30; bat.x = clamp(x, 34, W - 34); lastX = x; },
     up() { lastX = null; },
-    key(k, d) { if (d && k === 'ArrowLeft') { bat.x = clamp(bat.x - 30, 34, W - 34); vxBat = -400; } if (d && k === 'ArrowRight') { bat.x = clamp(bat.x + 30, 34, W - 34); vxBat = 400; } },
+    key(k, d) { if (d) started = true; if (d && k === 'ArrowLeft') { bat.x = clamp(bat.x - 30, 34, W - 34); vxBat = -400; } if (d && k === 'ArrowRight') { bat.x = clamp(bat.x + 30, 34, W - 34); vxBat = 400; } },
   };
 
   function lose(why) {

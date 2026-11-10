@@ -13,7 +13,7 @@ const G = 260;
 
 function make(api) {
   const feel = new Feel();
-  let p, cam, blocks, vents, stars, nextX, score, dist, starsN, t, steer, drag0, dead, gust, wind, trail;
+  let started, p, cam, blocks, vents, stars, nextX, score, dist, starsN, t, steer, drag0, dead, gust, wind, trail;
   want('motion');
 
   function more() {
@@ -27,10 +27,11 @@ function make(api) {
   }
 
   return {
-    reset() { p = { x: 60, y: H * .3, v: 170, a: 0 }; cam = 0; blocks = []; vents = []; stars = []; nextX = 300; score = 0; dist = 0; starsN = 0; t = 0; steer = 0; drag0 = null; dead = 0; gust = 0; trail = []; wind = null; more(); feel.clear(); },
+    reset() { started = false; p = { x: 60, y: H * .3, v: 170, a: 0 }; cam = 0; blocks = []; vents = []; stars = []; nextX = 300; score = 0; dist = 0; starsN = 0; t = 0; steer = 0; drag0 = null; dead = 0; gust = 0; trail = []; wind = null; more(); feel.clear(); },
     resize(w, h) { W = w; H = h; },
     update(dt) {
       feel.update(dt); if (feel.frozen) return;
+      if (!started) return;
       t += dt;
       if (!wind) wind = bed({ vol: .02, from: 500, gusts: .5 });
       if (dead) { dead += dt; p.y += 200 * dt; p.a += 3 * dt; if (dead > 1.2) api.over(); return; }
@@ -84,12 +85,12 @@ function make(api) {
       c.restore();
       feel.end(c, W, H);
       c.fillStyle = '#ffffffd0'; c.font = '600 13px Rubik, sans-serif'; c.textAlign = 'left'; c.fillText(`${Math.round(p.v / 4)} km/h${p.v < 100 ? '  STALL!' : ''}`, 16, H - 20);
-      if (t < 4) { c.textAlign = 'center'; c.fillStyle = '#fff'; c.font = '700 17px Rubik, sans-serif'; c.fillText('Hold and drag up or down to steer', W / 2, H * .62); c.font = '500 14px Rubik, sans-serif'; c.fillText('Ride the warm air over the vents', W / 2, H * .62 + 22); }
+      if (!started || t < 4) { c.textAlign = 'center'; c.fillStyle = '#fff'; c.font = '700 17px Rubik, sans-serif'; c.fillText('Hold and drag up or down to steer', W / 2, H * .62); c.font = '500 14px Rubik, sans-serif'; c.fillText('Ride the warm air over the vents', W / 2, H * .62 + 22); }
     },
-    down(x, y) { drag0 = y; steer = 0; },
+    down(x, y) { started = true; drag0 = y; steer = 0; },
     move(x, y, pr) { if (pr && drag0 != null) steer = clamp((y - drag0) / 70, -1, 1); },
     up() { drag0 = null; steer = 0; },
-    key(k, d) { if (k === 'ArrowUp') steer = d ? -1 : 0; if (k === 'ArrowDown') steer = d ? 1 : 0; },
+    key(k, d) { if (d) started = true; if (k === 'ArrowUp') steer = d ? -1 : 0; if (k === 'ArrowDown') steer = d ? 1 : 0; },
   };
 }
 
