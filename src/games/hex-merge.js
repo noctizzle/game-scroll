@@ -77,7 +77,7 @@ export default {
   tag: 'Casual · Merge',
   retro: false,
   w: 360, h: 640, maxH: 800,
-  goal: 120,
+  goal: 250,
   hint: 'Tap an empty hex to place the next tile. Three or more touching alike merge into one higher, and merges chain. Swap with the held tile. A full board ends it.',
   make,
 };

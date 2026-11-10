@@ -144,7 +144,7 @@ export default {
   tag: 'Casual · Physics',
   retro: false,
   w: 360, h: 640, maxH: 800,
-  goal: 80,
+  goal: 40,
   hint: 'Drag back from the crash-test dummy and let go to fling it down the stairs. Hard bumps score, head bumps double; knock crates off and land in the bin. Three flings.',
   make,
 };
