@@ -9,9 +9,9 @@
 // gs.sky (time of day, rain), gs.poses (soldiers), gs.combat (rifle, health, explosives), gs.tactics
 // (cover and squads), gs.ai (paths), gs.brains (the enemy commander learns how you play),
 // gs.stealth (bodies get found), gs.missions, gs.cutscene, gs.prompts, gs.gadgets (zip line),
-// gs.destruction (the watchtower) and gs.campaign (stars and saves).
+// gs.destruction (the watchtower), gs.campaign (stars and saves) and gs.models (Wren up close).
 import gs from '../gamescroll.js';
-const { sounds, noise, tone, space, bed, Ears } = gs.sound;
+const { sounds, noise, tone, space, bed, Ears, music, compose } = gs.sound;
 const { haptic, hapticPattern } = gs.device;
 const { clamp, rnd } = gs.util;
 const { fbm, rng, noise3 } = gs.math;
@@ -32,6 +32,7 @@ const { Prompts } = gs.prompts;
 const { Zipline } = gs.gadgets;
 const { Campaign } = gs.campaign;
 const { shatter } = gs.destruction;
+const { human, material: recipe } = gs.models;
 const { Group, Mesh, InstancedMesh, Object3D, Vector3, BoxGeometry, CylinderGeometry, ConeGeometry, PlaneGeometry, SphereGeometry, CapsuleGeometry, TorusGeometry, Color } = THREE;
 
 let W = 300, H = 420;
@@ -419,6 +420,9 @@ function world() {
   v.exposure = 1; v.bloom = .3;
   const sl = sun('#fff0d8', 2.8, 34, [.9, .35, -.3]); v.scene.add(sl, sl.target); v.onTier(T => sl.setTier(T));
   v.sun = sl;
+  sl.softShadows(1.4);   // shadows sharp where they touch and soft further out (WebGPU)
+  // the eye adapts a little: dazzled facing the low sun, opening up into the dark of the woods
+  v.autoExposure = { amount: .45, min: .75, max: 1.45, speed: .9, darken: 2 };
   // the air (haze, valley mist, cloud shadows, rain): on from the start, each mission sets its own
   v.air(MOODS.m1.air);
 
@@ -448,12 +452,13 @@ function world() {
   // ---- materials (built once)
   const VT = villageTextures(), { plaster, tiles, stone } = VT;
   const wood = surface(128, ({ col, h, size: S }) => { col.fillStyle = '#6b4a30'; col.fillRect(0, 0, S, S); for (let i = 0; i < 40; i++) { col.fillStyle = `rgba(30,18,10,${Math.random() * .3})`; col.fillRect(0, Math.random() * S, S, 1 + Math.random() * 2); } h.fillStyle = '#888'; h.fillRect(0, 0, S, S); });
+  // the stone stands out from its mortar as you look across it (parallax occlusion, WebGPU)
   const M = {
     wall: pbr('#ffffff', { tex: plaster, rep: [2, 2], rough: .92 }), roof: pbr('#ffffff', { tex: tiles, rep: [3, 2], rough: .8 }),
-    stone: pbr('#d8d2c6', { tex: stone, rep: [2, 2], rough: .9 }), wood: pbr('#ffffff', { tex: wood, rough: .85 }),
+    stone: pbr('#d8d2c6', { tex: stone, rep: [2, 2], rough: .9, depth: .035 }), wood: pbr('#ffffff', { tex: wood, rough: .85 }),
     // the village's own: the textures tinted by each part's colour
     wallV: pbr('#ffffff', { tex: plaster, rough: .93, vertexColors: true }), roofV: pbr('#ffffff', { tex: tiles, rough: .78, vertexColors: true }),
-    stoneV: pbr('#ffffff', { tex: stone, rough: .9, vertexColors: true }), woodV: pbr('#ffffff', { tex: VT.boards, rough: .82, vertexColors: true }),
+    stoneV: pbr('#ffffff', { tex: stone, rough: .9, vertexColors: true, depth: .035 }), woodV: pbr('#ffffff', { tex: VT.boards, rough: .82, vertexColors: true }),
     strawV: pbr('#ffffff', { tex: VT.straw, rough: 1, vertexColors: true }), lit: pbr('#2a2018', { rough: .3, glow: 0, glowCol: '#ffb860' }),
     glass: pbr('#1a2128', { rough: .15, metal: .4, glow: 0, glowCol: '#ffb860' }), iron: pbr('#3a3c3e', { rough: .45, metal: .8 }),
     rail: pbr('#6a6560', { rough: .35, metal: .9 }), dark: pbr('#24221f', { rough: .8 }), sand: pbr('#a39270', { rough: 1 }),
@@ -946,6 +951,26 @@ function man(look) {
   list.push(root); WD.v.scene.add(root);
   return root;
 }
+// Wren up close (the ladder, the zip line, the train): a code-made person (gs.models.human: a smoothed
+// body, a sculpted face with eyes that blink, skin light shines through, clothes in a woven cloth) with
+// the same skeleton and poses as the soldiers, in her scrim hood and scarf, the rifle slung on her back
+function wrenFigure() {
+  const L = LOOKS.wren, w = human({ body: L.tunic, legs: L.trousers, shoes: L.boots, skin: L.skin, hair: '#4a3424', hairStyle: 'bun', iris: '#6b7a58', lips: '#a8665c', jaw: .94, nose: .96 });
+  const hood = recipe('fabric', { colour: L.helmet, repeat: [3, 3], seed: 4, side: THREE.DoubleSide }), sling = pbr('#5e5640', { rough: .9 });
+  const add = (bone, geo, mat, at, r = [0, 0, 0], sc = [1, 1, 1]) => { const m = new Mesh(geo, mat); m.position.set(...at); m.rotation.set(...r); m.scale.set(...sc); m.castShadow = true; w.bones[bone].add(m); return m; };
+  // the hood: over the top, sides and back of the head, open at the face; the scarf round the neck
+  add('head', new SphereGeometry(.142, 20, 12, Math.PI * .5 + 1.05, TAU - 2.1, 0, Math.PI * .66), hood, [0, .135, -.012], [-.12, 0, 0], [1.02, 1.06, 1.12]);
+  add('spine', new TorusGeometry(.078, .034, 8, 18), hood, [0, .41, -.005], [Math.PI / 2 - .2, 0, 0], [1.05, 1.15, 1]);
+  // the rifle across her back, muzzle up past the right shoulder, on a strap
+  const rifle = new Group(); rifle.position.set(0, .26, -.17); rifle.rotation.z = -.55; rifle.scale.setScalar(.78); w.bones.spine.add(rifle);
+  const wood = pbr('#5a3e26', { rough: .6 }), steel = pbr('#2a2a2a', { rough: .35, metal: .8 });
+  for (const [geo, mat, y] of [[new BoxGeometry(.045, .32, .07), wood, -.3], [new BoxGeometry(.035, .4, .045), wood, .02], [new CylinderGeometry(.011, .011, .42, 8), steel, .4], [new BoxGeometry(.035, .12, .04), steel, .12]]) { const m = new Mesh(geo, mat); m.position.y = y; m.castShadow = true; rifle.add(m); }
+  add('spine', new BoxGeometry(.03, .5, .012), sling, [.02, .28, .13], [.12, 0, .62]);
+  w.mats = [w.mesh.material].flat();
+  for (const m of w.mats) if (m.emissive) { m.emissive.set('#ffb57a'); m.emissiveIntensity = 0; }
+  WD.wrenMats = w.mats; WD.v.scene.add(w);
+  return w;
+}
 function freeMen() { for (const k in POOL) for (const f of POOL[k]) { f.userData.used = false; f.visible = false; } }
 
 // ------------------------------------------------------------------ campaign
@@ -983,11 +1008,17 @@ const MOODS = {
     time: 8.4, tilt: -.3, day: DAY_CLEAR, physical: { haze: 3.2, bright: .6 }, clouds: .3, gap: .55, cloudLight: null, cloudDark: null,
     air: { haze: .00062, mist: .0035, mistFall: .13, mistY: -1.5, patchy: .9, cloudShade: .38, wind: [5, -1.5], wet: 0, colour: '#b4c0cc', sunColour: '#f2d4a4' },
     grade: { saturation: 1.12, contrast: 1.16, shadows: '#e2e8f4', highlights: '#fff4e4' }, glare: .6, shafts: .6, exposure: 1.08, bloom: .3, env: .6, windows: 0,
+    // a colour slide of the period: warm, rich greens, blacks lifted a touch as on an old print
+    lut: (r, g, b) => { const l = .3 * r + .59 * g + .11 * b, k = 1.06; return [r, g, b].map((x, i) => { const v = l + (x - l) * k; return .025 + .965 * clamp(v + [.012, .004, -.016][i] * (1 - l) + [.01, .003, -.012][i] * l, 0, 1); }); },
+    lutAmount: .8, flare: { strength: .45, threshold: .5, dirt: .35, tint: [1, .9, .78] },
   },
   m2: {
     time: 17.75, tilt: .12, day: DAY_STORM, physical: false, clouds: .86, gap: .4, cloudLight: '#8c8a8a', cloudDark: '#2a2e36',
     air: { haze: .0014, mist: .005, mistFall: .1, mistY: -1, patchy: .7, cloudShade: .5, wind: [-8, 1], wet: .85, colour: '#5f646c', sunColour: '#a8785a' },
     grade: { saturation: .82, contrast: 1.1, shadows: '#d2dcee', highlights: '#ffeedc' }, glare: .4, shafts: .25, exposure: 1.02, bloom: .45, env: .65, windows: 1.8,
+    // a storm on news film: colour bled out, deep blue-grey shadows, the lamplight still warm
+    lut: (r, g, b) => { const l = .3 * r + .59 * g + .11 * b, w = clamp((l - .45) * 2 + .5, 0, 1); return [r, g, b].map((x, i) => clamp(l + (x - l) * .78 + [-.02, -.006, .026][i] * (1 - w) + [.02, .006, -.02][i] * w * w, 0, 1)); },
+    lutAmount: .7, flare: { strength: .3, threshold: .35, dirt: .5, tint: [1, .85, .7] },
   },
 };
 // trees swap to fewer leaves past these distances (further when you look through the scope)
@@ -2060,7 +2091,7 @@ function make(api) {
     for (const s of men || []) endMind(s);
     freeMen(); men = []; allies = null; shots = []; timers = [];
     // Wren herself, seen when she moves between nests
-    WD.wren = man('wren'); WD.wren.userData.mesh.material = WD.wrenMat ||= (() => { const m = WD.wren.userData.mesh.material.clone(); m.emissive = new Color('#ffb57a'); m.emissiveIntensity = 0; return m; })(); WD.wren.visible = false; WD.wren.userData.helmet.visible = true; WD.wren.userData.pack.visible = false; WD.wren.userData.aerial.visible = false; WD.wren.userData.rifle.visible = false;
+    WD.wren ||= wrenFigure(); WD.wren.visible = false;
     if (!WD.wren.rig.poses.ladder) WD.wren.rig.add('ladder', ph => { const q = Math.sin(ph * TAU); return { j: { spine: [.12, 0, 0], head: [-.35, 0, 0], armL: [-2.5 + .45 * q, 0, -.12], armR: [-2.5 - .45 * q, 0, .12], foreL: [-.6 - .4 * Math.max(0, -q), 0, 0], foreR: [-.6 - .4 * Math.max(0, q), 0, 0], legL: [-.95 - .45 * q, 0, 0], shinL: [1.3 + .5 * q, 0, 0], legR: [-.95 + .45 * q, 0, 0], shinR: [1.3 - .5 * q, 0, 0] }, drop: 0 }; }, .8); tower?.g.removeFromParent(); for (const p of tower?.pieces || []) { p.removeFromParent(); p.geometry?.dispose(); }
     tower = null; drums = null; car = null; op = null; cs = null; boom.list.length = 0; if (WD.bags) WD.bags.visible = false;
     WD.solids = WD.solids.filter(b => !b.temp);
@@ -2092,6 +2123,7 @@ function make(api) {
     const md = MOODS[id], v = WD.v;
     Object.assign(sky, { time: md.time, tilt: md.tilt, day: md.day, physical: md.physical, clouds: md.clouds, gap: md.gap, cloudLight: md.cloudLight ? new Color(md.cloudLight) : null, cloudDark: md.cloudDark ? new Color(md.cloudDark) : null });
     v.air(md.air); v.grade = md.grade; v.glare = md.glare; v.shafts = md.shafts; v.exposure = md.exposure; v.bloom = md.bloom; v.envI = md.env;
+    v.lut = md.lut; v.lutAmount = md.lutAmount; v.flare = md.flare; v.eye = null;   // the mission's film stock, lens flare and dirt; the eye adapts afresh
     GU.uWet.value = md.air.wet; WD.wins.material.emissiveIntensity = md.windows;
     // the sky's reflections are redone once, just after the next frame is drawn (heavy GPU work, so it
     // stays out of update(); until then the last ones carry on)
@@ -2162,17 +2194,34 @@ function make(api) {
     clampLook();
   });
   let briefRows = [], briefGo = null, failMsg = '', pathBudget = 0, thinkBudget = 0;
+  let theme = null;
   let beatT = 0, beat = 0, tiltBtn = null, ptrZoom = false, envDirty = false, envBaked = null;
   const grassAt = new Vector3(1e9, 0, 0);
   const later = [];
   function soon(sec, fn) { later.push({ in: sec, fn }); }
   function runLater(dt) { let ran = false; for (let i = 0; i < later.length; i++) { const j = later[i]; j.in -= dt; if (j.in <= 0 && !ran) { ran = true; later.splice(i--, 1); j.fn(); } } }
   const ZOOM_ARC = [-.62, .5];
+  // A new camera (the next cutscene shot, the bullet cam, a run or the zip line starting or ending, a
+  // nest) starts the picture's history again, so the upscaler, the edge smoothing and frame generation
+  // don't smear the last view into it. On the move, in the bullet cam and in cutscenes the world blurs
+  // with the camera (and on WebGPU, things with their own move); looking down the scope it stays crisp.
+  const camWas = { key: '', step: null, p: new Vector3(), d: new Vector3() }, camD = new Vector3();
+  function camCut(v) {
+    const cam = v.cam, key = state === 'brief' ? 'b' : (state === 'intro' || state === 'outro') ? 'c' : move ? 'm' + move.kind : bulletCam ? (bulletCam.hold > 0 ? 'h' : 'k') : 'n' + nestId;
+    cam.getWorldDirection(camD);
+    const step = key === 'c' ? cut?.camStep : null, flying = key === 'k';
+    const jump = !flying && (cam.position.distanceTo(camWas.p) > (key === 'c' || key[0] === 'm' ? 4 : 1.5) || camD.dot(camWas.d) < .9);
+    if (key !== camWas.key || (step !== camWas.step && jump) || (key[0] === 'm' && jump)) v.cut();
+    camWas.key = key; camWas.step = step; camWas.p.copy(cam.position); camWas.d.copy(camD);
+    const blur = key === 'c' || key === 'k' || key[0] === 'm';
+    v.motionBlur = blur && gs.prefs.motion > 0 ? (MBLUR.amount = .5 * gs.prefs.motion, MBLUR) : null;
+  }
+  const MBLUR = { amount: .5, max: .035, sharp: 3 };
   const fmtT = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 
   return {
     reset() {
-      audioDown();
+      audioDown(); theme?.stop();
       world(); layout();
       if (!sky) { sky = new Sky(WD.v, { time: MOODS.m1.time, tilt: MOODS.m1.tilt, stars: 300, sun: WD.sl, day: DAY_CLEAR, clouds: MOODS.m1.clouds, gap: MOODS.m1.gap, env: true, fog: false }); rain = new Weather(WD.v, { kind: 'clear', amount: 0, wind: AIR, area: 40 }); rain.onFlash = far => { storm = 1.6; thunder(far); }; }
       fx.clear(); me.reset(); gun.ammo = gun.mag; gun.reloadLeft = 0; gun.reserve = Infinity; gun.shotsAtCs = 0;
@@ -2191,7 +2240,13 @@ function make(api) {
     update(dtReal) {
       frame++;
       fx.update(dtReal); breathT(dtReal); runLater(dtReal);
-      if (state === 'brief') { briefT += dtReal; sky.update(dtReal); rain.update(dtReal); return; }
+      if (state === 'brief') {
+        briefT += dtReal; sky.update(dtReal); rain.update(dtReal);
+        // the field file has its own quiet tune (written by gs.sound.compose from the game's name); play is silent but for the valley
+        theme ||= music({ ...compose({ mood: 'sad', seed: 'long-shadow' }), vol: .32 }); if (!theme.playing && briefT > .4) theme.start();
+        return;
+      }
+      theme?.stop();
       // slow motion: bullet cam, quick-time moments
       let ts = 1;
       if (bulletCam) ts = bulletCam.hold > 0 ? .06 : bulletCam.scale;
@@ -2307,8 +2362,8 @@ function make(api) {
           const f = tripAt(move).fig, w = WD.wren; w.visible = true; w.position.set(f.x, f.y, f.z); w.rotation.order = 'YXZ'; w.rotation.y = f.yaw; w.rotation.x = f.sw || 0; w.rotation.z = f.roll || 0;
           if (f.sw) { const s_ = Math.sin(f.sw), c_ = Math.cos(f.sw); w.position.x -= 2.02 * s_ * Math.sin(f.yaw); w.position.y += 2.02 * (1 - c_); w.position.z -= 2.02 * s_ * Math.cos(f.yaw); }   // she swings from her hands, not her feet
           WD.trolley.visible = move.kind === 'zip' && move.t >= .6; if (move.kind === 'zip') { const h = zip.hands; WD.trolley.position.set(h.x, h.y + .05, h.z); WD.trolley.rotation.y = f.yaw; }
-          w.rig.play(f.pose, { fade: .15 }); w.rig.update(dt, { speed: f.speed });
-          WD.wrenMat.emissiveIntensity = mid === 'm2' ? .1 : 0;   // a little warm light on her at dusk, or she's lost against the dark stone
+          w.rig.play(f.pose, { fade: .15 }); w.rig.update(dt, { speed: f.speed }); w.face?.update(dtReal);
+          for (const m of WD.wrenMats) m.emissiveIntensity = mid === 'm2' ? .1 : 0;   // a little warm light on her at dusk, or she's lost against the dark stone
           // footsteps on the run, rungs on the ladder
           if (f.speed > 0 && Math.floor(move.t * (f.pose === 'ladder' ? 3 : 3.4)) !== move.step) { move.step = Math.floor(move.t * (f.pose === 'ladder' ? 3 : 3.4)); if (f.pose === 'ladder') tone(220, { len: .04, wave: 'triangle', vol: .02 }); else noise(.07, { vol: .025, from: 700, to: 200 }); }
         }
@@ -2368,6 +2423,7 @@ function make(api) {
       GU.uTime.value = v.t; v.sunDir(GU.uSun.value);
       for (const r of WD.ripples) r.offset.set(v.t * .011, v.t * .004);
       if (WD.train.visible) { WD.train.position.set(train.x, RAILH, RAILZ); }
+      camCut(v);
       fx.begin(c); v.render(c, W, H); fx.end(c, W, H);
       if (envDirty && sky.makesEnv) { envDirty = false; try { sky.makeEnv(); envBaked = sky.envAt; } catch (e) { /* keeps the last reflections */ } }
       hud(c);
@@ -2460,7 +2516,7 @@ function make(api) {
   function rideTrain(dt) {
     const w = WD.wren; w.visible = true; w.rotation.order = 'YXZ'; w.rotation.x = 0; w.rotation.z = Math.sin(t * 7) * .02;
     w.position.set(train.x - 13.8, RAILH + 3.82, RAILZ + .3); w.rotation.y = Math.PI / 2;
-    w.rig.play('crouch', { fade: .2 }); w.rig.update(dt, { speed: 0 });
+    w.rig.play('crouch', { fade: .2 }); w.rig.update(dt, { speed: 0 }); w.face?.update(dt);
   }
   function trainUpdate(dt) {
     if (!train.on) { train.next -= dt; if (train.next <= 0 && mid === 'm1') { train.on = true; train.x = -420; train.speed = 30; tone(520, { len: .9, wave: 'triangle', vol: .05 }); tone(620, { len: .9, wave: 'triangle', vol: .04, at: .1 }); } WD.train.visible = false; return; }
@@ -2575,15 +2631,15 @@ function make(api) {
     c.save(); c.textAlign = 'left'; c.font = '600 11px Rubik, sans-serif'; const w = Math.min(W * .58, 220);
     let lines = wrap(c, o.text, w - 18);
     if (tight && lines.length > 1) { let l0 = lines[0]; while (l0.length > 3 && c.measureText(l0 + '…').width > w - 18) l0 = l0.slice(0, -1); lines = [l0 + '…']; }
-    const h = 18 + lines.length * 13;
-    c.translate(10, 10); c.rotate(-.015);
+    const h = 18 + lines.length * 13, sa = api.scoreArea(), top = sa && 10 + w > sa.x - 4 ? Math.max(10, sa.bottom + 4) : 10;   // under the score badge when it would sit on it
+    c.translate(10, top); c.rotate(-.015);
     c.fillStyle = paper; c.shadowColor = '#0006'; c.shadowBlur = 6; c.fillRect(0, 0, w, h); c.shadowBlur = 0;
     c.fillStyle = red; c.fillRect(0, 0, 3, h);
     c.fillStyle = '#8a7f66'; c.font = '700 8px "Courier New", monospace'; c.fillText('ORDERS · ' + fmtT(mission.time), 9, 11);
     c.fillStyle = ink; c.font = '600 11px Rubik, sans-serif'; lines.forEach((s, i) => c.fillText(s, 9, 24 + i * 13));
     if (op?.sending && !op.ko) { const k = clamp(op.send / 60, 0, 1); c.fillStyle = '#0002'; c.fillRect(9, h - 5, w - 18, 3); c.fillStyle = red; c.fillRect(9, h - 5, (w - 18) * k, 3); }
     c.restore();
-    const bottom = 10 + h;
+    const bottom = top + h;
     // a marker towards the objective
     const at = o.at; if (!at || scoped) return bottom;
     const ax = at.m ? at.x : at.x, ay = at.m ? at.gy + 2.2 : at.y, az = at.m ? at.y : at.z;
