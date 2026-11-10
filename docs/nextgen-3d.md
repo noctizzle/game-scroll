@@ -27,6 +27,10 @@ ceilings), `neon-drift.js` (drift racer on a wet neon street circuit), `storm-ho
   `s.follow(x, y, z)` each frame so the shadow box tracks the player (it snaps to shadow texels, so
   shadows do not shimmer) and `v.onTier(T => s.setTier(T))`. Big outdoor levels use `s.fit(v, ...)`
   instead (see [Outdoor worlds](#outdoor-worlds-sun-air-sky-and-grade)).
+  `gs.hd.sun(...).softShadows(2)` makes its shadows soft the way real ones are: sharp where a thing
+  touches the ground, spreading the higher it stands (PCSS, as three.js's own shadow filter hook, on
+  WebGPU; WebGL phones get an evenly softer edge). The number is the sun's width in the sky in degrees
+  (the real sun is 0.5; 2 to 4 reads as a soft, hazy day). Call it when you make the sun.
 - **Lamp light pool** (`v.lampLights(range)` then `v.placeLamps(spots, x, y, z, t)` each frame):
   a level can have dozens of lamps; the nearest few get real point lights (with flicker) and the
   rest only glow. Light count stays fixed, so shaders never recompile mid-game.
@@ -119,6 +123,12 @@ so its next round starts there instead of stuttering down again.
   same. The copies share the original's points, so normals, UVs and bone weights stay exact. Off for
   instanced and multi-material meshes, see-through ones and `mesh.userData.noLod = true`;
   `__hd.autoLod = false` turns it off. (gs.props makes LODs for instanced props.)
+- Static batching (WebGL, by itself): small still things that share a material (crates, posts, rocks,
+  walls) are merged into one mesh per material and area after about 1.5 s still, one draw call where
+  there were dozens (Unity's static batching). A piece that moves, hides or changes material goes back
+  to drawing itself that frame, so the game never has to know, and raycasts still hit the pieces.
+  `mesh.userData.noBatch = true` keeps a mesh out; `__hd.batch = false` turns it off. WebGPU draws are
+  cheap enough that merging measured slower there, so it stays off on WebGPU.
 - On WebGPU, lights use three.js's clustered (Forward+) lighting: each pixel only adds up the point
   and spot lights that reach it, so `v.lampLights()` / `v.placeLamps()` light 8 times as many of the
   nearest lamps (up to 32) for about the same cost, and lamps coming and going build no shaders.
@@ -127,6 +137,36 @@ so its next round starts there instead of stuttering down again.
   screen colours. ACES (the default, the film look) pushes very bright colours towards yellow and
   white; Neutral (Khronos PBR Neutral) keeps colours true to the material, good for neon, paint and
   products; AgX (Blender's) keeps their hue in bright light and rolls off softly.
+- `pbr(col, { tex, depth: .05 })`: parallax occlusion mapping on WebGPU for a `surface()` texture: the
+  raised parts of its height layer stand up and hide what's behind them as you look across the surface
+  (bricks, cobbles, planks, tiles), with no extra triangles. `depth` is in texture widths. WebGL keeps
+  the normal map's shading. Use it on big flat surfaces seen at a slant, where it shows the most.
+- `pbr(col, { sss: true | { colour, power, scale, distortion, ambient, attenuation } })`: subsurface
+  scattering for skin, wax, leaves, jade and ears against the light: light passing through glows out
+  of the far side in `colour` (default a skin red). On WebGPU this is three.js's MeshSSSNodeMaterial
+  (fast translucency, as in Frostbite); WebGL phones get a soft tinted rim in its place.
+- Richer materials on `pbr()` (three.js's MeshPhysicalMaterial, the same on WebGL and WebGPU):
+  `aniso: .9` (and `anisoDir` in radians) stretches highlights along brushed or turned metal, hair and
+  satin; `film: 1` is a thin rainbow film (soap bubbles, oil, beetle shells, lens coatings);
+  `glass: true | { thickness, ior, tint, distance }` lets light through and bends it (bottles, ice,
+  gems; it costs a picture of what's behind, so keep it to a few things); `wet: .8` soaks a surface
+  (darker, glossy, a water layer on top; `porosity` 0..1 for how much it darkens: stone 1, metal 0).
+- `detail(big, fine, { times: 4, strength: .7 })`: mixes a fine `surface()` (pores, grain, scratches),
+  repeated `times` over, into the normals of a big one, so a close-up keeps its grain without a huge
+  texture. Give it sets without `repeat()`; the result has its own `repeat`.
+- `v.flare = true | { strength, threshold, spacing, fade, tint, dirt }`: lens flare ghosts of the bright
+  parts, mirrored through the middle of the picture (three.js's LensflareNode, the same maths on WebGL),
+  and lens dirt (smudges, dust and wipe marks drawn in code) lit where bright light falls on it.
+  `dirt` (.5) is how dirty the lens is, 0 for none. Needs bloom; off by default.
+- `v.oit = true` (WebGPU): order-independent transparency, three.js's weighted blended OIT (McGuire and
+  Bavoil). See-through things (normal blending, not glass with `transmission`) blend right whatever
+  order they're drawn in: glass behind glass, panes passing through each other, smoke in water, with no
+  popping as they move. WebGL sorts them back to front as before. Costs an extra pass; off by default.
+- `gs.hd.panel(colour, intensity, w, h, { glow })`: an area light, a glowing rectangle (window, TV,
+  striplight, softbox) with the soft, stretched highlights a point light can't make (three.js's
+  RectAreaLight, both backends). It shines out of its front (-z): place it and `lookAt` the target.
+  `glow: true` also shows the rectangle. No shadows (add a `spot` for those); its tables load the first
+  time a game makes one, and it lights up a moment later.
 - `v.lut = 'film' | 'bleach' | 'noir' | 'sepia' | 'warm' | 'cold' | 'faded' | 'vivid' | 'night'`: a colour
   look, the way films grade their pictures (a 3D lookup table on the finished colours: one texture
   read, three.js's LUTPass maths and Lut3DNode). Also your own recipe, `v.lut = (r, g, b) => [r, g, b]`

@@ -9,16 +9,18 @@
 // scripts/look-compare.cjs --webgpu draws the same scenes both ways and compares them.
 // Kit use only.
 import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Vector4, Color, BackSide, Sprite, Group, InstancedMesh, BufferGeometry, Frustum, Sphere, InstancedBufferAttribute as IBA, SpriteNodeMaterial, InstancedBufferAttribute, AdditiveBlending, NormalBlending,
-  MeshBasicNodeMaterial, NodeMaterial, Data3DTexture, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, DepthTexture, LessEqualCompare, NoToneMapping, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, SRGBColorSpace, LinearSRGBColorSpace, Matrix3 } from 'three/webgpu';
+  MeshBasicNodeMaterial, NodeMaterial, Data3DTexture, RectAreaLightNode, MeshSSSNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, DepthTexture, LessEqualCompare, NoToneMapping, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, SRGBColorSpace, LinearSRGBColorSpace, Matrix3 } from 'three/webgpu';
 import {
   pass, mrt, output, velocity, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
   positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min, materialEmissive, distance,
   attribute, vertexColor, normalWorld, normalViewGeometry, positionLocal, positionGeometry, positionPrevious, modelWorldMatrix, modelWorldMatrixInverse,
   materialColor, materialOpacity, materialRoughness, cos, floor, step, fwidth, dFdx, dFdy, normalize, uniformArray, Loop, int, If, sqrt,
-  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix, shadow as shadowOf, texture3D,
+  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix, shadow as shadowOf, texture3D, parallaxDirection, normalMap,
 } from 'three/tsl';
 import { lut3D } from 'three/examples/jsm/tsl/display/Lut3DNode.js';
+import { oitPass } from 'three/examples/jsm/tsl/display/OITPassNode.js';
+import { lensflare } from 'three/examples/jsm/tsl/display/LensflareNode.js';
 import { LightProbeGrid } from 'three/examples/jsm/lighting/LightProbeGrid.js';
 // v.tone (hd3d.js): three.js's own tone mappers
 const TONE = { aces: ACESFilmicToneMapping, neutral: NeutralToneMapping, agx: AgXToneMapping };
@@ -58,6 +60,43 @@ export function envFrom(r, scene, { size = 256, blur = .03 } = {}) {
 // hd3d.js swaps a mesh's material for its twin here while the view draws on WebGPU (material.userData.gsGpu
 // names it). The twin reads the WebGL material's own uniform objects, so changes show on both.
 export const gpuMaterials = {
+  // pbr(col, { tex, depth }): parallax occlusion mapping (the classic steep-parallax march with a final
+  // interpolation, as in Unreal's and Unity's POM nodes). three.js only has plain parallax offset
+  // (parallaxUV), so the march is ours, on its tangent-space view direction (parallaxDirection: from
+  // the screen-space derivatives when the mesh has no tangents). The surface's maps are read at the
+  // marched place; height is surface()'s height layer (white raised).
+  pom(gm) {
+    const m = new (gm.isMeshPhysicalMaterial ? MeshPhysicalNodeMaterial : MeshStandardNodeMaterial)(), P = gm.userData.pom;
+    for (const k in gm) if (k !== 'uuid' && k !== 'id' && k !== 'type') m[k] = gm[k];   // (as three's own NodeLibrary.fromMaterial)
+    const H = texture(P.height), rp = P.height.repeat, depth = float(P.depth);
+    const base = uv().mul(vec2(rp.x, rp.y)).add(vec2(P.height.offset.x, P.height.offset.y));
+    const puv = Fn(() => {
+      const gx = dFdx(base), gy = dFdy(base), h = q => H.sample(q).grad(gx, gy).r;
+      const V = parallaxDirection.normalize(), N = 16, step = float(1 / N);
+      const d = V.xy.div(max(V.z, .25)).mul(depth).mul(step);   // (flat angles capped, or the march runs off sideways)
+      const cur = base.toVar(), lay = float(0).toVar(), mapD = float(1).sub(h(base)).toVar();
+      Loop(N, () => { If(lay.greaterThanEqual(mapD), () => { Break(); }); cur.subAssign(d); lay.addAssign(step); mapD.assign(float(1).sub(h(cur))); });
+      const prev = cur.add(d), after = mapD.sub(lay), before = float(1).sub(h(prev)).sub(lay).add(step);
+      return mix(cur, prev, after.div(after.sub(before)).clamp(0, 1));
+    })().toVar('pomUV');
+    const at = (t, q) => texture(t, q).grad(dFdx(base), dFdy(base));
+    if (gm.map) m.colorNode = at(gm.map, puv).mul(materialColor);
+    if (gm.normalMap) m.normalNode = normalMap(at(gm.normalMap, puv), uniform(gm.normalScale));
+    if (gm.roughnessMap) m.roughnessNode = at(gm.roughnessMap, puv).g.mul(materialRoughness);
+    m.map = m.normalMap = m.roughnessMap = null;   // (read above at the marched place; three's materialColor would multiply the map in again)
+    m.name = gm.name || 'pom';
+    return m;
+  },
+  // pbr(col, { sss }): three's subsurface scattering material, with everything else copied as three does
+  sss(gm) {
+    const m = new MeshSSSNodeMaterial(), S = gm.userData.sss;
+    for (const k in gm) if (k !== 'uuid' && k !== 'id' && k !== 'type') m[k] = gm[k];   // (as three's own NodeLibrary.fromMaterial)
+    if (gm.sheenColor?.equals(S.colour) && gm.sheenRoughness === .7) m.sheen = 0;   // (the WebGL stand-in)
+    m.thicknessColorNode = uniform(S.colour); m.thicknessPowerNode = float(S.power); m.thicknessScaleNode = float(S.scale);
+    m.thicknessDistortionNode = float(S.distortion); m.thicknessAmbientNode = float(S.ambient); m.thicknessAttenuationNode = float(S.attenuation);
+    m.name = gm.name || 'sss';
+    return m;
+  },
   // gs.sky's dome (sky.js): the sky gradient and sun glow, or Preetham scattering (pSun.z > 0), the sun's
   // disc, and drifting clouds lit from the sun's side
   skyDome(gm) {
@@ -328,6 +367,44 @@ export function setCascade(near, fade) { if (near) CASC.m.value = near.shadow.ma
 // (three r187: the clustered node passes itself as the light to the lighting model, and the AR floor's
 // ShadowMaterial multiplies by its shadowNode, undefined there, so its shader fails: give it "no shadow")
 if (ClusteredLightsNode.prototype.shadowNode === undefined) ClusteredLightsNode.prototype.shadowNode = null;
+// area lights' LTC tables (hd3d.js panel), once they've loaded
+export function areaLTC(lib) { RectAreaLightNode.setLTC(lib.init()); }
+// Soft shadows that harden where things touch (hd3d.js sun().softShadows): PCSS (Fernando, NVIDIA 2005)
+// as three's own shadow.filterNode hook. A few taps find how far above the ground the blockers are,
+// then the filter spreads by that gap times the sun's width: sharp at a foot, soft at a rooftop's edge.
+// Sun (orthographic) shadows: depth there is linear, so the gap in metres is the depth gap x range.
+const PCSS_FIND = 8, PCSS_TAPS = 12, GOLDEN = 2.39996323;
+const disc = (i, n, phi) => { const r = Math.sqrt((i + .5) / n), a = phi.add(i * GOLDEN); return vec2(cos(a), sin(a)).mul(r); };
+export function pcss(light) {
+  const sh = light.shadow, cam = sh.camera;
+  // texels of spread per unit of depth gap: depth range (m) x tan(sun width) / texel size (m)
+  const K = uniform(1).onRenderUpdate(() => { const tx = (cam.right - cam.left) / sh.mapSize.x; return (cam.far - cam.near) * Math.tan((light.gsSoft || 2) * Math.PI / 180) / Math.max(1e-4, tx); });
+  const TEXEL = uniform(new Vector2()).onRenderUpdate(() => TEXEL.value.set(1 / sh.mapSize.x, 1 / sh.mapSize.y));
+  const MAXR = uniform(1).onRenderUpdate(() => Math.min(24, sh.mapSize.x / 64));   // widest spread (texels): ~16 at 1024
+  return Fn(({ depthTexture, shadowCoord, depthLayer }, builder) => {
+    const rev = builder.renderer.reversedDepthBuffer;
+    const at = u => { let t = texture(depthTexture, u); if (depthTexture.isArrayTexture) t = t.depth(depthLayer); return t; };
+    // (the raw depth by texel: the map's sampler is a comparing one, which can't read depths)
+    const raw = u => { let t = texture(depthTexture).load(ivec2(u.div(TEXEL))); if (depthTexture.isArrayTexture) t = t.depth(depthLayer); return t.x; };
+    const texel = TEXEL, z = shadowCoord.z, phi = interleavedGradientNoise(screenCoordinate.xy).mul(6.2831853);
+    // 1: blockers in reach of the widest spread, their average depth
+    const sum = float(0).toVar(), n = float(0).toVar();
+    for (let i = 0; i < PCSS_FIND; i++) {
+      const d = raw(clamp(shadowCoord.xy.add(disc(i, PCSS_FIND, phi).mul(MAXR).mul(texel)), 0, .9999));
+      const b = rev ? step(z, d) : step(d, z);   // (closer to the sun than this point)
+      sum.addAssign(d.mul(b)); n.addAssign(b);
+    }
+    const lit = float(1).toVar();
+    If(n.greaterThan(0), () => {
+      const gap = abs(z.sub(sum.div(n))), r = clamp(gap.mul(K), 1, MAXR).mul(texel);
+      // 2: the filter, as wide as the gap says
+      const acc = float(0).toVar();
+      for (let i = 0; i < PCSS_TAPS; i++) acc.addAssign(at(shadowCoord.xy.add(disc(i, PCSS_TAPS, phi.add(1.7)).mul(r))).compare(z));
+      lit.assign(acc.div(PCSS_TAPS));
+    });
+    return lit;
+  });
+}
 export function manyLights(r) { r.lighting = new ClusteredLighting(256, 32, 24, 32); r.gsClustered = true; }
 // Auto exposure's light meter (hd3d.js Eye): the scene's brightness as 16 x 16 log values (each from a
 // 4 x 4 grid of taps), packed into bytes so any phone can read them back without stalling.
@@ -769,6 +846,7 @@ export class GpuChain {
   constructor(r, scene, cam, clear) {
     Object.assign(this, { r, scene, cam, clear, key: '' });
     this.pp = new RenderPipeline(r); this.pp.outputColorTransform = false;
+    this.F = { tint: uniform(new Vector3(1, 1, 1)), th: uniform(.15), sp: uniform(.3), fade: uniform(20), k: uniform(1), dk: uniform(0), dirt: texture(new Texture()) };   // v.flare
     this.U = {
       t: uniform(0), hurt: uniform(0), vig: uniform(.32), gradeOn: uniform(0), sat: uniform(1), con: uniform(1),
       lo: uniform(new Vector3(1, 1, 1)), hi: uniform(new Vector3(1, 1, 1)), glare: uniform(0), sunUV: uniform(new Vector2(.5, .5)),
@@ -797,8 +875,8 @@ export class GpuChain {
     this.fg = null; this.sched = null; this.fgMode = null; this.fgWin = { real: 0, missed: 0 }; this.still = null; this.lastShown = null;
     this.warp = uniform(new Matrix3()); this.aim = null; this.aimBase = newPose(); this.aimAt = -1e9;
   }
-  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces', traaOn = false, lutOn = false) {
-    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}|${traaOn}|${lutOn}`;
+  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces', traaOn = false, lutOn = false, oitOn = false, flareOn = false) {
+    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}|${traaOn}|${lutOn}|${oitOn}|${flareOn}`;
     const TM = TONE[tone] ?? ACESFilmicToneMapping;
     if (key === this.key) return;
     this.key = key; this.fg?.reset(); this.sched = null; this.still?.reset();
@@ -806,7 +884,9 @@ export class GpuChain {
     for (const t of [this.volT, this.baseT, this.mbT]) t?.renderTarget?.dispose();
     this.traaN?.dispose(); this.casN?.dispose(); this.traaN = this.casN = null;
     this.aoN = this.dnN = this.bloomN = this.s2 = this.s1 = this.dofT = this.shM = this.shB = this.volT = this.baseT = this.mbT = null;
-    const sp = this.sp = pass(this.scene, this.cam, { samples: msaa || 0 });
+    // v.oit: three's weighted blended order-independent transparency (McGuire and Bavoil) in place of the plain
+    // scene pass: see-through things blend right whatever order they're drawn in (glass behind glass, smoke in water)
+    const sp = this.sp = (oitOn ? oitPass : pass)(this.scene, this.cam, { samples: msaa || 0 });
     // frame generation and SGSR 2: the scene's pass also writes each pixel's motion and where see-through things are
     if (mrtOn && this.clear) sp.setMRT(frameGenMRT());
     if (this.clear) {
@@ -826,6 +906,8 @@ export class GpuChain {
     // last frame (following the motion picture, dropping what's newly uncovered), in place of MSAA.
     // It takes the scene's colour before anything else reads it, so AO, bloom and the grade see the smooth one
     let colT = sp.getTextureNode('output');
+    // (OIT: the see-through things are blended over the scene by the pass node itself, so that's what's read on)
+    if (oitOn) colT = rtt(sp, null, null, { type: HalfFloatType, depthBuffer: false });
     // (then AMD FidelityFX's contrast-adaptive sharpening, three's RCAS, gives back the crispness the blending takes, as engines do after TAA)
     if (traaOn) {
       this.traaN = traa(colT, sp.getTextureNode('depth'), sp.getTextureNode('velocity'), this.cam);
@@ -932,6 +1014,13 @@ export class GpuChain {
       let col = smooth ? lit : vec3(src.sample(uv.add(d.mul(r2).mul(.012))).r.mul(srcAo).add(shafts.r), lit.g, src.sample(uv.sub(d.mul(r2).mul(.012))).b.mul(srcAo).add(shafts.b));
       // bloom
       col = col.add(this.bloomN.out.mul(this.bloomK));
+      // lens flare (v.flare): three's LensflareNode over the bloom, and the lens dirt lit by it (hd3d.js FINAL_EFFECTS flare)
+      if (flareOn) {
+        const F = this.F, bl = this.bloomN.out.mul(this.bloomK);
+        this.flareN = lensflare(vec4(bl, 1), { ghostTint: F.tint, threshold: F.th, ghostSamples: 4, ghostSpacing: F.sp, ghostAttenuationFactor: F.fade });
+        const fl = this.flareN.rgb, asp = U.aspect, du = uv.sub(.5).mul(vec2(min(asp, 1), min(float(1).div(asp), 1))).add(.5);
+        col = col.add(fl.mul(F.k)).add(F.dirt.sample(du).rgb.mul(bl.add(fl)).mul(F.dk));
+      }
       // grade (v.grade): saturation, contrast round mid grey, shadow and highlight tints
       const l = dot(col, LUM);
       let g = max(mix(vec3(l), col, U.sat), vec3(0));
@@ -968,7 +1057,7 @@ export class GpuChain {
     // o.mrt: the scene's pass also writes motion and the see-through mask (frame generation, SGSR 2)
     const f = !this.clear && o.s2 ? o.s2 : null, s1 = !f && !!o.s1, live = !!o.live;
     DRAWN.n++;
-    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !f && !s1 && !!o.traa, !this.clear && !!o.lut);
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !f && !s1 && !!o.traa, !this.clear && !!o.lut, !this.clear && !!o.oit, !this.clear && !!o.flare);
     if (this.s1) this.s1.size(o.w, o.h);
     // the passes size themselves from the canvas: upscaled, the canvas is the screen's size, so scale them down
     const k = f || s1 ? (o.w + .5) / o.fw : 1;
@@ -982,6 +1071,7 @@ export class GpuChain {
       if (g) { U.sat.value = g.sat; U.con.value = g.con; U.lo.value.copy(g.lo); U.hi.value.copy(g.hi); }
       U.glare.value = o.glare; U.sunUV.value.set(o.sunUV.x, 1 - o.sunUV.y); U.sunCol.value.copy(o.sunCol); U.aspect.value = o.aspect;
       U.px.value.set(1 / o.w, 1 / o.h);
+      if (o.flare) { const F = this.F, f = o.flare; F.tint.value.copy(f.tint); F.th.value = f.threshold; F.sp.value = f.spacing; F.fade.value = f.fade; F.k.value = f.strength; F.dk.value = f.dirt; F.dirt.value = f.dirtTex; }
       if (this.lutN) { this.lutN.lutNode.value = o.lut; this.lutN.size.value = o.lut.image.width; U.lutK.value = Math.min(1, o.lutK ?? 1); }
       if (this.dofT) { this.dofT.setSize(o.w, o.h); const L = o.lens; U.lens.value.set(L ? L[0] : 0, L ? L[1] : 0, L ? L[2] : 0, L ? L[3] : 0); U.cn.value = o.near; U.cf.value = o.far; }
       const V = this.V, cam = this.cam;
