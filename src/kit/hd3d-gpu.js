@@ -28,6 +28,7 @@ export { gpuFlood } from './flood-gpu.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { traa } from 'three/examples/jsm/tsl/display/TRAANode.js';
 import { sharpen } from 'three/examples/jsm/tsl/display/SharpenNode.js';
+import { ClusteredLighting } from 'three/examples/jsm/lighting/ClusteredLighting.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -319,6 +320,10 @@ export function gpuWet(m, o, AIR) {
 // one elsewhere), as the light's colour node. role: a uniform per light, 0 plain, 1 near, 2 far.
 const CASC = { m: uniform(new Matrix4()), fade: uniform(.06) };
 export function setCascade(near, fade) { if (near) CASC.m.value = near.shadow.matrix; CASC.fade.value = fade; }
+// Many lights (three.js's Forward+ clustered lighting): the view is cut into tiles and depth slices and
+// each pixel only adds up the point and spot lights that reach it, so a scene can have dozens of lamps
+// for about the cost of a few. Lights without shadows only; adding or removing one builds no shaders.
+export function manyLights(r) { r.lighting = new ClusteredLighting(256, 32, 24, 32); r.gsClustered = true; }
 // The still/moving shadow split on WebGPU (hd3d.js shadowLights): the light gets three's own shadow
 // node, made here so the kit can draw its map when it wants to (splitDraw), and over what is already
 // there when told to keep it (three clears a shadow map each time it draws one).

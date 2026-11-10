@@ -48,6 +48,7 @@ import { SGSR2, SgsrFrame } from './sgsr2.js';
 import { lookPatch, looksOf, lookSpec } from './looks.js';
 import { copyFrame, webgpu, setGpuPick, prepareGPU } from './gpu.js';
 import { makeRenderer } from './renderer.js';
+import { MeshoptSimplifier } from 'three/examples/jsm/libs/meshopt_simplifier.module.js';
 import { Occlusion } from './occlusion.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -1052,7 +1053,7 @@ export class HDView {
     if (fog) this.scene.fog = new FogExp2(bg, fog);
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
-    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces';
+    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
     this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null; this.beams = null; this.motionBlur = null;
@@ -1405,11 +1406,17 @@ export class HDView {
    * with spots = [{ x, y, z, col, i, flick }].
    */
   lampLights(dist = 7) {
+    this.lampDist = dist;
     for (let i = 0; i < 4; i++) { const l = new PointLight('#ffd8a0', 0, dist, 1.6); this.scene.add(l); this.lamps.push(l); }
     return this;
   }
   placeLamps(spots, x, y, z, t = 0) {
-    const n = tier().lights, near = spots.map(s => [s, (s.x - x) ** 2 + (s.z - z) ** 2 + (s.y - y) ** 2]).sort((a, b) => a[1] - b[1]);
+    // on WebGPU, clustered lighting (hd3d-gpu.js manyLights) lights 8 times as many of the nearest lamps
+    // for about the same cost; the pool grows as needed (its extra lights stay off on WebGL)
+    const many = HD.manyLights !== false && !!gpuFor(this)?.r.gsClustered;
+    const n = Math.min(tier().lights * (many ? 8 : 1), many ? spots.length : 4);
+    while (this.lamps.length < n) { const l = new PointLight('#ffd8a0', 0, this.lampDist ?? 7, 1.6); this.scene.add(l); this.lamps.push(l); }
+    const near = spots.map(s => [s, (s.x - x) ** 2 + (s.z - z) ** 2 + (s.y - y) ** 2]).sort((a, b) => a[1] - b[1]);
     // A light switching on or off changes how many lights every material is built for, so three.js
     // rebuilds all their shaders: a stutter each time a lamp came into or left range. So the pooled
     // lights stay switched on (the tier sets how many) and a spare one just goes dark.
@@ -1520,7 +1527,7 @@ export class HDView {
       if (o.isLight) return;
       if (!o.castShadow) { if (o.layers.mask & SH_BITS) o.layers.mask &= ~SH_BITS; return; }
       const e = o.matrixWorld.elements, w = (o.id % 89) + 1, held = (o.layers.mask & HOLD_BIT) !== 0;
-      let h = (e[0] * 1.3 + e[1] * 1.7 + e[2] * 2.3 + e[4] * 2.9 + e[5] * 3.1 + e[6] * 3.7 + e[8] * 4.1 + e[9] * 4.3 + e[10] * 4.7 + e[12] * 5.3 + e[13] * 5.9 + e[14] * 6.1 + (held ? .5 : 0)) * w;
+      let h = ((o.geometry?.id ?? 0) % 97 * .37 + e[0] * 1.3 + e[1] * 1.7 + e[2] * 2.3 + e[4] * 2.9 + e[5] * 3.1 + e[6] * 3.7 + e[8] * 4.1 + e[9] * 4.3 + e[10] * 4.7 + e[12] * 5.3 + e[13] * 5.9 + e[14] * 6.1 + (held ? .5 : 0)) * w;
       let wide = false, copies = 1;   // instanced and skinned things: counted for every light (their bounds move without the object)
       const tw = o.userData.gsTwin;
       if (tw) { h += ((tw.instanceCount ?? 0) * 7 + (tw.matricesTexture?.version ?? 0) + tw.matrixWorld.elements[12] * 3 + tw.matrixWorld.elements[14] * 5) * w; wide = true; copies = o.count; }
@@ -1601,7 +1608,10 @@ export class HDView {
       dofOn: false, lens: null, near: this.cam.near, far: this.cam.far, shaftsOn: false, shaft: 0, shaftCol: null };
     // temporal anti-aliasing in place of MSAA (three.js's TRAA) where the tier pays for smooth edges and the
     // picture isn't upscaled (SGSR 2 is temporal itself); card pictures keep MSAA (one frame has no history)
-    if (HD.traa !== false && T.msaa && !up && !baking && !off && !this.clearBg) { o.traa = true; o.msaa = 0; o.smooth = false; }
+    // Small bright moving things (particles, sparks) blend away in its history and look dimmer, so a view
+    // with particles keeps MSAA unless the game asks for it (v.aa = 'traa'; 'msaa' keeps MSAA anyway)
+    const traaOk = this.aa === 'traa' || (this.aa !== 'msaa' && !this.parts.length);
+    if (HD.traa !== false && traaOk && T.msaa && !up && !baking && !off && !this.clearBg) { o.traa = true; o.msaa = 0; o.smooth = false; }
     const g = this.grade;
     if (g) o.grade = { sat: g.saturation ?? 1, con: g.contrast ?? 1, lo: toRGB(g.shadows, GL), hi: toRGB(g.highlights, GH) };
     // depth of field and sun shafts: in the chain from the first time the view uses them (high and ultra
@@ -1627,6 +1637,7 @@ export class HDView {
         if (o.shaftsOn) { o.shaft = Math.min(2, this.shafts) * seen; o.shaftCol = this.sun?.color || C_WARM; o.shaftAt = this.shaftsAt; }
       }
     }
+    if (!baking && !off) autoLod(this, r.domElement.height);
     // shadows: each light's map is drawn again only when it or a caster it sees moved (shadowLights)
     r.shadowMap.enabled = T.shadow > 0; r.shadowMap.type = PCFShadowMap;
     if (T.shadow > 0) {
@@ -1887,6 +1898,7 @@ export class HDView {
     if (!this.warmed && !off) this.warm();
     // shadows: redraw the maps only when a shadow caster or a shadow light moved (or the tier, view or map changed)
     this.scene.updateMatrixWorld();
+    if (!baking && !off) autoLod(this, r.domElement.height);
     r.shadowMap.enabled = T.shadow > 0;
     let shadows = false; const cut = lastView !== this || this._cut; this._cut = false;
     if (T.shadow > 0 && this.shadowLights(lastView !== this)) r.shadowMap.needsUpdate = shadows = true;
@@ -2082,6 +2094,60 @@ function shadowSize(sh, n) {
   if (sh.map?.isWebGLRenderTarget) { sh.map.dispose(); sh.map = null; } else sh.map?.setSize(n, n, sh.map.depth);
 }
 // the layer things hidden by occlusion culling move to: the view's camera doesn't draw it, shadow cameras do
+// Automatic level of detail for the game's own meshes (Unreal and Unity make these on import; here they're
+// made in the background as a game plays). A detailed mesh (LOD_MIN_TRIS or more) gets simpler copies
+// from meshoptimizer, each with the most it may move a point (its error, in metres at the mesh's size).
+// Each frame the simplest copy whose error would show as less than LOD_PX pixels on screen is drawn, so
+// nobody can see the swap: far away a mesh needs a fraction of its triangles. The copies share the
+// original's points (only the triangle list changes), so normals, colours and UVs stay exact.
+// Skinned and morphing meshes too (their bone weights and shapes are shared points). Off for instanced and
+// multi-material meshes, see-through ones and userData.noLod.
+const LOD_MIN_TRIS = 3000, LOD_PX = .6, LOD_KEEP = [.5, .25, .1], LODS = new WeakMap(), LOD_Q = [];
+let lodReady = false; MeshoptSimplifier.ready.then(() => { lodReady = true; }, () => {});
+function lodLevels(g) {
+  const idx = g.index, pos = g.attributes.position;
+  if (!lodReady || !idx || !pos || pos.itemSize !== 3 || pos.isInterleavedBufferAttribute) return null;
+  const P = pos.array instanceof Float32Array && pos.array.length === pos.count * 3 ? pos.array : Float32Array.from({ length: pos.count * 3 }, (_, i) => pos.getComponent(i / 3 | 0, i % 3));
+  const I = idx.array instanceof Uint32Array ? idx.array : new Uint32Array(idx.array), scale = MeshoptSimplifier.getScale(P, 3);
+  const out = [{ g, err: 0, tris: I.length / 3 }];
+  for (const k of LOD_KEEP) {
+    const [ix, err] = MeshoptSimplifier.simplify(I, P, 3, Math.max(3, Math.floor(I.length * k / 3) * 3), .05, ['LockBorder']);
+    if (ix.length >= out.at(-1).tris * 3 * .85 || !ix.length) break;   // (not much simpler: stop)
+    const lg = new BufferGeometry();
+    for (const n in g.attributes) lg.setAttribute(n, g.attributes[n]);
+    lg.morphAttributes = g.morphAttributes; lg.morphTargetsRelative = g.morphTargetsRelative;
+    lg.setIndex(new BufferAttribute(pos.count > 65535 ? ix : Uint16Array.from(ix), 1));
+    lg.boundingSphere = g.boundingSphere; lg.boundingBox = g.boundingBox; lg.name = g.name + ':lod';
+    out.push({ g: lg, err: err * scale, tris: ix.length / 3 });
+  }
+  return out.length > 1 ? out : null;
+}
+function autoLod(v, ph) {
+  if (HD.autoLod === false) return;
+  const cam = v.cam, k = ph / (2 * Math.tan(cam.fov * Math.PI / 360));   // pixels per metre at 1 m
+  let built = 0;
+  v.scene.traverseVisible(o => {
+    if (!o.isMesh || o.isInstancedMesh || o.isInstancedMesh2 || o.isBatchedMesh || o.userData.noLod) return;
+    let L = o.userData.gsLod;
+    if (L === undefined) {
+      const g = o.geometry;
+      if (!g?.index || g.groups.length > 1 || Array.isArray(o.material) || o.material.transparent || g.index.count < LOD_MIN_TRIS * 3) { o.userData.gsLod = null; return; }
+      if (!g.boundingSphere) g.computeBoundingSphere();
+      let lv = LODS.get(g);
+      if (lv === undefined) { if (built++ > 0 || !lodReady) return; try { lv = lodLevels(g); } catch (e) { lv = null; } LODS.set(g, lv); }   // one a frame
+      o.userData.gsLod = L = lv ? { lv, base: g } : null;
+    }
+    if (!L) return;
+    if (o.geometry !== L.base && !L.lv.some(x => x.g === o.geometry)) { o.userData.gsLod = undefined; return; }   // the game swapped the geometry itself
+    const bs = L.base.boundingSphere, e = o.matrixWorld.elements, sc = Math.sqrt(Math.max(e[0] * e[0] + e[1] * e[1] + e[2] * e[2], e[4] * e[4] + e[5] * e[5] + e[6] * e[6], e[8] * e[8] + e[9] * e[9] + e[10] * e[10]));
+    LOD_V.copy(bs.center).applyMatrix4(o.matrixWorld);
+    const d = Math.max(.01, LOD_V.distanceTo(cam.position) - bs.radius * sc), px = k * sc / d;
+    let pick = L.lv[0];
+    for (let i = L.lv.length - 1; i > 0; i--) if (L.lv[i].err * px < LOD_PX) { pick = L.lv[i]; break; }
+    if (o.geometry !== pick.g) o.geometry = pick.g;
+  });
+}
+const LOD_V = new Vector3();
 const OCC_LAYER = 30;
 // shadowLights(): scratch (no garbage per frame)
 let SH_H = new Float64Array(40); const SH_S = new Sphere(), SH_P = new Vector3(), SH_LAST = new WeakMap();
