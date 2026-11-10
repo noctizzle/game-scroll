@@ -10,10 +10,10 @@ import { material } from './materials.js';
 import { wear } from './wear.js';
 import { pbr } from '../hd3d.js';
 
-const rngOf = s => { let a = (s * 2654435761) >>> 0 || 1; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+export const rngOf = s => { let a = (s * 2654435761) >>> 0 || 1; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
 
 // textures laid on by box projection in metres (every part of every prop at the same scale, no stretching)
-function boxUV(g, tile) {
+export function boxUV(g, tile) {
   const P = g.attributes.position, N = g.attributes.normal, uv = new Float32Array(P.count * 2);
   for (let i = 0; i < P.count; i++) {
     const ax = Math.abs(N.getX(i)), ay = Math.abs(N.getY(i)), az = Math.abs(N.getZ(i)), x = P.getX(i), y = P.getY(i), z = P.getZ(i);
@@ -26,7 +26,7 @@ function boxUV(g, tile) {
 
 const M = new Matrix4(), Q = new Quaternion(), E = new Euler(), S = new Vector3(), Tv = new Vector3();
 /** A prop under construction: shapes added per material slot, merged at the end. */
-class Build {
+export class Build {
   constructor() { this.slots = new Map(); }
   add(slot, geo, at, rot, scale) {
     at ||= [0, 0, 0]; rot ||= [0, 0, 0]; scale ||= [1, 1, 1];

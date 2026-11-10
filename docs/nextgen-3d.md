@@ -649,3 +649,10 @@ const rock = gs.models.sculpt([{ box: [.9, .6, .7], round: .15 }, { cylinder: [.
   the same kind), `leaves` and `bark` (colours), `wind` (.6, or a `gs.outdoors` Wind). About 20 to 80 ms each;
   the same options again give a copy sharing shapes and materials, so make a few kinds and place copies (or
   hand them to `gs.props` for instancing and far-off impostors).
+- **`building(o)`**: a building to walk up to, from a small shape grammar: the block is split into floors,
+  each wall into bays, and each bay into a real window opening (reveal, frame, sill, glass set back) or the
+  door, with a string course, cornice, and a flat roof with a parapet or a gable roof. `style` (`brick`,
+  `plaster`, `concrete`, `stone`, `timber`, or your own: `{ ...gs.models.buildings.brick, bay: 3 }`), `w`, `d`
+  (metres, 8 x 6), `floors`, `roof`, `floor` (storey height), `bay` (metres per window), `win` ([w, h]), `lit` (0..1
+  of windows glowing), `colour` (walls), `door: false`, `seed`, `wear`. Its door faces +z. About 0.1 to 0.25 s
+  each, so make them while loading; for a whole town in the distance `gs.city` is far cheaper.

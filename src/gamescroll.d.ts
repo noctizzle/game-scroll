@@ -1375,6 +1375,10 @@ export interface ModelsPart {
   tree(kind?: 'oak' | 'ash' | 'aspen' | 'pine' | 'bush', o?: { size?: 'small' | 'medium' | 'large'; height?: number; seed?: number; leaves?: string; bark?: string; wind?: number | Loose }): Loose;
   /** The tree kinds. */
   readonly trees: readonly string[];
+  /** A close-up building from a shape grammar: floors split into bays, each a real window opening (frame, glass set back, sill) or the door; string course, cornice, flat roof with parapet or gable roof; recipe materials, aged. style 'brick' | 'plaster' | 'concrete' | 'stone' | 'timber' (or an object like gs.models.buildings' own), w, d (metres, 8 x 6), floors (2), roof 'flat' | 'gable', floor (storey height), bay (metres per window), win [w, h], lit (0..1 of windows glowing), colour (walls), door (false: none), seed, wear. A Group centred on x/z, foot at y = 0, door facing +z. */
+  building(o?: { style?: 'brick' | 'plaster' | 'concrete' | 'stone' | 'timber' | Record<string, Loose>; w?: number; d?: number; floors?: number; roof?: 'flat' | 'gable'; floor?: number; bay?: number; win?: [number, number]; lit?: number; colour?: string; color?: string; door?: boolean; seed?: number; wear?: false | Record<string, Loose> }): Loose;
+  /** The building styles (copy one and change it: { ...gs.models.buildings.brick, bay: 3 }). */
+  readonly buildings: Record<string, Record<string, Loose>>;
   /** Per-vertex curvature of a geometry (convex > 0, concave < 0) and how much each vertex faces up. */
   curvature(geometry: Loose): { curve: Float32Array; up: Float32Array };
 }

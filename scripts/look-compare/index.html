@@ -303,6 +303,19 @@ async function treesScene() {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend + ', ' + ms.join(', ') + ' ms'];
 }
+// gs.models.building: the five styles from the grammar (real window openings, sills, trim, roofs), some windows lit
+async function buildingsScene() {
+  window.__hd.force = 2;
+  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: 0, env: .4, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  if (new URLSearchParams(location.search).has('zoom')) { v.cam.position.set(-6, 3, 9); v.cam.lookAt(-8, 3, 0); } else { v.cam.position.set(0, 9, 30); v.cam.lookAt(0, 4, 0); } v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 20, [-.5, .7, .6]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(80, 80).rotateX(-Math.PI / 2), gs.hd.pbr('#8a8478', { rough: .95 })); floor.receiveShadow = true; v.scene.add(floor);
+  const ms = [];
+  [['brick', -9, -4, 3], ['plaster', 0, -10, 3], ['concrete', 9, -8, 4], ['stone', -6, 6, 2], ['timber', 6, 5, 2]].forEach(([s, px, pz, fl], i) => { const a = performance.now(), b = gs.models.building({ style: s, floors: fl, lit: .3, seed: i }); ms.push(s + ' ' + Math.round(performance.now() - a)); b.position.set(px, 0, pz); v.scene.add(b); });
+  const t1 = performance.now(); while (performance.now() - t1 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + ', ' + ms.join(', ') + ' ms'];
+}
 // soft shadows (sun().softShadows): a post, a raised slab and a crate sitting on the ground: the
 // crate's shadow sharp at its foot, the post's and slab's spreading the further they fall
 async function pcssScene() {
@@ -500,7 +513,7 @@ function consoleScene() {
   return c.toDataURL();
 }
 // ?pick=materials,gpu-pcss draws only those (a quick look while working on one)
-const SCENES = { area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene(), 'gpu-fog': () => fogScene(), 'gpu-mblur': () => objBlurScene(), 'gpu-gi-none': () => giScene(null), 'gpu-gi-screen': () => giScene('screen'), 'gpu-gi-voxel': () => giScene('voxel'), recipes: () => recipesScene(), 'gpu-recipes-near': () => recipesScene(true), wear: () => wearScene(), props: () => propsScene(), sculpt: () => sculptScene(), trees: () => treesScene() };
+const SCENES = { area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene(), 'gpu-fog': () => fogScene(), 'gpu-mblur': () => objBlurScene(), 'gpu-gi-none': () => giScene(null), 'gpu-gi-screen': () => giScene('screen'), 'gpu-gi-voxel': () => giScene('voxel'), recipes: () => recipesScene(), 'gpu-recipes-near': () => recipesScene(true), wear: () => wearScene(), props: () => propsScene(), sculpt: () => sculptScene(), trees: () => treesScene(), buildings: () => buildingsScene() };
 const PICK = new URLSearchParams(location.search).get('pick');
 if (PICK) try { for (const n of PICK.split(',')) [out[n], backends[n]] = await SCENES[n](); } catch (e) { out.error = String(e && e.stack || e); }
 else try {
@@ -530,6 +543,7 @@ else try {
   [out.props, backends.props] = await propsScene();
   [out.sculpt, backends.sculpt] = await sculptScene();
   [out.trees, backends.trees] = await treesScene();
+  [out.buildings, backends.buildings] = await buildingsScene();
   { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; }
   [out.river, backends.river] = await riverScene();
   [out.flood, backends.flood] = await floodScene();
