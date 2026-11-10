@@ -1632,5 +1632,31 @@ console.log('physics ok');
   console.log('gs.solve ok');
 }
 
+// gs.voxels: a world made, meshed (merged faces, shading), dug, picked, walked on, packed
+{
+  const { Voxels, BLOCKS } = await import('../src/kit/voxels.js');
+  const v = new Voxels({ size: [32, 16, 32], worker: false });
+  v.fill(0, 0, 0, 31, 3, 31, BLOCKS.stone);
+  v.build();
+  let tris = 0; v.group.traverse(o => { if (o.isMesh) tris += o.geometry.index.count / 3; });
+  assert.ok(tris > 0 && tris < 400, 'a flat slab merges into few triangles: ' + tris);
+  const r = v.ray({ x: 10.5, y: 10, z: 10.5 }, { x: 0, y: -1, z: 0 }, 20);
+  assert.ok(r && r.y === 3 && r.ny === 1 && r.id === BLOCKS.stone, 'ray finds the top block and its face');
+  const me = { x: 10.5, y: 8, z: 10.5, w: .6, h: 1.7 };
+  let hit = { ground: false }; for (let i = 0; i < 60 && !hit.ground; i++) hit = v.move(me, 0, -0.3, 0);
+  assert.ok(hit.ground && Math.abs(me.y - 4) < 1e-3, 'falls and stands on the top: ' + me.y);
+  v.set(12, 4, 10, BLOCKS.brick);
+  const h2 = v.move(me, 3, 0, 0); assert.ok(h2.x && me.x < 12 - .29 && me.x > 11.6, 'stopped by a wall: ' + me.x);
+  const h3 = v.move(me, 3, 0, 0, { step: 1.01 }); assert.ok(me.x > 12 && me.y >= 5 - 1e-3, 'steps up onto it with step 1');
+  const dug = v.sphere(16, 3, 16, 2.5); assert.ok(dug.changed > 10 && dug.gone[BLOCKS.stone] === dug.changed, 'sphere digs');
+  assert.ok(v.dirty.size > 0); v.build(); assert.equal(v.meshing, 0);
+  const text = v.pack(), w = new Voxels({ size: [32, 16, 32], worker: false }).unpack(text);
+  assert.deepEqual(w.data, v.data, 'pack and unpack'); assert.ok(text.length < 600, 'packed small: ' + text.length);
+  const g = new Voxels({ size: [48, 32, 48], worker: false }).generate({ seed: 'kit', kind: 'hills' }).build();
+  assert.ok(g.top(24, 24) > 4 && g.group.children.length > 4, 'hills generate and mesh');
+  const t0 = performance.now(); const big = new Voxels({ size: [64, 32, 64], worker: false }).generate({ seed: 2 }).build();
+  console.log('gs.voxels ok (64x32x64 made and meshed in', Math.round(performance.now() - t0), 'ms)');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);

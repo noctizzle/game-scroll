@@ -58,6 +58,7 @@
 //   gs.rhythm    a beat clock in step with the music, note charts, Perfect/Good/Miss, tap-lag calibration
 //   gs.strokes   drawn lines and gesture shapes (circle, zigzag, star... or your own), lines into physics
 //   gs.solve     Puzzle (one-answer puzzles: solve, carve clues, grade, fair hints) and Search (turn-based opponents: minimax, MCTS, skill)
+//   gs.voxels    editable 3D block worlds: chunks meshed in a worker, ray picks, a box mover, world makers (3D; lazy)
 //   gs.tick      the fixed game tick (tick: 60 in the definition): rate, alpha for drawing between ticks, mix, turn
 //   gs.paths     smooth paths through points (2D or 3D): steady-speed followers, lanes, nearest point
 //   gs.bones     2D bone characters: parts that hang off each other, poses, clips, reach (IK), wobble
@@ -212,12 +213,12 @@ function readOnly(o) {
 // code). The app loads the parts a streamed game needs before running it, so games don't notice;
 // if a part isn't in yet, reading it throws StillLoading and the app shows "Loading…".
 const GROUPS = {
-  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'level3d', 'sky', 'poses', 'destruction', 'props', 'outdoors', 'city', 'models', 'THREE'],
+  '3d': { parts: ['toon', 'hd', 'ar', 'bricks', 'physics3d', 'fx3d', 'camera', 'nav3d', 'characters', 'level3d', 'sky', 'poses', 'destruction', 'props', 'outdoors', 'city', 'models', 'voxels', 'THREE'],
     // (with WebGPU picked in Settings, its renderer gets ready alongside: src/kit/gpu.js)
     load: () => Promise.all([import('./gs-3d.js').then(m => Promise.all([m.props.simplifyReady, m.models.ready()]).then(() => m)), import('./kit/gpu.js').then(g => g.prepareGPU())]).then(([m]) => ({ toon: pick('toon', m.toon), hd: pick('hd', m.hd), ar: pick('ar', m.ar), bricks: pick('bricks', m.bricks),
       physics3d: pick('physics3d', m.physics3d), fx3d: pick('fx3d', m.fx3d), camera: pick('camera', m.camera), nav3d: pick('nav3d', m.nav3d),
       characters: pick('characters', m.characters), level3d: pick('level3d', m.level3d), sky: pick('sky', m.sky),
-      poses: pick('poses', m.poses), destruction: pick('destruction', m.destruction), props: pick('props', m.props), outdoors: pick('outdoors', m.outdoors), city: pick('city', m.city), models: pick('models', m.models), THREE: m.THREE })) },
+      poses: pick('poses', m.poses), destruction: pick('destruction', m.destruction), props: pick('props', m.props), outdoors: pick('outdoors', m.outdoors), city: pick('city', m.city), models: pick('models', m.models), voxels: pick('voxels', m.voxels), THREE: m.THREE })) },
   ai: { parts: ['ai'], load: () => import('./kit/ai.js').then(m => ({ ai: pick('ai', m) })) },
   action: { parts: ['combat', 'tactics', 'climb', 'missions', 'cutscene', 'prompts', 'stealth', 'gadgets', 'campaign', 'arena'],
     load: () => import('./gs-action.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
