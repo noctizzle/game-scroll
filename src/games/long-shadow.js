@@ -24,7 +24,8 @@ const { Rig } = gs.poses;
 const { Gun, Health, Explosives } = gs.combat;
 const { CoverMap, Squad } = gs.tactics;
 const { NavGrid } = gs.ai;
-const { Brain, Wave, Imagine } = gs.brains;
+const { Brain, Wave, Imagine, Nemesis } = gs.brains;
+const { Senses, Noises } = gs.senses;
 const { Bodies } = gs.stealth;
 const { Mission } = gs.missions;
 const { Cutscene } = gs.cutscene;
@@ -1055,6 +1056,20 @@ function make(api) {
     rules: (s, a) => a === 'peek' && s[1] < .3 ? 'hold' : a === 'flank' && (s[6] < .4 || squad.t - squad.lastFlank < 8) ? 'rush' : a === 'fallback' && s[0] > 1.3 ? 'hold' : a,
   });
   const riflemen = new Wave(rifleman);
+  // Colonel Marr, who runs the Grey Order in the valley, remembers Wren between sessions (Tiny Brains'
+  // Nemesis): how often they've met, who's ahead, and how she covers her shots. Once he's sure of a
+  // habit (always the bell, always the train) his men sometimes listen for it, and he says so on the
+  // radio first, so it's fair. He never does it while you're on a losing run, and his lines after a
+  // loss are kind.
+  const SHOT_KINDS = ['the train', 'the bell', 'the thunder', 'silence'];
+  const marr = new Nemesis(api, { name: 'grey-colonel', moves: SHOT_KINDS, target: .62, lines: {
+    first: ['A sniper in Ashvale? Then we hunt one.'], back: ['The sniper again. Eyes on the hills.', 'Same valley, same sniper. Stay low, men.'],
+    long: ['{days} days quiet. I had hoped the sniper went home.'], habit: ['This one shoots in {move}. Listen for it.', 'Mark it: the sniper waits for {move}.'],
+    won: ['Lucky. The valley is long.', 'Fall back and count heads.'], lost: ['Rest now, sniper. We will meet again.', 'Not today. Get some sleep, whoever you are.'],
+    streak: ['{streak} in a row. Who IS this?'],
+  } });
+  const MARR = 'COL. MARR · GREY ORDER';
+  let noises = new Noises(), guard = null, metMarr = false;
   // The commander also thinks a few seconds ahead (Tiny Brains' Imagine) with a rough sketch of the
   // fight: [heat, your favourite nest, quiet, men left, your health, masked, alerted, time, how close
   // they are, mortar ready]. Pushing closes in but costs men while you're watching; flanking is slower
@@ -1114,7 +1129,7 @@ function make(api) {
   const alive = list => list.filter(s => !s.ko);
   const wakeUp = (s, why) => {
     if (s.ko || s.alert || s.fixed) return;
-    s.alert = true; s.sus = 1; s.alertT = 0; if (!squad.members.includes(s)) squad.members.push(s);
+    s.alert = true; s.sus = 1; s.alertT = 0; s.shoutT = t; if (!squad.members.includes(s)) squad.members.push(s);
     if (!squad.alerted) { squad.alerted = true; squad.call(s, 'contact'); }
     s.order = { do: 'hold' }; s.plan = null; s.thinkT = rnd(.2, 1.4); s.thinkDt = 0;   // staggered, so they don't all decide at once
     if (!s.mind) s.mind = riflemen.mind();
@@ -1170,10 +1185,14 @@ function make(api) {
     lastShotT = t; if (cs && !cs.ko) gun.shotsAtCs++;
     const b = { x: eye.x, y: eye.y - .05, z: eye.z, x0: eye.x, y0: eye.y - .05, z0: eye.z, vx: d.x * V0, vy: d.y * V0, vz: d.z * V0, life: 2.2, dist: 0, masked: masked() };
     shots.push(b);
-    // loud unless something covers it
-    heat = clamp(heat + (b.masked ? .04 : .3), 0, 1.2);
+    // loud unless something covers it; the colonel notes what covered it, and when his men are
+    // listening for that (he said so on the radio) it covers it only half as well
+    const how = train.on && Math.abs(train.x) < 190 ? 'the train' : bell.ring > 0 ? 'the bell' : storm > 0 ? 'the thunder' : 'silence';
+    marr.see(how); const heard = b.masked && guard === how;
+    heat = clamp(heat + (b.masked ? (heard ? .16 : .04) : .3), 0, 1.2);
     for (const f of WD.flocks) if (Math.hypot(f.x - eye.x, f.z - eye.z) < (b.masked ? 40 : 130)) flush(f, 'shot');
-    for (const o of men) if (!o.ko && !o.alert && !b.masked) o.sus = Math.max(o.sus, .35);
+    // the crack carries a long way across the valley: whoever hears it turns towards the hills (gs.senses)
+    noises.make(eye.x, eye.z, b.masked ? (heard ? 220 : 50) : 520);
     rifleReport();
     haptic('heavy'); fx.shake(scoped ? 2 : 5);
     if (!scoped && !glass) { WD.gun.updateWorldMatrix(true, false); const mz = WD.gun.localToWorld(tmpA.set(0, .03, -.74)); muzzle(mz.x, mz.y, mz.z, d.x, d.y, d.z, .3); }
@@ -1300,7 +1319,8 @@ function make(api) {
       for (let i = 0; i < 8; i++) WD.dust.emit({ x, y: y + .05, z, vx: rnd(-2.5, 2.5) + bx * 2, vy: rnd(2, 6), vz: rnd(-2.5, 2.5) + bz * 2, life: 1.2, size: .07, col: col.map(c => c * .55), a: 1, grav: 12, floor: h.ground ? WD.land.height(x, z) : y - 3 });
       holeAt(h, x, y, z, stoneHit, wet);
       if (stoneHit) for (let i = 0; i < 6; i++) WD.sparks.emit({ x, y, z, vx: rnd(-3, 3), vy: rnd(0, 3), vz: rnd(-3, 3), life: .25, size: .08, col: [4, 3, 1.4], drag: 1 });
-      // a near miss makes them jumpy
+      // a near miss makes them jumpy (and the smack of it is heard round about)
+      noises.make(x, z, 28);
       for (const s of men) if (!s.ko && Math.hypot(s.x - x, s.y - z) < 8) { s.sus = 1; s.shaken = 1; if (!b.masked || Math.hypot(s.x - x, s.y - z) < 3) wakeUp(s, 'miss'); }
     }
     if (h.drum) drumHit(h.drum);
@@ -1883,7 +1903,11 @@ function make(api) {
     return s.hidT || 0;
   }
   function updateMen(dt) {
-    const eye = WD.v.cam.position; pathBudget = 1; thinkBudget = 1;
+    const eye = WD.v.cam.position; pathBudget = 1; thinkBudget = 1; let plantN = 6;
+    // Wren as the soldiers' senses see her: at her nest, harder to make out at dusk, easier just after
+    // a shot (the flash and the dust) and through her lenses (a glint)
+    if (nest && !move && state === 'play') { const e = nestEye(nest); wrenT ||= {}; wrenT.x = e.x; wrenT.y = e.z; wrenT.hidden = false; } else wrenT = null;
+    wrenLight = (mid === 'm2' ? .3 : .5) * (t - lastShotT < 2 ? 2.2 : 1) * (scoped || glass ? 1.3 : 1);
     for (const s of men) {
       const m = s.m; let speed = 0;
       if (s.ko) { m.rig.update(dt, { speed: 0 }); if (s.koFx) s.koFx.t += dt; continue; }
@@ -1947,16 +1971,29 @@ function make(api) {
         m.rig.play(speed > 0 ? 'run' : s.crouch ? 'crouch' : 'idle'); m.rig.upper(speed > 0 ? null : 'aim');
       } else {
         // calm: patrol or stand; suspicion grows when bullets land near or a friend drops
+        // eyes and ears (gs.senses): he hears shots and near misses and turns to look; close enough,
+        // with a clear line, he can make Wren out (sooner just after she fires, through the lens glint)
+        const sn = s.senses ||= new Senses({ range: mid === 'm2' ? 95 : 135, fov: 110, near: 12, hearing: mid === 'm2' ? .75 : 1, spotTime: 2.4, memory: 5, searchTime: 7, calmDown: 5 });
+        if (!s.fixed) {
+          if ((s.seeT = (s.seeT ?? Math.random() * .4) - dt) <= 0 && wrenT && Math.hypot(s.x - wrenT.x, s.y - wrenT.y) < sn.range) { s.seeT = .4; s.clear = shootable(nestEye(nest), s); }
+          const was = sn.mood;
+          sn.update(dt, { x: s.x, y: s.y, facing: Math.PI / 2 - s.yaw }, wrenT, { sees: () => !!s.clear, noises, light: wrenLight });
+          if (sn.mood !== was) s.moodT = 0; s.moodT = (s.moodT || 0) + dt;
+          s.sus = Math.max(s.sus, sn.awareness * .98);
+          if (sn.mood === 'alert' && sn.seen) { heat = Math.max(heat, 1); wakeUp(s, 'seen'); }
+        }
+        const wary = !s.fixed && (sn.mood === 'suspicious' || sn.mood === 'searching') && sn.lookAt;
         // a sentry standing where the nest can't reach him wanders out to where it can
         if (!s.route && !s.fixed && hiddenFor(s, dt, true) > 5) { const p = seenSpot(s, nestEye(nest)); s.hidT = 0; if (p) s.route = [[p.x, p.y, 1e9]], s.ri = 0, s.wt = 0; }
-        if (s.route) {
+        if (wary) s.yaw = turnTo(s.yaw, Math.atan2(sn.lookAt.x - s.x, sn.lookAt.y - s.y), dt * 2.5);   // stops and stares where the sound came from
+        else if (s.route) {
           const r = s.route[s.ri % s.route.length];
           if (Math.hypot(r[0] - s.x, r[1] - s.y) > .6) { if (walk(s, r[0], r[1], s.late ? 2.6 : 1.3, dt) === 'stuck') { s.ri++; if (s.route.length < 2) s.route = null; } else speed = s.late ? 2.6 : 1.3; }
           else if ((s.wt += dt) > r[2]) { s.wt = 0; s.ri++; if (s.late) { s.route = null; s.sus = .8; } }
         }
-        if (s.sus > .5) { s.yaw += Math.sin(t * 2 + s.x) * dt; }
+        if (s.sus > .5 && !wary) { s.yaw += Math.sin(t * 2 + s.x) * dt; }
         s.sus = Math.max(0, s.sus - dt * .05);
-        m.rig.play(speed > 2 ? 'run' : speed > 0 ? 'walk' : 'idle'); m.rig.upper(null);
+        m.rig.play(speed > 2 ? 'run' : speed > 0 ? 'walk' : 'idle'); m.rig.upper(wary && sn.mood === 'searching' ? 'aim' : null);   // searching: rifle up, scanning
         if (s.spotter && spotting) { s.yaw = turnTo(s.yaw, Math.atan2(eye.x - s.x, eye.z - s.y), dt * 2); m.rig.upper('aim'); }
       }
       s.gy = s.deck ?? groundAt(s.x, s.y) + (s.lift || 0);
@@ -1966,9 +2003,13 @@ function make(api) {
       // far soldiers animate less often
       const far = Math.hypot(s.x - eye.x, s.y - eye.z) > 160 && !scoped;
       if (!far || (frame + (s.x | 0)) % 3 === 0) m.rig.update(far ? dt * 3 : dt, { speed, aim: s.alert ? -.05 : 0 });
+      // through the scope his feet meet the slope he stands on (foot IK), for the few men in view
+      if (scoped && !s.deck && plantN > 0 && watched(s)) { plantN--; m.rig.plant(WD.ground, m); }
     }
     bodies.update(dt, men.filter(s => !s.ko && !s.fixed));
+    noises.update(dt);
   }
+  let wrenT = null, wrenLight = .5;
   let frame = 0, spotting = false;
   function nearestAlly(s) { if (!allies) return null; let best = null, bd = 140; for (const a of allies) { if (a.ko || a.done) continue; const d = Math.hypot(a.x - s.x, a.y - s.y); if (d < bd) { bd = d; best = a; } } return best; }
   function updateAllies(dt) {
@@ -2110,6 +2151,7 @@ function make(api) {
     const e = nestEye(nest); look = { yaw: Math.atan2(-(nest.face.x - e.x), -(nest.face.z - e.z)), pitch: -.06 };
     mission = new Mission(def.script.bind(def));
     mission.nests = def.nests;
+    noises = new Noises(); guard = null; metMarr = false;
     cut = new Cutscene(def.intro(), { bars: .14 }); state = 'intro';
     { const cam = WD.v.cam, keep = cam.position.clone(), e = nestEye(nest); cam.position.set(e.x, e.y, e.z); cam.updateMatrixWorld(); WD.land.update(0, cam); grassAt.copy(cam.position); cam.position.copy(keep); cam.updateMatrixWorld(); }
     for (const s of men) { s.m.updateMatrixWorld(true); s.m.rig.update(0, { speed: 0 }); }
@@ -2273,7 +2315,7 @@ function make(api) {
       }
       if (state === 'intro' || state === 'outro') {
         cut.update(dt); audioTick(dt);
-        if (state === 'intro' && cut.done) { state = 'play'; const s = cut.shot; if (s?.look) { const dx = s.look.x - s.x, dy = s.look.y - s.y, dz = s.look.z - s.z; look.yaw = Math.atan2(-dx, -dz); look.pitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -.5, .35); } }
+        if (state === 'intro' && cut.done) { state = 'play'; meetMarr(); const s = cut.shot; if (s?.look) { const dx = s.look.x - s.x, dy = s.look.y - s.y, dz = s.look.z - s.z; look.yaw = Math.atan2(-dx, -dz); look.pitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -.5, .35); } }
       updateMen(dt); updateAllies(dt); WD.dust.update(dt); WD.sparks.update(dt); WD.smoke.update(dt); WD.trail.update(dt);
         if (state === 'outro') { mission.update(dt); trainUpdate(dt); if (mid === 'm1' && train.final) rideTrain(dt); }
         if (outroDone && state === 'outro') finish(true);
@@ -2534,12 +2576,22 @@ function make(api) {
       score += 500 + st.filter(Boolean).length * 250; api.score(score);
       const d = api.load({}) || {}; d.nests = favour; api.save(d);
       boss.result(true); rifleman.result(true); for (const s of men) endMind(s);
+      { const l = marr.result(true); if (l) say(l, MARR, 2.4, true); }
       api.win(); state = 'won'; endT = 2.4; sounds.win(); haptic('success');
     } else {
       boss.result(false); rifleman.result(false); for (const s of men) endMind(s);
+      { const l = marr.result(false); if (l) say(l, MARR, 2.2, true); }
       const d = api.load({}) || {}; d.nests = favour; api.save(d);
       state = 'fail'; endT = 2.2; sounds.lose(); haptic('error'); failMsg = mission.failed || 'Mission failed';
     }
+  }
+  // the colonel on the radio as the mission starts (an intercept, red like the Grey Order's calls)
+  function meetMarr() {
+    if (metMarr) return; metMarr = true;
+    const hello = marr.met(); guard = marr.counter(boss.skill);
+    if (hello) soon(3.2, () => say(hello, MARR, 3.2, true));
+    // listening for your habit: always said out loud first, so you know to change it
+    if (guard && !/listen|waits/i.test(hello || '')) { const l = marr.line('habit'); if (l) soon(7.5, () => say(l, MARR, 3.2, true)); }
   }
   function go() { begin(sel); haptic('medium'); sounds.click?.(); }
   function briefTap(x, y) {
@@ -2568,6 +2620,7 @@ function make(api) {
     const sc = scoped, gl = glass;
     // tags above soldiers, KO pops
     tags(c, brass, red);
+    tells(c, brass, red);
     koPops(c);
     if (sc) scopeView(c, brass, red); else if (gl) glassView(c, brass);
     else crosshair(c);
@@ -2757,6 +2810,23 @@ function make(api) {
     if (scoped) return;
     c.font = '700 7px "Courier New", monospace'; c.textAlign = 'center'; c.lineWidth = 2.5; c.strokeStyle = '#0b0b0a99'; c.lineJoin = 'round';
     for (const l of labels) { const txt = Math.round(l.d) + 'm' + (l.n > 1 ? ' ×' + l.n : ''); c.strokeText(txt, l.x, l.y - 9); c.fillStyle = l.alert ? red : brass; c.fillText(txt, l.x, l.y - 9); }
+  }
+  // what a soldier's senses are up to, over his head: a "?" that fills as he grows sure something's
+  // there (he heard a shot, he's staring at the hills), a red "!" as he raises the alarm. Shown over
+  // tagged men, and over anyone in the scope or glasses
+  function tells(c, brass, red) {
+    c.save(); c.textAlign = 'center'; c.font = '800 11px Rubik, sans-serif'; c.lineWidth = 2;
+    for (const s of men) {
+      if (s.ko || s.inside || !(s.tagged || scoped || glass)) continue;
+      const sn = s.senses, shout = s.alert && t - (s.shoutT ?? -9) < 2, wary = !s.alert && sn && sn.mood !== 'calm';
+      if (!shout && !wary) continue;
+      const [x, y, z] = WD.v.toScreen(s.x, s.gy + 2.75, s.y); if (z > 1 || x < 8 || x > W - 8 || y < 8 || y > H - 8) continue;
+      const pop = clamp(s.moodT * 6, 0, 1), r = 7 * (.6 + .4 * pop);
+      c.fillStyle = '#0b0b0acc'; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+      if (wary) { c.strokeStyle = brass; c.beginPath(); c.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + TAU * clamp(sn.awareness, .08, 1)); c.stroke(); }
+      c.fillStyle = shout ? red : brass; c.fillText(shout ? '!' : '?', x, y + 4);
+    }
+    c.restore();
   }
   function koPops(c) {
     for (const s of men) {
