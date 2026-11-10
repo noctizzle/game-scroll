@@ -1082,13 +1082,27 @@ export class City {
     const col = { road: '#2a2d33', block: '#5a5c60', park: '#3f6a3a', building: '#8a8e96', water: '#1d3c52', ...colours }, s = Math.min(w, h) / 2 / range;
     c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip(); c.fillStyle = col.road; c.fillRect(x, y, w, h);
     c.translate(x + w / 2, y + h / 2); c.rotate(-turn); c.scale(s, s); c.translate(-at.x, -(at.z ?? at.y));
-    const P = this.plan;
-    if (P.water) { c.fillStyle = col.water; c.fillRect(at.x - range * 2, P.water.z + 10, range * 4, range * 4); }
-    for (const b of P.blocks) { if (Math.abs((b.x0 + b.x1) / 2 - at.x) > range * 1.6 + 60 || Math.abs((b.z0 + b.z1) / 2 - (at.z ?? at.y)) > range * 1.6 + 60) continue; c.fillStyle = b.kind === 'park' ? col.park : col.block; c.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0); }
-    c.fillStyle = col.building;
-    for (const b of P.buildings) if (Math.abs(b.x0 - at.x) < range * 1.6 && Math.abs(b.z0 - (at.z ?? at.y)) < range * 1.6) c.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0);
+    // the streets don't change: drawn once into a picture (hundreds of rectangles), then only that is
+    // moved and turned each frame (the Fold's frame lab showed the game's own CPU time going over the beat)
+    const m = this.mapPicture(col);
+    c.drawImage(m.cv, m.x0, m.z0, m.w, m.h);
     c.restore();
     this._map = { x, y, w, h, at, s, turn };
+  }
+  // the whole plan as a picture for drawMap, about 2 pixels a metre (made again if the colours change)
+  mapPicture(col) {
+    const key = JSON.stringify(col); if (this._mapPic?.key === key) return this._mapPic;
+    const P = this.plan, M = 400; let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const b of P.blocks) { x0 = Math.min(x0, b.x0); z0 = Math.min(z0, b.z0); x1 = Math.max(x1, b.x1); z1 = Math.max(z1, b.z1); }
+    if (!(x1 > x0)) { x0 = z0 = -100; x1 = z1 = 100; }
+    x0 -= M; z0 -= M; x1 += M; z1 += M;
+    const k = Math.min(2, 2048 / Math.max(x1 - x0, z1 - z0)), cv = canvas(Math.ceil((x1 - x0) * k), Math.ceil((z1 - z0) * k)), c = cv.getContext('2d');
+    c.fillStyle = col.road; c.fillRect(0, 0, cv.width, cv.height); c.scale(k, k); c.translate(-x0, -z0);
+    if (P.water) { c.fillStyle = col.water; c.fillRect(x0, P.water.z + 10, x1 - x0, Math.max(0, z1 - P.water.z - 10)); }
+    for (const b of P.blocks) { c.fillStyle = b.kind === 'park' ? col.park : col.block; c.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0); }
+    c.fillStyle = col.building;
+    for (const b of P.buildings) c.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0);
+    return this._mapPic = { key, cv, x0, z0, w: cv.width / k, h: cv.height / k };
   }
   /** Where a city point lands on the last drawMap(): [x, y] on the canvas (may be outside the box). */
   mapPoint(p) {

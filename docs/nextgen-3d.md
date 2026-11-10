@@ -63,19 +63,27 @@ That picks where 3D games start and how fast they run:
 
 | Class | Starts on | 3D frame rate | Other games |
 | --- | --- | --- | --- |
-| top (Fold 8, recent iPhone Pro, desktops) | ultra | 120 fps (where the screen does 120 Hz) | screen rate |
+| top (Fold 8, recent iPhone Pro, desktops) | high | 120 fps (where the screen does 120 Hz) | screen rate |
 | mid | high | 60 fps | screen rate |
 | low | medium | 30 fps | 60 fps |
+
+Play never climbs above **high**: on ultra the Fold 8 got hot and throttled within a minute in every
+3D game, and then stuttered (frame lab reports, 2026-11-10). Ultra is still there for `HD.force = 3`
+(tests, screenshots, the frame lab's A/B). While the phone is warm or hot (`src/kit/power.js`), and for
+a minute after it cools, games also draw one tier lower from the next round (a tier change rebuilds
+shaders, so not mid-round) and drop to the first resolution step at once.
 
 The feed loop skips screen refreshes to hold a game at its rate (a 60 fps game on a 120 Hz screen
 draws every other refresh), which saves battery and heat. Settings has Auto / 120 / 60 / 30
 (battery saver); a game can also set `fps: 30` in its definition to cap itself.
 
 Frame times are averaged over 45-frame windows and compared with the frame budget for the game's rate
-(8.3 ms at 120 fps, 16.7 ms at 60). After two slow windows the render resolution steps down one fixed
+(8.3 ms at 120 fps, 16.7 ms at 60). A window is slow when its average is a quarter over the budget, or
+when two or more of its frames came a whole refresh late (a game averaging 57 fps at 60 that drops a
+frame three times a second stutters visibly, though its average looks fine). After two slow windows the render resolution steps down one fixed
 level (100%, 85%, 70%, 55%), then the tier drops. At 120 fps a struggling game first gives up one
 resolution step, then drops to 60 fps at full resolution, keeping the picture; at the lowest tier and
-resolution a 60 fps game can drop to 30. It only climbs back after eight fast windows in a row, and
+resolution a 60 fps game can drop to 30. It only climbs back after eight fast windows in a row (on the beat, with no late frames), and
 never above a level that was too slow in the last 30 seconds, so it does not bounce up and down (each
 step reallocates render targets). Where a game settles (tier and frame rate) is remembered per game,
 so its next round starts there instead of stuttering down again.
@@ -246,7 +254,7 @@ side). Keep the HUD anchored to the edges of `W` × `H` and it just works.
 ## Reflections and contact shadows
 
 - `v.reflect(floor, carBody)` marks shiny surfaces for screen-space reflections. They're drawn on the
-  ultra tier (top-end phones) only; on other phones those surfaces keep their normal look, so mark the
+  ultra tier only (tests and `HD.force = 3`: play stops at high); on other phones those surfaces keep their normal look, so mark the
   few that matter (a wet floor, a polished hall), not everything.
 - `const cs = v.contact({ y: 0, size: 8 })` lays soft contact shadows on a floor (medium tier and up),
   so things look like they're standing on it even where real shadows are off. In a big level, keep it
