@@ -379,8 +379,7 @@ function paint(s){
   // must never stop at one broken game)
   const off=s!==active;speed.offscreen=off;try{s.game.draw(s.ctx,beforeDraw(s,tickRate(s.def)))}catch(e){speed.offscreen=false;gameFault(s,e);try{s.game.draw(s.ctx,1)}catch(_){}return}finally{speed.offscreen=false}
   if(s.def.era==='console'){s.ctx.save();consolePost(s.ctx,s.w||s.def.w,s.h||s.def.h);s.ctx.restore()}
-  // the shared 3D canvas shown on the card being played just drew another card's frame: put its own back
-  if(off&&active&&usesHD(s.def)&&usesHD(active.def)&&!active.loading)paint(active);
+  // (Next Gen and AR cards painted off screen draw no 3D then: hd3d.js paints their picture in once the feed is still)
 }
 // Always keep AHEAD games downloaded and ready below the one you're on, so swiping never waits.
 const AHEAD=5;

@@ -542,10 +542,34 @@ function consoleScene() {
   v.render(x, 192, 160);
   return c.toDataURL();
 }
+// gs.props on WebGPU with GPU culling (HD.gpuCull) on ('gpu-cull') and off ('gpu-cull-cpu'): a forest of
+// ?n= (default 6000) trees with a simpler far shape and sun shadows; the two should match, and the text
+// gives the CPU time per frame of each
+async function cullScene(on) {
+  window.__hd.force = 2; window.__hd.gpuCull = on;
+  const Q = new URLSearchParams(location.search), N = +(Q.get('n') || 6000);
+  const v = new HV({ bg: '#9ab4d0', fog: .004, env: .4, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 6, 40); v.cam.lookAt(0, 2, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 40, [-.5, .8, .4]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 10);
+  const floor = new T.Mesh(new T.PlaneGeometry(400, 400).rotateX(-Math.PI / 2), gs.hd.pbr('#6a7a58', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const tree = new T.ConeGeometry(1, 3, 10, 2).translate(0, 1.5, 0), far = new T.ConeGeometry(1, 3, 5, 1).translate(0, 1.5, 0);
+  const props = new gs.props.Props(v.scene); props.kind('tree', tree, gs.hd.pbr('#3a6a34', { rough: .8 }), { lod: [[40, far]], capacity: N });
+  const side = Math.ceil(Math.sqrt(N)), gap = 300 / side;
+  for (let i = 0; i < N; i++) { const px = -150 + (i % side) * gap + (i * 7 % 5) * .3, pz = -150 + Math.floor(i / side) * gap + (i * 3 % 7) * .2; props.add('tree', px, 0, pz, { rot: i, scale: .8 + (i % 4) * .15, color: ['#3a6a34', '#4a7a3a', '#2f5a2c'][i % 3] }); }
+  props.done();
+  for (let i = 0; i < 4; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  let syncMs = 0; v.scene.traverse(o => { const tw = o.isInstancedMesh2 && o.userData.gpuTwin; if (tw) { const f = tw.sync; tw.sync = (...a) => { const t = performance.now(); f.apply(tw, a); syncMs += performance.now() - t; }; } });
+  const cpu = []; for (let i = 0; i < 30; i++) { v.cam.position.x = Math.sin(i * .05) * 2; v.cam.lookAt(0, 2, 0); v.t = 0; v.render(x, 240, 320); cpu.push(window.__hd.info.cpu); await frame(); }
+  v.cam.position.set(0, 6, 40); v.cam.lookAt(0, 2, 0); v.cam.updateMatrixWorld();
+  for (let i = 0; i < 3; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  cpu.sort((a, b) => a - b);
+  const onGpu = []; v.scene.traverse(o => { if (o.isInstancedMesh2 && o.userData.gpuTwin) onGpu.push(o.userData.gpuTwin.isGpu() + ' sends ' + o.userData.gpuTwin.sends()); });
+  return [c.toDataURL(), window.__hd.info.backend + ', ' + N + ' trees, gpu ' + onGpu.join('/') + ', cpu p50 ' + cpu[15].toFixed(2) + ' ms, list ' + (syncMs / 33).toFixed(2) + ' ms'];
+}
 // ?pick=materials,gpu-pcss draws only those (a quick look while working on one)
-const SCENES = { area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene(), 'gpu-fog': () => fogScene(), 'gpu-mblur': () => objBlurScene(), 'gpu-gi-none': () => giScene(null), 'gpu-gi-screen': () => giScene('screen'), 'gpu-gi-voxel': () => giScene('voxel'), recipes: () => recipesScene(), 'gpu-recipes-near': () => recipesScene(true), wear: () => wearScene(), props: () => propsScene(), sculpt: () => sculptScene(), trees: () => treesScene(), buildings: () => buildingsScene(), humans: () => humansScene() };
+const SCENES = { river: () => riverScene(), flood: () => floodScene(), city: () => cityScene(), 'outdoor-tier1': () => outdoor(1), 'outdoor-tier3': () => outdoor(3), 'outdoor-physical': () => outdoor(3, true), 'gpu-cull': () => cullScene(true), 'gpu-cull-cpu': () => cullScene(false), area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene(), 'gpu-fog': () => fogScene(), 'gpu-mblur': () => objBlurScene(), 'gpu-gi-none': () => giScene(null), 'gpu-gi-screen': () => giScene('screen'), 'gpu-gi-voxel': () => giScene('voxel'), recipes: () => recipesScene(), 'gpu-recipes-near': () => recipesScene(true), wear: () => wearScene(), props: () => propsScene(), sculpt: () => sculptScene(), trees: () => treesScene(), buildings: () => buildingsScene(), humans: () => humansScene() };
 const PICK = new URLSearchParams(location.search).get('pick');
-if (PICK) try { for (const n of PICK.split(',')) [out[n], backends[n]] = await SCENES[n](); } catch (e) { out.error = String(e && e.stack || e); }
+if (PICK) try { for (const n of PICK.split(',')) if (n === 'beams') { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; } else [out[n], backends[n]] = await SCENES[n](); } catch (e) { out.error = String(e && e.stack || e); }
 else try {
   const only = new URLSearchParams(location.search).get('only');
   for (const t of only ? [+only] : [0, 1, 2, 3]) [out['nextgen-tier' + t], backends['nextgen-tier' + t]] = await nextgen(t);

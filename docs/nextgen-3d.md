@@ -557,6 +557,15 @@ works on instanced meshes and on WebGL and WebGPU alike.
   CPU (a small depth picture of the nearest boxes, `{ max: 300 }` of them), so it's the same on WebGL
   and WebGPU, and it only skips what is surely hidden. `gs.city` turns it on for its buildings by
   itself (`occlude: false` to stop it). `v.occlusion.stats` says what the last frame skipped.
+- GPU culling (WebGPU): a `gs.props` kind with 2,000 copies or more is culled on the graphics chip
+  instead of the CPU. A compute pass tests every copy against the view and the lights' shadow views,
+  picks its detail level by distance, and packs the ones that pass into a list drawn with one indirect
+  draw per level. The CPU only sends the copies again when the game moves, hides or recolours one, so a
+  forest of 6,000 trees costs about 2 ms of CPU a frame instead of 6. Games don't change anything.
+  `__hd.gpuCull` is `'auto'` (the default), `true` (every kind) or `false` (always the CPU). It is off while
+  frame generation runs, because frame generation needs each copy to keep its place in the list. It
+  skips occlusion culling, and a kind with a list of materials stays on the CPU. Copies that move every
+  frame should be plain meshes anyway; on the GPU path a moved copy gets no motion blur for that frame.
 - `v.shafts = 1` (0..2) adds sun shafts: the bright sky round the sun is smeared towards it at quarter
   size, so whatever blocks it (trees, window frames, a hill) leaves streaks of light. Set `v.sun` so
   it knows where the sun is. It's off on the lowest tier. A physical sky is far brighter round the sun;
