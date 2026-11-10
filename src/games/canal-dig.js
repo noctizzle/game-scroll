@@ -126,7 +126,7 @@ export default {
   tag: 'Advance · Physics',
   retro: true, era: 'advance', pal: 'lemon',
   w: 176, h: 208, maxW: 176, maxH: 208,
-  goal: 8,
+  goal: 12,
   hint: 'Drag to dig tunnels so the water in the tank flows down into the flower pots. Rock won\'t dig and sand slumps in. Fill all three for a bonus.',
   make,
 };

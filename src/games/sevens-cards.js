@@ -103,7 +103,7 @@ export default {
   tag: 'Casual · Cards',
   retro: false,
   w: 360, h: 640, maxH: 800,
-  goal: 10,
+  goal: 8,
   hint: 'Each suit starts with its 7 and grows up to the King and down to the Ace. Tap a glowing card that fits, or knock if none do. Empty your hand first; three rounds.',
   make,
 };

@@ -27,11 +27,13 @@ function view3d() {
 
 function make(api) {
   const fx = new Juice();
-  let kids, holder, fuse, fuseMax, fly, score, hats, t, thinkT, started, ended, msg, ml, passes;
+  let kids, nap, holder, fuse, fuseMax, fly, score, hats, t, thinkT, started, ended, msg, ml, passes;
   const CX = () => W / 2, CY = () => H / 2 + 8;
   const seat = i => { const a = Math.PI / 2 + i * Math.PI * 2 / 5; return [CX() + Math.cos(a) * 58, CY() + Math.sin(a) * 44]; };
 
-  function newCake(to) { fuseMax = Math.max(2.4, 6 - passes * .06); fuse = fuseMax * rnd(.6, 1); holder = to; fly = null; thinkT = holder === 0 ? 0 : rnd(.35, 1.1) * Math.max(.45, 1 - passes * .015); }
+  function newCake(to) { fuseMax = Math.max(2.4, 6 - passes * .06); fuse = fuseMax * rnd(.6, 1); holder = to; fly = null; if (to === 0) doze(); thinkT = holder === 0 ? 0 : rnd(.35, 1.1) * Math.max(.45, 1 - passes * .015); }
+  // when the cake reaches you, one or two friends nod off: throw to them and it bounces straight back
+  function doze() { const k = [1, 2, 3, 4].sort(() => Math.random() - .5); nap = k.slice(0, passes > 14 ? 2 : 1); }
   function throwTo(from, to) {
     fly = { from, to, k: 0 }; holder = -1; passes++; sounds.jump?.(); haptic('light');
   }
@@ -45,13 +47,13 @@ function make(api) {
   }
 
   return {
-    reset() { kids = [0, 1, 2, 3, 4]; score = 0; hats = 3; t = 0; started = false; ended = false; msg = ''; ml = 0; passes = 0; newCake(0); fx.clear(); },
+    reset() { kids = [0, 1, 2, 3, 4]; nap = []; score = 0; hats = 3; t = 0; started = false; ended = false; msg = ''; ml = 0; passes = 0; newCake(0); fx.clear(); },
     resize(w, h) { W = w; H = h; },
     update(dt) {
       fx.update(dt); t += dt; if (ml > 0) ml -= dt;
       if (!started || ended) return;
       fuse -= dt;
-      if (fly) { fly.k += dt / .45; if (fly.k >= 1) { holder = fly.to; fly = null; if (holder === 0) { score++; api.score(score); sounds.coin(1 + passes * .01); fx.pop(...seat(0).map((v, i) => v - (i ? 26 : 0)), '+1'); } thinkT = holder === 0 ? 0 : rnd(.25, 1.1) * Math.max(.4, 1 - passes * .015); } }
+      if (fly) { fly.k += dt / .45; if (fly.k >= 1) { if (fly.from === 0 && nap.includes(fly.to)) { fuse *= .6; msg = 'ASLEEP! IT BOUNCED BACK'; ml = 1.2; sounds.hit(); haptic('warning'); fly = { from: fly.to, to: 0, k: 0, back: true }; return; } holder = fly.to; const back = fly.back; fly = null; if (holder === 0) doze(); if (holder === 0 && !back) { score++; api.score(score); sounds.coin(1 + passes * .01); fx.pop(...seat(0).map((v, i) => v - (i ? 26 : 0)), '+1'); } thinkT = holder === 0 ? 0 : rnd(.25, 1.1) * Math.max(.4, 1 - passes * .015); } }
       if (fuse <= 0) { pop(); return; }
       if (holder > 0) {
         thinkT -= dt;
@@ -65,7 +67,7 @@ function make(api) {
     draw(c) {
       const v = view3d(); v.frame();
       v.put('table', v.at(CX(), CY()), { sx: 44, sy: 1, sz: 32 / v.sin });
-      for (let i = 0; i < 5; i++) { const [x, y] = seat(i); v.put('kid' + i, v.at(x, y, holder === i ? Math.abs(Math.sin(t * 12)) * 2 : 0), { ry: Math.atan2(y - CY(), x - CX()) + Math.PI / 2 }); }
+      for (let i = 0; i < 5; i++) { const [x, y] = seat(i); v.put('kid' + i, v.at(x, y, holder === i ? Math.abs(Math.sin(t * 12)) * 2 : nap.includes(i) ? -3 : 0), { ry: Math.atan2(y - CY(), x - CX()) + Math.PI / 2 }); }
       let cx, cy, cz = 18;
       if (fly) { const [ax, ay] = seat(fly.from), [bx, by] = seat(fly.to); cx = ax + (bx - ax) * fly.k; cy = ay + (by - ay) * fly.k; cz = 18 + Math.sin(fly.k * Math.PI) * 26; }
       else if (holder >= 0) [cx, cy] = seat(holder);
@@ -81,6 +83,7 @@ function make(api) {
       for (let i = 0; i < 3; i++) { c.fillStyle = i < hats ? '#f080b0' : '#ffffff30'; c.beginPath(); c.moveTo(8 + i * 11, 15); c.lineTo(12 + i * 11, 5); c.lineTo(16 + i * 11, 15); c.fill(); }
       c.textAlign = 'center'; c.fillStyle = '#fff';
       if (holder === 0 && !fly && started) { c.font = '800 11px Rubik, sans-serif'; c.fillStyle = (t * 6 | 0) % 2 ? '#ffe060' : '#fff'; c.fillText('TAP A FRIEND!', W / 2, H - 22); }
+      for (const i of nap) { const [x, y] = seat(i); c.font = '800 10px Rubik, sans-serif'; c.fillStyle = '#c0d8ff'; c.fillText('z', x + 6, y - 26 - (t * 8 % 6)); c.fillText('Z', x + 11, y - 32 - (t * 8 % 6)); }
       if (ml > 0) { c.font = '800 14px Rubik, sans-serif'; c.fillStyle = '#fff'; c.fillText(msg, W / 2, 30); }
       if (!started) { c.fillStyle = '#000b'; c.fillRect(0, H / 2 - 20, W, 34); c.fillStyle = '#fff'; c.font = '700 10px Rubik, sans-serif'; c.fillText('You are at the front with the cake.', W / 2, H / 2 - 6); c.fillText('Tap a friend to throw it. Tap to start', W / 2, H / 2 + 8); }
     },
@@ -102,7 +105,7 @@ export default {
   tag: 'Console · Party',
   retro: true, era: 'console', pal: 'grape',
   w: 192, h: 176, maxW: 300, maxH: 280,
-  goal: 30,
-  hint: 'A fizzing party cake gets passed round the table. When it lands with you, tap a friend to throw it on before it pops. Get caught holding it three times and the party is over.',
+  goal: 60,
+  hint: 'A fizzing party cake gets passed round the table. When it lands with you, tap a friend who is awake to throw it on before it pops (sleepy ones bounce it back). Get caught holding it three times and the party is over.',
   make,
 };

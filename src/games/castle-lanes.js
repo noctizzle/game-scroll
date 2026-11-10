@@ -105,7 +105,7 @@ export default {
   tag: 'Casual · Strategy',
   retro: false,
   w: 360, h: 640, maxH: 800,
-  goal: 40,
+  goal: 80,
   hint: 'Tap a soldier card, then a lane to send it. Swords beat bows, bows beat spears, spears beat swords. Reach the enemy castle to knock it down before yours falls.',
   make,
 };
