@@ -353,3 +353,11 @@ Ten batches toward 1000, mostly from the open ideas above (ticked where they wer
 - [x] Castle Lanes — send swords, spears and bows down three lanes; each beats one and loses to another
 - [x] Bee Keeper — share bees between foraging, building comb and guarding against wasp raids
 - [x] Ferry Crossing — river-crossing logic puzzles with a small boat and a different rule each river
+- [x] Canal Dig — dig tunnels through falling-sand earth so a water tank drains into buried flower pots
+- [x] Bumper Bowl — bumper cars on a round table with no rails: ram the others off and stay on
+- [x] Fuse Pass — pass a fizzing party cake round the table before it pops in your hands
+- [x] Lighthouse Watch — swing the beam over a dark sea so homecoming boats can see and dodge the rocks
+- [x] Ghost Torch 📷 — hold drifting ghosts in your torch circle around the room until they pop
+- [x] Star Join 📷 — find numbered stars in the sky around you and join them in order to draw constellations
+- [x] Bubble Garden 📷🎤 — blow bubbles (mic or button) onto flower buds on your floor to make them bloom
+- [x] Echo Drums 📷 — five drums stand round you: listen, then turn and play their rhythm back
