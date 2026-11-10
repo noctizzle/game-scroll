@@ -2193,7 +2193,7 @@ const gpuLooked = new WeakSet(), gpuTwins = new WeakMap(), sunRoles = new WeakMa
 // A twin can have a close-up version (gs.models materials: the recipe worked out per pixel): drawn
 // while the thing is within its distance of the camera, once its shaders have built in the background
 // (so walking up to a wall never hides it while a shader builds)
-const NEAR_S = new Sphere();
+const NEAR_S = new Sphere(), nearBusy = new WeakSet();
 function swapTwins(scene, G, cam = null) {
   scene.traverse(o => {
     if (!o.isMesh) return;
@@ -2204,14 +2204,17 @@ function swapTwins(scene, G, cam = null) {
       o.userData.gsGlMat = gl;
       const near = tw.m.userData.gsNear;
       let use = tw.m;
-      if (near && cam && !o.isInstancedMesh) {
+      if (near && cam && !o.isInstancedMesh && HD.closeUp !== false) {
         if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
         NEAR_S.copy(o.geometry.boundingSphere).applyMatrix4(o.matrixWorld);
         const close = NEAR_S.distanceToPoint(cam.position) < tw.m.userData.gsNearDist;
         if (close && tw.nearOk) use = near;
-        else if (close && !tw.building) {
-          tw.building = true; const keep = o.material; o.material = near;
-          try { G.r.compileAsync(o, cam, scene).then(() => { tw.nearOk = true; }, () => {}); } catch (e) { /* stays far */ }
+        else if (close && !tw.building && !nearBusy.has(G.r)) {
+          // one close-up build at a time per renderer: many at once can stall the graphics chip (and a
+          // phone's frame) while they all compile; a build that never settles frees the queue after 4 s
+          tw.building = true; nearBusy.add(G.r); const keep = o.material; o.material = near;
+          const done = () => { nearBusy.delete(G.r); clearTimeout(cap); }, cap = setTimeout(done, 4000);
+          try { G.r.compileAsync(o, cam, scene).then(() => { tw.nearOk = true; done(); }, done); } catch (e) { done(); /* stays far */ }
           o.material = keep;
         }
       }

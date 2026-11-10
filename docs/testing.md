@@ -96,6 +96,12 @@ server) and count the calls per second.
 
 - `look-compare.cjs` draws fixed, seeded scenes (Next Gen at every tier, Console) and fails on a
   visible difference. Save before the change, check after, on WebGL and with `--webgpu`.
+  `PICK=recipes,wear` draws just those scenes (about 10 s); `Q=dbg` (with `ALLWARN=1`) logs what the
+  renderer holds every 3 s and says when the graphics queue stops answering.
+- Known noise (2026-11-10): the test machine's software WebGPU (SwiftShader) sometimes hangs its queue,
+  with no error, partway through a full `--webgpu` run (seen after the live bounce light scenes), and
+  every scene after that shows the same frozen picture. If a run of CHANGED lines all differ by 30+,
+  run the check again or `PICK` the scenes that failed.
 - `gpu-games.cjs --shots dir` saves each game's first moments on both backends; games move a little
   by their own randomness, so it's a guide, not a test.
 - `shots.cjs` / `shots3d.cjs` take screenshots at phone and fold sizes for looking at.

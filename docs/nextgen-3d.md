@@ -610,7 +610,8 @@ wear(wall, { moss: .7 });                                                    // 
   `under`, `vein`, `grout`...), `seed` for another pattern, `repeat: [u, v]`, `size` (texture pixels, 256).
   Each is painted once into tiling colour, bump, roughness and metal textures, and kept across launches
   (the next launch reads them back instead of painting again). On WebGPU: `closeUp` (on by default)
-  works the recipe out per pixel near the camera so it stays sharp however close you get; `solid: true`
+  works the recipe out per pixel near the camera so it stays sharp however close you get (its
+  shaders build in the background, one at a time, and it shows once they're ready); `solid: true`
   (or metres per tile) lays it on by world position, with no UVs or seams; `scatter: true` turns and moves
   each tile so a big floor shows no repeat. Other options go to `gs.hd.pbr` (`glow`, `clear`, `wet`...).
 - **`wear(mesh, o)`**: ages a thing from its own shape, the way texture artists use curvature and cavity
