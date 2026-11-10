@@ -613,7 +613,7 @@ function frame(now){
     try{
       let run=true;if(DBG&&DBG.on)({dt,run}=DBG.time(dt));if(LAB&&LAB.frozen)run=false;
       const timed=s.state==='playing'&&!s.paused,t0=timed?performance.now():0;
-      if(timed){if(run)runTicks(s,tickRate(s.def),dt,h=>{if(s.state==='playing'&&!s.paused)s.game.update(h)});gameRan(s.def.id)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
+      if(timed){if(run)runTicks(s,tickRate(s.def),dt,h=>{if(s.state==='playing'&&!s.paused)s.game.update(h)},DBG&&DBG.on?0:1/fps);gameRan(s.def.id)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
       const t1=performance.now();
       // a Next Gen / AR card scrolling into place already shows its picture: its first live frame (which
       // moves the shared 3D canvas onto it) waits until the swipe has settled

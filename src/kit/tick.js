@@ -29,7 +29,7 @@ export const tick = Object.freeze({
   get on() { return state.rate > 0; },
   /** Seconds in one tick (1 / rate), or 0 when off. */
   get dt() { return state.rate ? 1 / state.rate : 0; },
-  /** How far the frame being drawn is between the last two ticks: 0..1 (always 1 when off). */
+  /** Where the frame being drawn is between the last two ticks: 0 the one before, 1 the newest (always 1 when off). */
   get alpha() { return state.alpha; },
   /** Ticks since the round started: a steady clock for replays and timers. */
   get count() { return state.steps; },
@@ -60,24 +60,30 @@ export function onBlend(obj) {
 export const MAX_STEPS = 8;
 
 /**
- * Runs a card's updates for a frame of `dt` seconds. Fixed tick: whole ticks, the rest kept for
- * next frame; otherwise one update(dt). Returns the number of updates run.
+ * Runs a card's updates for a frame of `dt` seconds. Fixed tick: whole ticks, run just far enough
+ * that the game is at or a little past "now" (so the frame never shows the past: no added delay),
+ * the rest carried to the next frame; otherwise one update(dt). nominal: the frame's planned length
+ * (1 / fps): a frame a little early or late counts as exactly that, so a 60 fps game on a 60 tick
+ * runs one update every frame instead of now and then none and then two. Returns the updates run.
  */
-export function runTicks(card, rate, dt, update) {
+export function runTicks(card, rate, dt, update, nominal = 0) {
   state.card = card; state.rate = rate;
   if (!rate) { state.alpha = 1; update(dt); return 1; }
   const h = 1 / rate;
+  if (nominal && Math.abs(dt - nominal) < nominal * .3) dt = nominal;
   card.tickLeft = (card.tickLeft || 0) + dt;
   let n = 0;
-  while (card.tickLeft >= h - 1e-6 && n < MAX_STEPS) { card.tickLeft -= h; state.steps++; update(h); n++; }
-  if (card.tickLeft >= h) card.tickLeft %= h;   // too far behind: drop it
-  state.alpha = Math.min(1, Math.max(0, card.tickLeft / h));
+  while (card.tickLeft > 1e-7 && n < MAX_STEPS) { card.tickLeft -= h; state.steps++; update(h); n++; }
+  if (card.tickLeft > 1e-7) card.tickLeft = 0;   // too far behind: let it go
+  // the game is now up to tickLeft (<= 0) seconds ahead: draw that far back from its newest tick
+  state.alpha = alphaOf(card, rate);
   return n;
 }
+const alphaOf = (card, rate) => rate ? Math.min(1, Math.max(0, 1 + (card.tickLeft || 0) * rate)) : 1;
 
 /** Before drawing a card: its alpha, and its kits' meshes put between ticks. */
 export function beforeDraw(card, rate) {
-  if (state.card !== card) { state.card = card; state.rate = rate; state.alpha = rate ? Math.min(1, Math.max(0, (card.tickLeft || 0) * rate)) : 1; }
+  if (state.card !== card) { state.card = card; state.rate = rate; state.alpha = alphaOf(card, rate); }
   const set = hooks.get(card);
   if (set) for (const r of set) { const o = r.deref(); if (!o) { set.delete(r); continue; } try { o.blend(state.alpha); } catch (e) { console.warn('[tick]', e); } }
   return state.alpha;

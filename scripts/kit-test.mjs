@@ -1572,6 +1572,8 @@ console.log('physics ok');
     return xs; };
   const a = run(60), b = run(120), c = run(30), d = run(90);
   assert.equal(a.length, 120); assert.deepEqual(b, a, '120 fps runs the same ticks as 60'); assert.deepEqual(c, a, '30 fps too'); assert.deepEqual(d.slice(0, 119), a.slice(0, 119), '90 fps too');
+  { const card = {}; T.resetTicks(card); let k = 0; for (let f = 0; f < 50; f++) k += T.runTicks(card, 60, (1 + (f % 2 ? .2 : -.2)) / 60, () => {}, 1 / 60);
+    assert.equal(k, 50, 'a 60 fps game on a 60 tick runs one update a frame, early or late'); assert.equal(T.tick.alpha, 1, 'and shows the newest tick'); }
   { const card = {}; T.resetTicks(card); T.runTicks(card, 60, 1 / 120, () => {}); assert.ok(Math.abs(T.tick.alpha - .5) < 1e-6, 'half a tick: alpha .5');
     assert.equal(T.tick.mix(10, 20), 15); assert.ok(Math.abs(T.tick.turn(3, -3) - Math.PI) < .05, 'turn goes the short way');
     let n = 0; T.runTicks(card, 60, 1, () => n++); assert.equal(n, T.MAX_STEPS, 'a long hitch runs at most MAX_STEPS'); }

@@ -440,6 +440,24 @@ export interface SolvePart {
     readonly nodes: number;
   };
 }
+export interface VoxelWorld {
+  readonly w: number; readonly h: number; readonly d: number; readonly scale: number; group: Loose; readonly meshing: number;
+  block(name: string, color: string, o?: { see?: boolean }): number; id(b: string | number): number;
+  get(x: number, y: number, z: number): number; solid(x: number, y: number, z: number): boolean; set(x: number, y: number, z: number, b: string | number): boolean;
+  fill(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, b: string | number): this;
+  sphere(cx: number, cy: number, cz: number, r: number, b?: string | number): { changed: number; gone: Record<number, number> };
+  top(x: number, z: number): number;
+  generate(o?: { seed?: string | number; kind?: 'hills' | 'flat' | 'island' | 'caves'; ground?: number; hills?: number; water?: number; trees?: number; caves?: boolean }): this;
+  tree(x: number, y: number, z: number, height?: number): this;
+  update(limit?: number): number; build(): this;
+  ray(from: { x: number; y: number; z: number }, dir: { x: number; y: number; z: number }, far?: number, o?: { solidOnly?: boolean }): { x: number; y: number; z: number; id: number; nx: number; ny: number; nz: number; dist: number } | null;
+  move(box: { x: number; y: number; z: number; w?: number; h?: number; d?: number }, dx: number, dy: number, dz: number, o?: { step?: number }): { x: boolean; y: boolean; z: boolean; ground: boolean; inWater: boolean };
+  pack(): string; unpack(text: string): this; dispose(): void;
+}
+export interface VoxelsPart {
+  Voxels: new (o?: { size?: [number, number, number]; chunk?: number; scale?: number; shadows?: boolean; worker?: boolean; rough?: number }) => VoxelWorld;
+  BLOCKS: Readonly<Record<'air' | 'grass' | 'dirt' | 'stone' | 'sand' | 'water' | 'wood' | 'leaves' | 'snow' | 'brick' | 'glass' | 'lava' | 'gold' | 'coal' | 'plank' | 'ice', number>>;
+}
 export interface TickPart {
   /** Ticks per second for the game being played; 0 when it runs one update per frame. */
   readonly rate: number; readonly on: boolean; readonly dt: number;
@@ -1657,7 +1675,7 @@ export interface GS {
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
-  outdoors: OutdoorsPart; city: CityPart; models: ModelsPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; trivia: TriviaPart; ui: UIPart;
+  outdoors: OutdoorsPart; city: CityPart; models: ModelsPart; voxels: VoxelsPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; trivia: TriviaPart; ui: UIPart;
   hear: HearPart; doodle: DoodlePart; phoneai: PhoneaiPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;
