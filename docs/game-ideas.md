@@ -104,7 +104,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 
 - [x] Dart Wheel — throw darts into a spinning target without hitting other darts
 - [ ] Ball Bounce Helix — tap to drop a ball through gaps in rotating rings
-- [ ] Paper Plane — tilt or drag to glide a paper plane through a windy city
+- [x] Paper Plane — tilt or drag to glide a paper plane through a windy city
 - [x] Bowling Swipe — swipe and curve a ball into ten pins
 - [x] Mini Golf One Hole — drag back to putt on a random one-hole course
 - [x] Bottle Flip — flick to flip a bottle so it lands upright
@@ -117,15 +117,15 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Ski Slalom — steer between gates on a downhill run
 - [ ] Surf Wave — ride a wave's face, pump for speed, avoid wipeout
 - [ ] Boxing Dodge — swipe to dodge punches, tap to counter
-- [ ] Laser Dodge — drag a dot through sweeping laser beams
+- [x] Laser Dodge — drag a dot through sweeping laser beams
 - [ ] Popcorn Pan — shake or tap to pop kernels without burning them
-- [ ] Ping Pong Rally — swipe to return the ball, angle by swipe direction
-- [ ] Trampoline Tricks — tap in the air to flip, land upright
+- [x] Ping Pong Rally — swipe to return the ball, angle by swipe direction
+- [x] Trampoline Tricks — tap in the air to flip, land upright
 - [x] Gravity Runner — flip gravity between floor and ceiling to dodge spikes on both
 - [x] Balloon Rise — protect a rising balloon by pushing obstacles away
-- [ ] Hammer Strength — time the power meter for the carnival bell
+- [x] Hammer Strength — time the power meter for the carnival bell
 - [ ] Fruit Stacker — stack wobbling fruit as high as possible
-- [ ] Cup Shuffle — follow the cup hiding the ball
+- [x] Cup Shuffle — follow the cup hiding the ball
 - [ ] Spinner Keep-up — flick a fidget spinner to keep it spinning past targets
 
 ## Casual puzzle 📱
@@ -341,3 +341,5 @@ Ten batches toward 1000, mostly from the open ideas above (ticked where they wer
 - [x] Till Rush — count out a customer's change from the till, fewest coins for a tip
 - [x] Shape Turn — tap the box with the top shape only turned, not mirrored
 - [x] Tally Count — count only the sheep the card asks for as the flock runs past
+- [x] Plate Spinner — tap wobbling plates on sticks to keep them all spinning
+- [x] Lasso Loop — circle your finger over a running calf, let go to drop the loop there
