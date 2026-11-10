@@ -11,7 +11,7 @@
 import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Vector4, Color, BackSide, Sprite, Group, InstancedMesh, BufferGeometry, Frustum, Sphere, InstancedBufferAttribute as IBA, SpriteNodeMaterial, InstancedBufferAttribute, AdditiveBlending, NormalBlending,
   MeshBasicNodeMaterial, NodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, DepthTexture, LessEqualCompare, NoToneMapping, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, SRGBColorSpace, LinearSRGBColorSpace, Matrix3 } from 'three/webgpu';
 import {
-  pass, mrt, output, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
+  pass, mrt, output, velocity, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
   positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min, materialEmissive, distance,
   attribute, vertexColor, normalWorld, normalViewGeometry, positionLocal, positionGeometry, positionPrevious, modelWorldMatrix, modelWorldMatrixInverse,
@@ -21,9 +21,13 @@ import {
 import { LightProbeGrid } from 'three/examples/jsm/lighting/LightProbeGrid.js';
 // v.tone (hd3d.js): three.js's own tone mappers
 const TONE = { aces: ACESFilmicToneMapping, neutral: NeutralToneMapping, agx: AgXToneMapping };
+// TRAA's sharpening (RCAS: 0 = most, 2 = none)
+const TRAA_SHARP = .25;
 export { LightProbeGrid };
 export { gpuFlood } from './flood-gpu.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
+import { traa } from 'three/examples/jsm/tsl/display/TRAANode.js';
+import { sharpen } from 'three/examples/jsm/tsl/display/SharpenNode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -760,13 +764,14 @@ export class GpuChain {
     this.fg = null; this.sched = null; this.fgMode = null; this.fgWin = { real: 0, missed: 0 }; this.still = null; this.lastShown = null;
     this.warp = uniform(new Matrix3()); this.aim = null; this.aimBase = newPose(); this.aimAt = -1e9;
   }
-  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces') {
-    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}`;
+  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces', traaOn = false) {
+    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}|${traaOn}`;
     const TM = TONE[tone] ?? ACESFilmicToneMapping;
     if (key === this.key) return;
     this.key = key; this.fg?.reset(); this.sched = null; this.still?.reset();
     this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose(); this.s2?.dispose(); this.s1?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose();
     for (const t of [this.volT, this.baseT, this.mbT]) t?.renderTarget?.dispose();
+    this.traaN?.dispose(); this.casN?.dispose(); this.traaN = this.casN = null;
     this.aoN = this.dnN = this.bloomN = this.s2 = this.s1 = this.dofT = this.shM = this.shB = this.volT = this.baseT = this.mbT = null;
     const sp = this.sp = pass(this.scene, this.cam, { samples: msaa || 0 });
     // frame generation and SGSR 2: the scene's pass also writes each pixel's motion and where see-through things are
@@ -781,8 +786,18 @@ export class GpuChain {
     // (the normals picture's alpha says whether a pixel takes ambient occlusion: see-through things,
     // leaf cards and anything marked noAO write 0, as WebGL's AO leaves them out: noAO() below)
     const nrm = aoOn ? { normal: vec4(normalView, 1) } : {};
-    if (mrtOn) sp.setMRT(frameGenMRT(nrm)); else if (aoOn) sp.setMRT(mrt({ output, ...nrm }));
-    const U = this.U, colT = sp.getTextureNode('output');
+    if (mrtOn) sp.setMRT(frameGenMRT(nrm)); else if (traaOn) sp.setMRT(mrt({ output, velocity: vec4(velocity, 0, 1), ...nrm })); else if (aoOn) sp.setMRT(mrt({ output, ...nrm }));
+    const U = this.U;
+    // temporal anti-aliasing (three.js's TRAA, top tiers when the picture isn't upscaled: SGSR 2 does its
+    // own): the camera moves by a fraction of a pixel each frame and each pixel blends with where it was
+    // last frame (following the motion picture, dropping what's newly uncovered), in place of MSAA.
+    // It takes the scene's colour before anything else reads it, so AO, bloom and the grade see the smooth one
+    let colT = sp.getTextureNode('output');
+    // (then AMD FidelityFX's contrast-adaptive sharpening, three's RCAS, gives back the crispness the blending takes, as engines do after TAA)
+    if (traaOn) {
+      this.traaN = traa(colT, sp.getTextureNode('depth'), sp.getTextureNode('velocity'), this.cam);
+      this.casN = sharpen(this.traaN.getTextureNode(), uniform(TRAA_SHARP)); colT = this.casN.getTextureNode();
+    }
     let lit = colT.rgb, aoF = float(1);
     if (aoOn) {
       this.aoN = ao(sp.getTextureNode('depth'), sp.getTextureNode('normal'), this.cam);
@@ -917,7 +932,7 @@ export class GpuChain {
     // o.mrt: the scene's pass also writes motion and the see-through mask (frame generation, SGSR 2)
     const f = !this.clear && o.s2 ? o.s2 : null, s1 = !f && !!o.s1, live = !!o.live;
     DRAWN.n++;
-    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone);
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !f && !s1 && !!o.traa);
     if (this.s1) this.s1.size(o.w, o.h);
     // the passes size themselves from the canvas: upscaled, the canvas is the screen's size, so scale them down
     const k = f || s1 ? (o.w + .5) / o.fw : 1;

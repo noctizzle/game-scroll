@@ -78,7 +78,8 @@ export function prepareGPU() {
       if (!await hasWebGPU()) { console.warn('WebGPU: no adapter'); return null; }
       const [W, fx] = await Promise.all([import('three/webgpu'), import('./hd3d-gpu.js')]);
       const canvas = document.createElement('canvas');
-      const r = new W.WebGPURenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance' });
+      // trackTimestamp: three times each pass on the GPU where the phone allows it (hd3d.js reads it as HD.info.gpuMs)
+      const r = new W.WebGPURenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance', trackTimestamp: true });
       await r.init();
       if (!r.backend?.isWebGPUBackend) { console.warn('WebGPU: three fell back to WebGL 2'); r.dispose(); return null; }   // three fell back to WebGL 2: keep our own WebGL path
       r.gsBackend = 'webgpu';

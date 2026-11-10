@@ -95,29 +95,44 @@ const FG_PX = 1.6;
 // A climb that turns out too slow again soon after doubles how long the step it fell back to holds
 // (30 s, 1, 2, 4 min), so a game that's on the edge doesn't keep stuttering every half a minute.
 const HOLD = 30000, HOLD_MAX = 240000;
-const Q = { tier: 2, lvl: 0, sum: 0, cnt: 0, slow: 0, fast: 0, lastT: 0, ceil: 0, ceilT: 0, tierCeil: 3, force: null, game: undefined, easy: 0, fpsT: 0, hold: HOLD, upT: -1e9, fpsHold: 60000, fpsUpT: -1e9 };
+const Q = { gsum: 0, gcnt: 0, tier: 2, lvl: 0, sum: 0, cnt: 0, slow: 0, fast: 0, lastT: 0, ceil: 0, ceilT: 0, tierCeil: 3, force: null, game: undefined, easy: 0, fpsT: 0, hold: HOLD, upT: -1e9, fpsHold: 60000, fpsUpT: -1e9 };
 // a new game is on screen: start from where it settled last time, or from the phone's class
 // (and the resolution step it settled on, so a round doesn't start too sharp, stutter and step down again)
 function startGame(def) {
   Q.game = def; const s = settledFor(def?.id);
   Q.tier = s?.tier ?? START[phoneClass()] ?? 2; Q.lvl = Math.min(LEVELS.length - 1, s?.lvl ?? 0); Q.ceil = Q.lvl; Q.ceilT = performance.now(); Q.tierCeil = 3;
-  Q.sum = Q.cnt = Q.slow = Q.fast = Q.easy = 0; Q.lastT = 0; Q.want = null; Q.hold = HOLD; Q.upT = -1e9; Q.fpsHold = 60000;
+  Q.sum = Q.cnt = Q.slow = Q.fast = Q.easy = Q.gsum = Q.gcnt = 0; Q.lastT = 0; Q.want = null; Q.hold = HOLD; Q.upT = -1e9; Q.fpsHold = 60000;
+}
+// WebGPU timestamps: three adds up every pass's GPU time between two reads, so each read is divided by
+// the frames drawn since (one read at a time: the answer comes back a frame or two later)
+const GT = { n: 0, busy: false };
+function gpuTime(r) {
+  GT.n++;
+  if (GT.busy || !r.backend?.trackTimestamp) return;
+  const n = GT.n; GT.n = 0; GT.busy = true;
+  r.resolveTimestampsAsync('render').then(ms => { if (ms > 0 && n > 0) { const f = ms / n; HD.info.gpuMs = f; if (f < 100) { Q.gsum += f; Q.gcnt++; } } }, () => {}).finally(() => { GT.busy = false; });
 }
 function adapt(gap) {
   if (Q.force != null || !(gap > 0 && gap < 100)) return;
   Q.sum += gap; if (++Q.cnt < 45) return;
   const a = Q.sum / Q.cnt, now = performance.now(), fps = Q.game ? fpsFor(Q.game) : 60, budget = 1000 / fps; Q.sum = Q.cnt = 0;
+  // the GPU's own time per frame (WebGPU timestamps, where the phone has them): how much of a slow frame
+  // is the graphics chip's. A frame that's slow while the GPU has room is held up by the CPU, and fewer
+  // pixels wouldn't help it; a GPU with plenty of room can take sharpness back sooner (Unreal and
+  // Unity's dynamic resolution work from GPU time the same way)
+  const g = Q.gcnt >= 5 ? Q.gsum / Q.gcnt : null; Q.gsum = Q.gcnt = 0;
+  const cpuBound = g != null && g < budget * .75, gpuRoom = g != null && g < budget * .6;
   if (now - Q.ceilT > Q.hold) { Q.ceil = 0; Q.tierCeil = 3; }
   const tier0 = Q.tier, lvl0 = Q.lvl;
   if (a > budget * 1.26) {
     Q.fast = 0; Q.easy = 0; if (++Q.slow < 2) return; Q.slow = 0; Q.ceilT = now;
     if (now - Q.upT < 20000) Q.hold = Math.min(HOLD_MAX, Q.hold * 2);   // the last climb didn't hold
     if (fps > 60 && Q.lvl >= 1 && stepDown(Q.game)) { Q.lvl = 0; Q.ceil = 0; Q.fpsT = now; if (now - Q.fpsUpT < 20000) Q.fpsHold = Math.min(8 * 60000, Q.fpsHold * 2); }
-    else if (Q.lvl < LEVELS.length - 1) { Q.lvl++; Q.ceil = Q.lvl; }
+    else if (Q.lvl < LEVELS.length - 1 && !cpuBound) { Q.lvl++; Q.ceil = Q.lvl; }
     else if (Q.tier > 0) { if (Q.want == null) { Q.tierCeil = Q.tier - 1; Q.want = Q.tier - 1; } }
     else if (stepDown(Q.game)) { Q.lvl = 1; Q.fpsT = now; }
   } else if (a < budget * 1.044) {
-    Q.slow = 0; if (++Q.fast < 8) return; Q.fast = 0;
+    Q.slow = 0; if (++Q.fast < (gpuRoom && Q.lvl > Q.ceil ? 3 : 8)) return; Q.fast = 0;
     if (Q.lvl > Q.ceil) { Q.lvl--; Q.upT = now; }
     else if (Q.lvl === 0 && Q.want == null && Q.tier < Math.min(Q.tierCeil, TIERS.length - 1)) { Q.want = Q.tier + 1; Q.upT = now; }
     // a long spell of easy frames at the top tier, a while after stepping the frame rate down: try one notch up
@@ -138,7 +153,7 @@ export const HD = {
   get tier() { return Q.force ?? Q.tier; }, get name() { return TIERS[this.tier].name; }, get res() { return Q.force != null ? 1 : LEVELS[Q.lvl]; },
   set force(t) { Q.force = t; }, get force() { return Q.force; },
   /** Last frame: draw calls, triangles, milliseconds spent in render() on the CPU, and whether the shadows were redrawn. */
-  info: { calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0, fgSteps: 0, still: false, rw: 0, rh: 0, ow: 0, oh: 0 },
+  info: { gpuMs: null, calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0, fgSteps: 0, still: false, rw: 0, rh: 0, ow: 0, oh: 0 },
   /** Things needing a shader not built yet wait (hidden) at most this long while it builds in the background (v.holdNew); hold = false: build it in the frame instead. */
   holdMs: 500, hold: true,
   /** Upscale when the 3D is drawn below the screen's size (false: plain stretch). */
@@ -1584,6 +1599,9 @@ export class HDView {
     const pw = up ? up.pw : r.domElement.width, ph = up ? Math.max(1, Math.floor(up.fh * (pw + .5) / up.fw)) : r.domElement.height;
     const o = { tone: this.tone, w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, s1: !!up?.s1, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
       dofOn: false, lens: null, near: this.cam.near, far: this.cam.far, shaftsOn: false, shaft: 0, shaftCol: null };
+    // temporal anti-aliasing in place of MSAA (three.js's TRAA) where the tier pays for smooth edges and the
+    // picture isn't upscaled (SGSR 2 is temporal itself); card pictures keep MSAA (one frame has no history)
+    if (HD.traa !== false && T.msaa && !up && !baking && !off && !this.clearBg) { o.traa = true; o.msaa = 0; o.smooth = false; }
     const g = this.grade;
     if (g) o.grade = { sat: g.saturation ?? 1, con: g.contrast ?? 1, lo: toRGB(g.shadows, GL), hi: toRGB(g.highlights, GH) };
     // depth of field and sun shafts: in the chain from the first time the view uses them (high and ultra
@@ -1628,6 +1646,7 @@ export class HDView {
     for (const e of empty) e.visible = false;
     r.info.autoReset = false; r.info.reset();
     const cut = lastView !== this || this._cut; lastView = this; this._cut = false; if (TEST) window.__hdView = this;
+    if (cut && ch.traaN) ch.traaN._historyRenderTarget?.setSize(1, 1);   // (TRAA starts its history again from this frame)
     // Frame generation starts again after a cut (another view drew, v.cut(), a pause, the camera
     // jumping): the frames either side of one don't belong together.
     let fg = null;
@@ -1663,6 +1682,7 @@ export class HDView {
       else if (miss > .08 && how === 'blend') console.info('Frame generation: ahead for this game, its refreshes were too full in blend');
     }
     if (!baking && !off) {
+      gpuTime(r);
       HD.info.calls = r.info.render.drawCalls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = T.shadow > 0; HD.info.upscaled = s2 ? 'sgsr2' : up ? 'sgsr1' : false; HD.info.backend = 'webgpu';
       HD.info.framegen = made ? how : false; HD.info.fgMs = made ? ch.fg.stats.ms : 0; HD.info.fgSteps = made ? steps : 0;
     }

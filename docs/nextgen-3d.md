@@ -97,6 +97,13 @@ so its next round starts there instead of stuttering down again.
   outweigh the moving ones (20,000 triangles or more, at least twice the moving ones), for sun and
   spot lights with one map. `__hd.shadowCache = false` turns it off; `node scripts/shadow-check.cjs <id> [--gpu]`
   checks the pictures match a full redraw.
+- On WebGPU at high and ultra, when the picture isn't upscaled, edges are smoothed by temporal
+  anti-aliasing (three.js's TRAA, then its RCAS sharpening from AMD FidelityFX) instead of MSAA:
+  smoother thin lines and edges, less memory. `__hd.traa = false` goes back to MSAA. A camera jump
+  (`v.cut()`) starts its history again.
+- WebGPU times each frame on the graphics chip where the phone allows it (`__hd.info.gpuMs`). The
+  quality steps use it: a frame slowed by the CPU doesn't give up resolution (it wouldn't help), and
+  a GPU with plenty of room gets sharpness back sooner.
 - `v.tone = 'aces' | 'neutral' | 'agx'`: which of three.js's tone mappers turns the light into
   screen colours. ACES (the default, the film look) pushes very bright colours towards yellow and
   white; Neutral (Khronos PBR Neutral) keeps colours true to the material, good for neon, paint and
