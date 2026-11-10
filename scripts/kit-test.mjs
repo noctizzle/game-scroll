@@ -1510,5 +1510,58 @@ console.log('physics ok');
   console.log('frame generation: props keep their places on WebGPU ok');
 }
 
+// gs.models material recipes: each tiles seamlessly (the same at p and p + one tile), with finite numbers
+{
+  const { JS } = await import('../src/kit/models/ops.js'), { RECIPES } = await import('../src/kit/models/recipes.js');
+  for (const [n, R] of Object.entries(RECIPES)) {
+    const K = {}; for (const k in R.look) K[k] = JS.rgb(R.look[k]);
+    for (let i = 0; i < 60; i++) {
+      const x = (i * .618) % R.P, y = (i * .377) % R.P, a = R.f(JS, { x, y }, K);
+      for (const b of [R.f(JS, { x: x + R.P, y }, K), R.f(JS, { x, y: y + R.P }, K)]) {
+        assert.ok(Math.abs(a.h - b.h) < 1e-6 && Math.abs(a.rough - b.rough) < 1e-6 && a.col.every((v, j) => Math.abs(v - b.col[j]) < 1e-6), `${n} tiles at ${x}, ${y}`);
+      }
+      for (const v of [a.h, a.rough, a.metal, ...a.col]) assert.ok(Number.isFinite(v), `${n} gives numbers`);
+    }
+  }
+  console.log('gs.models: material recipes tile ok');
+  // wear: a box's edges come out convex, its face middles flat; snow lands on top, grime at the foot
+  const T = await import('three'), { wear, curvature } = await import('../src/kit/models/wear.js');
+  const box = new T.Mesh(new T.BoxGeometry(1, 1, 1, 4, 4, 4), new T.MeshStandardMaterial()), { curve } = curvature(box.geometry), P = box.geometry.attributes.position;
+  for (let i = 0; i < P.count; i++) {
+    const v = [P.getX(i), P.getY(i), P.getZ(i)].map(Math.abs), edge = v.filter(a => a > .5 - 1e-6).length >= 2, middle = v.filter(a => a < .2).length === 2;
+    if (edge) assert.ok(curve[i] > .05, `box edge convex at vertex ${i}`); if (middle) assert.ok(Math.abs(curve[i]) < 1e-6, `box face flat at vertex ${i}`);
+  }
+  const old = box.material; wear(box, { snow: 1, dirt: 1, edges: 0 }); assert.ok(box.material !== old && box.material.vertexColors && !old.vertexColors, 'wear copies the material');
+  const C = box.geometry.attributes.color, Q = box.geometry.attributes.position; let top = 0, foot = 1e9;
+  for (let i = 0; i < Q.count; i++) { const l = C.getX(i) + C.getY(i) + C.getZ(i); if (Q.getY(i) > .49 && Math.abs(Q.getX(i)) < .3 && Math.abs(Q.getZ(i)) < .3) top = Math.max(top, l); if (Q.getY(i) < -.45) foot = Math.min(foot, l); }
+  assert.ok(top > 3 && foot < 2, `snow on top (${top}), grime at the foot (${foot})`);
+  console.log('gs.models: wear ok');
+  // sculpt: a ball comes out round (every point about r from the middle, normals pointing out), a carved hole is a hole
+  const { sculpt } = await import('../src/kit/models/sculpt.js');
+  const sg = sculpt([{ ball: .5, at: [0, 1, 0] }], { res: 32 }), SP = sg.attributes.position, SN = sg.attributes.normal;
+  for (let i = 0; i < SP.count; i += 7) {
+    const x = SP.getX(i), y = SP.getY(i) - 1, z = SP.getZ(i), r = Math.hypot(x, y, z);
+    assert.ok(Math.abs(r - .5) < .02, `sculpted ball radius ${r}`); assert.ok((x * SN.getX(i) + y * SN.getY(i) + z * SN.getZ(i)) / r > .95, 'sculpt normals point out');
+  }
+  { const a = sg.index.array, P = SP; let out = 0; for (let t = 0; t < a.length; t += 3) { const [i, j, k] = [a[t], a[t + 1], a[t + 2]], ux = P.getX(j) - P.getX(i), uy = P.getY(j) - P.getY(i), uz = P.getZ(j) - P.getZ(i), vx = P.getX(k) - P.getX(i), vy = P.getY(k) - P.getY(i), vz = P.getZ(k) - P.getZ(i);
+    out += (uy * vz - uz * vy) * P.getX(i) + (uz * vx - ux * vz) * (P.getY(i) - 1) + (ux * vy - uy * vx) * P.getZ(i) > 0 ? 1 : -1; } assert.ok(out === a.length / 3, 'sculpt faces turned out'); }
+  assert.ok(sculpt([{ ball: .5, at: [0, 1, 0] }], { res: 32 }) === sg, 'sculpt reuses the same shapes');
+  const holed = sculpt([{ box: [1, 1, .4] }, { cylinder: [.2, 1], rot: [Math.PI / 2, 0, 0], cut: true }], { res: 40 }), HP = holed.attributes.position;
+  let inHole = 0; for (let i = 0; i < HP.count; i++) if (Math.hypot(HP.getX(i), HP.getY(i)) < .15) inHole++;
+  assert.ok(inHole === 0, 'carved hole is empty');
+  console.log('gs.models: sculpt ok');
+  // a finer person (gs.models.human's build): parts smoothed, one group per material covering every triangle, weights summing to 1
+  {
+    const { personParts, assemble } = await import('../src/kit/skin.js'), { LoopSubdivision } = await import('three-subdivide');
+    const plain = await import('../src/kit/poses.js').then(m => m.person()), fine = assemble(personParts({}), { smooth: 1, subdivide: (g, n) => LoopSubdivision.modify(g, n, {}), mats: { body: new T.MeshStandardMaterial(), skin: new T.MeshStandardMaterial(), legs: new T.MeshStandardMaterial(), shoes: new T.MeshStandardMaterial() } });
+    const g = fine.mesh.geometry, tris = g.index.count / 3;
+    assert.ok(g.attributes.position.count > plain.mesh.geometry.attributes.position.count * 2, 'smoothed person is finer');
+    assert.ok(Array.isArray(fine.mesh.material) && fine.mesh.material.length === 4 && g.groups.reduce((a, x) => a + x.count, 0) / 3 === tris, 'groups cover every triangle');
+    const W = g.attributes.skinWeight; for (let i = 0; i < W.count; i += 11) assert.ok(Math.abs(W.getX(i) + W.getY(i) + W.getZ(i) + W.getW(i) - 1) < 1e-4, 'weights sum to 1');
+    assert.ok(g.morphAttributes.position.length === 7 && fine.rig && fine.face, 'face shapes, rig and face');
+  }
+  console.log('gs.models: finer person ok');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);

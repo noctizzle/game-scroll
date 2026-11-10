@@ -28,6 +28,21 @@ function bundledGames(streamed) {
   };
 }
 
+// EZ-Tree (gs.models.tree) from its source, with its bark and leaf picture files swapped for ours drawn
+// in code (src/kit/models/tree-textures.js): the app ships no image files, and its built copy carries
+// 4 MB of them. 'ez-tree/lib' is its src/lib (the package only exports the built copy).
+export function ezTreeInCode() {
+  const lib = resolve('node_modules/@dgreenheck/ez-tree/src/lib');
+  return {
+    name: 'ez-tree-in-code', enforce: 'pre',
+    resolveId(id, importer) {
+      if (id === 'ez-tree/lib') return resolve(lib, 'index.js');
+      if (importer && importer.replace(/\\/g, '/').includes('@dgreenheck/ez-tree/src/lib') && /(^|\/)textures(\.js)?$/.test(id)) return resolve('src/kit/models/tree-textures.js');
+      return null;
+    },
+  };
+}
+
 // Hot reload for game makers (npm run dev): saving a file in src/games/ swaps that game in place, on
 // the same card, instead of reloading the whole app (src/main.js hotSwap). Kit and app files still
 // reload the page as usual.
@@ -107,6 +122,6 @@ export default defineConfig(({ mode }) => {
   return {
     base: './',
     define: { __APP_BUILD__: JSON.stringify(buildLabel()) },
-    plugins: [bundledGames(!!env.VITE_GAMES_URL), hotGames(), mlFiles(!!env.VITE_GAMES_URL), csp(env)],
+    plugins: [ezTreeInCode(), bundledGames(!!env.VITE_GAMES_URL), hotGames(), mlFiles(!!env.VITE_GAMES_URL), csp(env)],
   };
 });

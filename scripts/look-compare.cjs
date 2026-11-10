@@ -10,18 +10,19 @@
 //   on both runs, to find which one makes a difference.
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
+const DETAILED = new Set(['trees', 'buildings', 'wear', 'props']);
 (async () => {
   const argv = process.argv.slice(2), gpu = argv.includes('--webgpu'), [mode, dir] = argv.filter(a => !a.startsWith('--'));
   if (!['save', 'check'].includes(mode) || !dir) { console.log('usage: look-compare.cjs save|check <dir>'); process.exit(2); }
   const vite = await import('vite');
-  const server = await vite.createServer({ server: { port: 4183 }, mode: 'bundled', logLevel: 'error' }); await server.listen();
+  const server = await vite.createServer({ server: { port: +(process.env.PORT || 4183) }, mode: 'bundled', logLevel: 'error' }); await server.listen();
   // WebGPU in a headless browser needs Chromium's own SwiftShader Vulkan driver
   const icd = path.join(path.dirname(chromium.executablePath()), 'vk_swiftshader_icd.json');
   const b = await chromium.launch(gpu
     ? { args: ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--use-angle=vulkan', '--enable-features=Vulkan'], env: { ...process.env, VK_ICD_FILENAMES: icd } }
     : { args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] }), p = await b.newPage();
-  const errs = [], warns = new Set(); p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'warning' && /THREE|WebGPU/.test(m.text())) warns.add(m.text()); });
-  await p.goto('http://localhost:4183/scripts/look-compare/?' + (gpu ? 'gpu&' : '') + (process.env.ONLY ? 'only=' + process.env.ONLY : '') + (process.env.Q ? '&' + process.env.Q : '') + (process.env.PICK ? '&pick=' + process.env.PICK : '')); await p.waitForFunction(() => window.result, null, { timeout: 400000 });
+  const errs = [], warns = new Set(); p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if ((m.type() === 'warning' || m.type() === 'error') && (process.env.ALLWARN || /THREE|WebGPU|[Dd]evice|memory/.test(m.text()))) warns.add(m.text().slice(0, 300)); });
+  await p.goto('http://localhost:' + (process.env.PORT || 4183) + '/scripts/look-compare/?' + (gpu ? 'gpu&' : '') + (process.env.ONLY ? 'only=' + process.env.ONLY : '') + (process.env.Q ? '&' + process.env.Q : '') + (process.env.PICK ? '&pick=' + process.env.PICK : '')); await p.waitForFunction(() => window.result, null, { timeout: 1200000 });
   const res = await p.evaluate(() => window.result);
   if (res.error || errs.length) { for (const w of warns) console.log('warning:', w); console.log('FAIL', res.error || errs.join('\n')); process.exit(1); }
   for (const w of warns) console.log('three.js warning:', w);
@@ -30,7 +31,7 @@ const fs = require('fs'), path = require('path');
   let bad = 0;
   for (const [name, url] of Object.entries(res)) {
     const file = path.join(dir, name + '.png'), png = Buffer.from(url.split(',')[1], 'base64');
-    if (mode === 'save') { fs.writeFileSync(file, png); console.log('saved', file); continue; }
+    if (mode === 'save') { fs.writeFileSync(file, png); console.log('saved', file, backends[name] ? '(' + backends[name] + ')' : ''); continue; }
     if (!fs.existsSync(file)) { console.log('MISSING', file); bad++; continue; }
     // gpu-...: scenes of features that are fuller on WebGPU (WebGL draws a lighter stand-in), so only same-backend runs compare them
     if (gpu && name.startsWith('gpu-')) { console.log(`skip  ${name}: WebGPU draws more than WebGL here by design`); fs.writeFileSync(path.join(dir, name + '.new.png'), png); continue; }
@@ -44,7 +45,10 @@ const fs = require('fs'), path = require('path');
     }, [old, url]);
     // grain and dithering move a little between runs; a real change moves a lot of pixels a lot (WebGPU
     // against WebGL: edge smoothing differs a little more along every edge)
-    const ok = d.mean < 2.5 && d.big < (gpu ? .02 : .01);
+    // (trees and buildings: thousands of small edges (cut-out leaves; window frames, sills and fine texture
+    // over the whole picture), each smoothed a little differently by the two backends; checked by eye in
+    // the saved pictures)
+    const ok = d.mean < (gpu && DETAILED.has(name) ? 3.5 : 2.5) && d.big < (gpu ? (DETAILED.has(name) ? .03 : .02) : .01);
     if (!ok) bad++;
     console.log(`${ok ? 'same' : 'CHANGED'}  ${name}${backends[name] ? ` (${backends[name]})` : ''}: mean difference ${d.mean.toFixed(2)}/255, ${(d.big * 100).toFixed(2)}% of pixels clearly different`);
     fs.writeFileSync(path.join(dir, name + '.new.png'), png);

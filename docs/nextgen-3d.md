@@ -158,6 +158,23 @@ so its next round starts there instead of stuttering down again.
   parts, mirrored through the middle of the picture (three.js's LensflareNode, the same maths on WebGL),
   and lens dirt (smudges, dust and wipe marks drawn in code) lit where bright light falls on it.
   `dirt` (.5) is how dirty the lens is, 0 for none. Needs bloom; off by default.
+- `v.liveBounce = 'screen' | 'voxel' | { kind, strength, res, box }` (WebGPU, high and ultra): light
+  bounced off walls and floors onto what's near them, worked out every frame, so it follows a moving
+  sun, a lamp switched on or a door opened (`v.bounce()` instead bakes it once, on every renderer).
+  `'screen'` is three.js's SSGI: what's on screen bounces, cheapest. `'voxel'` is three.js's VXGI: the
+  level is turned into voxels once (`res` along its longest side, 64; `box` a Box3 to cover only part of
+  a big world) and light is traced through them in cones, so walls off screen and behind you count
+  too; call `v.levelChanged()` after its big still pieces change. Moving things count where they stood
+  when the voxels were made, so keep it for levels whose shape stays put. `strength` (1) scales it.
+- `v.fog3d = { density, height, falloff, far, colour, glow, ambient, strength, noise, wind, lamps }`
+  (WebGPU, high and ultra): fog that light really travels through, kept in a grid of small boxes fitted
+  to the view (froxels, as in Frostbite and Unreal) and worked out each frame on the graphics chip. The
+  sun lights it through its shadows (dark under a roof, bright in the gaps between pillars), the
+  nearest 8 lamps glow in it, and every material reads it at its own place, so glass and particles are
+  fogged right too. `density` per metre (.03), lying thickest below `height` (0) and thinning by
+  `falloff` (.15) per metre above it, out to `far` metres (60); `glow` (.4) is how much more it shines
+  looking towards the light; `noise` (.5) makes it patchy, drifting with `wind` ([x, z]). A plain
+  `bg` colour behind isn't fogged, so match it to the fog or use a sky. WebGL keeps the view's own fog.
 - `v.oit = true` (WebGPU): order-independent transparency, three.js's weighted blended OIT (McGuire and
   Bavoil). See-through things (normal blending, not glass with `transmission`) blend right whatever
   order they're drawn in: glass behind glass, panes passing through each other, smoke in water, with no
@@ -340,8 +357,9 @@ s.fit(v, { far: 600, ground: (x, z) => land.height(x, z) });
 - **Motion blur** (`v.motionBlur = { amount, max, sharp }`): the world smears as the camera turns and
   moves fast. `amount` is how much of each frame's move (0.5, a half-frame shutter); `max` is the longest
   smear as a part of the screen's width (0.04); things nearer than `sharp` metres stay sharp, such as the
-  car, bike or hands the camera carries. Camera motion only, the same on both renderers: a thing moving
-  by itself in front of a still camera doesn't blur. High and ultra; `v.cut()` after a camera jump stops
+  car, bike or hands the camera carries. On WebGPU each thing also blurs by its own move (a ball flying
+  past, a spinning wheel, a swung sword), smearing out over what's behind it, from three.js's velocity
+  picture; `objects: false` keeps it to the camera's move. WebGL blurs the camera's move only. High and ultra; `v.cut()` after a camera jump stops
   one big smear. Scale `amount` by `gs.prefs.motion` for players with Reduce motion on.
 - `v.envFrom(scene)` makes the reflections from any scene of your own (a painted room, a sunset dome),
   and makes them again on WebGPU when the view draws there; `v.env = null` goes back to the studio.
@@ -571,3 +589,79 @@ const leafLook = looks.leaves(leafMaterial, { wind: .6 });      // sway, sun glo
   depths are copied back every few frames for `flood.depth()`. Both look the same on WebGL and WebGPU.
 - Every look is a named effect (`material.userData.gsLooks` lists them), so the WebGPU version can
   swap each one for a node later (see `docs/webgpu-move.md`). Road segments: up to 32.
+
+## Things made in code: gs.models
+
+A game stays one `.js` file with no image or model files, so `gs.models` makes the materials and
+things a scene needs from recipes written in code. Everything works on WebGL and WebGPU.
+
+```js
+const { material, wear } = gs.models, { rbox, THREE } = gs.hd;
+const crate = new THREE.Mesh(rbox(.8, .8, .8, .05), material('planks', { colour: '#a87a4c' }));
+wear(crate, { edges: .8, dirt: .6 });                                       // rubbed edges, grimy foot
+const wall = new THREE.Mesh(new THREE.BoxGeometry(6, 3, .4), material('brick', { solid: 1, scatter: true }));
+const barrel = gs.models.prop('barrel', { seed: 2 }); barrel.position.set(1, 0, 2); v.scene.add(barrel);
+wear(wall, { moss: .7 });                                                    // moss on the top
+```
+
+- **`material(name, o)`**: 17 recipes: `wood`, `planks`, `bark`, `brick`, `stone`, `cobbles`, `tiles`,
+  `concrete`, `metal`, `rust`, `paint`, `fabric`, `leather`, `marble`, `dirt`, `sand`, `snow`
+  (`gs.models.materials` lists them). Change the recipe's colours (`colour`, `dark`, `mortar`, `gap`, `rust`,
+  `under`, `vein`, `grout`...), `seed` for another pattern, `repeat: [u, v]`, `size` (texture pixels, 256).
+  Each is painted once into tiling colour, bump, roughness and metal textures, and kept across launches
+  (the next launch reads them back instead of painting again). On WebGPU: `closeUp` (on by default)
+  works the recipe out per pixel near the camera so it stays sharp however close you get (its
+  shaders build in the background, one at a time, and it shows once they're ready); `solid: true`
+  (or metres per tile) lays it on by world position, with no UVs or seams; `scatter: true` turns and moves
+  each tile so a big floor shows no repeat. Other options go to `gs.hd.pbr` (`glow`, `clear`, `wet`...).
+- **`wear(mesh, o)`**: ages a thing from its own shape, the way texture artists use curvature and cavity
+  maps: outer edges rubbed lighter (`edges` 0..1, `edgeColour` for what shows through), creases and the
+  bottom `ground` metres grimy (`dirt`, `dirtColour`), moss or snow on what faces up (`moss`, `mossColour`,
+  `snow`). It is worked out once into vertex colours, so it costs nothing to draw. Flat-sided shapes are
+  split into smaller triangles first (the shape stays the same) so there are corners to wear; `split: false`
+  skips that. The material is copied, so other things sharing it stay clean.
+- **`prop(name, o)`**: everyday things built from simple shapes, dressed in the recipes and aged with
+  `wear`: `crate`, `barrel`, `drum`, `pallet`, `table`, `chair`, `bench`, `shelf`, `lamp`, `fence`, `sign`,
+  `bucket`, `sack`, `chest`, `cone`, `bin`, `door`, `pipe` (`gs.models.props` lists them). A Group with one
+  mesh per material, its foot at y = 0, facing +z. `seed` (small differences), `size` (its main measure in
+  metres), `colour` (its main material), `wear` (options for `wear`, or `false` for new), `lit` (lamp glow).
+  Asking again with the same options gives a copy that shares shapes and materials, so a hundred crates
+  cost one to make, and copies that keep still merge into one draw.
+- **`sculpt(shapes, o)`**: soft shapes melted together or carved away, the way sculptors block things
+  out, turned into a mesh with surface nets: `{ ball: r }`, `{ box: [w, h, d], round }`, `{ cylinder: [r, h], round }`,
+  `{ torus: [R, r] }`, `{ cone: [r, h] }`, `{ capsule: [[x, y, z], [x, y, z]], r }`, each with `at`, `rot`, `scale`,
+  `blend` (how softly it melts in, metres), `cut: true` (carved away) and `colour` (vertex colours: give the
+  mesh a material with `vertexColors: true`). Or pass a distance function `(x, y, z) => d` with `bounds`.
+  Options `blend` (.08), `res` (cells along the longest side, 48, up to 128). About 0.1 s each, so make them
+  in `make()` or `reset()`; the same shapes again give back the same geometry.
+
+```js
+const snowman = gs.models.sculpt([
+  { ball: .35, at: [0, .32, 0] }, { ball: .26, at: [0, .78, 0] }, { ball: .18, at: [0, 1.12, 0] },
+  { cone: [.04, .22], at: [0, 1.13, .14], rot: [Math.PI / 2, 0, 0], colour: '#e8641c', blend: .01 },
+], { blend: .1, colour: '#dde3ea' });
+v.scene.add(new THREE.Mesh(snowman, gs.hd.pbr('#ffffff', { vertexColors: true })));
+const rock = gs.models.sculpt([{ box: [.9, .6, .7], round: .15 }, { cylinder: [.14, 1], rot: [Math.PI / 2, 0, 0], cut: true }]);
+```
+- **`tree(kind, o)`**: a tree grown in code with EZ-Tree (branches that split, bend and taper, leaves on
+  the twigs): `oak`, `ash`, `aspen`, `pine`, `bush`. Its bark is the `bark` recipe and its leaves are drawn in
+  code, swaying in the wind and glowing with the sun behind them, on the view's own clock (they stop when
+  the game pauses). `size` ('small', 'medium', 'large': its shape), `height` (metres), `seed` (another tree of
+  the same kind), `leaves` and `bark` (colours), `wind` (.6, or a `gs.outdoors` Wind). About 20 to 80 ms each;
+  the same options again give a copy sharing shapes and materials, so make a few kinds and place copies (or
+  hand them to `gs.props` for instancing and far-off impostors).
+- **`building(o)`**: a building to walk up to, from a small shape grammar: the block is split into floors,
+  each wall into bays, and each bay into a real window opening (reveal, frame, sill, glass set back) or the
+  door, with a string course, cornice, and a flat roof with a parapet or a gable roof. `style` (`brick`,
+  `plaster`, `concrete`, `stone`, `timber`, or your own: `{ ...gs.models.buildings.brick, bay: 3 }`), `w`, `d`
+  (metres, 8 x 6), `floors`, `roof`, `floor` (storey height), `bay` (metres per window), `win` ([w, h]), `lit` (0..1
+  of windows glowing), `colour` (walls), `door: false`, `seed`, `wear`. Its door faces +z. About 0.1 to 0.25 s
+  each, so make them while loading; for a whole town in the distance `gs.city` is far cheaper.
+- **`human(o)`**: a person to see up close. It has the same skeleton, `rig` and `face` as `gs.poses.person`, so
+  the same poses, blends, foot planting, face shapes and lip sync drive it; only the build is finer. The body
+  is smoothed by subdivision, and the head is sculpted (jaw, cheekbones, nose, brow, ears, eye sockets). The
+  eyes have an iris and pupil under a clear coat, and eyelids that blink. The hair shines along its strands,
+  the skin lets light through at thin edges (WebGPU), and the clothes are in the fabric and leather recipes.
+  It takes `person()`'s options plus `hairStyle` ('short', 'long', 'bun', 'bald'), `iris`, `jaw` and `nose` (1 is
+  average), `smooth` (1; 2 for a hero right in front of the camera) and `cloth: false`. About 0.3 s each, and
+  people with the same build and face shape share their smoothed parts, so make them in `make()` or `reset()`.

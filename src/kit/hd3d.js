@@ -554,6 +554,29 @@ function beamsFrame(v) {
   m.density = Math.max(0, b.density ?? .02); m.far = Math.max(1, b.far ?? 60); m.g = Math.min(.9, Math.max(0, b.glow ?? .5)); m.steps = Math.round(Math.min(VOL_MAX, Math.max(4, b.steps ?? 24)));
   return m;
 }
+// froxel fog (v.fog3d, WebGPU: hd3d-gpu.js froxels): this frame's numbers for it
+const FOG_C = new Color(), FOG_L = [];
+function fogFrame(v) {
+  const f = v.fog3d, m = v._fz ||= { colour: new Color(), ambient: new Color(), sunDir: new Vector3(0, 1, 0), sunCol: new Color(), shadow: null, shadowM: null, lamps: [], wind: [1, .4], t: 0 };
+  m.near = v.cam.near; m.far = Math.max(5, f.far ?? 60); m.density = Math.max(0, f.density ?? .03); m.height = f.height ?? 0; m.falloff = Math.max(0, f.falloff ?? .15);
+  m.noise = Math.min(1, Math.max(0, f.noise ?? .5)); m.g = Math.min(.9, Math.max(-.5, f.glow ?? .4)); m.wind = f.wind || m.wind; m.t = v.t;
+  m.colour.set(f.colour ?? '#c8d0d8'); m.ambient.setScalar(f.ambient ?? .35);
+  const L = v.sun;
+  if (L?.isDirectionalLight && L.visible) {
+    L.updateMatrixWorld(); L.target.updateMatrixWorld(); L.getWorldPosition(m.sunDir); L.target.getWorldPosition(GV); m.sunDir.sub(GV).normalize();
+    m.sunCol.copy(L.color).multiplyScalar(L.intensity * (f.strength ?? 1) * 4);
+    m.shadow = L.castShadow && L.shadow?.map?.depthTexture || null; m.shadowM = L.shadow.matrix;
+  } else { m.sunCol.setRGB(0, 0, 0); m.shadow = null; }
+  // the nearest lit lamps (point and spot lights), up to 8
+  FOG_L.length = 0; const cp = v.cam.position;
+  if (f.lamps !== false) v.scene.traverseVisible(o => { if ((o.isPointLight || o.isSpotLight) && o.intensity > 0) FOG_L.push(o); });
+  if (FOG_L.length > 8) FOG_L.sort((a, b) => a.getWorldPosition(GV).distanceToSquared(cp) - b.getWorldPosition(GW).distanceToSquared(cp));
+  const n = Math.min(8, FOG_L.length);
+  while (m.lamps.length < n) m.lamps.push({ p: new Vector4(), c: new Vector4() });
+  m.lamps.length = n;
+  for (let i = 0; i < n; i++) { const o = FOG_L[i]; o.getWorldPosition(GV); m.lamps[i].p.set(GV.x, GV.y, GV.z, o.distance || 10); FOG_C.copy(o.color).multiplyScalar(o.intensity * (f.strength ?? 1)); m.lamps[i].c.set(FOG_C.r, FOG_C.g, FOG_C.b, 0); }
+  return m;
+}
 class BeamsPass extends Pass {
   constructor() {
     super(); this.needsSwap = true; this.a = null;
@@ -610,6 +633,7 @@ function blurFrame(v, cut) {
   m.prevVP.copy(m.has && !cut ? m.prev : m.cur); m.prev.copy(m.cur); m.has = true;
   if (!b) return null;
   m.mb.set(Math.max(0, b.amount ?? .5), Math.max(0, b.max ?? .04), Math.max(0, b.sharp ?? 0), v.W / v.H);
+  m.obj = b.objects !== false && !cut && m.had ? 1 : 0; m.had = true;   // (WebGPU: each thing's own move, not just the camera's)
   return m;
 }
 class BlurPass extends Pass {
@@ -727,10 +751,11 @@ export function pbr(col = '#ffffff', { rough = .6, metal = 0, glow = 0, glowCol,
  * rough). The kit turns the height layer into a normal map. Returns { map, normal, rough,
  * repeat(u, v) } where repeat() returns a copy with that tiling.
  */
-export function surface(size, paint, { strength = 2.5 } = {}) {
+export function surface(size, paint, { strength = 2.5, metal = false } = {}) {
   const mk = () => { const c = document.createElement('canvas'); c.width = c.height = size; return c; };
   const C = mk(), Hc = mk(), Rc = mk(), g = { col: C.getContext('2d'), h: Hc.getContext('2d', { willReadFrequently: true }), r: Rc.getContext('2d', { willReadFrequently: true }), size };
   g.h.fillStyle = '#808080'; g.h.fillRect(0, 0, size, size); g.r.fillStyle = '#999'; g.r.fillRect(0, 0, size, size);
+  const Mc = metal ? mk() : null; if (Mc) { g.m = Mc.getContext('2d'); g.m.fillStyle = '#000'; g.m.fillRect(0, 0, size, size); }   // (metal: white = metal; its blue is what three reads)
   paint(g);
   // height -> tangent-space normal map (wrapping Sobel)
   const hd = g.h.getImageData(0, 0, size, size).data, N = mk(), nc = N.getContext('2d'), out = nc.createImageData(size, size), nf = new Float32Array(size * size * 3);
@@ -744,10 +769,10 @@ export function surface(size, paint, { strength = 2.5 } = {}) {
   }
   nc.putImageData(out, 0, 0);
   const tx = (cv, srgb) => { const t = new CanvasTexture(cv); t.wrapS = t.wrapT = RepeatWrapping; t.colorSpace = srgb ? SRGBColorSpace : NoColorSpace; t.anisotropy = 4; t.minFilter = LinearMipmapLinearFilter; return t; };
-  const base = { map: tx(C, true), normal: tx(N), rough: roughMips(tx(Rc), g.r.getImageData(0, 0, size, size).data, nf, size), height: tx(Hc), nf, size, rd: g.r.getImageData(0, 0, size, size).data };
+  const base = { map: tx(C, true), normal: tx(N), rough: roughMips(tx(Rc), g.r.getImageData(0, 0, size, size).data, nf, size), height: tx(Hc), nf, size, rd: g.r.getImageData(0, 0, size, size).data, ...(Mc ? { metal: tx(Mc) } : {}), canvases: { col: C, h: Hc, r: Rc, ...(Mc ? { m: Mc } : {}) } };
   const set = (u, v, b = base) => {
     if (u === 1 && v === 1) return { ...b, repeat: set };
-    const cl = {}; for (const k of ['map', 'normal', 'rough', 'height']) { cl[k] = b[k].clone(); cl[k].repeat.set(u, v); cl[k].needsUpdate = true; }
+    const cl = {}; for (const k of ['map', 'normal', 'rough', 'height', 'metal']) { if (!b[k]) continue; cl[k] = b[k].clone(); cl[k].repeat.set(u, v); cl[k].needsUpdate = true; }
     return { ...cl, repeat: set };
   };
   return { ...base, repeat: set };
@@ -1211,11 +1236,11 @@ export class HDView {
    * image-based reflections; sky/ground/amb: hemisphere fill light.
    */
   constructor({ bg = '#0a0c10', fog = 0, env = .35, sky = '#9ab0d0', ground = '#2a2420', amb = .25, fov = 70 } = {}) {
-    this.scene = new Scene(); this.scene.background = new Color(bg);
+    this.scene = new Scene(); this.scene.background = new Color(bg); Object.defineProperty(this.scene, 'gsView', { value: this });   // (kit parts that animate on the view's own clock, v.t; not in userData, which copies go through JSON)
     if (fog) this.scene.fog = new FogExp2(bg, fog);
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
-    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null; this.lut = null; this.lutAmount = 1; this.oit = false; this.flare = null;
+    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null; this.lut = null; this.lutAmount = 1; this.oit = false; this.flare = null; this.fog3d = null; this.liveBounce = null;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
     this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null; this.beams = null; this.motionBlur = null;
@@ -1755,6 +1780,8 @@ export class HDView {
     return any;
   }
   /** Redraw the shadow maps next frame even if nothing seems to have moved (e.g. after changing a geometry in place). */
+  /** The level's big still pieces changed: voxel bounce light (v.liveBounce = 'voxel') builds its picture of them again. */
+  levelChanged() { this._giRebuild = true; return this; }
   shadowsDirty() { this.shK?.clear(); return this; }
   // The WebGPU frame (render() decided this view fits): the same numbers as the WebGL chain, drawn by hd3d-gpu.js.
   // up: { pw, fw, fh, s1 } when the scene is drawn pw wide and upscaled to the canvas (fw x fh) by SGSR 2, or SGSR 1 if s1
@@ -1772,7 +1799,11 @@ export class HDView {
     if (!baking && !off) HD.info.still = false;
     try { this.envMaker?.(); } catch (e) { /* the studio reflections stay */ }
     this.scene.environment = this.envFor(G); this.scene.environmentIntensity = this.envI;
-    if (this._air) { this.airUniforms(); const a = gpuAir(G); a.sync(); this.scene.fogNode = a.node(); } else { this.scene.fogNode = null; AIR.gsAirOn.value = 0; }
+    let fogN = null;
+    if (this._air) { this.airUniforms(); const a = gpuAir(G); a.sync(); fogN = a.node(); } else AIR.gsAirOn.value = 0;
+    // froxel fog (v.fog3d): lit by the sun and lamps, over the air's haze when both are on (high and ultra)
+    if (this.fog3d && T.ao > 0) { const fz = this._froxels?.r === r ? this._froxels : (this._froxels = { r, ...G.fx.froxels() }); fz.update(r, this.cam, fogFrame(this)); fogN = fz.node(fogN); }
+    this.scene.fogNode = fogN;
     // the sun lights: cloud shadows and the near shadow cascade's share (hd3d-gpu.js gpuSunLight)
     const cs = this.cascade, casc = !!(cs?.near.visible && cs.near.castShadow && cs.near.parent);
     G.fx.setCascade(casc ? cs.near : null, cs?.fade ?? .06);
@@ -1809,6 +1840,13 @@ export class HDView {
     this._dofUsed ||= !!this.focus; this._shaftsUsed ||= this.shafts > 0;
     o.dofOn = this._dofUsed && T.ao > 0; o.shaftsOn = this._shaftsUsed && T.shadow > 0;
     if (o.dofOn && this.focus) { const f = this.focus; o.lens = [f.at ?? 50, f.range ?? 2, f.depth ?? .5, (f.blur ?? 6) * ph / 640]; }
+    // live bounce light (v.liveBounce, WebGPU, high and ultra): 'screen' (three's SSGI) or 'voxel' (three's VXGI)
+    const lb = this.liveBounce;
+    if (lb && T.ao > 0) {
+      const spec = typeof lb === 'string' ? { kind: lb } : lb, gi = this._gi ||= { kind: 'screen', strength: 1, res: 64, box: null, rebuild: false };
+      gi.kind = spec.kind === 'voxel' ? 'voxel' : 'screen'; gi.strength = spec.strength ?? 1; gi.res = Math.min(128, Math.max(16, spec.res ?? 64)); gi.box = spec.box || null;
+      gi.rebuild = !!this._giRebuild; this._giRebuild = false; o.gi = gi;
+    }
     // volumetric light and motion blur: the same tiers as WebGL (high and ultra, and shadows for the light)
     this._volUsed ||= !!this.beams; this._mbUsed ||= !!this.motionBlur;
     o.volOn = this._volUsed && T.ao > 0 && T.shadow > 0; o.vol = o.volOn && this.beams ? beamsFrame(this) : null;
@@ -2152,19 +2190,40 @@ function gpuFor(v) {
 // swap each view's parts between their WebGL and WebGPU versions (particles: points or sprites)
 const gpuLooked = new WeakSet(), gpuTwins = new WeakMap(), sunRoles = new WeakMap();
 // kit ShaderMaterials (GPU_TWINS) swapped for their node material twin on WebGPU, and back
-function swapTwins(scene, G) {
+// A twin can have a close-up version (gs.models materials: the recipe worked out per pixel): drawn
+// while the thing is within its distance of the camera, once its shaders have built in the background
+// (so walking up to a wall never hides it while a shader builds)
+const NEAR_S = new Sphere(), nearBusy = new WeakSet();
+function swapTwins(scene, G, cam = null) {
   scene.traverse(o => {
     if (!o.isMesh) return;
     const gl = o.userData.gsGlMat || o.material;
     if (!gl?.userData?.gsGpu) return;
     if (G) {
-      let tw = gpuTwins.get(gl); if (tw?.r !== G.r) gpuTwins.set(gl, tw = { r: G.r, m: G.fx.gpuMaterials[gl.userData.gsGpu](gl) });
-      o.userData.gsGlMat = gl; o.material = tw.m;
+      let tw = gpuTwins.get(gl); if (tw?.r !== G.r) gpuTwins.set(gl, tw = { r: G.r, m: G.fx.gpuMaterials[gl.userData.gsGpu](gl), nearOk: false, building: false });
+      o.userData.gsGlMat = gl;
+      const near = tw.m.userData.gsNear;
+      let use = tw.m;
+      if (near && cam && !o.isInstancedMesh && HD.closeUp !== false) {
+        if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+        NEAR_S.copy(o.geometry.boundingSphere).applyMatrix4(o.matrixWorld);
+        const close = NEAR_S.distanceToPoint(cam.position) < tw.m.userData.gsNearDist;
+        if (close && tw.nearOk) use = near;
+        else if (close && !tw.building && !nearBusy.has(G.r)) {
+          // one close-up build at a time per renderer: many at once can stall the graphics chip (and a
+          // phone's frame) while they all compile; a build that never settles frees the queue after 4 s
+          tw.building = true; nearBusy.add(G.r); const keep = o.material; o.material = near;
+          const done = () => { nearBusy.delete(G.r); clearTimeout(cap); }, cap = setTimeout(done, 4000);
+          try { G.r.compileAsync(o, cam, scene).then(() => { tw.nearOk = true; done(); }, done); } catch (e) { done(); /* stays far */ }
+          o.material = keep;
+        }
+      }
+      o.material = use;
     } else if (o.userData.gsGlMat) { o.material = gl; delete o.userData.gsGlMat; }
   });
 }
 function gpuSwap(v, G) {
-  swapTwins(v.scene, G);
+  swapTwins(v.scene, G, v.cam);
   if (AREA_LTC && G && !AREA_GPU) { G.fx.areaLTC(AREA_LTC); AREA_GPU = true; }   // area lights' tables for WebGPU (panel)
   // shadow maps: each renderer keeps its own. WebGL drew into WebGPU's map when it found one on the light
   // (and the other way round), which made WebGPU remake it in the middle of a frame that still used it:

@@ -11,11 +11,23 @@ setGpuPick(GPU ? 'webgpu' : 'webgl');
 await loadParts();
 if (GPU && !await prepareGPU()) { window.result = { error: 'WebGPU did not start in this browser' }; throw new Error(window.result.error); }
 const T = gs.THREE, out = {}, backends = {};
+// ?dbg: every 3 s, what the renderer holds and has drawn (look-compare.cjs prints it with ALLWARN=1)
+if (new URLSearchParams(location.search).has('dbg')) { const g = GPU ? await prepareGPU() : null; setInterval(() => { const r = g?.r, i = r?.info; const dev = r?.backend?.device; if (dev) { let ok = false; dev.queue.onSubmittedWorkDone().then(() => { ok = true; }); setTimeout(() => { if (!ok) console.warn('DBG queue stuck 2.5 s'); }, 2500); } console.warn('DBG', JSON.stringify({ comp: r?._gsComp,  tex: i?.memory?.textures, geo: i?.memory?.geometries, frame: i?.render?.frame, calls: i?.render?.calls, held: window.__hd.info.held, still: window.__hd.info.still, be: window.__hd.info.backend })); }, 3000); }
 const frame = () => new Promise(r => requestAnimationFrame(r));
-window.__hd.force = 3; window.__hd.upscale = false;
+// every scene's view, freed when the next one starts: a long run would otherwise keep every scene's
+// meshes and pictures on the graphics chip (SwiftShader's WebGPU stopped drawing after about 30 scenes)
+const views = [];
+class HV extends gs.hd.HDView { constructor(o) { free(); super(o); views.push(this); } }
+function free() { if (new URLSearchParams(location.search).has('nofree')) return;
+  for (const v of views.splice(0)) v.scene.traverse(o => {
+    o.geometry?.dispose?.();
+    for (const m of [].concat(o.material || [])) { for (const k in m) if (m[k]?.isTexture) m[k].dispose(); m.dispose(); }
+  });
+}
+window.__hd.force = 3; window.__hd.upscale = false; if (new URLSearchParams(location.search).has('nonear')) window.__hd.closeUp = false;
 async function nextgen(tier, wet = 0, look = null) {
   window.__hd.force = tier;
-  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .002, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#9ab4d0', fog: .002, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 4, 9); v.cam.lookAt(0, 1, 0); v.cam.updateMatrixWorld();
   const sun = gs.hd.sun('#fff2d8', 3, 18, [-.45, 1, .35]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const ground = new T.Mesh(new T.PlaneGeometry(60, 60).rotateX(-Math.PI / 2), gs.hd.pbr('#6a7a58', { rough: .9 })); ground.receiveShadow = true; v.scene.add(ground);
@@ -30,7 +42,7 @@ async function nextgen(tier, wet = 0, look = null) {
 // a dark room: thick fog, point lights from the lamp pool, metal walls (indoor games)
 async function dark(tier) {
   window.__hd.force = tier;
-  const Q = new URLSearchParams(location.search), v = new gs.hd.HDView({ bg: '#05060c', fog: .05, env: +(Q.get('env') ?? .45), sky: '#6080c0', ground: '#201018', amb: +(Q.get('amb') ?? .3) }).lampLights(12), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const Q = new URLSearchParams(location.search), v = new HV({ bg: '#05060c', fog: .05, env: +(Q.get('env') ?? .45), sky: '#6080c0', ground: '#201018', amb: +(Q.get('amb') ?? .3) }).lampLights(12), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 1.5, 6); v.cam.lookAt(0, 1, -6); v.cam.updateMatrixWorld();
   const wall = gs.hd.pbr('#ffffff', { rough: 1, metal: .45, side: T.BackSide });
   v.scene.add(new T.Mesh(new T.BoxGeometry(6, 4, 40).translate(0, 2, -10), wall));
@@ -50,7 +62,7 @@ async function dark(tier) {
 // a sonar ring (gs.hd.pulse) sweeping over rock in the dark, with an instanced row of spikes
 async function pulseScene() {
   window.__hd.force = 2;
-  const v = new gs.hd.HDView({ bg: '#02060a', fog: .04, env: .2, amb: .15 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#02060a', fog: .04, env: .2, amb: .15 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 2, 7); v.cam.lookAt(0, 0, -3); v.cam.updateMatrixWorld();
   const at = { value: new T.Vector3(0, 0, 2) }, radius = { value: 5 }, strength = { value: 2.2 };
   const rock = gs.hd.pulse(gs.hd.pbr('#5a626c', { rough: 1 }), { at, radius, strength }), spike = gs.hd.pulse(gs.hd.pbr('#3a3e44', { rough: .8 }), { at, radius, strength, color: [1, .5, .2] });
@@ -65,7 +77,7 @@ async function pulseScene() {
 // gravity, drag, a swirl and a floor, stepped a fixed time; glowing sparks and soft smoke
 async function sparksScene() {
   window.__hd.force = 2;
-  const v = new gs.hd.HDView({ bg: '#0a0c14', fog: .02, env: .2, amb: .2 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#0a0c14', fog: .02, env: .2, amb: .2 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 3, 9); v.cam.lookAt(0, 1.5, 0); v.cam.updateMatrixWorld();
   v.scene.add(new T.Mesh(new T.PlaneGeometry(40, 40).rotateX(-Math.PI / 2), gs.hd.pbr('#30343c', { rough: .8 })));
   const fire = new gs.hd.GPUParticles(v, { max: 4000, gravity: 6, drag: .4, floor: 0, turbulence: { strength: 2, scale: .8, speed: 1 } });
@@ -82,7 +94,7 @@ async function sparksScene() {
 // (foot IK), one up close smiling with the mouth open (blend shapes)
 async function peopleScene() {
   window.__hd.force = 2;
-  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .004, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#9ab4d0', fog: .004, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 1.6, 4.2); v.cam.lookAt(0, 1.1, 0); v.cam.updateMatrixWorld();
   const sun = gs.hd.sun('#fff2d8', 3, 8, [-.45, 1, .55]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const ground = new T.Mesh(new T.PlaneGeometry(30, 30).rotateX(-Math.PI / 2), gs.hd.pbr('#6a7a58', { rough: .9 })); ground.receiveShadow = true; v.scene.add(ground);
@@ -105,7 +117,7 @@ async function peopleScene() {
 // a dark studio lit by two area lights (gs.hd.panel): a softbox above and a striplight behind
 async function areaScene() {
   window.__hd.force = 2;
-  const v = new gs.hd.HDView({ bg: '#101014', fog: 0, env: .05, amb: .02 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#101014', fog: 0, env: .05, amb: .02 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 1.6, 3.6); v.cam.lookAt(0, .6, -1); v.cam.updateMatrixWorld();
   const W = (w, h, d, col, px, py, pz, o = {}) => { const m = new T.Mesh(new T.BoxGeometry(w, h, d), gs.hd.pbr(col, o)); m.position.set(px, py, pz); v.scene.add(m); return m; };
   W(8, .1, 8, '#6a6a70', 0, -.05, 0, { rough: .25 }); W(8, 4, .1, '#505058', 0, 2, -3, { rough: .7 });
@@ -121,7 +133,7 @@ async function areaScene() {
 // subsurface scattering (pbr { sss }): wax, jade and skin-coloured shapes with the sun behind them
 async function sssScene() {
   window.__hd.force = 2;
-  const v = new gs.hd.HDView({ bg: '#20242c', fog: 0, env: .1, amb: .05 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#20242c', fog: 0, env: .1, amb: .05 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 1.2, 3.4); v.cam.lookAt(0, .6, 0); v.cam.updateMatrixWorld();
   const sun = gs.hd.sun('#fff2d8', 4, 6, [.2, .5, -1]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const floor = new T.Mesh(new T.PlaneGeometry(10, 10).rotateX(-Math.PI / 2), gs.hd.pbr('#3a3a40', { rough: .8 })); floor.receiveShadow = true; v.scene.add(floor);
@@ -134,7 +146,7 @@ async function sssScene() {
 // order-independent transparency (v.oit, WebGPU): coloured glass panes passing through each other
 async function oitScene() {
   window.__hd.force = 2;
-  const v = new gs.hd.HDView({ bg: '#d8dce4', fog: 0, env: .3, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#d8dce4', fog: 0, env: .3, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 1.2, 3); v.cam.lookAt(0, .8, 0); v.cam.updateMatrixWorld(); v.oit = !new URLSearchParams(location.search).has('nooit');
   const sun = gs.hd.sun('#fff2d8', 3, 6, [-.4, 1, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const floor = new T.Mesh(new T.PlaneGeometry(10, 10).rotateX(-Math.PI / 2), gs.hd.pbr('#8a8a90', { rough: .8 })); v.scene.add(floor);
@@ -146,7 +158,7 @@ async function oitScene() {
 // lens flare and dirt (v.flare): bright lamps in the dark, ghosts mirrored through the middle
 async function flareScene() {
   window.__hd.force = 2;
-  const v = new gs.hd.HDView({ bg: '#05070c', fog: 0, env: .05, amb: .05 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#05070c', fog: 0, env: .05, amb: .05 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 1.2, 4); v.cam.lookAt(0, 1.2, 0); v.cam.updateMatrixWorld(); v.flare = true;
   const floor = new T.Mesh(new T.PlaneGeometry(20, 20).rotateX(-Math.PI / 2), gs.hd.pbr('#30343c', { rough: .5 })); v.scene.add(floor);
   [[-1.1, 2.1, '#ffd8a0'], [1.3, 1.6, '#a0d0ff'], [.3, 2.6, '#ffffff']].forEach(([px, py, col]) => { const m = new T.Mesh(new T.SphereGeometry(.12, 16, 12), gs.hd.pbr(col, { glow: 12 })); m.position.set(px, py, 0); v.scene.add(m); });
@@ -157,7 +169,7 @@ async function flareScene() {
 // parallax occlusion mapping (pbr { tex, depth }, WebGPU): a cobbled floor and a brick wall seen at a slant
 async function pomScene() {
   window.__hd.force = 2;
-  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: 0, env: .3, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#9ab4d0', fog: 0, env: .3, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 1.1, 2.6); v.cam.lookAt(0, .4, -1); v.cam.updateMatrixWorld();
   const sun = gs.hd.sun('#fff2d8', 3, 6, [-.8, .6, .4]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const bricks = gs.hd.surface(256, g => {
@@ -170,11 +182,173 @@ async function pomScene() {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend];
 }
+// froxel fog (v.fog3d, WebGPU): low fog in a colonnade, the sun through it in shafts and two lamps glowing
+async function fogScene() {
+  window.__hd.force = 3;
+  const v = new HV({ bg: '#8aa0b8', fog: 0, env: .3, amb: .25 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 1.6, 8); v.cam.lookAt(0, 1.2, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#ffe8c8', 3, 14, [-.7, .5, -.4]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(40, 40).rotateX(-Math.PI / 2), gs.hd.pbr('#8a8478', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const stone = gs.hd.pbr('#b8b0a0', { rough: .8 });
+  for (let i = 0; i < 6; i++) for (const sx of [-2.5, 2.5]) { const p = new T.Mesh(new T.CylinderGeometry(.3, .35, 5, 16), stone); p.position.set(sx, 2.5, 3 - i * 3); p.castShadow = p.receiveShadow = true; v.scene.add(p); }
+  const roof = new T.Mesh(new T.BoxGeometry(6, .4, 18), stone); roof.position.set(0, 5.2, -4.5); roof.castShadow = true; v.scene.add(roof);
+  for (const [lx, lc] of [[-1.2, '#ffb060'], [1.4, '#60c0ff']]) { const l = new T.PointLight(lc, 6, 6); l.position.set(lx, 1.2, -2); v.scene.add(l); }
+  if (!new URLSearchParams(location.search).has('nofog')) v.fog3d = { density: .06, height: .5, falloff: .5, far: 40, colour: '#d8dce8', glow: .5 };
+  const t0 = performance.now(); while (performance.now() - t0 < 2000) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
+// per-object motion blur (WebGPU): a still camera, a wheel spinning and a ball flying past blur; the post stays sharp
+async function objBlurScene() {
+  window.__hd.force = 3;
+  const v = new HV({ bg: '#9ab4d0', fog: 0, env: .3, amb: .4 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 1.5, 5); v.cam.lookAt(0, 1, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 8, [-.5, .8, .4]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(20, 20).rotateX(-Math.PI / 2), gs.hd.pbr('#7a8a68', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const wheel = new T.Mesh(new T.CylinderGeometry(.8, .8, .2, 6).rotateX(Math.PI / 2), gs.hd.pbr('#d04030', { rough: .5 })); wheel.position.set(-1, 1.2, 0); v.scene.add(wheel);
+  const ball = new T.Mesh(new T.SphereGeometry(.3, 24, 12), gs.hd.pbr('#3060d0', { rough: .4 })); v.scene.add(ball);
+  const post = new T.Mesh(new T.BoxGeometry(.3, 2, .3), gs.hd.pbr('#e0d8c8', { rough: .7 })); post.position.set(1.5, 1, -.5); v.scene.add(post);
+  v.motionBlur = { amount: .5, max: .08 };
+  let k = 0; const step = () => { k++; wheel.rotation.z = k * .35; ball.position.set(-2 + (k % 40) * .12, .8, .8); };
+  for (let i = 0; i < 90; i++) { step(); v.t = 0; v.render(x, 240, 320); await frame(); }
+  return [c.toDataURL(), window.__hd.info.backend];
+}
+// live bounce light (v.liveBounce, WebGPU): sun through a gap onto a white floor between a red and a green wall;
+// the walls should pick up the floor's light and colour each other
+async function giScene(kind) {
+  window.__hd.force = 3;
+  const v = new HV({ bg: '#a8c0d8', fog: 0, env: .05, amb: .03 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 1.5, 4.5); v.cam.lookAt(0, 1.2, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 5, 6, [.3, 1, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const W = (w, h, d, col, px, py, pz) => { const m = new T.Mesh(new T.BoxGeometry(w, h, d), gs.hd.pbr(col, { rough: .9 })); m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; v.scene.add(m); };
+  W(4, .1, 4, '#e8e4dc', 0, -.05, 0); W(.1, 3, 4, '#c0392b', -2, 1.5, 0); W(.1, 3, 4, '#2e9e4f', 2, 1.5, 0); W(4, 3, .1, '#e8e4dc', 0, 1.5, -2);
+  W(4, .1, 2.6, '#e8e4dc', 0, 3, -.7);   // roof with a gap at the front
+  W(.8, .8, .8, '#e8e4dc', .5, .4, -.6);
+  if (kind) v.liveBounce = { kind, strength: 1.5 };
+  const t0 = performance.now(); while (performance.now() - t0 < 2500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
+// gs.models material recipes: every recipe on a slab, far (baked textures) and one close up (?near: the
+// camera a metre from the brick wall, where WebGPU works the recipe out per pixel)
+async function recipesScene(near = false) {
+  window.__hd.force = 3;
+  const v = new HV({ bg: '#9ab4d0', fog: 0, env: .4, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const names = gs.models.materials, t0 = performance.now();
+  names.forEach((n, i) => { const m = new T.Mesh(new T.BoxGeometry(.9, .9, .2), gs.models.material(n)); m.position.set((i % 4) * 1 - 1.5, 3.6 - Math.floor(i / 4) * 1, 0); v.scene.add(m); });
+  const bake = performance.now() - t0;
+  if (near) { v.cam.position.set(-1.2, 3.5, .6); v.cam.lookAt(-1.4, 3.5, 0); } else { v.cam.position.set(0, 1.6, 6); v.cam.lookAt(0, 1.6, 0); }
+  v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 8, [-.4, .6, .8]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const t1 = performance.now(); while (performance.now() - t1 < 2000) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + ', baked ' + names.length + ' in ' + Math.round(bake) + ' ms'];
+}
+// gs.models.wear: the same things new (left) and aged from their own shape (right): rubbed edges,
+// grime in the creases and near the ground, moss on the steps, snow on the pillar's top
+async function wearScene() {
+  window.__hd.force = 2;
+  const v = new HV({ bg: '#9ab4d0', fog: 0, env: .4, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  if (new URLSearchParams(location.search).has('zoom')) { v.cam.position.set(1.1, 2.2, 2.6); v.cam.lookAt(1.1, .4, 0); } else { v.cam.position.set(0, 3.4, 4.4); v.cam.lookAt(0, .3, 0); } v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 6, [-.5, .8, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(12, 12).rotateX(-Math.PI / 2), gs.hd.pbr('#a8a090', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const t0 = performance.now();
+  for (const side of [-1, 1]) {
+    const add = (m, px, py, pz, o) => { m.position.set(px * side, py, pz); m.castShadow = m.receiveShadow = true; if (side > 0) gs.models.wear(m, o); v.scene.add(m); };
+    add(new T.Mesh(gs.hd.rbox(.8, .8, .8, .05), gs.models.material('paint', { colour: '#2f6a4a' })), .55, .4, .8, { edges: .9, dirt: .6 });
+    add(new T.Mesh(new T.CylinderGeometry(.3, .3, .9, 20, 4), gs.models.material('metal', { colour: '#8a3a2a' })), 1.55, .45, .8, { edges: .8, dirt: .7 });
+    const steps = new T.Group(); for (let i = 0; i < 3; i++) { const b = new T.Mesh(new T.BoxGeometry(.9, .25, .3 * (3 - i)), gs.models.material('stone')); b.position.set(0, .125 + i * .25, -.15 * i); b.castShadow = b.receiveShadow = true; if (side > 0) gs.models.wear(b, { moss: .9, dirt: .5 }); steps.add(b); }
+    steps.position.set(.6 * side, 0, -.6); v.scene.add(steps);
+    add(new T.Mesh(new T.BoxGeometry(.35, 1.6, .35), gs.models.material('brick')), 1.6, .8, -.7, { snow: 1, dirt: .4 });
+  }
+  const ms = performance.now() - t0;
+  const t1 = performance.now(); while (performance.now() - t1 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + ', made in ' + Math.round(ms) + ' ms'];
+}
+// gs.models.prop: every prop in a grid (made from recipes, aged with wear), and how long making them took
+async function propsScene() {
+  window.__hd.force = 2;
+  const v = new HV({ bg: '#9ab4d0', fog: 0, env: .4, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 6.2, 5.6); v.cam.lookAt(0, 0, -.7); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 8, [-.5, .8, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(14, 14).rotateX(-Math.PI / 2), gs.hd.pbr('#a8a090', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const t0 = performance.now(), names = gs.models.props;
+  names.forEach((n, i) => { const p = gs.models.prop(n, { seed: i }); p.position.set((i % 4) * 1.5 - 2.25, 0, Math.floor(i / 4) * 1.5 - 3.4); v.scene.add(p); });
+  const ms = performance.now() - t0, t2 = performance.now(), each = names.map((n, i) => { const a = performance.now(); gs.models.prop(n, { seed: i }); return n + ' ' + Math.round(performance.now() - a); });
+  const again = performance.now() - t2;
+  const t1 = performance.now(); while (performance.now() - t1 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + ', ' + names.length + ' props in ' + Math.round(ms) + ' ms (again ' + Math.round(again) + ' ms' + (new URLSearchParams(location.search).has('each') ? ': ' + each.join(', ') : '') + ')'];
+}
+// gs.models.sculpt: shapes melted together and carved: a snowman (coloured parts), a rock carved with a
+// hole, a blobby creature from capsules, a rounded mug with a torus handle, and how long each took
+async function sculptScene() {
+  window.__hd.force = 2;
+  const v = new HV({ bg: '#9ab4d0', fog: 0, env: .4, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 2.4, 4.2); v.cam.lookAt(0, .6, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 6, [-.5, .8, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(12, 12).rotateX(-Math.PI / 2), gs.hd.pbr('#a8a090', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const ms = [], put = (geo, mat, px, pz) => { const m = new T.Mesh(geo, mat); m.position.set(px, 0, pz); m.castShadow = m.receiveShadow = true; v.scene.add(m); return m; };
+  const time = f => { const a = performance.now(), g = f(); ms.push(Math.round(performance.now() - a) + ' ms/' + g.attributes.position.count); return g; };
+  const S = gs.models.sculpt, white = gs.hd.pbr('#ffffff', { rough: .7, vertexColors: true });
+  put(time(() => S([{ ball: .35, at: [0, .32, 0], colour: '#dde3ea' }, { ball: .26, at: [0, .78, 0], colour: '#dde3ea' }, { ball: .18, at: [0, 1.12, 0], colour: '#dde3ea' },
+    { cone: [.04, .22], at: [0, 1.13, .14], rot: [Math.PI / 2, 0, 0], colour: '#e8641c', blend: .01 }, { cylinder: [.16, .2], at: [0, 1.32, 0], colour: '#222222', blend: .02, round: .02 }], { blend: .1 })), white, -1.2, 0);
+  put(time(() => S([{ box: [.9, .6, .7], round: .15, at: [0, .3, 0], rot: [.1, .4, .05] }, { ball: .35, at: [.35, .45, .2] }, { cylinder: [.14, 1], at: [0, .35, 0], rot: [Math.PI / 2, 0, 0], cut: true, blend: .05 }], { blend: .15 })), gs.models.material('stone'), 0, -.6);
+  put(time(() => S([{ capsule: [[-.3, .35, 0], [.3, .4, 0]], r: .22, colour: '#6a9a3a' }, { ball: .18, at: [.45, .6, 0], colour: '#6a9a3a' },
+    ...[[-.25, .12], [.2, .12], [-.25, -.12], [.2, -.12]].map(([lx, lz]) => ({ capsule: [[lx, .3, lz], [lx, 0, lz * 1.3]], r: .06, colour: '#5a8a2a' })), { ball: .05, at: [.58, .68, .09], colour: '#111111', blend: .01 }, { ball: .05, at: [.58, .68, -.09], colour: '#111111', blend: .01 }], { blend: .08 })), white, 1.2, 0);
+  put(time(() => S([{ cylinder: [.18, .4], round: .03, at: [0, .2, 0] }, { cylinder: [.15, .4], at: [0, .26, 0], cut: true, blend: .02 }, { torus: [.1, .025], at: [.2, .2, 0], rot: [Math.PI / 2, 0, 0] }], { blend: .03, res: 64 })), gs.hd.pbr('#c8584a', { rough: .25, clear: .6 }), .3, .9);
+  const t1 = performance.now(); while (performance.now() - t1 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + ', ' + ms.join(', ')];
+}
+// gs.models.tree: EZ-Tree grown in code with the bark recipe and code-drawn leaves (oak, ash, aspen, pine, bush)
+async function treesScene() {
+  window.__hd.force = 2;
+  const v = new HV({ bg: '#9ab4d0', fog: 0, env: .4, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  if (new URLSearchParams(location.search).has('zoom')) { v.cam.position.set(-4.5, 4, 1); v.cam.lookAt(-6, 3.5, -2); } else { v.cam.position.set(0, 4, 16); v.cam.lookAt(0, 4, 0); } v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 14, [-.5, .8, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(40, 40).rotateX(-Math.PI / 2), gs.hd.pbr('#7a8a5a', { rough: .95 })); floor.receiveShadow = true; v.scene.add(floor);
+  const ms = [];
+  [['oak', -6, -2], ['ash', -1.5, -4], ['aspen', 3, -3], ['pine', 7, -6], ['bush', 1, 3]].forEach(([k, px, pz]) => { const a = performance.now(), t = gs.models.tree(k, { size: 'small' }); ms.push(k + ' ' + Math.round(performance.now() - a)); t.position.set(px, 0, pz); v.scene.add(t); });
+  const t1 = performance.now(); while (performance.now() - t1 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + ', ' + ms.join(', ') + ' ms'];
+}
+// gs.models.building: the five styles from the grammar (real window openings, sills, trim, roofs), some windows lit
+async function buildingsScene() {
+  window.__hd.force = 2;
+  const v = new HV({ bg: '#9ab4d0', fog: 0, env: .4, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  if (new URLSearchParams(location.search).has('zoom')) { v.cam.position.set(-6, 3, 9); v.cam.lookAt(-8, 3, 0); } else { v.cam.position.set(0, 9, 30); v.cam.lookAt(0, 4, 0); } v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 20, [-.5, .7, .6]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(80, 80).rotateX(-Math.PI / 2), gs.hd.pbr('#8a8478', { rough: .95 })); floor.receiveShadow = true; v.scene.add(floor);
+  const ms = [];
+  [['brick', -9, -4, 3], ['plaster', 0, -10, 3], ['concrete', 9, -8, 4], ['stone', -6, 6, 2], ['timber', 6, 5, 2]].forEach(([s, px, pz, fl], i) => { const a = performance.now(), b = gs.models.building({ style: s, floors: fl, lit: .3, seed: i }); ms.push(s + ' ' + Math.round(performance.now() - a)); b.position.set(px, 0, pz); v.scene.add(b); });
+  const t1 = performance.now(); while (performance.now() - t1 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + ', ' + ms.join(', ') + ' ms'];
+}
+// gs.models.human beside gs.poses.person: subdivided body, sculpted head, eyes, hair, skin, cloth (?zoom: faces)
+async function humansScene() {
+  window.__hd.force = 2;
+  const v = new HV({ bg: '#9ab4d0', fog: 0, env: .5, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  if (new URLSearchParams(location.search).has('zoom')) { v.cam.position.set(.25, 1.6, .9); v.cam.lookAt(.25, 1.56, 0); } else { v.cam.position.set(0, 1.3, 3.6); v.cam.lookAt(0, 1, 0); } v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 4, [-.4, .7, .8]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(12, 12).rotateX(-Math.PI / 2), gs.hd.pbr('#a8a090', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
+  const old = gs.poses.person({ body: '#b04a3a', skin: '#e0ac69', mat: col => gs.hd.pbr(col) }); old.position.set(-.55, 0, 0); v.scene.add(old);
+  const ms = [], t0 = performance.now();
+  const a = gs.models.human({ body: '#b04a3a', skin: '#e0ac69', hairStyle: 'short' }); a.position.set(.25, 0, 0); v.scene.add(a); ms.push(Math.round(performance.now() - t0));
+  const t2 = performance.now(), b = gs.models.human({ body: '#3a6a5a', legs: '#2a3a5a', skin: '#8d5524', hair: '#1a1008', hairStyle: 'long', iris: '#4a2a1a', sleeves: 'short', jaw: .9, nose: 1.2 }); b.position.set(.9, 0, -.3); v.scene.add(b); ms.push(Math.round(performance.now() - t2));
+  for (const h of [old, a, b]) { h.rig.play('idle', { fade: 0 }); h.rig.update(.5); h.face.set('smile', .6); h.face.update(1); }
+  const t1 = performance.now(); while (performance.now() - t1 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend + ', human ' + ms.join(', ') + ' ms'];
+}
 // soft shadows (sun().softShadows): a post, a raised slab and a crate sitting on the ground: the
 // crate's shadow sharp at its foot, the post's and slab's spreading the further they fall
 async function pcssScene() {
   window.__hd.force = 2;
-  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: 0, env: .3, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#9ab4d0', fog: 0, env: .3, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 3, 5); v.cam.lookAt(0, 0, 0); v.cam.updateMatrixWorld();
   const sun = gs.hd.sun('#fff2d8', 3, 6, [-.5, .8, .3]).softShadows(3); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const floor = new T.Mesh(new T.PlaneGeometry(12, 12).rotateX(-Math.PI / 2), gs.hd.pbr('#c8c0b0', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
@@ -187,7 +361,7 @@ async function pcssScene() {
 // richer materials: brushed metal (aniso), a soap-film ball (film), glass, a wet path and a detail-normal stone
 async function materialsScene() {
   window.__hd.force = 2;
-  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: 0, env: .5, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#9ab4d0', fog: 0, env: .5, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 1.4, 3.4); v.cam.lookAt(0, .5, 0); v.cam.updateMatrixWorld();
   const sun = gs.hd.sun('#fff2d8', 3, 6, [-.6, .8, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const grain = (n, s) => gs.hd.surface(128, g => { g.col.fillStyle = '#8a8478'; g.col.fillRect(0, 0, 128, 128); g.h.fillStyle = '#808080'; g.h.fillRect(0, 0, 128, 128); for (let i = 0; i < n; i++) { const a = (i * 97) % 128, b = (i * 61) % 128; g.h.fillStyle = i % 2 ? '#fff' : '#000'; g.h.beginPath(); g.h.arc(a, b, s * (1 + i % 3), 0, 7); g.h.fill(); } });
@@ -205,7 +379,7 @@ async function materialsScene() {
 // enough to be batched (?nobatch draws them one by one: the two pictures must match)
 async function batchScene() {
   window.__hd.force = 2; window.__hd.batch = !new URLSearchParams(location.search).has('nobatch');
-  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .01, env: .3, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#9ab4d0', fog: .01, env: .3, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 4, 9); v.cam.lookAt(0, 0, 0); v.cam.updateMatrixWorld();
   const sun = gs.hd.sun('#fff2d8', 3, 14, [-.5, 1, .4]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const floor = new T.Mesh(new T.PlaneGeometry(30, 30).rotateX(-Math.PI / 2), gs.hd.pbr('#6a7a58', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
@@ -219,7 +393,7 @@ async function batchScene() {
 async function roomScene() {
   window.__hd.force = 2;
   const F = new Set((new URLSearchParams(location.search).get('feat') || '').split(',')), on = k => !F.has('-' + k);
-  const v = new gs.hd.HDView({ bg: '#c8dcf0', fog: 0, env: .15, amb: .05 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#c8dcf0', fog: 0, env: .15, amb: .05 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 1.6, 3.6); v.cam.lookAt(0, 1, -1); v.cam.updateMatrixWorld();
   const sun = gs.hd.sun('#fff2d8', 6, 8, [.6, .7, -.5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const W = (w, h, d, col, px, py, pz, o = {}) => { const m = new T.Mesh(new T.BoxGeometry(w, h, d), gs.hd.pbr(col, o)); m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; v.scene.add(m); return m; };
@@ -240,7 +414,7 @@ async function roomScene() {
 // the camera turns between the last two frames (v.motionBlur: the far wall smears, the near crate stays sharp)
 async function beamsScene() {
   window.__hd.force = 2;
-  const v = new gs.hd.HDView({ bg: '#0d0f14', fog: 0, env: .05, amb: .03 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#0d0f14', fog: 0, env: .05, amb: .03 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(-1.5, 1.5, 4); v.cam.lookAt(1, 1.2, -1); v.cam.updateMatrixWorld();
   const sun = gs.hd.sun('#ffe2b0', 5, 8, [1, .8, -.3]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const W = (w, h, d, col, px, py, pz) => { const m = new T.Mesh(new T.BoxGeometry(w, h, d), gs.hd.pbr(col, { rough: .9 })); m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; v.scene.add(m); return m; };
@@ -262,7 +436,7 @@ async function beamsScene() {
 async function riverScene() {
   window.__hd.force = 2;
   const { River } = gs.outdoors, { Streams } = gs.flow, { Path } = gs.paths;
-  const v = new gs.hd.HDView({ bg: '#8aa4c0', fog: .004, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#8aa4c0', fog: .004, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(4, 4.5, 12); v.cam.lookAt(0, 2, -4); v.cam.updateMatrixWorld();
   const sun = gs.hd.sun('#fff2d8', 3, 24, [-.45, 1, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const rockM = gs.hd.pbr('#6a6458', { rough: .95 });
@@ -286,7 +460,7 @@ async function riverScene() {
 async function floodScene() {
   window.__hd.force = 2;
   const { FloodWater } = gs.outdoors, { Flood } = gs.flow;
-  const v = new gs.hd.HDView({ bg: '#8aa4c0', fog: .004, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#8aa4c0', fog: .004, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.position.set(0, 14, 16); v.cam.lookAt(0, 0, 0); v.cam.updateMatrixWorld();
   const sun = gs.hd.sun('#fff2d8', 3, 24, [-.45, 1, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const H = (x, z) => Math.sin(x * .35) * .9 + Math.cos(z * .3) * .8 + Math.hypot(x, z) * .12;
@@ -307,7 +481,7 @@ async function outdoor(tier, phys = false) {
   window.__hd.force = tier;
   const F = new Set((new URLSearchParams(location.search).get('feat') || '').split(',')), on = k => !F.has('-' + k);
   const { Land, looks, groundDetail, horizon, impostor, Wind } = gs.outdoors, { Sky } = gs.sky, { Props } = gs.props;
-  const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .002, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const v = new HV({ bg: '#9ab4d0', fog: .002, amb: .35 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   v.cam.far = 900; v.cam.updateProjectionMatrix();
   v.cam.position.set(0, 7, 26); v.cam.lookAt(-8, 1, -20); v.cam.updateMatrixWorld();
   const sun = gs.hd.sun('#fff0d8', 3, 30, [-.6, .45, -.9]); v.scene.add(sun, sun.target); v.sun = sun;
@@ -350,7 +524,7 @@ async function outdoor(tier, phys = false) {
 // hidden behind the first row; Q=occ=0 draws them all, and the two pictures must match
 async function cityScene() {
   window.__hd.force = 2;
-  const Q = new URLSearchParams(location.search), v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .004, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  const Q = new URLSearchParams(location.search), v = new HV({ bg: '#9ab4d0', fog: .004, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
   const sun = gs.hd.sun('#fff2d8', 3, 60, [-.45, 1, .35]); v.scene.add(sun, sun.target); v.sun = sun;
   const city = new gs.city.City(v, { seed: 3, blocks: 6, traffic: 0, people: 0, sound: false, lamps: false, occlude: Q.get('occ') !== '0' });
   const s = city.start; v.cam.position.set(s.x, 1.7, s.z); v.cam.lookAt(s.x + 30, 4, s.z + 8); v.cam.updateMatrixWorld(); sun.follow(s.x, 0, s.z);
@@ -367,7 +541,7 @@ function consoleScene() {
   return c.toDataURL();
 }
 // ?pick=materials,gpu-pcss draws only those (a quick look while working on one)
-const SCENES = { area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene() };
+const SCENES = { area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene(), 'gpu-fog': () => fogScene(), 'gpu-mblur': () => objBlurScene(), 'gpu-gi-none': () => giScene(null), 'gpu-gi-screen': () => giScene('screen'), 'gpu-gi-voxel': () => giScene('voxel'), recipes: () => recipesScene(), 'gpu-recipes-near': () => recipesScene(true), wear: () => wearScene(), props: () => propsScene(), sculpt: () => sculptScene(), trees: () => treesScene(), buildings: () => buildingsScene(), humans: () => humansScene() };
 const PICK = new URLSearchParams(location.search).get('pick');
 if (PICK) try { for (const n of PICK.split(',')) [out[n], backends[n]] = await SCENES[n](); } catch (e) { out.error = String(e && e.stack || e); }
 else try {
@@ -388,6 +562,19 @@ else try {
   [out.batch, backends.batch] = await batchScene();
   [out.materials, backends.materials] = await materialsScene();
   [out['gpu-pcss'], backends['gpu-pcss']] = await pcssScene();
+  [out['gpu-fog'], backends['gpu-fog']] = await fogScene();
+  [out['gpu-mblur'], backends['gpu-mblur']] = await objBlurScene();
+  // (the close-up recipes go before live bounce light: the test machine's software WebGPU (SwiftShader)
+  // sometimes hangs its queue, with no error, building close-up shaders right after the GI scenes)
+  [out.recipes, backends.recipes] = await recipesScene();
+  [out['gpu-recipes-near'], backends['gpu-recipes-near']] = await recipesScene(true);
+  for (const k of ['screen', 'voxel']) [out['gpu-gi-' + k], backends['gpu-gi-' + k]] = await giScene(k);
+  [out.wear, backends.wear] = await wearScene();
+  [out.props, backends.props] = await propsScene();
+  [out.sculpt, backends.sculpt] = await sculptScene();
+  [out.trees, backends.trees] = await treesScene();
+  [out.buildings, backends.buildings] = await buildingsScene();
+  [out.humans, backends.humans] = await humansScene();
   { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; }
   [out.river, backends.river] = await riverScene();
   [out.flood, backends.flood] = await floodScene();

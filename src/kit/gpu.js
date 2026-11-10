@@ -84,7 +84,7 @@ export function prepareGPU() {
       if (!r.backend?.isWebGPUBackend) { console.warn('WebGPU: three fell back to WebGL 2'); r.dispose(); return null; }   // three fell back to WebGL 2: keep our own WebGL path
       r.gsBackend = 'webgpu';
       fx.manyLights(r);
-      r.backend.device?.lost?.then(() => { if (gpu?.r === r) gpu = null; gpuLoad = null; });   // the GPU went away: back to WebGL
+      r.backend.device?.lost?.then(info => { console.warn('WebGPU device lost:', info?.reason, info?.message); if (gpu?.r === r) gpu = null; gpuLoad = null; });   // the GPU went away: back to WebGL
       return gpu = { r, W, fx };
     } catch (e) { console.warn('WebGPU did not start:', e); gpuLoad = null; return null; }
   })();
