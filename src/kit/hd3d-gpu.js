@@ -30,6 +30,7 @@ import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { traa } from 'three/examples/jsm/tsl/display/TRAANode.js';
 import { sharpen } from 'three/examples/jsm/tsl/display/SharpenNode.js';
 import { ClusteredLighting } from 'three/examples/jsm/lighting/ClusteredLighting.js';
+import ClusteredLightsNode from 'three/examples/jsm/tsl/lighting/ClusteredLightsNode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -324,6 +325,9 @@ export function setCascade(near, fade) { if (near) CASC.m.value = near.shadow.ma
 // Many lights (three.js's Forward+ clustered lighting): the view is cut into tiles and depth slices and
 // each pixel only adds up the point and spot lights that reach it, so a scene can have dozens of lamps
 // for about the cost of a few. Lights without shadows only; adding or removing one builds no shaders.
+// (three r187: the clustered node passes itself as the light to the lighting model, and the AR floor's
+// ShadowMaterial multiplies by its shadowNode, undefined there, so its shader fails: give it "no shadow")
+if (ClusteredLightsNode.prototype.shadowNode === undefined) ClusteredLightsNode.prototype.shadowNode = null;
 export function manyLights(r) { r.lighting = new ClusteredLighting(256, 32, 24, 32); r.gsClustered = true; }
 // Auto exposure's light meter (hd3d.js Eye): the scene's brightness as 16 x 16 log values (each from a
 // 4 x 4 grid of taps), packed into bytes so any phone can read them back without stalling.
