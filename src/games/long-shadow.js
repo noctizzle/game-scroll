@@ -2077,11 +2077,13 @@ function make(api) {
   // ---- the round
   // ---- sound: the valley's own echo, beds of wind, river and rain, and a rifle built in layers.
   // Everything loud goes through the valley space, so a shot cracks, booms and then rolls round the hills.
-  let aud = null; const earF = new Vector3();
+  // The echo's impulse (seconds of shaped noise) is costly to make, so each kind is made once, and on
+  // the tap that starts a mission rather than in the first frame of play (a hitch on slower phones).
+  let aud = null; const earF = new Vector3(), spaces = {};
   function audioUp() {
     if (aud && aud.mid === mid) return; audioDown();
     const wet = missions[mid]?.weather === 'rain';
-    const sp = space({ seconds: wet ? 2.4 : 3.6, decay: wet ? 3.4 : 2.3, wet: wet ? .2 : .28, bright: wet ? 2000 : 3400, pre: .09 });
+    const sp = spaces[wet] ||= space({ seconds: wet ? 2.4 : 3.6, decay: wet ? 3.4 : 2.3, wet: wet ? .2 : .28, bright: wet ? 2000 : 3400, pre: .09 });
     aud = {
       mid, sp, ears: new Ears({ ref: 10, max: 500, rolloff: .5, hrtf: false, space: sp, send: .8 }),
       wind: bed({ vol: .01, from: 480, q: .5, gusts: .9 }),
@@ -2619,7 +2621,7 @@ function make(api) {
     // listening for your habit: always said out loud first, so you know to change it
     if (guard && !/listen|waits/i.test(hello || '')) { const l = marr.line('habit'); if (l) soon(7.5, () => say(l, MARR, 3.2, true)); }
   }
-  function go() { begin(sel); haptic('medium'); sounds.click?.(); }
+  function go() { begin(sel); audioUp(); haptic('medium'); sounds.click?.(); }
   function briefTap(x, y) {
     if (briefT < .3) return;
     for (const r of briefRows) if (y >= r.y && y <= r.y + r.h && x >= r.x && x <= r.x + r.w) { if (r.id && r.id !== sel && camp.open(r.id)) { sel = r.id; begin(sel); state = 'brief'; haptic('tick'); } return; }
