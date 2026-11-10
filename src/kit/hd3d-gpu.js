@@ -9,16 +9,18 @@
 // scripts/look-compare.cjs --webgpu draws the same scenes both ways and compares them.
 // Kit use only.
 import { RenderPipeline, PMREMGenerator, Vector2, Vector3, Vector4, Color, BackSide, Sprite, Group, InstancedMesh, BufferGeometry, Frustum, Sphere, InstancedBufferAttribute as IBA, SpriteNodeMaterial, InstancedBufferAttribute, AdditiveBlending, NormalBlending,
-  MeshBasicNodeMaterial, NodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, DepthTexture, LessEqualCompare, NoToneMapping, ACESFilmicToneMapping, SRGBColorSpace, LinearSRGBColorSpace, Matrix3 } from 'three/webgpu';
+  MeshBasicNodeMaterial, NodeMaterial, QuadMesh, MRTNode, OutputStructNode, PMREMNode, CubeRenderTarget, CubeCamera, RenderTarget, Texture, Matrix4, HalfFloatType, DepthTexture, LessEqualCompare, NoToneMapping, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, SRGBColorSpace, LinearSRGBColorSpace, Matrix3 } from 'three/webgpu';
 import {
   pass, mrt, output, normalView, uniform, texture, screenUV, screenCoordinate, screenSize, renderOutput, Fn,
   vec2, vec3, vec4, float, mix, smoothstep, dot, exp, length, max, pow, clamp, log2, fract, sin, abs, select,
   positionWorld, cameraPosition, instancedBufferAttribute, uv, rtt, depth, ivec2, min, materialEmissive, distance,
   attribute, vertexColor, normalWorld, normalViewGeometry, positionLocal, positionGeometry, positionPrevious, modelWorldMatrix, modelWorldMatrixInverse,
   materialColor, materialOpacity, materialRoughness, cos, floor, step, fwidth, dFdx, dFdy, normalize, uniformArray, Loop, int, If, sqrt,
-  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix,
+  modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix, shadow as shadowOf,
 } from 'three/tsl';
 import { LightProbeGrid } from 'three/examples/jsm/lighting/LightProbeGrid.js';
+// v.tone (hd3d.js): three.js's own tone mappers
+const TONE = { aces: ACESFilmicToneMapping, neutral: NeutralToneMapping, agx: AgXToneMapping };
 export { LightProbeGrid };
 export { gpuFlood } from './flood-gpu.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
@@ -313,6 +315,23 @@ export function gpuWet(m, o, AIR) {
 // one elsewhere), as the light's colour node. role: a uniform per light, 0 plain, 1 near, 2 far.
 const CASC = { m: uniform(new Matrix4()), fade: uniform(.06) };
 export function setCascade(near, fade) { if (near) CASC.m.value = near.shadow.matrix; CASC.fade.value = fade; }
+// The still/moving shadow split on WebGPU (hd3d.js shadowLights): the light gets three's own shadow
+// node, made here so the kit can draw its map when it wants to (splitDraw), and over what is already
+// there when told to keep it (three clears a shadow map each time it draws one).
+export function splitShadowNode(l) {
+  const node = shadowOf(l, l.shadow), base = node.renderShadow;
+  node.gsSplit = true;
+  node.renderShadow = function (frame) { if (this.gsKeep) frame.renderer.autoClear = false; return base.call(this, frame); };
+  return node;
+}
+/** Draws light l's shadow map from the things on the layers in mask (keep: over what's there). */
+export function splitDraw(r, scene, cam, l, mask, keep) {
+  const sh = l.shadow, node = sh.shadowNode, c = sh.camera, m0 = c.layers.mask;
+  c.layers.mask = mask; node.gsKeep = keep;
+  try { node.updateShadow({ renderer: r, scene, camera: cam }); } finally { c.layers.mask = m0; node.gsKeep = false; }
+}
+/** A target holding a copy of a shadow map's depth. */
+export function splitTarget(r, w, h) { const t = new RenderTarget(w, h, { depthBuffer: true }); t.depthTexture = new DepthTexture(w, h); r.initRenderTarget(t); return t; }
 export function gpuSunLight(l, AIR, noise) {
   const c = new Color(), col = uniform(c).onRenderUpdate(() => c.copy(l.color).multiplyScalar(l.intensity)), role = uniform(0);
   const wp = positionWorld, S = live(AIR.gsSun), CL = live(AIR.gsCloud), DR = live(AIR.gsDrift);
@@ -384,6 +403,7 @@ export function gpuProps(im) {
       if (!src.boundingSphere) src.computeBoundingSphere(); g.boundingSphere = src.boundingSphere;
       const m = new InstancedMesh(g, obj.material, cap); m.count = 0; m.frustumCulled = false;
       m.castShadow = im.castShadow; m.receiveShadow = im.receiveShadow;
+      m.userData.gsTwin = im;   // (hd3d.js shadowLights: its shadow changes when the props do, not when this view's culling does)
       if (im.colorsTexture) m.instanceColor = new IBA(new Float32Array(cap * 3), 3);
       // slotOf: copy -> slot + 1 (0: none); owner: slot -> copy + 1; idle: frames since its copy left the view
       m.userData.slots = { slotOf: new Int32Array(cap), owner: new Int32Array(cap), idle: new Uint16Array(cap), top: 0 };
@@ -740,8 +760,9 @@ export class GpuChain {
     this.fg = null; this.sched = null; this.fgMode = null; this.fgWin = { real: 0, missed: 0 }; this.still = null; this.lastShown = null;
     this.warp = uniform(new Matrix3()); this.aim = null; this.aimBase = newPose(); this.aimAt = -1e9;
   }
-  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false) {
-    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}`;
+  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces') {
+    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}`;
+    const TM = TONE[tone] ?? ACESFilmicToneMapping;
     if (key === this.key) return;
     this.key = key; this.fg?.reset(); this.sched = null; this.still?.reset();
     this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose(); this.s2?.dispose(); this.s1?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose();
@@ -753,7 +774,7 @@ export class GpuChain {
     if (this.clear) {
       // AR: just the scene on a see-through background, tone mapped (bloom and the grade would tint the room behind it);
       // with SGSR 1, drawn small and upscaled (tone mapping named outright: drawn outside the pipeline's own)
-      if (s1) { this.s1 = sgsr1Gpu(renderOutput(sp, ACESFilmicToneMapping, SRGBColorSpace)); this.pp.outputNode = this.s1.node; }
+      if (s1) { this.s1 = sgsr1Gpu(renderOutput(sp, TM, SRGBColorSpace)); this.pp.outputNode = this.s1.node; }
       else this.pp.outputNode = renderOutput(sp);
       this.pp.needsUpdate = true; return;
     }
@@ -880,7 +901,7 @@ export class GpuChain {
       return col.add(U.sunCol.mul(gl).mul(U.glare).mul(seen));
     })();
     // tone mapping (ACES, the renderer's exposure) and sRGB (named outright under SGSR 2 and 1: drawn outside the pipeline)
-    let out = s2 || s1 ? renderOutput(vec4(graded, 1), ACESFilmicToneMapping, SRGBColorSpace) : renderOutput(vec4(graded, 1));
+    let out = s2 || s1 ? renderOutput(vec4(graded, 1), TM, SRGBColorSpace) : renderOutput(vec4(graded, 1));
     if (smooth) out = fxaa(out);
     // live, the last touches go on as each refresh is shown (show()), not here
     const fin = live ? vec4(out.rgb, 1) : Fn(() => vec4(touches(U, out.rgb, U.t, float(1)), 1))();
@@ -896,7 +917,7 @@ export class GpuChain {
     // o.mrt: the scene's pass also writes motion and the see-through mask (frame generation, SGSR 2)
     const f = !this.clear && o.s2 ? o.s2 : null, s1 = !f && !!o.s1, live = !!o.live;
     DRAWN.n++;
-    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt);
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone);
     if (this.s1) this.s1.size(o.w, o.h);
     // the passes size themselves from the canvas: upscaled, the canvas is the screen's size, so scale them down
     const k = f || s1 ? (o.w + .5) / o.fw : 1;

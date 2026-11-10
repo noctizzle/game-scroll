@@ -87,8 +87,23 @@ so its next round starts there instead of stuttering down again.
   down/up-sampling chain at half resolution and below (9 small passes, was 13 bigger ones plus two
   full-screen ones).
 - Shadow maps are only redrawn when a shadow caster or a shadow light has moved, turned, appeared or
-  hidden (`__hd.info.shadows` says whether the last frame redrew them). If you change a mesh's
-  geometry in place without moving it, call `v.shadowsDirty()`.
+  hidden, and each light only for the casters its own shadow can see, on WebGL and WebGPU
+  (`__hd.info.shadows` says whether the last frame redrew them, `__hd.info.shDraws` counts frames
+  that did). If you change a mesh's geometry in place without moving it, call `v.shadowsDirty()`.
+- Still and moving shadows are kept apart (Unity's cached shadows, Unreal's static/dynamic split): a
+  light that stays put keeps a copy of its map with only the things that haven't moved for about
+  45 frames, and when only moving things changed, that copy goes back and just the moving things are
+  drawn over it. It needs nothing from the game; it turns itself on where the still things far
+  outweigh the moving ones (20,000 triangles or more, at least twice the moving ones), for sun and
+  spot lights with one map. `__hd.shadowCache = false` turns it off; `node scripts/shadow-check.cjs <id> [--gpu]`
+  checks the pictures match a full redraw.
+- `v.tone = 'aces' | 'neutral' | 'agx'`: which of three.js's tone mappers turns the light into
+  screen colours. ACES (the default, the film look) pushes very bright colours towards yellow and
+  white; Neutral (Khronos PBR Neutral) keeps colours true to the material, good for neon, paint and
+  products; AgX (Blender's) keeps their hue in bright light and rolls off softly.
+- Bumpy surfaces made with `surface()` don't sparkle in the distance: each smaller copy of the
+  roughness map is made a little rougher by how much the bumps under it disagree (Toksvig specular
+  anti-aliasing, as in Filament and Unreal). three.js already does the same for curved shapes.
 
 Shaders are compiled up front: the first `render()` calls `v.warm()`, which compiles every material
 in the scene, including hidden ones, with shadows on and off. If you build new geometry or
