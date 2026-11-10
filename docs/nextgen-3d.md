@@ -119,6 +119,12 @@ so its next round starts there instead of stuttering down again.
   screen colours. ACES (the default, the film look) pushes very bright colours towards yellow and
   white; Neutral (Khronos PBR Neutral) keeps colours true to the material, good for neon, paint and
   products; AgX (Blender's) keeps their hue in bright light and rolls off softly.
+- `v.autoExposure = true | { amount, min, max, speed, darken, key }`: the eye adapts, like walking out
+  of a bunker into sunlight: it dazzles a moment, then settles. A light meter reads the picture every
+  few frames (read back without waiting) and the exposure drifts so the scene's brightness stays near
+  how it looked when it was turned on (or near `key`, a mid grey such as .18). `amount` (.7) is how
+  much of the change the eye makes up, `min`/`max` (.4 / 2.5) cap it, `speed` (1.2) brightens and
+  `darken` (3) dims, per second. `v.eye = null` measures afresh (a new level). Off by default.
 - Bumpy surfaces made with `surface()` don't sparkle in the distance: each smaller copy of the
   roughness map is made a little rougher by how much the bumps under it disagree (Toksvig specular
   anti-aliasing, as in Filament and Unreal). three.js already does the same for curved shapes.

@@ -324,6 +324,28 @@ export function setCascade(near, fade) { if (near) CASC.m.value = near.shadow.ma
 // each pixel only adds up the point and spot lights that reach it, so a scene can have dozens of lamps
 // for about the cost of a few. Lights without shadows only; adding or removing one builds no shaders.
 export function manyLights(r) { r.lighting = new ClusteredLighting(256, 32, 24, 32); r.gsClustered = true; }
+// Auto exposure's light meter (hd3d.js Eye): the scene's brightness as 16 x 16 log values (each from a
+// 4 x 4 grid of taps), packed into bytes so any phone can read them back without stalling.
+export function eyeMeter(r) {
+  const src = texture(new Texture()), mat = new NodeMaterial(), rt = new RenderTarget(16, 16, { depthBuffer: false });
+  mat.fragmentNode = Fn(() => {
+    const q = uv(), sum = float(0).toVar();
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+      const c = src.sample(q.add(vec2((x - 1.5) / 64, (y - 1.5) / 64))).rgb;
+      sum.addAssign(log2(max(dot(c, vec3(.2126, .7152, .0722)), 1e-4)));
+    }
+    const n = clamp(sum.div(16).add(14).div(20), 0, 1).mul(255);
+    return vec4(floor(n).div(255), fract(n), 0, 1);
+  })();
+  const quad = new QuadMesh(mat);
+  return {
+    async read(tex) {
+      src.value = tex; const was = r.getRenderTarget();
+      r.setRenderTarget(rt); quad.render(r); r.setRenderTarget(was);
+      return r.readRenderTargetPixelsAsync(rt, 0, 0, 16, 16);
+    },
+  };
+}
 // The still/moving shadow split on WebGPU (hd3d.js shadowLights): the light gets three's own shadow
 // node, made here so the kit can draw its map when it wants to (splitDraw), and over what is already
 // there when told to keep it (three clears a shadow map each time it draws one).

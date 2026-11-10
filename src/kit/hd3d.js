@@ -367,9 +367,17 @@ class FinalPass extends Pass {
     }
     F.tDiffuse.value = readBuffer.texture; F.tBloom.value = M[0]?.texture ?? null; F.bloom.value = on ? this.strength * .8 : 0;
     F.toneMappingExposure.value = r.toneMappingExposure; F.px.value.set(1 / readBuffer.width, 1 / readBuffer.height);
+    if (this.eyeView?.eye) {   // auto exposure's light meter, from the scene before tone mapping
+      const v = this.eyeView, src = readBuffer.texture;
+      v.eyeRead(() => {
+        const M = this.eyeM ||= { rt: new WebGLRenderTarget(16, 16, { depthBuffer: false }), mat: qmat(EYE_FS, { tDiffuse: { value: null } }), px: new Uint8Array(1024) };
+        M.mat.uniforms.tDiffuse.value = src; this.pass(r, M.mat, M.rt);
+        return r.readRenderTargetPixelsAsync(M.rt, 0, 0, 16, 16, M.px);
+      });
+    }
     this.pass(r, this.final, this.renderToScreen ? null : writeBuffer);
   }
-  dispose() { for (const m of this.mips) m.dispose(); for (const m of [this.bright, this.down, this.up, this.final]) m.dispose(); this.quad.dispose(); }
+  dispose() { this.eyeM?.rt.dispose(); this.eyeM?.mat.dispose(); for (const m of this.mips) m.dispose(); for (const m of [this.bright, this.down, this.up, this.final]) m.dispose(); this.quad.dispose(); }
 }
 // Sun shafts (v.shafts): light streaming past trees, through windows and round a hill top. A small
 // pass of its own (so it can be swapped for a WebGPU node later without touching the final pass):
@@ -1053,7 +1061,7 @@ export class HDView {
     if (fog) this.scene.fog = new FogExp2(bg, fog);
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
-    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined;
+    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
     this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null; this.beams = null; this.motionBlur = null;
@@ -1431,6 +1439,20 @@ export class HDView {
       l.intensity = (s.i ?? 6) * fl * fade; s.lit = fl;
     });
   }
+  /** The auto exposure multiplier for this frame (1 without v.autoExposure; card pictures keep the settled one). */
+  eyeAt(still) {
+    const o = this.autoExposure; if (!o) { this.eye = null; return 1; }
+    const eye = this.eye ||= new Eye(); if (o === true) this.autoExposure = {};
+    const now = performance.now(), dt = Math.min(.1, (now - (eye.t || now)) / 1000); eye.t = now;   // real time: the same speed at any frame rate
+    return still ? 2 ** eye.e : eye.step(dt, this.autoExposure);
+  }
+  // after a frame: a new light meter reading now and then (r: the renderer, read(): starts the reading)
+  eyeRead(read) {
+    const eye = this.eye; if (!eye || !eye.want()) return;
+    eye.busy = true;
+    let p; try { p = read(); } catch (e) { p = null; }
+    Promise.resolve(p).then(px => { if (px) eye.take(px, this.autoExposure || {}); }, () => {}).finally(() => { eye.busy = false; });
+  }
   /** Size the camera to the game's W x H (call from draw before render). */
   fit(W, H) { if (W !== this.W || H !== this.H || this.cam.aspect !== W / H) { this.W = W; this.H = H; this.cam.aspect = W / H; this.cam.updateProjectionMatrix(); } return this; }
   /** Logical screen position of a world point: [x, y, depth] (depth > 1 = behind the camera). */
@@ -1591,7 +1613,7 @@ export class HDView {
       let role = sunRoles.get(l); if (!role) sunRoles.set(l, role = G.fx.gpuSunLight(l, AIR, noiseTex()));
       role.value = casc ? (l === cs.near ? 1 : l === cs.far ? 2 : 0) : 0;
     });
-    r.toneMapping = TONES[this.tone] ?? ACESFilmicToneMapping; r.toneMappingExposure = this.exposure;
+    r.toneMapping = TONES[this.tone] ?? ACESFilmicToneMapping; r.toneMappingExposure = this.exposure * this.eyeAt(baking || off);
     if (this.decals.length && !baking && !off) this.tickDecals(Math.min(.1, (now - (this.decalT || now)) / 1000)); this.decalT = now;
     if (!baking && !off) this.t += 1 / 60;
     gpuSwap(this, G);
@@ -1681,6 +1703,7 @@ export class HDView {
     this._aimJit = s2 && fg ? fg.jit : null;   // the real frame is shown while SGSR 2's jitter is still on the camera
     let shown = false;
     try { shown = ch.render(o) || false; } finally { for (const e of empty) e.visible = true; if (s2) o.s2.end(this.cam); this._aimJit = null; }
+    if (this.eye && !baking && !off && ch.sp) this.eyeRead(() => (ch.eyeM ||= G.fx.eyeMeter(r)).read(ch.sp.getTexture('output')));
     const made = !!fg && !!shown;
     if (made) HD.fgTap?.(shown, r.domElement, 'frame');
     // the refreshes after this one that the feed skips show the moments due then (last: the next draws a real frame)
@@ -1838,7 +1861,7 @@ export class HDView {
     this.patchAir(); this.airUniforms();
     if (this.gi || this.rooms?.length) this.bakeExtras(null, r);
     this.holdNew(r, baking || off, now, this.clearBg ? null : cp.readBuffer);
-    r.toneMappingExposure = this.exposure;
+    r.toneMappingExposure = this.exposure * this.eyeAt(baking || off);
     if (this.clearBg) { P.arRender.scene = this.scene; P.arRender.camera = this.cam; } else { P.render.scene = P.ao.scene = this.scene; P.render.camera = P.ao.camera = this.cam; }
     // reflections (ultra, and only if the game marked shiny surfaces): SSR draws the scene itself
     if (ssr) {
@@ -1858,7 +1881,7 @@ export class HDView {
     if (!baking && !off) this.t += 1 / 60;
     if (!this.clearBg) {
       const F = P.final; P.ao.enabled = T.ao > 0; if (T.ao > 0 && P.ao.scale !== T.ao) { P.ao.scale = T.ao; P.ao.setSize(P.ao.fw || pw, P.ao.fh || ph); }
-      F.strength = this.bloom; F.scale = T.bloom; F.setTone(this.tone); F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
+      F.strength = this.bloom; F.scale = T.bloom; F.setTone(this.tone); F.eyeView = baking || off ? null : this; F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
       const u = F.final.uniforms; u.t.value = this.t % 10; u.hurt.value = this.hurt;
       const g = this.grade; u.gradeOn.value = g ? 1 : 0;
       if (g) { u.sat.value = g.saturation ?? 1; u.con.value = g.contrast ?? 1; toRGB(g.shadows, u.lo.value); toRGB(g.highlights, u.hi.value); }
@@ -2148,6 +2171,28 @@ function autoLod(v, ph) {
   });
 }
 const LOD_V = new Vector3();
+// Auto exposure (v.autoExposure): the eye adapting, as every big engine does. A light meter reads the
+// scene's brightness every few frames (a 16 x 16 grid of log brightness, read back without waiting:
+// readRenderTargetPixelsAsync), and the exposure drifts towards the one that puts the average at
+// mid grey: stepping out of a dark bunker into sunlight dazzles for a moment, then settles. Faster
+// to darken than to brighten, like eyes.
+const EYE_FS = `uniform sampler2D tDiffuse; varying vec2 vUv;
+  void main(){ float s = 0.;
+    for (int y = 0; y < 4; y++) for (int x = 0; x < 4; x++) { vec3 c = texture2D(tDiffuse, vUv + (vec2(float(x), float(y)) - 1.5) / 64.).rgb; s += log2(max(dot(c, vec3(.2126, .7152, .0722)), 1e-4)); }
+    float n = clamp((s / 16. + 14.) / 20., 0., 1.) * 255.; gl_FragColor = vec4(floor(n) / 255., fract(n), 0., 1.); }`;
+class Eye {
+  constructor() { this.e = 0; this.goal = 0; this.busy = false; this.n = 0; this.key = null; }   // log2 of the exposure
+  // the 16 x 16 bytes back: mean log brightness (the middle of the screen counts twice)
+  take(px, o) {
+    let s = 0, w = 0;
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const i = (y * 16 + x) * 4, l = (px[i] + px[i + 1] / 255) / 255 * 20 - 14, k = x >= 4 && x < 12 && y >= 4 && y < 12 ? 2 : 1; s += l * k; w += k; }
+    const avg = s / w, key = o.key ? Math.log2(o.key) : (this.key ??= avg);   // no key: the game's look as it starts is the target
+    this.goal = Math.min(Math.log2(o.max ?? 2.5), Math.max(Math.log2(o.min ?? .4), (key - avg) * (o.amount ?? .7)));   // eyes don't fully make up the difference
+  }
+  step(dt, o) { const up = this.goal > this.e, k = 1 - Math.exp(-dt * (up ? o.speed ?? 1.2 : o.darken ?? 3)); this.e += (this.goal - this.e) * k; return 2 ** this.e; }
+  // read now and then (one read at a time)
+  want() { return !this.busy && ++this.n % 6 === 0; }
+}
 const OCC_LAYER = 30;
 // shadowLights(): scratch (no garbage per frame)
 let SH_H = new Float64Array(40); const SH_S = new Sphere(), SH_P = new Vector3(), SH_LAST = new WeakMap();
