@@ -177,6 +177,9 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   `music({ layers }).intensity()` + `follow(song)` (living music), `gs.props` (`Props` instancing + LOD, `perCopy(instancedMesh)` skips off-screen copies, `Areas`, `Chunks`, `simplify`).
 - Cities: `gs.city.City(view, { seed, blocks, style: 'downtown'|'oldtown'|'harbour'|'suburb', traffic, people, sky })` (made-up streets, lit buildings,
   traffic at the lights, people; `update(dt, player)`, `avoid`, `collide`, `ray`, `route`, `spot('door'|'rooftop'...)`, `cars.hit`, `people.scare`, `plan`, `drawMap`); guide `docs/city.md`.
+- Things made in code (Next Gen; no image or model files): `gs.models` (`material(name)` 17 recipes like wood, brick, rust, fabric;
+  `wear(mesh)` worn edges, grime, moss, snow; `prop('crate'|'barrel'|...)` 18 props; `sculpt([{ ball }, { box, cut }...])`;
+  `tree('oak'|'pine'|...)`; `building({ style, floors })`; `human()` a close-up gs.poses.person); guide in `docs/nextgen-3d.md`.
 - Worlds, craft, soft things, cards and menus: `gs.outdoors` (`Land` terrain + `grass`/`scatter`, `Water`, `River` (water/lava look for gs.flow), `FloodWater` (GPU on WebGPU), `tree`, `rock`, `Wind`, `impostor`),
   `gs.craft` (`Plane`, `Boat`, `Hover`, `Floater`), `gs.soft` (`Soft` cloth/rope/jelly with `grab`/`cut`, `Liquid`),
   `gs.cards` (`Deck`, `total`, `groups`, `poker`, `winners`, `stacks`), `gs.dice` (`roll('4d6kh3')`, `odds`, `Dice`, `Dice3D`),
@@ -198,7 +201,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 
 **Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `story.Story`, `look2d.Screen`, `look2d.Batch`, `words.Words`, `trivia.Quiz`, `ui.UI`, `juice.Timeline`, `hear.Sounds`, `doodle.Doodle`): create them in `make()` or `reset()`, never
 later. The app shows "Loading…" and remakes the game once the library is in.
-The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `city`, `THREE`)
+The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `city`, `models`, `THREE`)
 and `ai`, plus the action kits (`combat`, `tactics`, `climb`, `missions`, `cutscene`, `prompts`, `stealth`, `gadgets`, `campaign`, `arena`) and play kits (`craft`, `soft`, `cards`, `dice`, `words`, `trivia`, `ui`) and smarts (`hear`, `doodle`, `phoneai`), also load on first use, so the app opens fast. The app loads the ones a game uses before it
 runs, so read them as usual (`const { HDView } = gs.hd` at the top of the file is fine).
 
