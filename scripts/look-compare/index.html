@@ -131,6 +131,18 @@ async function sssScene() {
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend];
 }
+// order-independent transparency (v.oit, WebGPU): coloured glass panes passing through each other
+async function oitScene() {
+  window.__hd.force = 2;
+  const v = new gs.hd.HDView({ bg: '#d8dce4', fog: 0, env: .3, amb: .3 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 1.2, 3); v.cam.lookAt(0, .8, 0); v.cam.updateMatrixWorld(); v.oit = !new URLSearchParams(location.search).has('nooit');
+  const sun = gs.hd.sun('#fff2d8', 3, 6, [-.4, 1, .5]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.PlaneGeometry(10, 10).rotateX(-Math.PI / 2), gs.hd.pbr('#8a8a90', { rough: .8 })); v.scene.add(floor);
+  ['#ff3030', '#30d040', '#3060ff'].forEach((col, i) => { const m = new T.Mesh(new T.PlaneGeometry(1.4, 1.2), gs.hd.pbr(col, { rough: .2, transparent: true, opacity: .5, side: 2, depthWrite: false })); m.position.set((i - 1) * .35, .8, 0); m.rotation.y = (i - 1) * .9; v.scene.add(m); });
+  const t0 = performance.now(); while (performance.now() - t0 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }   // (new shaders wait hidden up to half a second)
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
 async function roomScene() {
   window.__hd.force = 2;
   const F = new Set((new URLSearchParams(location.search).get('feat') || '').split(',')), on = k => !F.has('-' + k);
@@ -293,6 +305,7 @@ try {
   [out.room, backends.room] = await roomScene();
   [out.area, backends.area] = await areaScene();
   [out['gpu-sss'], backends['gpu-sss']] = await sssScene();
+  [out['gpu-oit'], backends['gpu-oit']] = await oitScene();
   { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; }
   [out.river, backends.river] = await riverScene();
   [out.flood, backends.flood] = await floodScene();

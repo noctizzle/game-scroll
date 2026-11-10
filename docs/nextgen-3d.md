@@ -123,6 +123,10 @@ so its next round starts there instead of stuttering down again.
   scattering for skin, wax, leaves, jade and ears against the light: light passing through glows out
   of the far side in `colour` (default a skin red). On WebGPU this is three.js's MeshSSSNodeMaterial
   (fast translucency, as in Frostbite); WebGL phones get a soft tinted rim in its place.
+- `v.oit = true` (WebGPU): order-independent transparency, three.js's weighted blended OIT (McGuire and
+  Bavoil). See-through things (normal blending, not glass with `transmission`) blend right whatever
+  order they're drawn in: glass behind glass, panes passing through each other, smoke in water, with no
+  popping as they move. WebGL sorts them back to front as before. Costs an extra pass; off by default.
 - `gs.hd.panel(colour, intensity, w, h, { glow })`: an area light, a glowing rectangle (window, TV,
   striplight, softbox) with the soft, stretched highlights a point light can't make (three.js's
   RectAreaLight, both backends). It shines out of its front (-z): place it and `lookAt` the target.

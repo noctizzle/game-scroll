@@ -19,6 +19,7 @@ import {
   modelViewProjection, acos, getParallaxCorrectNormal, getViewPosition, interleavedGradientNoise, Break, cameraViewMatrix, shadow as shadowOf, texture3D,
 } from 'three/tsl';
 import { lut3D } from 'three/examples/jsm/tsl/display/Lut3DNode.js';
+import { oitPass } from 'three/examples/jsm/tsl/display/OITPassNode.js';
 import { LightProbeGrid } from 'three/examples/jsm/lighting/LightProbeGrid.js';
 // v.tone (hd3d.js): three.js's own tone mappers
 const TONE = { aces: ACESFilmicToneMapping, neutral: NeutralToneMapping, agx: AgXToneMapping };
@@ -809,8 +810,8 @@ export class GpuChain {
     this.fg = null; this.sched = null; this.fgMode = null; this.fgWin = { real: 0, missed: 0 }; this.still = null; this.lastShown = null;
     this.warp = uniform(new Matrix3()); this.aim = null; this.aimBase = newPose(); this.aimAt = -1e9;
   }
-  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces', traaOn = false, lutOn = false) {
-    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}|${traaOn}|${lutOn}`;
+  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces', traaOn = false, lutOn = false, oitOn = false) {
+    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}|${traaOn}|${lutOn}|${oitOn}`;
     const TM = TONE[tone] ?? ACESFilmicToneMapping;
     if (key === this.key) return;
     this.key = key; this.fg?.reset(); this.sched = null; this.still?.reset();
@@ -818,7 +819,9 @@ export class GpuChain {
     for (const t of [this.volT, this.baseT, this.mbT]) t?.renderTarget?.dispose();
     this.traaN?.dispose(); this.casN?.dispose(); this.traaN = this.casN = null;
     this.aoN = this.dnN = this.bloomN = this.s2 = this.s1 = this.dofT = this.shM = this.shB = this.volT = this.baseT = this.mbT = null;
-    const sp = this.sp = pass(this.scene, this.cam, { samples: msaa || 0 });
+    // v.oit: three's weighted blended order-independent transparency (McGuire and Bavoil) in place of the plain
+    // scene pass: see-through things blend right whatever order they're drawn in (glass behind glass, smoke in water)
+    const sp = this.sp = (oitOn ? oitPass : pass)(this.scene, this.cam, { samples: msaa || 0 });
     // frame generation and SGSR 2: the scene's pass also writes each pixel's motion and where see-through things are
     if (mrtOn && this.clear) sp.setMRT(frameGenMRT());
     if (this.clear) {
@@ -838,6 +841,8 @@ export class GpuChain {
     // last frame (following the motion picture, dropping what's newly uncovered), in place of MSAA.
     // It takes the scene's colour before anything else reads it, so AO, bloom and the grade see the smooth one
     let colT = sp.getTextureNode('output');
+    // (OIT: the see-through things are blended over the scene by the pass node itself, so that's what's read on)
+    if (oitOn) colT = rtt(sp, null, null, { type: HalfFloatType, depthBuffer: false });
     // (then AMD FidelityFX's contrast-adaptive sharpening, three's RCAS, gives back the crispness the blending takes, as engines do after TAA)
     if (traaOn) {
       this.traaN = traa(colT, sp.getTextureNode('depth'), sp.getTextureNode('velocity'), this.cam);
@@ -980,7 +985,7 @@ export class GpuChain {
     // o.mrt: the scene's pass also writes motion and the see-through mask (frame generation, SGSR 2)
     const f = !this.clear && o.s2 ? o.s2 : null, s1 = !f && !!o.s1, live = !!o.live;
     DRAWN.n++;
-    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !f && !s1 && !!o.traa, !this.clear && !!o.lut);
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !f && !s1 && !!o.traa, !this.clear && !!o.lut, !this.clear && !!o.oit);
     if (this.s1) this.s1.size(o.w, o.h);
     // the passes size themselves from the canvas: upscaled, the canvas is the screen's size, so scale them down
     const k = f || s1 ? (o.w + .5) / o.fw : 1;
