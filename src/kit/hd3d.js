@@ -268,6 +268,9 @@ export const FINAL_EFFECTS = [
   #ifdef LUT
   uniform highp sampler3D tLut; uniform float lutS, lutO, lutK;
   #endif
+  #ifdef FLARE
+  uniform sampler2D tDirt; uniform float flareTh, flareSp, flareFade, flareK, dirtK; uniform vec3 flareTint;
+  #endif
   // (three.js adds its tone mapping and sRGB helpers to every ShaderMaterial drawn to the screen; when
   // SGSR upscales after this pass, it draws into a buffer and three leaves tone mapping out, so here it is)
   #ifndef TONE_MAPPING
@@ -301,6 +304,13 @@ ${ShaderChunk.tonemapping_pars_fragment}
   #endif
 ` },
   { name: 'bloom', what: 'bloom', glsl: `    col += texture2D(tBloom, vUv).rgb * bloom;
+` },
+  { name: 'flare', what: 'lens flare and dirt (v.flare: three\'s LensflareNode maths, ghosts of the bright parts mirrored through the middle)', glsl: `  #ifdef FLARE
+    { vec2 fv = 1. - vUv, gv = (vec2(.5) - fv) * flareSp; vec3 fl = vec3(0.);
+      for (int i = 0; i < 4; i++) { vec2 q = fract(fv + gv * float(i)); fl += max(texture2D(tBloom, q).rgb * bloom - flareTh, 0.) * flareTint * pow(1. - distance(q, vec2(.5)), flareFade); }
+      vec2 du = (vUv - .5) * vec2(min(aspect, 1.), min(1. / aspect, 1.)) + .5;
+      col += fl * flareK + texture2D(tDirt, du).rgb * (texture2D(tBloom, vUv).rgb * bloom + fl) * dirtK; }
+  #endif
 ` },
   { name: 'grade', what: 'colour grade (v.grade)', glsl: `    // the game's colour grade (v.grade): saturation, contrast round mid grey, a tint for the shadows and one for the highlights
     if (gradeOn > .5) {
@@ -349,7 +359,7 @@ class FinalPass extends Pass {
     this.down = qmat(DOWN, { tDiffuse: { value: null }, px: { value: new Vector2() } });
     this.up = qmat(UP, { tDiffuse: { value: null }, px: { value: new Vector2() }, k: { value: 1 } }, { blending: ADD });
     this.final = qmat(FINAL, { tDiffuse: { value: null }, tBloom: { value: null }, t: { value: 0 }, hurt: { value: 0 }, vig: { value: .32 }, bloom: { value: .7 }, px: { value: new Vector2(1, 1) }, toneMappingExposure: { value: 1 },
-      gradeOn: { value: 0 }, sat: { value: 1 }, con: { value: 1 }, lo: { value: new Vector3(1, 1, 1) }, hi: { value: new Vector3(1, 1, 1) }, glare: { value: 0 }, sunUV: { value: new Vector2() }, sunCol: { value: new Color() }, aspect: { value: 1 }, tLut: { value: null }, lutS: { value: 1 }, lutO: { value: 0 }, lutK: { value: 1 } }, { defines: { SRGB_TRANSFER: '', TONE_FN: TONE_FN.aces } });
+      gradeOn: { value: 0 }, sat: { value: 1 }, con: { value: 1 }, lo: { value: new Vector3(1, 1, 1) }, hi: { value: new Vector3(1, 1, 1) }, glare: { value: 0 }, sunUV: { value: new Vector2() }, sunCol: { value: new Color() }, aspect: { value: 1 }, tLut: { value: null }, lutS: { value: 1 }, lutO: { value: 0 }, lutK: { value: 1 }, tDirt: { value: null }, flareTh: { value: .3 }, flareSp: { value: .25 }, flareFade: { value: 25 }, flareK: { value: 1 }, dirtK: { value: 0 }, flareTint: { value: new Vector3(1, 1, 1) } }, { defines: { SRGB_TRANSFER: '', TONE_FN: TONE_FN.aces } });
     this.quad = new FullScreenQuad(null); this.mips = []; this.scale = .5; this.w = 0; this.h = 0; this.fxaa = false; this.strength = .7;
   }
   setSize(w, h) {
@@ -367,6 +377,14 @@ class FinalPass extends Pass {
     if (on) { const n = t.image.width; u.tLut.value = t; u.lutS.value = (n - 1) / n; u.lutO.value = .5 / n; u.lutK.value = Math.min(1, k); }
     if (on === ('LUT' in this.final.defines)) return;
     if (on) this.final.defines.LUT = ''; else delete this.final.defines.LUT;
+    this.final.needsUpdate = true;
+  }
+  // v.flare: lens flare ghosts and dirt (null: off; needs bloom)
+  setFlare(f) {
+    const u = this.final.uniforms, on = !!f;
+    if (on) { u.flareTh.value = f.threshold; u.flareSp.value = f.spacing; u.flareFade.value = f.fade; u.flareK.value = f.strength; u.dirtK.value = f.dirt; u.flareTint.value.copy(f.tint); u.tDirt.value = f.dirtTex; }
+    if (on === ('FLARE' in this.final.defines)) return;
+    if (on) this.final.defines.FLARE = ''; else delete this.final.defines.FLARE;
     this.final.needsUpdate = true;
   }
   setFxaa(on) { if (this.fxaa === on) return; this.fxaa = on; if (on) this.final.defines.FXAA = ''; else delete this.final.defines.FXAA; this.final.needsUpdate = true; }
@@ -735,6 +753,22 @@ function roughMips(t, rd, nf, size) {
   t.mipmaps = mips; t.generateMipmaps = false; return t;
 }
 /** Speckle noise helper for surface painters: n dots of colour col, radius up to r. */
+// The lens dirt for v.flare: smudges, specks and a few wipe marks, drawn once in code (no image file),
+// seeded so every phone gets the same lens. Lit only where bright light falls on it.
+let DIRT = null;
+function lensDirt() {
+  if (DIRT) return DIRT;
+  const n = 512, c = document.createElement('canvas'); c.width = c.height = n; const x = c.getContext('2d');
+  let seed = 7; const R = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  x.fillStyle = '#000'; x.fillRect(0, 0, n, n); x.globalCompositeOperation = 'lighter';
+  const blob = (px, py, r, a, tint) => { const g = x.createRadialGradient(px, py, 0, px, py, r); g.addColorStop(0, `rgba(${tint},${a})`); g.addColorStop(1, `rgba(${tint},0)`); x.fillStyle = g; x.fillRect(px - r, py - r, r * 2, r * 2); };
+  for (let i = 0; i < 70; i++) blob(R() * n, R() * n, 12 + R() * 60, .05 + R() * .12, R() < .5 ? '255,236,210' : '210,230,255');   // smudges
+  for (let i = 0; i < 260; i++) blob(R() * n, R() * n, 1 + R() * 4, .25 + R() * .5, '255,250,240');                                   // dust specks
+  x.lineCap = 'round';
+  for (let i = 0; i < 6; i++) { x.strokeStyle = `rgba(255,245,230,${.04 + R() * .05})`; x.lineWidth = 10 + R() * 26; x.beginPath(); const cx = R() * n, cy = R() * n, rr = 80 + R() * 200, a0 = R() * 6.28; x.arc(cx, cy, rr, a0, a0 + .6 + R()); x.stroke(); }   // wipe marks
+  DIRT = new CanvasTexture(c); DIRT.colorSpace = NoColorSpace;
+  return DIRT;
+}
 // Colour looks (v.lut): a 3D lookup table, the way films and big games grade their pictures. It
 // changes the finished screen colours (after tone mapping), so any recipe of curves, tints and channel
 // mixing costs one texture read. Made in code: a look's name, your own function, or the text of a
@@ -1127,7 +1161,7 @@ export class HDView {
     if (fog) this.scene.fog = new FogExp2(bg, fog);
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
-    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null; this.lut = null; this.lutAmount = 1; this.oit = false;
+    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null; this.lut = null; this.lutAmount = 1; this.oit = false; this.flare = null;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
     this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null; this.beams = null; this.motionBlur = null;
@@ -1519,6 +1553,14 @@ export class HDView {
     let p; try { p = read(); } catch (e) { p = null; }
     Promise.resolve(p).then(px => { if (px) eye.take(px, this.autoExposure || {}); }, () => {}).finally(() => { eye.busy = false; });
   }
+  // v.flare as numbers: true or { strength, ghosts' threshold, spacing, fade, tint, dirt }
+  flareSet() {
+    const f = this.flare; if (!f) return null;
+    const o = f === true ? {} : f, F = this._flareO ||= { tint: new Vector3() };
+    F.strength = o.strength ?? 1; F.threshold = o.threshold ?? .15; F.spacing = o.spacing ?? .3; F.fade = o.fade ?? 20; F.dirt = o.dirt ?? .5;
+    toRGB(o.tint ?? [1, .92, .85], F.tint); F.dirtTex = lensDirt();
+    return F;
+  }
   // v.lut as a texture: a look's name, a function, a .cube text or a table from gs.hd.lut (made once)
   lutTex() {
     const l = this.lut; if (!l) return null;
@@ -1698,7 +1740,7 @@ export class HDView {
     for (const cs of this.contacts) { const tw = cs.gpuTwin?.r === r ? cs.gpuTwin : (cs.gpuTwin = { r, ...G.fx.gpuContact(cs) }); tw.update(r, this.scene, T.contact); }
     // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
     const pw = up ? up.pw : r.domElement.width, ph = up ? Math.max(1, Math.floor(up.fh * (pw + .5) / up.fw)) : r.domElement.height;
-    const o = { tone: this.tone, w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, s1: !!up?.s1, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, lut: this.lutAmount > 0 ? this.lutTex() : null, lutK: this.lutAmount, oit: !!this.oit, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
+    const o = { tone: this.tone, w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, s1: !!up?.s1, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, lut: this.lutAmount > 0 ? this.lutTex() : null, lutK: this.lutAmount, oit: !!this.oit, flare: this.bloom > 0 ? this.flareSet() : null, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
       dofOn: false, lens: null, near: this.cam.near, far: this.cam.far, shaftsOn: false, shaft: 0, shaftCol: null };
     // temporal anti-aliasing in place of MSAA (three.js's TRAA) where the tier pays for smooth edges and the
     // picture isn't upscaled (SGSR 2 is temporal itself); card pictures keep MSAA (one frame has no history)
@@ -1953,7 +1995,7 @@ export class HDView {
     if (!baking && !off) this.t += 1 / 60;
     if (!this.clearBg) {
       const F = P.final; P.ao.enabled = T.ao > 0; if (T.ao > 0 && P.ao.scale !== T.ao) { P.ao.scale = T.ao; P.ao.setSize(P.ao.fw || pw, P.ao.fh || ph); }
-      F.strength = this.bloom; F.scale = T.bloom; F.setTone(this.tone); F.setLut(this.lutTex(), this.lutAmount); F.eyeView = baking || off ? null : this; F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
+      F.strength = this.bloom; F.scale = T.bloom; F.setTone(this.tone); F.setLut(this.lutTex(), this.lutAmount); F.setFlare(this.bloom > 0 && T.bloom ? this.flareSet() : null); F.eyeView = baking || off ? null : this; F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
       const u = F.final.uniforms; u.t.value = this.t % 10; u.hurt.value = this.hurt;
       const g = this.grade; u.gradeOn.value = g ? 1 : 0;
       if (g) { u.sat.value = g.saturation ?? 1; u.con.value = g.contrast ?? 1; toRGB(g.shadows, u.lo.value); toRGB(g.highlights, u.hi.value); }

@@ -20,6 +20,7 @@ import {
 } from 'three/tsl';
 import { lut3D } from 'three/examples/jsm/tsl/display/Lut3DNode.js';
 import { oitPass } from 'three/examples/jsm/tsl/display/OITPassNode.js';
+import { lensflare } from 'three/examples/jsm/tsl/display/LensflareNode.js';
 import { LightProbeGrid } from 'three/examples/jsm/lighting/LightProbeGrid.js';
 // v.tone (hd3d.js): three.js's own tone mappers
 const TONE = { aces: ACESFilmicToneMapping, neutral: NeutralToneMapping, agx: AgXToneMapping };
@@ -782,6 +783,7 @@ export class GpuChain {
   constructor(r, scene, cam, clear) {
     Object.assign(this, { r, scene, cam, clear, key: '' });
     this.pp = new RenderPipeline(r); this.pp.outputColorTransform = false;
+    this.F = { tint: uniform(new Vector3(1, 1, 1)), th: uniform(.15), sp: uniform(.3), fade: uniform(20), k: uniform(1), dk: uniform(0), dirt: texture(new Texture()) };   // v.flare
     this.U = {
       t: uniform(0), hurt: uniform(0), vig: uniform(.32), gradeOn: uniform(0), sat: uniform(1), con: uniform(1),
       lo: uniform(new Vector3(1, 1, 1)), hi: uniform(new Vector3(1, 1, 1)), glare: uniform(0), sunUV: uniform(new Vector2(.5, .5)),
@@ -810,8 +812,8 @@ export class GpuChain {
     this.fg = null; this.sched = null; this.fgMode = null; this.fgWin = { real: 0, missed: 0 }; this.still = null; this.lastShown = null;
     this.warp = uniform(new Matrix3()); this.aim = null; this.aimBase = newPose(); this.aimAt = -1e9;
   }
-  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces', traaOn = false, lutOn = false, oitOn = false) {
-    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}|${traaOn}|${lutOn}|${oitOn}`;
+  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces', traaOn = false, lutOn = false, oitOn = false, flareOn = false) {
+    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}|${traaOn}|${lutOn}|${oitOn}|${flareOn}`;
     const TM = TONE[tone] ?? ACESFilmicToneMapping;
     if (key === this.key) return;
     this.key = key; this.fg?.reset(); this.sched = null; this.still?.reset();
@@ -949,6 +951,13 @@ export class GpuChain {
       let col = smooth ? lit : vec3(src.sample(uv.add(d.mul(r2).mul(.012))).r.mul(srcAo).add(shafts.r), lit.g, src.sample(uv.sub(d.mul(r2).mul(.012))).b.mul(srcAo).add(shafts.b));
       // bloom
       col = col.add(this.bloomN.out.mul(this.bloomK));
+      // lens flare (v.flare): three's LensflareNode over the bloom, and the lens dirt lit by it (hd3d.js FINAL_EFFECTS flare)
+      if (flareOn) {
+        const F = this.F, bl = this.bloomN.out.mul(this.bloomK);
+        this.flareN = lensflare(vec4(bl, 1), { ghostTint: F.tint, threshold: F.th, ghostSamples: 4, ghostSpacing: F.sp, ghostAttenuationFactor: F.fade });
+        const fl = this.flareN.rgb, asp = U.aspect, du = uv.sub(.5).mul(vec2(min(asp, 1), min(float(1).div(asp), 1))).add(.5);
+        col = col.add(fl.mul(F.k)).add(F.dirt.sample(du).rgb.mul(bl.add(fl)).mul(F.dk));
+      }
       // grade (v.grade): saturation, contrast round mid grey, shadow and highlight tints
       const l = dot(col, LUM);
       let g = max(mix(vec3(l), col, U.sat), vec3(0));
@@ -985,7 +994,7 @@ export class GpuChain {
     // o.mrt: the scene's pass also writes motion and the see-through mask (frame generation, SGSR 2)
     const f = !this.clear && o.s2 ? o.s2 : null, s1 = !f && !!o.s1, live = !!o.live;
     DRAWN.n++;
-    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !f && !s1 && !!o.traa, !this.clear && !!o.lut, !this.clear && !!o.oit);
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !f && !s1 && !!o.traa, !this.clear && !!o.lut, !this.clear && !!o.oit, !this.clear && !!o.flare);
     if (this.s1) this.s1.size(o.w, o.h);
     // the passes size themselves from the canvas: upscaled, the canvas is the screen's size, so scale them down
     const k = f || s1 ? (o.w + .5) / o.fw : 1;
@@ -999,6 +1008,7 @@ export class GpuChain {
       if (g) { U.sat.value = g.sat; U.con.value = g.con; U.lo.value.copy(g.lo); U.hi.value.copy(g.hi); }
       U.glare.value = o.glare; U.sunUV.value.set(o.sunUV.x, 1 - o.sunUV.y); U.sunCol.value.copy(o.sunCol); U.aspect.value = o.aspect;
       U.px.value.set(1 / o.w, 1 / o.h);
+      if (o.flare) { const F = this.F, f = o.flare; F.tint.value.copy(f.tint); F.th.value = f.threshold; F.sp.value = f.spacing; F.fade.value = f.fade; F.k.value = f.strength; F.dk.value = f.dirt; F.dirt.value = f.dirtTex; }
       if (this.lutN) { this.lutN.lutNode.value = o.lut; this.lutN.size.value = o.lut.image.width; U.lutK.value = Math.min(1, o.lutK ?? 1); }
       if (this.dofT) { this.dofT.setSize(o.w, o.h); const L = o.lens; U.lens.value.set(L ? L[0] : 0, L ? L[1] : 0, L ? L[2] : 0, L ? L[3] : 0); U.cn.value = o.near; U.cf.value = o.far; }
       const V = this.V, cam = this.cam;

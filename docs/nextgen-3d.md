@@ -123,6 +123,10 @@ so its next round starts there instead of stuttering down again.
   scattering for skin, wax, leaves, jade and ears against the light: light passing through glows out
   of the far side in `colour` (default a skin red). On WebGPU this is three.js's MeshSSSNodeMaterial
   (fast translucency, as in Frostbite); WebGL phones get a soft tinted rim in its place.
+- `v.flare = true | { strength, threshold, spacing, fade, tint, dirt }`: lens flare ghosts of the bright
+  parts, mirrored through the middle of the picture (three.js's LensflareNode, the same maths on WebGL),
+  and lens dirt (smudges, dust and wipe marks drawn in code) lit where bright light falls on it.
+  `dirt` (.5) is how dirty the lens is, 0 for none. Needs bloom; off by default.
 - `v.oit = true` (WebGPU): order-independent transparency, three.js's weighted blended OIT (McGuire and
   Bavoil). See-through things (normal blending, not glass with `transmission`) blend right whatever
   order they're drawn in: glass behind glass, panes passing through each other, smoke in water, with no
