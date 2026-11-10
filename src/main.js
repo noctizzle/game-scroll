@@ -22,6 +22,7 @@ import { initWallet, toast, shopHTML, bindShop } from './kit/wallet-ui.js';
 import { haptic, want } from './kit/device.js';
 import { pollPads } from './kit/gamepad.js';
 import { stopAll, pauseAll, resumeAll, ownedBy, release } from './kit/cleanup.js';
+import { tickRate, runTicks, beforeDraw, resetTicks } from './kit/tick.js';
 // Things a game may leave running (music, the camera for face tracking, motion moves): stopped when a round ends or the player leaves.
 const stopKits=stopAll;   // every kit registers its own stop (src/kit/cleanup.js)
 import { remote } from './remote.js';
@@ -65,7 +66,7 @@ let slides=[],active=null,filter='all',lastId=null,io;
 // reset, must not take the feed with it: its card says so and a tap tries again.
 const stubGame=(s,msg)=>({reset(){},update(){},draw(c){const w=s.w||s.def.w,h=s.h||s.def.h;c.fillStyle='#111';c.fillRect(0,0,w,h);c.fillStyle='#bbb';c.font=`${Math.round(Math.min(w,h)/14)}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(msg,w/2,h/2)}});
 function bootGame(s){
-  s.failed=null;
+  s.failed=null;resetTicks(s);
   try{ownedBy(s,()=>{s.game=s.def.make(s.api);s.game.reset()});s.loading=false}
   catch(e){
     if(e&&e.kitLoading){
@@ -79,7 +80,7 @@ function bootGame(s){
 function gameFault(s,e){console.error(s.def.id,e);perf.error(e,s.def.id);broken(s,'This game hit a problem.')}
 function broken(s,why){if(isFull(s))leaveFull();if(s.state==='playing')try{gameOver(s)}catch(_){}try{s.game?.dispose?.()}catch(_){}release(s);s.loading=true;s.failed=why;s.game=stubGame(s,'Tap to try again');s.dirty=true;if(s.state!=='ready'){s.state='ready';s.el.classList.remove('playing','over');feed.classList.remove('locked')}renderOverlay(s)}
 // A new round: false (and the card shows the problem) if the game threw.
-function resetGame(s){try{ownedBy(s,()=>s.game.reset());return true}catch(e){gameFault(s,e);return false}}
+function resetGame(s){resetTicks(s);try{ownedBy(s,()=>s.game.reset());return true}catch(e){gameFault(s,e);return false}}
 function makeSlide(def){
   const el=document.createElement('section');el.className='slide '+(def.retro?'retro':'modern')+(def.era==='console'?' console':def.era==='nextgen'?' console nextgen':def.era==='ar'?' console nextgen ar':'');
   if(def.retro){const p=PAL[def.pal||'moss'];p.forEach((c,i)=>el.style.setProperty('--lcd'+i,c));el.style.setProperty('--shell',SHELL[def.pal||'moss']);}el.setAttribute('aria-label',def.title);
@@ -376,7 +377,7 @@ const usesHD=d=>d.era==='nextgen'||d.era==='ar';
 function paint(s){
   // a game that throws while drawing shows its problem card instead (painting new cards for the feed
   // must never stop at one broken game)
-  const off=s!==active;speed.offscreen=off;try{s.game.draw(s.ctx)}catch(e){speed.offscreen=false;gameFault(s,e);try{s.game.draw(s.ctx)}catch(_){}return}finally{speed.offscreen=false}
+  const off=s!==active;speed.offscreen=off;try{s.game.draw(s.ctx,beforeDraw(s,tickRate(s.def)))}catch(e){speed.offscreen=false;gameFault(s,e);try{s.game.draw(s.ctx,1)}catch(_){}return}finally{speed.offscreen=false}
   if(s.def.era==='console'){s.ctx.save();consolePost(s.ctx,s.w||s.def.w,s.h||s.def.h);s.ctx.restore()}
   // the shared 3D canvas shown on the card being played just drew another card's frame: put its own back
   if(off&&active&&usesHD(s.def)&&usesHD(active.def)&&!active.loading)paint(active);
@@ -612,7 +613,7 @@ function frame(now){
     try{
       let run=true;if(DBG&&DBG.on)({dt,run}=DBG.time(dt));if(LAB&&LAB.frozen)run=false;
       const timed=s.state==='playing'&&!s.paused,t0=timed?performance.now():0;
-      if(timed){if(run)s.game.update(dt);gameRan(s.def.id)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
+      if(timed){if(run)runTicks(s,tickRate(s.def),dt,h=>{if(s.state==='playing'&&!s.paused)s.game.update(h)});gameRan(s.def.id)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
       const t1=performance.now();
       // a Next Gen / AR card scrolling into place already shows its picture: its first live frame (which
       // moves the shared 3D canvas onto it) waits until the swipe has settled

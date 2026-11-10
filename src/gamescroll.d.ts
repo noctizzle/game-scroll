@@ -37,8 +37,8 @@ export interface Game {
   reset(): void;
   /** dt in seconds. */
   update(dt: number): void;
-  /** Draw the whole frame in w × h game units. */
-  draw(c: Ctx): void;
+  /** Draw the whole frame in w × h game units. alpha (fixed-tick games): how far between the last two ticks, 0..1; else 1. */
+  draw(c: Ctx, alpha?: number): void;
   down?(x: number, y: number, id: number): void;
   move?(x: number, y: number, pressed: boolean, id: number): void;
   up?(x: number, y: number, id: number): void;
@@ -74,6 +74,8 @@ export interface GameDef {
   scoreRate?: number;
   w: number;
   h: number;
+  /** Fixed game tick: update(1/tick) runs a whole number of times per frame on every screen rate (true = 60). */
+  tick?: number | boolean;
   maxW?: number;
   maxH?: number;
   retro?: boolean;
@@ -397,6 +399,16 @@ export interface SensesPart {
 }
 
 /** The player's Reduce motion setting (read only). The kits already apply it. */
+export interface TickPart {
+  /** Ticks per second for the game being played; 0 when it runs one update per frame. */
+  readonly rate: number; readonly on: boolean; readonly dt: number;
+  /** How far the frame being drawn is between the last two ticks (0..1; 1 when off). */
+  readonly alpha: number;
+  /** Ticks since the round started. */
+  readonly count: number;
+  mix(before: number, now: number, alpha?: number): number;
+  turn(before: number, now: number, alpha?: number): number;
+}
 export interface PrefsPart { readonly reduceMotion: boolean; /** 1 normally, smaller with Reduce motion: scale your own shakes and flashes by it. */ readonly motion: number }
 
 // ---------- 2D worlds, characters, story, replays and look ----------
@@ -1597,7 +1609,7 @@ export interface GS {
   sound: SoundPart; device: DevicePart; util: UtilPart; math: MathPart; palettes: PalettesPart;
   juice: JuicePart; effects: { Feel: typeof Feel }; controls: ControlsPart; pad: PadPart; moves: MovesPart;
   pixel: PixelPart; gfx: GfxPart; physics: PhysicsPart; vision: VisionPart; geo: GeoPart;
-  things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart;
+  things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart; tick: TickPart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
   board: BoardPart; battle: BattlePart; gen: GenPart; drag: DragPart; idle: IdlePart; history: HistoryPart; items: ItemsPart; adventure: AdventurePart; hex: HexPart; rts: RtsPart; fight: FightPart; bullets: BulletsPart; sand: SandPart; flow: FlowPart; art: ArtPart; sports: SportsPart; party: PartyPart; rhythm: RhythmPart; strokes: StrokesPart; vehicles: VehiclesPart; paths: PathsPart; bones: BonesPart;

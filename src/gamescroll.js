@@ -57,6 +57,7 @@
 //   gs.party     pass-and-play turns with a hand-over screen, and split-screen halves for two to four
 //   gs.rhythm    a beat clock in step with the music, note charts, Perfect/Good/Miss, tap-lag calibration
 //   gs.strokes   drawn lines and gesture shapes (circle, zigzag, star... or your own), lines into physics
+//   gs.tick      the fixed game tick (tick: 60 in the definition): rate, alpha for drawing between ticks, mix, turn
 //   gs.paths     smooth paths through points (2D or 3D): steady-speed followers, lanes, nearest point
 //   gs.bones     2D bone characters: parts that hang off each other, poses, clips, reach (IK), wobble
 //   gs.vehicles  arcade Car (top-down drift) and Kart (3D, hops and drift boosts), Laps and places
@@ -148,6 +149,7 @@ import * as strokes from './kit/strokes.js';
 import * as vehicles from './kit/vehicles.js';
 import * as paths from './kit/paths.js';
 import * as bones from './kit/bones.js';
+import { tick } from './kit/tick.js';
 import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
@@ -267,6 +269,7 @@ const core = {
   aim: pick('aim', aim),
   senses: pick('senses', senses),
   prefs: prefsKit.prefs,
+  tick,
   camera2d: pick('camera2d', camera2d),
   tiles: pick('tiles', tiles),
   movers: pick('movers', movers),

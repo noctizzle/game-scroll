@@ -1563,5 +1563,27 @@ console.log('physics ok');
   console.log('gs.models: finer person ok');
 }
 
+// fixed game tick: the same updates at 30, 60, 90 and 120 fps; alpha between ticks; physics draws smoothly
+{
+  const T = await import('../src/kit/tick.js'), { ownedBy } = await import('../src/kit/cleanup.js');
+  assert.equal(T.tickRate({ tick: true }), 60); assert.equal(T.tickRate({}), 0); assert.equal(T.tickRate({ tick: 5 }), 0);
+  const run = fps => { const card = {}; T.resetTicks(card); const xs = []; let x = 0, v = 0;
+    for (let f = 0; f < fps * 2; f++) T.runTicks(card, 60, 1 / fps, h => { v += 900 * h; x += v * h; xs.push(x); });
+    return xs; };
+  const a = run(60), b = run(120), c = run(30), d = run(90);
+  assert.equal(a.length, 120); assert.deepEqual(b, a, '120 fps runs the same ticks as 60'); assert.deepEqual(c, a, '30 fps too'); assert.deepEqual(d.slice(0, 119), a.slice(0, 119), '90 fps too');
+  { const card = {}; T.resetTicks(card); T.runTicks(card, 60, 1 / 120, () => {}); assert.ok(Math.abs(T.tick.alpha - .5) < 1e-6, 'half a tick: alpha .5');
+    assert.equal(T.tick.mix(10, 20), 15); assert.ok(Math.abs(T.tick.turn(3, -3) - Math.PI) < .05, 'turn goes the short way');
+    let n = 0; T.runTicks(card, 60, 1, () => n++); assert.equal(n, T.MAX_STEPS, 'a long hitch runs at most MAX_STEPS'); }
+  { const card = {}; T.resetTicks(card); T.runTicks(card, 0, .016, h => assert.equal(h, .016)); assert.equal(T.tick.alpha, 1); assert.equal(T.tick.on, false); }
+  { const card = {}; const p = new Physics({ gravity: 900 }); const ball = p.circle(50, 0, 5);
+    T.resetTicks(card); T.runTicks(card, 60, 1 / 60, h => p.step(h)); T.runTicks(card, 60, 1 / 120, h => p.step(h));
+    assert.ok(ball.sy > ball._was.y && ball.sy < ball.y, 'Physics sy is between the last two ticks'); }
+  { let blended = null; const card = {}; const o = { blend(a) { blended = a; } };
+    ownedBy(card, () => T.onBlend(o)); T.resetTicks(card); T.runTicks(card, 60, 1.5 / 60, () => {}); T.beforeDraw(card, 60);
+    assert.ok(Math.abs(blended - .5) < 1e-6, 'blend hooks get alpha'); }
+  console.log('gs.tick ok');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);

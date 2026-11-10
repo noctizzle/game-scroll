@@ -23,6 +23,7 @@
 import { lazy } from './lazy.js';
 import { wasmSimd } from './simd.js';
 import { own } from './cleanup.js';
+import { tick } from './tick.js';
 // The SIMD build where the phone has WebAssembly SIMD (faster: Neon on ARM phones), else the plain one.
 // Same engine and API; only one of the two is ever downloaded.
 const engine = lazy('The physics engine', () => (wasmSimd() ? import('@dimforge/rapier2d-simd-compat') : import('@dimforge/rapier2d-compat')).then(async m => {
@@ -56,6 +57,10 @@ class Thing {
   set y(v) { const p = this.body.translation(); this.body.setTranslation({ x: p.x, y: v / this.phys.scale }, true); }
   get angle() { return this.body.rotation(); }
   set angle(a) { this.body.setRotation(a, true); }
+  /** Where to draw it: between the last two ticks on a fixed-tick game (`tick: 60`), else x / y / angle. */
+  get sx() { const w = this._was; return w ? w.x + (this.x - w.x) * tick.alpha : this.x; }
+  get sy() { const w = this._was; return w ? w.y + (this.y - w.y) * tick.alpha : this.y; }
+  get sangle() { const w = this._was; return w ? tick.turn(w.a, this.angle) : this.angle; }
   get vx() { return this.body.linvel().x * this.phys.scale; }
   get vy() { return this.body.linvel().y * this.phys.scale; }
   set vx(v) { const l = this.body.linvel(); this.body.setLinvel({ x: v / this.phys.scale, y: l.y }, true); }
@@ -315,6 +320,7 @@ export class Physics {
     const before = new Map();
     if (this.hits.length) for (const t of this.things) if (!t.fixed) before.set(t, t.body.linvel());
     const started = [];
+    if (tick.on) for (const t of this.things) if (!t.fixed) { const w = t._was || (t._was = {}); w.x = t.x; w.y = t.y; w.a = t.angle; }
     this.world.timestep = h;
     for (let i = 0; i < n; i++) {
       for (const t of this.things) if (t.fx || t.fy) { const m = t.body.mass(); t.body.applyImpulse({ x: t.fx / s * m * h, y: t.fy / s * m * h }, true); }
@@ -345,7 +351,7 @@ export class Physics {
   path(c, t) {
     c.beginPath();
     if (t.kind === 'line') { t.points.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); if (t.loop) c.closePath(); return; }
-    const x = t.x, y = t.y, a = t.angle, co = Math.cos(a), si = Math.sin(a), P = (px, py) => [x + px * co - py * si, y + px * si + py * co];
+    const x = t.sx, y = t.sy, a = t.sangle, co = Math.cos(a), si = Math.sin(a), P = (px, py) => [x + px * co - py * si, y + px * si + py * co];
     if (t.kind === 'circle') { c.arc(x, y, t.r, 0, Math.PI * 2); return; }
     const pts = t.kind === 'box' ? [[-t.w / 2, -t.h / 2], [t.w / 2, -t.h / 2], [t.w / 2, t.h / 2], [-t.w / 2, t.h / 2]] : t.points;
     pts.forEach(([px, py], i) => { const [qx, qy] = P(px, py); i ? c.lineTo(qx, qy) : c.moveTo(qx, qy); });
