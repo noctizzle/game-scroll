@@ -122,6 +122,7 @@ function make(api) {
         c.globalAlpha = 1;
       }
       feel.end(c, W, H);
+      c.textAlign = 'center';
       // HUD: ink pot and drops left
       c.fillStyle = '#1d355722'; c.fillRect(16, H - 36, W - 32, 14); c.fillStyle = ink < inkMax * .15 ? '#e63946' : '#1d3557'; c.fillRect(16, H - 36, (W - 32) * ink / inkMax, 14);
       c.fillStyle = '#1d3557'; c.font = '600 13px Rubik, sans-serif'; c.textAlign = 'left'; c.fillText('INK', 16, H - 44);

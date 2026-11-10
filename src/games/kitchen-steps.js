@@ -112,6 +112,7 @@ function make(api) {
         c.font = '700 18px Rubik, sans-serif'; c.fillText(`Tap exactly ${target} times, then tap the plate`, mx, my + 116);
       }
       feel.end(c, W, H);
+      c.textAlign = 'center';
       c.fillStyle = '#3d2b1f'; c.font = '700 18px Rubik, sans-serif'; c.textAlign = 'left'; c.fillText('🍳'.repeat(Math.max(0, lives)), 20, H - 26);
       if (banner) { c.fillStyle = '#000000a0'; c.fillRect(0, H * .3, W, 90); c.fillStyle = '#fff'; c.textAlign = 'center'; c.font = '800 30px Rubik, sans-serif'; c.fillText(banner.txt, W / 2, H * .3 + 42); if (banner.sub) { c.font = '600 18px Rubik, sans-serif'; c.fillText(banner.sub, W / 2, H * .3 + 72); } }
     },

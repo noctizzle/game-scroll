@@ -83,22 +83,22 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Crate Pusher — push crates onto targets (small rooms, 1-minute boards)
 - [x] Mirror Beam — rotate mirrors to guide a laser to the receiver
 - [x] Colour Flood — flood-fill from a corner to make the board one colour in N moves
-- [ ] Gear Train — place gears so the motor turns the final wheel the right way
+- [x] Gear Train — place gears so the motor turns the final wheel the right way
 - [ ] Bridge Builder Lite — place planks so a cart crosses (fixed budget)
-- [ ] Sliding Picture — 3x3 sliding tile picture
-- [ ] One Line — draw through every dot without lifting or reusing a line
+- [x] Sliding Picture — 3x3 sliding tile picture
+- [x] One Line — draw through every dot without lifting or reusing a line
 - [x] Code Breaker — guess a 4-symbol code from right/close feedback
-- [ ] Laser Lock — rotate rings so gaps line up and the laser escapes
+- [x] Laser Lock — rotate rings so gaps line up and the laser escapes
 - [ ] Gravity Flip — flip gravity to guide a block through a maze
-- [ ] Rail Connect — draw track segments so two stations connect
-- [ ] Shape Fit — drop given shapes into an outline with no gaps
+- [x] Rail Connect — draw track segments so two stations connect
+- [x] Shape Fit — drop given shapes into an outline with no gaps
 - [ ] Switch Sequence — repeat a growing pattern of switch presses
-- [ ] Water Pour — pour between jugs to measure an exact amount
-- [ ] Arrow Maze — every tile has an arrow; pick a start that reaches the goal
+- [x] Water Pour — pour between jugs to measure an exact amount
+- [x] Arrow Maze — every tile has an arrow; pick a start that reaches the goal
 - [ ] Count the Dots — quickly count dots flashed on screen
 - [x] Odd One Out — spot the one critter that differs in a grid, subtler each round
 - [x] Path Memory — watch a path light up, then walk it from memory
-- [ ] Balance Scale — place weights so the beam balances
+- [x] Balance Scale — place weights so the beam balances
 
 ## Casual action 📱
 
@@ -149,7 +149,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Spot the Difference — two pictures, five differences
 - [x] Link Pairs — connect matching icons with a path of max two turns
 - [ ] Rotate Maze — rotate the whole maze to roll the ball out
-- [ ] Stack Sort Cards — sort a shuffled hand by dragging into order
+- [x] Stack Sort Cards — sort a shuffled hand by dragging into order
 
 ## Phone-feature games 🎯
 
@@ -191,7 +191,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [ ] Sharp Eye — find the letter hiding in a grid of similar letters
 - [ ] Memory Flash — remember positions of lit tiles
 - [x] Fast Maths — answer quick sums, true or false
-- [ ] Line Trace — trace a shape within the margin
+- [x] Line Trace — trace a shape within the margin
 - [x] Fly Swatter — swat flies, not bees
 - [x] Balloon Pump — hold to inflate, release before it pops, bigger = more points
 - [ ] Rhythm Copy — tap back a rhythm you just heard
@@ -336,4 +336,8 @@ Modern HD 3D on `src/kit/hd3d.js` (see [nextgen-3d.md](nextgen-3d.md)).
 ## Batches 18-27 (2026-11-10)
 Ten batches toward 1000, mostly from the open ideas above (ticked where they were built). New ideas that weren't on the list:
 - [x] Belt Sorter 🕹 — swipe parcels between three conveyor belts so each lands in the bin with its shape; the bins swap labels
-
+- [x] Clock Set — drag the clock hands to the time on the card (words, digital or sums)
+- [x] Mirror Draw 🖊 — trace a dotted path while your pen moves mirrored
+- [x] Till Rush — count out a customer's change from the till, fewest coins for a tip
+- [x] Shape Turn — tap the box with the top shape only turned, not mirrored
+- [x] Tally Count — count only the sheep the card asks for as the flock runs past
