@@ -6,6 +6,7 @@
 // (hd3d.js); renderer.js makes the WebGL ones, used everywhere else.
 // No three.js here (the app loads it only with the first 3D game): three's WebGPU build is a dynamic import.
 // Not for games: they get 3D through gs.toon, gs.hd and gs.ar.
+import { installPack } from './pack.js';
 
 /** 'webgl' or 'webgpu' for a renderer from makeRenderer or webgpu(). */
 export const backend = r => r?.gsBackend || 'webgl';
@@ -84,6 +85,7 @@ export function prepareGPU() {
       if (!r.backend?.isWebGPUBackend) { console.warn('WebGPU: three fell back to WebGL 2'); r.dispose(); return null; }   // three fell back to WebGL 2: keep our own WebGL path
       r.gsBackend = 'webgpu';
       fx.manyLights(r);
+      installPack(r);   // code-made textures packed into the chip's compressed formats (spark.js)
       r.backend.device?.lost?.then(info => { console.warn('WebGPU device lost:', info?.reason, info?.message); if (gpu?.r === r) gpu = null; gpuLoad = null; });   // the GPU went away: back to WebGL
       return gpu = { r, W, fx };
     } catch (e) { console.warn('WebGPU did not start:', e); gpuLoad = null; return null; }
