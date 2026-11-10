@@ -4,10 +4,11 @@
 // Blob Games' guide): which hex a tap is on, neighbours, distance, lines, rings and ranges, plus what
 // strategy games need on top: how far a unit can move with terrain costs (reach), the cheapest path
 // (path), and line of sight past blocking hexes (sees). Each cell has q, r (axial coordinates), its
-// centre x, y in game units, corners for drawing, and data for your own things.
+// centre x, y in game units, corners for drawing, and data for your own things. The map's own x, y
+// option is its TOP LEFT corner; use cx, cy (or map.centre(x, y)) to put its middle somewhere.
 //
 //   const { HexMap, Iso } = gs.hex;
-//   reset() { map = new HexMap({ size: 22, shape: 'rect', w: 8, h: 10, x: 20, y: 60 }); map.each(c => c.data.land = rnd(1) < .2 ? 'hill' : 'grass'); }
+//   reset() { map = new HexMap({ size: 22, shape: 'rect', w: 8, h: 10, cx: W / 2, cy: H / 2 }); map.each(c => c.data.land = rnd(1) < .2 ? 'hill' : 'grass'); }
 //   down(x, y) { const c = map.at(x, y); if (c && moves.has(c)) unit.cell = c; }
 //   moves = map.reach(unit.cell, 3, c => c.data.land === 'hill' ? 2 : 1);   // Map(cell -> cost)
 //   draw(c) { map.each(cell => { c.beginPath(); cell.corners.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.fill(); }); }
@@ -20,8 +21,13 @@ const AX = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];   // the six ax
 const key = (q, r) => q + ',' + r;
 
 export class HexMap {
-  /** size: a hex's radius (centre to corner); pointy: pointy tops (false: flat); shape: 'rect' (w x h) | 'hex' (radius) | 'none' (add cells yourself); x, y: where the map's top left goes. */
-  constructor({ size = 24, pointy = true, shape = 'rect', w = 8, h = 8, radius = 4, x = 0, y = 0 } = {}) {
+  /**
+   * size: a hex's radius (centre to corner); pointy: pointy tops (false: flat); shape: 'rect' (w x h) |
+   * 'hex' (radius) | 'none' (add cells yourself). x, y: where the map's TOP LEFT corner goes (not its
+   * middle). To put the map's middle on a point instead, pass cx, cy (e.g. cx: W / 2, cy: H / 2), or
+   * call map.centre(x, y) after adding your own cells. map.bounds is its box in game units.
+   */
+  constructor({ size = 24, pointy = true, shape = 'rect', w = 8, h = 8, radius = 4, x = 0, y = 0, cx = null, cy = null } = {}) {
     this.size = size; this.pointy = pointy; this.ox = x; this.oy = y;
     this.Hex = defineHex({ dimensions: size, orientation: pointy ? Orientation.POINTY : Orientation.FLAT, origin: 'topLeft' });
     this.grid = new Grid(this.Hex);
@@ -31,10 +37,24 @@ export class HexMap {
       this.addAll(new Grid(this.Hex, spiral({ radius, start: [radius, radius] })));
       // its top left corner at x, y
       let mx = Infinity, my = Infinity; for (const c of this.cells.values()) for (const [px, py] of c.corners) { mx = Math.min(mx, px); my = Math.min(my, py); }
-      const dx = x - mx, dy = y - my; this.ox += dx; this.oy += dy;
-      for (const c of this.cells.values()) { c.x += dx; c.y += dy; for (const p of c.corners) { p[0] += dx; p[1] += dy; } }
+      this.shift(x - mx, y - my);
     }
+    if (cx != null || cy != null) { const b = this.bounds; this.centre(cx ?? b.x + b.w / 2, cy ?? b.y + b.h / 2); }
   }
+  /** The box around every cell's corners, in game units: { x, y, w, h } (x, y its top left). */
+  get bounds() {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const c of this.cells.values()) for (const [px, py] of c.corners) { x0 = Math.min(x0, px); y0 = Math.min(y0, py); x1 = Math.max(x1, px); y1 = Math.max(y1, py); }
+    return x0 === Infinity ? { x: this.ox, y: this.oy, w: 0, h: 0 } : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+  /** Moves the whole map (every cell, and where taps land) by dx, dy game units. */
+  shift(dx, dy) {
+    this.ox += dx; this.oy += dy;
+    for (const c of this.cells.values()) { c.x += dx; c.y += dy; for (const p of c.corners) { p[0] += dx; p[1] += dy; } }
+    return this;
+  }
+  /** Moves the map so the middle of its box sits on x, y (e.g. map.centre(W / 2, H / 2)). */
+  centre(x, y) { const b = this.bounds; return this.shift(x - (b.x + b.w / 2), y - (b.y + b.h / 2)); }
   addAll(g) { for (const h of g) this.add(h.q, h.r); return this; }
   /** Adds a cell at axial q, r (for maps of your own shape). */
   add(q, r) {

@@ -27,6 +27,9 @@ export function pix(c, map, x, y, col) {
 /** Stable small hash, used for pseudo like-counts per game. */
 export function hash(str) { let h = 2166136261; for (const ch of str) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
 
+/** The i-th letter of the alphabet: letter(0) is 'A', letter(25) 'Z' (wraps); { lower: true } for 'a'. For word and grid games. */
+export const letter = (i, { lower = false } = {}) => (lower ? 'abcdefghijklmnopqrstuvwxyz' : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')[((Math.floor(i) % 26) + 26) % 26];
+
 export const fmt = n => n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'K' : String(n);
 
 /** Pixel-crisp filled circle (no anti-aliasing) for the low-res pocket screens. Uses current fillStyle. */

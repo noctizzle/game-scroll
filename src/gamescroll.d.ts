@@ -29,6 +29,8 @@ export interface GameApi {
   /** The player's rounded position (needs `location` in the definition), or null. */
   location(): Promise<{ lat: number; lon: number; accuracy?: number } | null>;
   watchLocation(cb: (p: { lat: number; lon: number }) => void): () => void;
+  /** Where the app's score badge sits (top centre), in game units, roomy enough for a 4-digit score: keep HUDs out of it. Changes with the screen (folding), so read it when drawing. */
+  scoreArea(): { x: number; y: number; w: number; h: number; bottom: number };
   [more: string]: Loose;
 }
 
@@ -202,6 +204,8 @@ export interface UtilPart {
   hash(str: string): number;
   fmt(n: number): string;
   flickTracker(): Loose;
+  /** The i-th letter: letter(0) is 'A' (wraps after 'Z'); { lower: true } for lower case. */
+  letter(i: number, o?: { lower?: boolean }): string;
 }
 
 export interface Rng { (): number; int(a: number, b: number): number; pick<T>(list: T[]): T; [k: string]: Loose }
@@ -388,6 +392,8 @@ export interface ThingsPart {
 export interface Scene { enter?(scenes: Loose, data?: Loose): void; update?(dt: number, scenes: Loose): void; draw?(c: Ctx, scenes: Loose): void; [input: string]: Loose }
 export interface RoundsPart {
   Scenes: new (scenes: Record<string, Scene>, start: string, o?: { fade?: number }) => { name: string; readonly scene: Scene; is(...names: string[]): boolean; go(name: string, o?: { fade?: number; data?: Loose }): Loose; after(sec: number, name: string, o?: Loose): Loose; readonly changing: boolean; readonly progress: number; readonly cover: number; update(dt: number): Loose; draw(c: Ctx, ...rest: Loose[]): Loose; input(kind: string, ...args: Loose[]): Loose };
+  /** Waits for the first touch or key before the round starts: `if (!ready.update(dt)) return;` in update, `if (ready.go()) return;` in down. */
+  Ready: new (o?: { eat?: boolean; text?: string }) => { waiting: boolean; readonly playing: boolean; t: number; since: number; eat: boolean; text: string; reset(): Loose; update(dt: number): boolean; go(): boolean; draw(c: Ctx, W: number, H: number, o?: { text?: string; x?: number; y?: number; color?: string; size?: number; font?: string; pixel?: boolean; shadow?: string | null }): Loose };
   Levels: new <T>(list: T[], o?: { loop?: boolean; start?: number }) => { readonly now: T; readonly number: number; readonly last: boolean; index: number; next(): Loose; restart(): Loose };
 }
 
@@ -980,6 +986,11 @@ export interface HexMap {
   neighbours(c: HexCell): HexCell[]; distance(a: HexCell, b: HexCell): number; line(a: HexCell, b: HexCell): HexCell[]; range(c: HexCell, n: number): HexCell[]; ring(c: HexCell, n: number): HexCell[];
   reach(from: HexCell, moves: number, cost?: (c: HexCell, from: HexCell) => number): Map<HexCell, number>; path(a: HexCell, b: HexCell, cost?: (c: HexCell, from: HexCell) => number): HexCell[] | null;
   sees(a: HexCell, b: HexCell, blocks?: (c: HexCell) => boolean): boolean; save(): Loose; load(d: Loose): HexMap;
+  /** The box round every cell, in game units (x, y its top left). */
+  readonly bounds: { x: number; y: number; w: number; h: number };
+  shift(dx: number, dy: number): HexMap;
+  /** Moves the map so its middle is at x, y. */
+  centre(x: number, y: number): HexMap;
 }
 export interface Iso {
   tw: number; th: number; x: number; y: number; zh: number;
@@ -987,7 +998,8 @@ export interface Iso {
   sort<T extends { tx: number; ty: number; z?: number }>(list: T[]): T[];
 }
 export interface HexPart {
-  HexMap: new (o?: { size?: number; pointy?: boolean; shape?: 'rect' | 'hex' | 'none'; w?: number; h?: number; radius?: number; x?: number; y?: number }) => HexMap;
+  /** x, y: the map's TOP LEFT corner. cx, cy: put the map's middle there instead. */
+  HexMap: new (o?: { size?: number; pointy?: boolean; shape?: 'rect' | 'hex' | 'none'; w?: number; h?: number; radius?: number; x?: number; y?: number; cx?: number; cy?: number }) => HexMap;
   Iso: new (o?: { tw?: number; th?: number; x?: number; y?: number; zh?: number | null }) => Iso;
 }
 export interface XY { x: number; y: number; [k: string]: Loose }
