@@ -156,6 +156,16 @@ declare const HAPTIC_NAMES: { tap: 1; thud: 1; heartbeat: 1; explosion: 1; charg
 export interface Mic { level(): number; pitch(): { hz: number; note: string; midi: number; clarity: number } | null; blow(): number; clapped(): boolean; whistle(): number; stop(): void }
 export type HapticKind = 'light' | 'medium' | 'heavy' | 'tick' | 'success' | 'warning' | 'error';
 export interface DevicePart {
+  /** Steps walked since the round started (null until the step counter runs and the player allowed it). */
+  steps(): { count: number; new: number; perMinute: number } | null;
+  /** Air pressure and height change (metres) since the round started. */
+  pressure(): { hPa: number; height: number } | null;
+  /** The room's light (Android; some browsers). */
+  light(): { lux: number; dark: boolean } | null;
+  /** Something right over the top of the phone (Android). */
+  near(): boolean | null;
+  /** Does this phone have it? null while still being asked. */
+  hasSensor(kind: 'steps' | 'pressure' | 'light' | 'near'): boolean | null;
   haptic(kind?: HapticKind): void;
   /** Morse-like buzz pattern: 0 short, 1 long. */
   buzz(pattern: (number | boolean)[], short?: number, long?: number, gap?: number): void;

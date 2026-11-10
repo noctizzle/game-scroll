@@ -7,7 +7,7 @@
 //
 // What's on it (docs/maker-kit.md has the full guide):
 //   gs.sound     beeps, ready-made sounds, ZzFX designs, music loops (and compose(): original tunes from a mood and a seed), Tone.js synths, the mixer, speech (say)
-//   gs.device    haptics (and rich haptic patterns), tilt, shake, mic (level, pitch, claps, blowing), camera, compass
+//   gs.device    haptics (and rich haptic patterns), tilt, shake, mic (level, pitch, claps, blowing), camera, compass, steps, air pressure, room light, proximity
 //   gs.util      clamp, rnd, pix, hash, fmt, disc, flickTracker
 //   gs.math      seeded random, daily seed, smooth noise, vectors, overlap tests, Grid, Timers
 //   gs.palettes  the Pocket colour sets (PAL, SHELL, C16)
@@ -153,6 +153,7 @@ import * as bones from './kit/bones.js';
 import { tick } from './kit/tick.js';
 import * as composer from './kit/compose.js';
 import * as solve from './kit/solve.js';
+import * as phoneSensors from './kit/sensors.js';
 import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
@@ -160,7 +161,7 @@ import { StillLoading } from './kit/lazy.js';
 export const HIDDEN = {
   sound: ['sound', 'setSound', 'audio', 'setSfxOut', 'stopMusic', 'pauseMusic', 'resumeMusic'],
   util: ['store', 'deviceId'],
-  device: ['location', 'hapticSettings', 'setHaptics'],
+  device: ['location', 'hapticSettings', 'setHaptics', 'stopSensors'],
   moves: ['stopMoves'],
   pad: ['pollPads'],
   vision: ['stopVision'],
@@ -252,7 +253,7 @@ export function offers(names) {
 
 const core = {
   sound: pick('sound', sound, sfx, composer),
-  device: pick('device', device),
+  device: pick('device', device, phoneSensors),
   util: pick('util', util),
   math: pick('math', math),
   palettes: pick('palettes', palettes),

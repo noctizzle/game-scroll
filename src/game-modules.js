@@ -48,9 +48,13 @@ export const LOCATION_LEVELS = ['coarse', 'precise'];
 const SENSORS = {
   camera: ['device.startCamera', 'vision.Face', 'vision.Hands', 'vision.Body', 'vision.CutOut', 'vision.Signs', 'vision', 'ar.ARView', 'ar'],
   mic: ['device.startMic', 'hear.Sounds', 'hear.Voice', 'hear'],
+  steps: ['device.steps'],
+  pressure: ['device.pressure'],
+  light: ['device.light'],
+  near: ['device.near'],
   motion: ['device.tilt', 'device.calibrateTilt', 'device.onMotion', 'device.onShake', 'device.heading', 'device.orientation', 'device.faceDown', 'moves.Moves', 'moves', 'ar.ARView', 'ar'],
 };
-/** ['camera', 'mic', 'motion'] (the ones a game uses), from a gsNeeds list. */
+/** ['camera', 'mic', 'steps', 'pressure', 'light', 'near', 'motion'] (the ones a game uses), from a gsNeeds list. */
 export function sensorsOf(needs) {
   return Object.keys(SENSORS).filter(s => SENSORS[s].some(n => needs.includes(n)));
 }

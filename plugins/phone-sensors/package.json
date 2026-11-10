@@ -1,0 +1,13 @@
+{
+  "name": "phone-sensors",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Game Scroll's extra phone sensors for games: step counter, air pressure (and height change), room light and proximity. Android SensorManager; iPhone CMPedometer and CMAltimeter. Read by src/kit/sensors.js.",
+  "main": "index.js",
+  "files": ["index.js", "Package.swift", "ios/Sources", "android/src/main", "android/build.gradle"],
+  "capacitor": {
+    "ios": { "src": "ios" },
+    "android": { "src": "android" }
+  },
+  "peerDependencies": { "@capacitor/core": "^8.0.0" }
+}

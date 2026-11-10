@@ -23,6 +23,7 @@ let package = Package(
         .package(name: "NativeAr", path: "../../../plugins/native-ar"),
         .package(name: "Npu", path: "../../../plugins/npu"),
         .package(name: "PhoneAi", path: "../../../plugins/phone-ai"),
+        .package(name: "PhoneSensors", path: "../../../plugins/phone-sensors"),
         .package(name: "PowerState", path: "../../../plugins/power-state"),
         .package(name: "RichHaptics", path: "../../../plugins/rich-haptics"),
         .package(name: "ScreenRate", path: "../../../plugins/screen-rate")
@@ -44,6 +45,7 @@ let package = Package(
                 .product(name: "NativeAr", package: "NativeAr"),
                 .product(name: "Npu", package: "Npu"),
                 .product(name: "PhoneAi", package: "PhoneAi"),
+                .product(name: "PhoneSensors", package: "PhoneSensors"),
                 .product(name: "PowerState", package: "PowerState"),
                 .product(name: "RichHaptics", package: "RichHaptics"),
                 .product(name: "ScreenRate", package: "ScreenRate")

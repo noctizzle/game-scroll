@@ -168,9 +168,9 @@ function updateBest(s){s.el.querySelector('.best').textContent=fmt(best(s.def.id
 // Games that use location say so before Play, so the phone's question doesn't come out of nowhere.
 // ...and so do games that use the camera, mic or motion sensor (worked out from their code), and
 // iPhones get asked for motion access on the Play tap instead of in the middle of a round.
-const SENSOR_WORDS={camera:'camera',mic:'microphone',motion:'motion sensor'};
+const SENSOR_WORDS={camera:'camera',mic:'microphone',steps:'step counter',pressure:'air pressure sensor',light:'light sensor',near:'proximity sensor',motion:'motion sensor'};
 const sensorNote=d=>{const u=(d.uses||[]).filter(k=>SENSOR_WORDS[k]);if(!u.length||d.era==='ar')return'';const w=u.map(k=>SENSOR_WORDS[k]);
-  return`<div class="ov-loc">${u.includes('camera')?'📷':u.includes('mic')?'🎤':'📱'} Uses your ${w.length>1?w.slice(0,-1).join(', ')+' and '+w[w.length-1]:w[0]}${u.includes('camera')||u.includes('mic')?'. Nothing is recorded or leaves your phone':''}.</div>`};
+  return`<div class="ov-loc">${u.includes('camera')?'📷':u.includes('mic')?'🎤':u.includes('steps')?'👟':'📱'} Uses your ${w.length>1?w.slice(0,-1).join(', ')+' and '+w[w.length-1]:w[0]}${u.includes('camera')||u.includes('mic')?'. Nothing is recorded or leaves your phone':''}.</div>`};
 const locNote=d=>d.location?`<div class="ov-loc">📍 Uses your ${d.location==='precise'?'location to walk around':'rough area (about 1 km)'}. It stays on your phone, and you can say no.</div>`:'';
 function renderOverlay(s){
   const d=s.def,cue='<div class="swipe-cue">Swipe up for the next game</div>';
