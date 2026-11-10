@@ -305,7 +305,9 @@ jobs:
   # Math.sin, exp...? Informational (a warning, never red). Runs when the kits change.
   maths:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # first run on a new Playwright version installs WebKit's system packages (over 10 minutes on a
+    # slow mirror); the browsers are cached after that
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
         with:
