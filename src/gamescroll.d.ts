@@ -1371,6 +1371,10 @@ export interface ModelsPart {
   readonly props: readonly string[];
   /** A mesh from soft shapes melted together or carved away, made with surface nets: each { ball: r } | { box: [w, h, d], round } | { cylinder: [r, h], round } | { torus: [R, r] } | { cone: [r, h] } | { capsule: [[x, y, z], [x, y, z]], r }, with at, rot, scale, blend (metres), cut, colour (vertex colours: use a material with vertexColors). Or a distance function (x, y, z) => d with o.bounds. Options: blend (.08), res (48, up to 128), colour. Returns a BufferGeometry (shared for the same shapes: clone before changing). */
   sculpt(shapes: SculptShape[] | ((x: number, y: number, z: number) => number), o?: { blend?: number; res?: number; bounds?: [[number, number, number], [number, number, number]]; colour?: string; color?: string }): Loose;
+  /** A tree grown in code (EZ-Tree: branches that split, bend and taper) with the bark recipe and leaves drawn in code that sway and glow with the sun behind: 'oak' | 'ash' | 'aspen' | 'pine' | 'bush'. size 'small' | 'medium' | 'large' (its shape), height (metres), seed, leaves / bark (colours), wind (.6, or a gs.outdoors Wind). A Group, foot at y = 0; the same options again give a copy sharing shapes and materials. */
+  tree(kind?: 'oak' | 'ash' | 'aspen' | 'pine' | 'bush', o?: { size?: 'small' | 'medium' | 'large'; height?: number; seed?: number; leaves?: string; bark?: string; wind?: number | Loose }): Loose;
+  /** The tree kinds. */
+  readonly trees: readonly string[];
   /** Per-vertex curvature of a geometry (convex > 0, concave < 0) and how much each vertex faces up. */
   curvature(geometry: Loose): { curve: Float32Array; up: Float32Array };
 }

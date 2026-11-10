@@ -642,3 +642,10 @@ const snowman = gs.models.sculpt([
 v.scene.add(new THREE.Mesh(snowman, gs.hd.pbr('#ffffff', { vertexColors: true })));
 const rock = gs.models.sculpt([{ box: [.9, .6, .7], round: .15 }, { cylinder: [.14, 1], rot: [Math.PI / 2, 0, 0], cut: true }]);
 ```
+- **`tree(kind, o)`**: a tree grown in code with EZ-Tree (branches that split, bend and taper, leaves on
+  the twigs): `oak`, `ash`, `aspen`, `pine`, `bush`. Its bark is the `bark` recipe and its leaves are drawn in
+  code, swaying in the wind and glowing with the sun behind them, on the view's own clock (they stop when
+  the game pauses). `size` ('small', 'medium', 'large': its shape), `height` (metres), `seed` (another tree of
+  the same kind), `leaves` and `bark` (colours), `wind` (.6, or a `gs.outdoors` Wind). About 20 to 80 ms each;
+  the same options again give a copy sharing shapes and materials, so make a few kinds and place copies (or
+  hand them to `gs.props` for instancing and far-off impostors).

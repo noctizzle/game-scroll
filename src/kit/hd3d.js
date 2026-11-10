@@ -1236,7 +1236,7 @@ export class HDView {
    * image-based reflections; sky/ground/amb: hemisphere fill light.
    */
   constructor({ bg = '#0a0c10', fog = 0, env = .35, sky = '#9ab0d0', ground = '#2a2420', amb = .25, fov = 70 } = {}) {
-    this.scene = new Scene(); this.scene.background = new Color(bg);
+    this.scene = new Scene(); this.scene.background = new Color(bg); Object.defineProperty(this.scene, 'gsView', { value: this });   // (kit parts that animate on the view's own clock, v.t; not in userData, which copies go through JSON)
     if (fog) this.scene.fog = new FogExp2(bg, fog);
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
