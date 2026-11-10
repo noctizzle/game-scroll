@@ -1550,6 +1550,17 @@ console.log('physics ok');
   let inHole = 0; for (let i = 0; i < HP.count; i++) if (Math.hypot(HP.getX(i), HP.getY(i)) < .15) inHole++;
   assert.ok(inHole === 0, 'carved hole is empty');
   console.log('gs.models: sculpt ok');
+  // a finer person (gs.models.human's build): parts smoothed, one group per material covering every triangle, weights summing to 1
+  {
+    const { personParts, assemble } = await import('../src/kit/skin.js'), { LoopSubdivision } = await import('three-subdivide');
+    const plain = await import('../src/kit/poses.js').then(m => m.person()), fine = assemble(personParts({}), { smooth: 1, subdivide: (g, n) => LoopSubdivision.modify(g, n, {}), mats: { body: new T.MeshStandardMaterial(), skin: new T.MeshStandardMaterial(), legs: new T.MeshStandardMaterial(), shoes: new T.MeshStandardMaterial() } });
+    const g = fine.mesh.geometry, tris = g.index.count / 3;
+    assert.ok(g.attributes.position.count > plain.mesh.geometry.attributes.position.count * 2, 'smoothed person is finer');
+    assert.ok(Array.isArray(fine.mesh.material) && fine.mesh.material.length === 4 && g.groups.reduce((a, x) => a + x.count, 0) / 3 === tris, 'groups cover every triangle');
+    const W = g.attributes.skinWeight; for (let i = 0; i < W.count; i += 11) assert.ok(Math.abs(W.getX(i) + W.getY(i) + W.getZ(i) + W.getW(i) - 1) < 1e-4, 'weights sum to 1');
+    assert.ok(g.morphAttributes.position.length === 7 && fine.rig && fine.face, 'face shapes, rig and face');
+  }
+  console.log('gs.models: finer person ok');
 }
 
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits

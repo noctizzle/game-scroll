@@ -1379,6 +1379,8 @@ export interface ModelsPart {
   building(o?: { style?: 'brick' | 'plaster' | 'concrete' | 'stone' | 'timber' | Record<string, Loose>; w?: number; d?: number; floors?: number; roof?: 'flat' | 'gable'; floor?: number; bay?: number; win?: [number, number]; lit?: number; colour?: string; color?: string; door?: boolean; seed?: number; wear?: false | Record<string, Loose> }): Loose;
   /** The building styles (copy one and change it: { ...gs.models.buildings.brick, bay: 3 }). */
   readonly buildings: Record<string, Record<string, Loose>>;
+  /** A close-up person with the same skeleton, Rig and Face as gs.poses.person (same poses, blends, foot planting, face shapes, lip sync): body smoothed by subdivision, a sculpted head (jaw, cheekbones, nose, brow, ears, eye sockets), eyes with iris and pupil under a clear coat, eyelids that blink, hair that shines along its strands, skin that lets light through (WebGPU), clothes in the fabric and leather recipes. person()'s options plus hairStyle ('short' | 'long' | 'bun' | 'bald'), iris, jaw, nose (1 average), smooth (1; 2 up close), cloth (false: plain). About 0.3 s each: make people in make() or reset(). */
+  human(o?: { body?: string; skin?: string; legs?: string; shoes?: string; hair?: string | null; eyes?: string; lips?: string; sleeves?: 'long' | 'short'; girth?: number; scale?: number; shadows?: boolean; hairStyle?: 'short' | 'long' | 'bun' | 'bald'; iris?: string; jaw?: number; nose?: number; smooth?: number; cloth?: boolean }): Loose;
   /** Per-vertex curvature of a geometry (convex > 0, concave < 0) and how much each vertex faces up. */
   curvature(geometry: Loose): { curve: Float32Array; up: Float32Array };
 }

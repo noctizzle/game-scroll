@@ -41,6 +41,15 @@ function reach(s) {
   return { c: s.at || [0, 0, 0], r: r * sc + (k === 'cone' ? 0 : 0) };
 }
 
+// what the skipping test needs: the shape's middle, its reach before stretching, and how it's stretched
+// (a stretched shape's distance is measured in its smallest stretch, so the bound is too). A cone's
+// distance is only a bound itself, so it is never skipped.
+function skipping(s) {
+  const sc = s.scale === undefined ? [1] : [].concat(s.scale), sMin = Math.min(...sc), sMax = Math.max(...sc);
+  if (kindOf(s) === 'cone') return { c: [0, 0, 0], r0: Infinity, sMin: 1, sMax: 1 };
+  const { c, r } = reach(s); return { c, r0: r / sMax, sMin, sMax };
+}
+
 /** One shape ready to measure: its distance function with its place, turn and stretch worked in. */
 function prepare(s, blend) {
   const k = kindOf(s); if (!k) throw new Error('gs.models.sculpt: a shape needs one of ' + Object.keys(KINDS).join(', '));
@@ -48,7 +57,7 @@ function prepare(s, blend) {
   const inv = new Matrix4().compose(new Vector3(...at), new Quaternion().setFromEuler(new Euler(...(s.rot || [0, 0, 0]))), new Vector3(1, 1, 1)).invert().elements;
   const smin3 = Math.min(...sc), p = new Vector3();
   return {
-    cut: !!s.cut, k: s.blend ?? blend, colour: s.colour ?? s.color ? new Color(s.colour ?? s.color) : null,
+    ...skipping(s), cut: !!s.cut, k: s.blend ?? blend, colour: s.colour ?? s.color ? new Color(s.colour ?? s.color) : null,
     d(x, y, z) {
       p.set(x, y, z); const e = inv, X = e[0] * x + e[4] * y + e[8] * z + e[12], Y = e[1] * x + e[5] * y + e[9] * z + e[13], Z = e[2] * x + e[6] * y + e[10] * z + e[14];
       return f(s, X / sc[0], Y / sc[1], Z / sc[2]) * smin3;
@@ -83,7 +92,13 @@ function build(shapes, { blend = .08, res = 48, bounds = null, colour = '#ffffff
     parts = shapes.map(s => prepare(s, blend));
     field = (x, y, z) => {
       let d = 1e9;
-      for (const s of parts) { const e = s.d(x, y, z); d = s.cut ? smax(d, -e, s.k) : smin(d, e, s.k); }
+      for (const s of parts) {
+        // a shape too far away to change the answer is skipped (its distance is at least how far its
+        // bounding ball is): exactly the same field, measured far fewer times
+        const far = (len3(x - s.c[0], y - s.c[1], z - s.c[2]) / s.sMax - s.r0) * s.sMin;
+        if (s.cut ? far >= s.k - d : far >= d + s.k) continue;
+        const e = s.d(x, y, z); d = s.cut ? smax(d, -e, s.k) : smin(d, e, s.k);
+      }
       return d;
     };
     if (!bounds) {
@@ -93,13 +108,14 @@ function build(shapes, { blend = .08, res = 48, bounds = null, colour = '#ffffff
     }
   }
   // the grid: a little bigger than the shapes (so the surface closes), cells square
-  const size = Math.max(...[0, 1, 2].map(i => bounds[1][i] - bounds[0][i])), cell = size / Math.max(8, Math.min(128, res)), pad = cell * 2 + blend;
+  const size = Math.max(...[0, 1, 2].map(i => bounds[1][i] - bounds[0][i])), cell = size / Math.max(8, Math.min(128, res)), pad = cell * 2 + blend * .25 + .002;   // (melting in grows a shape by at most a quarter of its blend)
   const lo = bounds[0].map(v => v - pad), dims = [0, 1, 2].map(i => Math.ceil((bounds[1][i] + pad - lo[i]) / cell) + 1);
   // measured once per grid point (surface nets asks for each corner of each cell: 8 times as many)
   const [nx, ny] = dims, F = new Float32Array(dims[0] * dims[1] * dims[2]);
   for (let k = 0, i = 0; k < dims[2]; k++) for (let j = 0; j < ny; j++) for (let a = 0; a < nx; a++, i++) F[i] = field(lo[0] + a * cell, lo[1] + j * cell, lo[2] + k * cell);
   const hiB = lo.map((v, i) => v + dims[i] * cell);
-  const { positions, cells } = surfaceNets(dims, (x, y, z) => F[Math.round((x - lo[0]) / cell) + nx * (Math.round((y - lo[1]) / cell) + ny * Math.round((z - lo[2]) / cell))], [lo, hiB]);
+  const ic = 1 / cell, [l0, l1, l2] = lo, nxy = nx * ny;
+  const { positions, cells } = surfaceNets(dims, (x, y, z) => F[(((x - l0) * ic + .5) | 0) + nx * (((y - l1) * ic + .5) | 0) + nxy * (((z - l2) * ic + .5) | 0)], [lo, hiB]);
   // positions, normals from the field's slope (smooth and true), uvs by box projection in metres, colours
   const n = positions.length, P = new Float32Array(n * 3), N = new Float32Array(n * 3), U = new Float32Array(n * 2), h = cell * .5;
   const anyCol = parts?.some(s => s.colour), C = anyCol ? new Float32Array(n * 3) : null, base = new Color(colour ?? color), tmp = new Color();

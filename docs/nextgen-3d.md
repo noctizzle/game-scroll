@@ -656,3 +656,11 @@ const rock = gs.models.sculpt([{ box: [.9, .6, .7], round: .15 }, { cylinder: [.
   (metres, 8 x 6), `floors`, `roof`, `floor` (storey height), `bay` (metres per window), `win` ([w, h]), `lit` (0..1
   of windows glowing), `colour` (walls), `door: false`, `seed`, `wear`. Its door faces +z. About 0.1 to 0.25 s
   each, so make them while loading; for a whole town in the distance `gs.city` is far cheaper.
+- **`human(o)`**: a person to see up close. It has the same skeleton, `rig` and `face` as `gs.poses.person`, so
+  the same poses, blends, foot planting, face shapes and lip sync drive it; only the build is finer. The body
+  is smoothed by subdivision, and the head is sculpted (jaw, cheekbones, nose, brow, ears, eye sockets). The
+  eyes have an iris and pupil under a clear coat, and eyelids that blink. The hair shines along its strands,
+  the skin lets light through at thin edges (WebGPU), and the clothes are in the fabric and leather recipes.
+  It takes `person()`'s options plus `hairStyle` ('short', 'long', 'bun', 'bald'), `iris`, `jaw` and `nose` (1 is
+  average), `smooth` (1; 2 for a hero right in front of the camera) and `cloth: false`. About 0.3 s each, and
+  people with the same build and face shape share their smoothed parts, so make them in `make()` or `reset()`.
