@@ -199,7 +199,7 @@ try {
     const colorOf = () => (jitter ? steady : sp).getTexture('output');
     // &handed: the last frame's picture is handed to real() (as the app does: it is read where it is,
     // not copied): prev holds it by the time the frames are made
-    const feed = () => fg.real({ ...(Q.has('handed') ? { prevColor: prev.texture } : {}), color: colorOf(), velocity: sp.getTexture('velocity'), reactive: mask ? sp.getTexture('reactive') : null, depth: sp.getTextureNode('depth').value, renderSize: [RW, RH], outputSize: [OW, OH], camera: S.cam, jitter: jit, jitterDelta: Q.has('nojd') ? [0, 0] : jd });
+    const feed = () => fg.real({ ...(Q.has('handed') ? { prevColor: prev.texture } : {}), eightBit: Q.has('eight'), color: colorOf(), velocity: sp.getTexture('velocity'), reactive: mask ? sp.getTexture('reactive') : null, depth: sp.getTextureNode('depth').value, renderSize: [RW, RH], outputSize: [OW, OH], camera: S.cam, jitter: jit, jitterDelta: Q.has('nojd') ? [0, 0] : jd });
     // warm the velocity history, then three real frames (the third back gives the curve)
     await frame(t0 - 3 * H); await frame(t0 - 2 * H); feed(); fg.keep();
     await frame(t0 - H); feed(); fg.keep(); copyRT(colorOf(), prev);

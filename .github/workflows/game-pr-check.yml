@@ -285,7 +285,7 @@ jobs:
         if: steps.changed.outputs.run
         run: node scripts/mutants.mjs
 
-  # Frame generation quality: made frames scored against the scene really drawn at that moment, in 12
+  # Frame generation quality: made frames scored against the scene really drawn at that moment, in 13
   # suites (blend, ahead, two frames between, hard cases, upscaled...), each scene no worse than
   # scripts/framegen-test/baseline.json. Then the upscalers against the same scene drawn at twice the
   # size: SGSR 2 no worse than a plain stretch, and our changes to it no worse than Qualcomm's shader
@@ -344,6 +344,11 @@ jobs:
       - name: SGSR 2 no worse than a plain stretch, and our changes to it no worse than without
         if: steps.changed.outputs.run
         run: node scripts/upscale-compare.cjs --webgpu
+
+      # (the WebGL fallback's own SGSR 2 shader, sgsr2.js, once its history has settled)
+      - name: The same on WebGL
+        if: steps.changed.outputs.run
+        run: node scripts/upscale-compare.cjs --warm 80 --modes plain,sgsr2,sgsr2-plain
 
   # The app around a game (screen kept on in a round, finer touch, even pixels and the LCD look, the
   # one-line soundtrack, the phone-only save) and the sound itself (every ready-made sound is heard and

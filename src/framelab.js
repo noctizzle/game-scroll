@@ -297,7 +297,8 @@ const nextGrab = (maxSide) => new Promise(res => {
 const PAIRS = {
   sgsr: { title: 'Upscaler off vs on', a: 'SGSR off (stretched)', b: 'SGSR on', set: on => { HD.upscale = on; } },
   sgsr12: { title: 'SGSR 1 vs SGSR 2', a: 'SGSR 1', b: 'SGSR 2', set: on => { HD.upscaler = on ? 'sgsr2' : 'sgsr1'; } },
-  sgsrTune: { title: 'SGSR 2 as it was vs tuned', a: 'SGSR 2 as Qualcomm has it', b: 'SGSR 2 with our changes', set: on => { HD.sgsrTune = on; }, needs: () => HD.info.backend === 'webgpu', no: 'Only SGSR 2 on WebGPU has the changes, so there is nothing to compare.' },
+  sgsrTune: { title: 'SGSR 2 as it was vs tuned', a: 'SGSR 2 as Qualcomm has it', b: 'SGSR 2 with our changes', set: on => { HD.sgsrTune = on; } },
+  mip: { title: 'Textures as drawn vs sharpened', a: 'textures read for the small picture', b: 'textures read for the screen', set: on => { HD.mipBias = on ? null : false; }, needs: () => HD.info.backend === 'webgpu' && HD.info.upscaled === 'sgsr2' && HD.info.rw < HD.info.ow, no: 'Textures are sharpened only while SGSR 2 upscales on WebGPU, so there is nothing to compare.' },
   backend: { title: 'WebGL vs WebGPU', a: 'WebGL', b: 'WebGPU', set: async on => { setGpuPick(on ? 'webgpu' : 'webgl'); if (on) await prepareGPU(); }, needs: () => !!webgpu() || gpuPick() === 'webgl' },
   res: { title: 'Half vs full resolution', a: '50% of the 3D size', b: 'the tier\'s own size', set: on => { HD.scale = on ? null : HD.info.rw && HD.info.ow ? .5 * HD.info.rw / HD.info.ow : .5; } },
   tier: { title: 'Low vs ultra tier', a: 'low', b: 'ultra', set: on => { HD.force = on ? 3 : 0; } },
@@ -305,7 +306,7 @@ const PAIRS = {
 async function runAB(key) {
   const s = UI.s, P = PAIRS[key]; if (!s || !HD || !is3D(s.def)) return UI.flash('A/B needs a Next Gen or AR game on screen.');
   if (P.needs && !P.needs()) return UI.flash(P.no || 'This phone has no WebGPU, so there is nothing to compare.');
-  const keep = { upscale: HD.upscale, upscaler: HD.upscaler, scale: HD.scale, force: HD.force, tune: HD.sgsrTune, pick: gpuPick() }, was = frozen;
+  const keep = { upscale: HD.upscale, upscaler: HD.upscaler, scale: HD.scale, force: HD.force, tune: HD.sgsrTune, mip: HD.mipBias, pick: gpuPick() }, was = frozen;
   setFrozen(true); UI.busy(`A/B: ${P.title}…`);
   try {
     const shotsAB = [];
@@ -319,7 +320,7 @@ async function runAB(key) {
     shots.push(shot); viewer(shot);
   } catch (e) { UI.flash('A/B did not finish: ' + (e?.message || e)); }
   finally {
-    HD.upscale = keep.upscale; HD.upscaler = keep.upscaler; HD.scale = keep.scale; HD.force = keep.force; HD.sgsrTune = keep.tune; if (gpuPick() !== keep.pick) setGpuPick(keep.pick);
+    HD.upscale = keep.upscale; HD.upscaler = keep.upscaler; HD.scale = keep.scale; HD.force = keep.force; HD.sgsrTune = keep.tune; HD.mipBias = keep.mip; if (gpuPick() !== keep.pick) setGpuPick(keep.pick);
     setFrozen(was); UI.busy('');
   }
 }
@@ -349,10 +350,10 @@ async function runShimmer() {
     };
     await waitFrames(30, 600); UI.busy('Shimmer: 16 pictures…');
     const { w, h, v, first, n, share } = await measure(), still = HD?.info.still;
-    // SGSR 2 on WebGPU: the same frame again as Qualcomm's shader has it, to see what our changes to it do
+    // SGSR 2: the same frame again as Qualcomm's shader has it, to see what our changes to it do
     // here (not while the 3D shows a still frame again: nothing is being redrawn to compare)
     let plain = null;
-    if (HD && !still && HD.info.upscaled === 'sgsr2' && HD.info.backend === 'webgpu' && HD.sgsrTune !== false) {
+    if (HD && !still && HD.info.upscaled === 'sgsr2' && HD.sgsrTune !== false) {
       UI.busy('Shimmer: again with SGSR 2 as it was…');
       const keep = HD.still; HD.sgsrTune = false; HD.still = false;
       try { await waitFrames(45, 900); plain = (await measure()).share; } finally { HD.sgsrTune = true; HD.still = keep; }

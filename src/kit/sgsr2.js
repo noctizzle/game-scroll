@@ -9,9 +9,17 @@
 // github.com/SnapdragonStudios/snapdragon-gsr. Changes: textureGather (not in WebGL 2) is done with
 // four texelFetch reads; there is no motion vector buffer, so every pixel's motion comes from its depth
 // and the camera's move (the shader's own fallback); depth is WebGL's 0..1, turned into -1..1 for the
-// reprojection; texelFetch reads are clamped to the picture; it reads three.js's vUv; the output is
-// opaque. (The WebGPU version is hd3d-gpu.js sgsr2Gpu, written in TSL from the same two passes, with
-// per-pixel motion and two more changes of ours listed there.)
+// reprojection; texelFetch reads are clamped to the picture; it reads three.js's vUv; the output's
+// alpha is ours (below). (The WebGPU version is hd3d-gpu.js sgsr2Gpu, written in TSL from the same two
+// passes, with per-pixel motion.)
+//
+// Two changes of ours to the upscale pass, the same as the WebGPU version's and each kept because it
+// measured better (scripts/upscale-compare.cjs); S2_TUNED off is Qualcomm's shader as it was:
+// - the history is read sharply (Catmull-Rom in 5 reads) where the shader read it bilinearly. It is read
+//   again every frame the camera moves, and bilinear softens it a little each time
+// - a pixel that stays put settles: how long it has been left alone is kept in the history's alpha and
+//   makes the history count for more there, up to S2_HOLD times, so a still picture shimmers less on
+//   thin things and edges. Anything that moves, or a cut, starts from the usual again
 //
 // ---------------------------------------------------------------------------------------------------
 // Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
@@ -42,6 +50,9 @@
 
 import { ShaderMaterial, WebGLRenderTarget, HalfFloatType, LinearFilter, Vector2, Matrix4 } from 'three';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
+
+/** How many times more the history counts for in a pixel that has settled (both versions). */
+export const S2_HOLD = 4;
 
 const VERT = /* glsl */`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 
@@ -110,6 +121,18 @@ const UPSCALE = /* glsl */`
   varying highp vec2 vUv;
 
   float FastLanczos(float base) { float y = base - 1.0; float y2 = y * y; float y_temp = 0.75 * y + y2; return y_temp * y2; }
+  #ifdef S2_TUNED
+  // the history read sharply: Catmull-Rom in 5 reads (the middle 2 x 2 in one, and the four edges)
+  vec4 sharpHistory(highp vec2 uv) {
+    highp vec2 ts = outputSize, P = uv * ts, c = floor(P - 0.5) + 0.5, f = P - c, f2 = f * f, f3 = f2 * f;
+    highp vec2 w0 = -0.5 * f3 + f2 - 0.5 * f, w1 = 1.5 * f3 - 2.5 * f2 + 1.0, w2 = -1.5 * f3 + 2.0 * f2 + 0.5 * f, w3 = 0.5 * f3 - 0.5 * f2;
+    highp vec2 w12 = w1 + w2, t12 = (c + w2 / w12) / ts, t0 = (c - 1.0) / ts, t3 = (c + 2.0) / ts;
+    highp float a = w12.x * w0.y, b = w0.x * w12.y, m = w12.x * w12.y, d = w3.x * w12.y, e = w12.x * w3.y;
+    highp vec4 sum = textureLod(PrevOutput, vec2(t12.x, t0.y), 0.0) * a + textureLod(PrevOutput, vec2(t0.x, t12.y), 0.0) * b
+      + textureLod(PrevOutput, t12, 0.0) * m + textureLod(PrevOutput, vec2(t3.x, t12.y), 0.0) * d + textureLod(PrevOutput, vec2(t12.x, t3.y), 0.0) * e;
+    return max(sum / (a + b + m + d + e), vec4(0.0));
+  }
+  #endif
   vec3 fetch(ivec2 p) { return texelFetch(InputColor, clamp(p, ivec2(0), ivec2(renderSize) - 1), 0).xyz; }
 
   vec4 Upsampledcw; vec3 rectboxcenter, rectboxvar, rectboxmin, rectboxmax; float rectboxweight;
@@ -138,7 +161,12 @@ const UPSCALE = /* glsl */`
     highp vec2 Motion = mda.xy;
     highp vec2 PrevUV = clamp(-0.5 * Motion + Hruv, 0.0, 1.0);
     float depthfactor = mda.z;
-    vec3 HistoryColor = textureLod(PrevOutput, PrevUV, 0.0).xyz;
+    #ifdef S2_TUNED
+    vec4 History = sharpHistory(PrevUV);
+    #else
+    vec4 History = textureLod(PrevOutput, PrevUV, 0.0);
+    #endif
+    vec3 HistoryColor = History.xyz;
 
     Upsampledcw = vec4(0.0);
     float biasmax = Biasmax_viewportXScale;
@@ -167,7 +195,14 @@ const UPSCALE = /* glsl */`
     Upsampledcw.xyz = clamp(Upsampledcw.xyz / Upsampledcw.w, rectboxmin - vec3(0.075), rectboxmax + vec3(0.075));
     Upsampledcw.w = Upsampledcw.w * (1.0 / 3.0);
 
-    float baseupdate = 1.0 - depthfactor;
+    // how much more the history counts for where the pixel has settled (its alpha: 0 the usual .. 1 S2_HOLD
+    // times); a pixel that moves (a tenth of a pixel is enough) is back to the usual
+    #ifdef S2_TUNED
+    float held = min(clamp(History.w, 0.0, 1.0) * (S2_HOLD - 1.0) + 1.0, mix(S2_HOLD, 1.0, clamp(motion_viewport_len * 10.0, 0.0, 1.0)));
+    #else
+    float held = 1.0;
+    #endif
+    float baseupdate = held * (1.0 - depthfactor);
     baseupdate = min(baseupdate, mix(baseupdate, Upsampledcw.w * 10.0, clamp(10.0 * motion_viewport_len, 0.0, 1.0)));
     baseupdate = min(baseupdate, mix(baseupdate, Upsampledcw.w, clamp(motion_viewport_len * 0.05, 0.0, 1.0)));
     float basealpha = baseupdate;
@@ -191,13 +226,21 @@ const UPSCALE = /* glsl */`
     basealpha = mix(basemin, basealpha, clamp(lerpcontribution, 0.0, 1.0));
 
     float alphasum = max(EPSILON, basealpha + Upsampledcw.w);
-    float alpha = clamp(Upsampledcw.w / alphasum + reset, 0.0, 1.0);
-    gl_FragColor = vec4(mix(HistoryColor, Upsampledcw.xyz, alpha), 1.0);
+    float own = Upsampledcw.w / alphasum;
+    float alpha = clamp(own + reset, 0.0, 1.0);
+    // settles a little more each frame (by the new frame's weight, so only as fast as the picture gathers),
+    // and starts again where the new frame was put in over the history (a cut)
+    #ifdef S2_TUNED
+    float settled = alpha > own + 1.0e-4 ? 0.0 : clamp((held + Upsampledcw.w - 1.0) / (S2_HOLD - 1.0), 0.0, 1.0);
+    #else
+    float settled = 1.0;
+    #endif
+    gl_FragColor = vec4(mix(HistoryColor, Upsampledcw.xyz, alpha), settled);
   }`;
 
 const COPY = /* glsl */`uniform sampler2D tDiffuse; varying vec2 vUv; void main() { gl_FragColor = vec4(texture2D(tDiffuse, vUv).rgb, 1.0); }`;
 
-const mat = (fragmentShader, uniforms) => new ShaderMaterial({ vertexShader: VERT, fragmentShader, uniforms, depthTest: false, depthWrite: false });
+const mat = (fragmentShader, uniforms, defines = {}) => new ShaderMaterial({ vertexShader: VERT, fragmentShader, uniforms, defines, depthTest: false, depthWrite: false });
 const rt = () => new WebGLRenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false, minFilter: LinearFilter, magFilter: LinearFilter });
 const halton = (i, b) => { let f = 1, r = 0; for (; i > 0; i = Math.floor(i / b)) { f /= b; r += f * (i % b); } return r; };
 const VP = new Matrix4(), INV = new Matrix4();
@@ -272,11 +315,18 @@ export class SGSR2 {
     this.cu = { InputDepth: { value: null }, clipToPrevClip: { value: new Matrix4() }, renderSize: { value: new Vector2() }, renderSizeRcp: { value: new Vector2() }, cameraFovAngleHor: { value: 1 } };
     this.uu = { PrevOutput: { value: null }, MotionDepthClipAlphaBuffer: { value: null }, InputColor: { value: null }, renderSize: this.cu.renderSize, renderSizeRcp: this.cu.renderSizeRcp,
       outputSize: { value: new Vector2() }, jitterOffset: { value: new Vector2() }, scaleRatio: { value: new Vector2() }, minLerpContribution: { value: 0 }, reset: { value: 1 } };
-    this.convert = mat(CONVERT, this.cu); this.upscale = mat(UPSCALE, this.uu); this.copy = mat(COPY, { tDiffuse: { value: null } });
+    this.convert = mat(CONVERT, this.cu); this.upscale = mat(UPSCALE, this.uu, { S2_TUNED: 1, S2_HOLD: S2_HOLD.toFixed(1) }); this.copy = mat(COPY, { tDiffuse: { value: null } });
     this.quad = new FullScreenQuad(null);
     this.mdc = rt(); this.hist = [rt(), rt()]; this.cur = 0;
     this.convertPass = new ConvertPass(this); this.upscalePass = new UpscalePass(this);
     this.f = new SgsrFrame();
+  }
+  /** Our two changes to the upscale pass on (the usual) or off: Qualcomm's shader as it was. A change builds the shader again and starts the history again. */
+  get tuned() { return 'S2_TUNED' in this.upscale.defines; }
+  set tuned(on) {
+    if (!!on === this.tuned) return;
+    if (on) this.upscale.defines.S2_TUNED = 1; else delete this.upscale.defines.S2_TUNED;
+    this.upscale.needsUpdate = true; this.f.key = '';
   }
   /** Before drawing: sizes, the camera's move since last frame, and this frame's jitter on cam. */
   begin(cam, pw, ph, ow, oh, view, now, cut = false) {
