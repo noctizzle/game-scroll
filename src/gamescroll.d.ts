@@ -221,11 +221,23 @@ export interface SoundPart {
     channel(name: string): { volume(v: number, fade?: number): Loose; duck(to?: number, hold?: number, back?: number): Loose };
     reset(): Loose;
   };
-  /** Speaks a line with the phone's own voice (text to speech). Resolves when it's said (false if it couldn't). Show the words too. */
-  say(text: string, o?: { pitch?: number; rate?: number; volume?: number; lang?: string; onWord?: (at: number) => void }): Promise<boolean>;
+  /**
+   * Speaks a line with the phone's own voices (text to speech). Resolves when it's said (false if it couldn't). Show the words too.
+   * voice casts a character from the voices this phone has: 'woman' | 'man' | 'any', or { kind, lang (accents to try, in order),
+   * take (the second, third... such voice, so a cast differs), like (voice names to prefer) }. An array of parts is said in
+   * order with pauses (numbers, in seconds) between; a part can be { text, pitch, rate, volume, voice, lang } for its own delivery.
+   */
+  say(text: string | SayPart[], o?: { pitch?: number; rate?: number; volume?: number; lang?: string | string[]; voice?: SayVoice | null; onWord?: (at: number) => void }): Promise<boolean>;
+  /** The voices this phone has to cast from (joke voices left out). kind is null when the phone doesn't say. */
+  voices(): Promise<{ name: string; lang: string; kind: 'woman' | 'man' | null }[]>;
   stopTalking(): void;
   talking(): boolean;
 }
+
+/** A character's voice for gs.sound.say: a kind, or which accents to try, which take of that kind, and voices to prefer by name. */
+export type SayVoice = 'woman' | 'man' | 'any' | { kind?: 'woman' | 'man' | 'any'; lang?: string | string[]; take?: number; like?: string | string[] };
+/** One part of a spoken line: words, a pause in seconds, or words with their own delivery. */
+export type SayPart = string | number | { text: string; pitch?: number; rate?: number; volume?: number; voice?: SayVoice | null; lang?: string | string[] };
 
 export interface HapticEvent { at?: number; len?: number; strength?: number; sharpness?: number; to?: number }
 declare const HAPTIC_NAMES: { tap: 1; thud: 1; heartbeat: 1; explosion: 1; charge: 1; engine: 1; rain: 1; rumble: 1; success: 1; fail: 1 };
