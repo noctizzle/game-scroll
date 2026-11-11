@@ -114,13 +114,11 @@ so its next round starts there instead of stuttering down again.
   checks the pictures match a full redraw.
 - On WebGPU, SGSR 2 is the anti-aliasing of every Next Gen view that isn't AR (it runs at full size too),
   so the scene under it is drawn without MSAA: the picture measured the same with it and without, and
-  the multisampled colour, depth and motion pictures are saved. Only a view kept off SGSR 2
-  (`v.upscaler = 'sgsr1'`, or `__hd.upscaler = 'sgsr1'`) that isn't upscaled gets, at high and ultra,
-  three.js's TRAA (then its RCAS sharpening from AMD FidelityFX) instead of MSAA. Small bright moving
-  things blend away in TRAA's history, so there a view with particles keeps MSAA unless it sets
-  `v.aa = 'traa'` (`v.aa = 'msaa'` always keeps MSAA). `__hd.traa = false` turns TRAA off everywhere. A
-  camera jump (`v.cut()`) starts either history again. Measured on the test scene at full size, SGSR 2
-  is closer to the true picture than TRAA with the camera still, moving, and with a thing moving.
+  the multisampled colour, depth and motion pictures are saved. A view kept off SGSR 2
+  (`v.upscaler = 'sgsr1'`, or `__hd.upscaler = 'sgsr1'`) has the tier's own edge smoothing: MSAA at high
+  and ultra, FXAA below. A camera jump (`v.cut()`) starts SGSR 2's history again. (three.js's TRAA was
+  here for those views at full size until it measured further from the true picture than SGSR 2 with
+  the camera still, moving, and with a thing moving, and almost no view reached it.)
 - WebGPU times each frame on the graphics chip where the phone allows it (`__hd.info.gpuMs`: every
   pass since the last real frame, the made frames and other compute work included, which
   `__hd.info.gpuCompute` gives on its own). The quality steps use it: a frame slowed by the CPU

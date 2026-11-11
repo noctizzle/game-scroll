@@ -5,7 +5,7 @@
 // picks its detail level by distance, and packs the ones that pass into that level's list, which is drawn
 // with an indirect draw whose copy count the pass wrote. The CPU only sends the copies again when the game
 // moves, hides or recolours one.
-// The packed lists change order every frame, so three's motion for each copy (frame generation, TRAA,
+// The packed lists change order every frame, so three's motion for each copy (frame generation, SGSR 2,
 // motion blur) is taken from the same list ("last frame" = this frame): right for still things, which is
 // what gs.props are; hd3d.js keeps the CPU lists (stable slots) while frame generation runs.
 // Not for: multi-material meshes (an indirect draw is one draw), occlusion culling (CPU only).

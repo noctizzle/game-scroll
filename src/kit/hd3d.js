@@ -1264,7 +1264,7 @@ export class HDView {
     if (fog) this.scene.fog = new FogExp2(bg, fog);
     this.envI = env; this.hemi = new HemisphereLight(sky, ground, amb); this.scene.add(this.hemi);
     this.cam = new PerspectiveCamera(fov, 1, .05, 120); this.scene.add(this.cam);
-    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.aa = undefined; this.autoExposure = false; this.eye = null; this.lut = null; this.lutAmount = 1; this.oit = false; this.flare = null; this.fog3d = null; this.liveBounce = null;
+    this.hurt = 0; this.t = 0; this.W = 240; this.H = 320; this.exposure = 1; this.bloom = .7; this.tone = 'aces'; this.autoExposure = false; this.eye = null; this.lut = null; this.lutAmount = 1; this.oit = false; this.flare = null; this.fog3d = null; this.liveBounce = null;
     this.lamps = []; this.tierSeen = -1; this.parts = []; this.reflectors = []; this.contacts = [];
     this.env = null; this.envMaker = null; this.grade = null; this.glare = 0; this._air = null;
     this.shafts = 0; this.shaftsAt = null; this.decals = []; this.probes = []; this.probe = null; this.rooms = []; this.gi = null; this.focus = null; this.cascade = null; this.beams = null; this.motionBlur = null;
@@ -1885,17 +1885,11 @@ export class HDView {
     // ultra here (WebGL: ultra only), traced at half size on high
     o.fx = this.extras?.length ? this.extras : null;
     o.refl = this.reflectors.length && T.ao > 0 && !this.clearBg ? (T.ssr ? REFL_FULL : REFL_HALF) : null;
-    // temporal anti-aliasing in place of MSAA (three.js's TRAA) where the tier pays for smooth edges and the
-    // picture isn't upscaled (SGSR 2 is temporal itself); card pictures keep MSAA (one frame has no history)
-    // Small bright moving things (particles, sparks) blend away in its history and look dimmer, so a view
-    // with particles keeps MSAA unless the game asks for it (v.aa = 'traa'; 'msaa' keeps MSAA anyway)
     // SGSR 2 smooths every edge from its history (also at full size, where it is the anti-aliasing), and the
     // picture measured the same with MSAA under it as without: so the scene is drawn without, which saves the
     // multisampled colour, depth and motion pictures and their resolves
     if (s2 && HD.sgsrTune !== false) o.msaa = 0;
     o.s2Plain = HD.sgsrTune === false;
-    const traaOk = this.aa === 'traa' || (this.aa !== 'msaa' && !this.parts.length);
-    if (HD.traa !== false && traaOk && T.msaa && !up && !baking && !off && !this.clearBg) { o.traa = true; o.msaa = 0; o.smooth = false; }
     const g = this.grade;
     if (g) o.grade = { sat: g.saturation ?? 1, con: g.contrast ?? 1, lo: toRGB(g.shadows, GL), hi: toRGB(g.highlights, GH) };
     // depth of field and sun shafts: in the chain from the first time the view uses them (high and ultra
@@ -1948,7 +1942,6 @@ export class HDView {
     for (const e of empty) e.visible = false;
     r.info.autoReset = false; r.info.reset();
     const cut = lastView !== this || this._cut; lastView = this; this._cut = false; if (TEST) window.__hdView = this;
-    if (cut && ch.traaN) ch.traaN._historyRenderTarget?.setSize(1, 1);   // (TRAA starts its history again from this frame)
     // Frame generation starts again after a cut (another view drew, v.cut(), a pause, the camera
     // jumping): the frames either side of one don't belong together.
     let fg = null;

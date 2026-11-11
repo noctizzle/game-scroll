@@ -30,13 +30,12 @@ v.grade = { saturation: 1.1, contrast: 1.05 };
 const pose = f => { const a = f * .004; v.cam.position.set(Math.sin(a) * 9, 4, Math.cos(a) * 9); v.cam.lookAt(0, 1, 0); v.cam.updateMatrixWorld(); };
 const place = f => { mover.position.x = -3 + f * .05; };
 // modes: full (the reference: drawn at twice the size and scaled down, no jaggies), plain, sgsr1 and sgsr2
-// (drawn at 1/K size), native (full size, FXAA or the tier's MSAA), aa (full size, SGSR 2 as anti-aliasing)
-// and traa (full size, three.js's TRAA: WebGPU, tiers with MSAA); sgsr2-plain and aa-plain: SGSR 2 as it was
+// (drawn at 1/K size), native (full size, FXAA or the tier's MSAA), aa (full size, SGSR 2 as anti-aliasing);
+// sgsr2-plain and aa-plain: SGSR 2 as it was
 const set = m => {
   const mode = m.replace('-plain', ''); HD.sgsrTune = mode === m;
-  HD.upscale = !['full', 'plain', 'native'].includes(mode); HD.upscaler = mode === 'sgsr1' || mode === 'traa' ? 'sgsr1' : 'sgsr2';
-  HD.traa = mode === 'traa';
-  HD.scale = mode === 'full' ? 2 : mode === 'native' || mode === 'aa' || mode === 'traa' ? 1 : 1 / K;
+  HD.upscale = !['full', 'plain', 'native'].includes(mode); HD.upscaler = mode === 'sgsr1' ? 'sgsr1' : 'sgsr2';
+  HD.scale = mode === 'full' ? 2 : mode === 'native' || mode === 'aa' ? 1 : 1 / K;
 };
 const draw = () => { v.t = 0; v.render(x, W, H); return x.getImageData(0, 0, W, H).data; };
 const err = (a, b) => { let s = 0; for (let i = 0; i < a.length; i += 4) s += (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])) / 3; return s / (a.length / 4); };
@@ -44,8 +43,8 @@ const err = (a, b) => { let s = 0; for (let i = 0; i < a.length; i += 4) s += (M
 // changes from frame to frame over them; the reference's own (ref) is what the motion itself changes, so
 // more than that is crawl or shimmer and less is blur
 const out = { scale: K, scenes: {} }, shots = {}, LAST = 8, tick = () => new Promise(r => requestAnimationFrame(r));
-const MODES = Q.get('modes')?.split(','), AA = ['native', 'aa', ...(GPU ? ['aa-plain'] : []), ...(GPU && HD.force >= 2 ? ['traa'] : [])].filter(m => !MODES || MODES.includes(m));
-const run = async (name, frames, moveCam, moveBox, modes = MODES?.filter(m => !/^(native|aa|traa)/.test(m)) || ['plain', 'sgsr1', 'sgsr2', ...(GPU ? ['sgsr2-plain'] : [])]) => {
+const MODES = Q.get('modes')?.split(','), AA = ['native', 'aa', ...(GPU ? ['aa-plain'] : [])].filter(m => !MODES || MODES.includes(m));
+const run = async (name, frames, moveCam, moveBox, modes = MODES?.filter(m => !/^(native|aa)/.test(m)) || ['plain', 'sgsr1', 'sgsr2', ...(GPU ? ['sgsr2-plain'] : [])]) => {
   const at = f => { pose(moveCam ? f : 0); place(moveBox ? f : 0); };
   set('full'); at(frames - LAST); draw(); await tick(); await tick();   // (a resized WebGPU canvas shows the old picture until the next frame)
   const refs = [];
@@ -60,7 +59,7 @@ const run = async (name, frames, moveCam, moveBox, modes = MODES?.filter(m => !/
       const t0 = performance.now(); let d = draw(); ms += performance.now() - t0;
       if (f > frames - LAST) { flick += err(d, prev) / LAST; e += err(d, refs[f - frames + LAST]) / LAST; }
       prev = d;
-      if (f === frames) { res[mode] = { error: +e.toFixed(2), flicker: +flick.toFixed(2), ms: +(ms / (frames + 1)).toFixed(1), used: HD.info.upscaled || (mode === 'traa' && window.__hdView?._gpuChain?.traaN ? 'traa' : false), backend: HD.info.backend }; if (Q.has('shots')) shots[name + '.' + mode] = c.toDataURL(); }
+      if (f === frames) { res[mode] = { error: +e.toFixed(2), flicker: +flick.toFixed(2), ms: +(ms / (frames + 1)).toFixed(1), used: HD.info.upscaled, backend: HD.info.backend }; if (Q.has('shots')) shots[name + '.' + mode] = c.toDataURL(); }
       await tick();
     }
   }

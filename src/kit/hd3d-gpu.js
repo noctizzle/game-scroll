@@ -32,14 +32,10 @@ import { vxgi } from 'three/examples/jsm/lighting/vxgi/VXGINode.js';
 import { LightProbeGrid } from 'three/examples/jsm/lighting/LightProbeGrid.js';
 // v.tone (hd3d.js): three.js's own tone mappers
 const TONE = { aces: ACESFilmicToneMapping, neutral: NeutralToneMapping, agx: AgXToneMapping };
-// TRAA's sharpening (RCAS: 0 = most, 2 = none)
-const TRAA_SHARP = .25;
 export { LightProbeGrid };
 export { bakeProbe };   // v.bakeLight() on this renderer
 export { gpuFlood } from './flood-gpu.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
-import { traa } from 'three/examples/jsm/tsl/display/TRAANode.js';
-import { sharpen } from 'three/examples/jsm/tsl/display/SharpenNode.js';
 import { ClusteredLighting } from 'three/examples/jsm/lighting/ClusteredLighting.js';
 import ClusteredLightsNode from 'three/examples/jsm/tsl/lighting/ClusteredLightsNode.js';
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
@@ -1062,14 +1058,14 @@ export class GpuChain {
     // gs.fx3d's screen effects (hd3d-gpu-fx.js): the slots they take in the chain, and reflections (v.reflect())
     this.fxSlots = []; this.fxR = []; this.fxN = []; this.fxK = 1; this.xKey = ''; this.reflOn = false;
   }
-  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces', traaOn = false, lutOn = false, oitOn = false, flareOn = false, giOn = false) {
-    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}|${traaOn}|${lutOn}|${oitOn}|${flareOn}|${giOn}`;
+  build(aoOn, smooth, msaa, s2 = false, dofOn = false, shaftsOn = false, live = false, s1 = false, volOn = false, mbOn = false, mrtOn = false, tone = 'aces', lutOn = false, oitOn = false, flareOn = false, giOn = false) {
+    const key = `${aoOn}|${smooth}|${msaa}|${this.clear}|${s2}|${dofOn}|${shaftsOn}|${live}|${s1}|${volOn}|${mbOn}|${mrtOn}|${tone}|${lutOn}|${oitOn}|${flareOn}|${giOn}`;
     const TM = TONE[tone] ?? ACESFilmicToneMapping;
     if (key === this.key) return;
     this.key = key; this.fg?.reset(); this.sched = null; this.still?.reset();
     this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose(); this.s2?.dispose(); this.s1?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose();
     for (const t of [this.volT, this.baseT, this.mbT]) t?.renderTarget?.dispose();
-    this.traaN?.dispose(); this.casN?.dispose(); this.traaN = this.casN = null; this.giN?.dispose?.(); this.giT?.renderTarget?.dispose(); this.giN = this.giT = null;
+    this.giN?.dispose?.(); this.giT?.renderTarget?.dispose(); this.giN = this.giT = null;
     this.aoN = this.dnN = this.bloomN = this.s2 = this.s1 = this.dofT = this.shM = this.shB = this.volT = this.baseT = this.mbT = null;
     fxDispose(this); reflDispose(this);
     // v.oit: three's weighted blended order-independent transparency (McGuire and Bavoil) in place of the plain
@@ -1086,7 +1082,7 @@ export class GpuChain {
     }
     // the scene pass's pictures have to fit the chip's bytes a pixel (8 each: gpu.js asks for up to 64, a few
     // chips stop at 32): what doesn't fit is left out, reflections first, then live bounce light
-    const fit = Math.floor((this.r.gsPixelBytes || 32) / 8) - 1 - (mrtOn ? 2 : traaOn || mbOn ? 1 : 0) - (aoOn ? 1 : 0);
+    const fit = Math.floor((this.r.gsPixelBytes || 32) / 8) - 1 - (mrtOn ? 2 : mbOn ? 1 : 0) - (aoOn ? 1 : 0);
     if (giOn && fit < 1) giOn = false;
     // (the normals picture's alpha says whether a pixel takes ambient occlusion: see-through things,
     // leaf cards and anything marked noAO write 0, as WebGL's AO leaves them out: noAO() below)
@@ -1094,12 +1090,8 @@ export class GpuChain {
     const nrm = aoOn ? { normal: vec4(normalView, 1), ...(giOn ? { diffuse: vec4(diffuseColor.rgb, 1) } : {}) } : {};
     // reflections (v.reflect()): one more picture, of which pixels are shiny things and how rough
     const reflOn = aoOn && this.reflOn && fit >= (giOn ? 2 : 1); if (reflOn) nrm.gsRefl = reflMRT();
-    if (mrtOn) sp.setMRT(frameGenMRT(nrm)); else if (traaOn || mbOn) sp.setMRT(mrt({ output, velocity: vec4(velocity, 0, 1), ...nrm })); else if (aoOn) sp.setMRT(mrt({ output, ...nrm }));   // (motion blur: velocity for each thing's own move)
+    if (mrtOn) sp.setMRT(frameGenMRT(nrm)); else if (mbOn) sp.setMRT(mrt({ output, velocity: vec4(velocity, 0, 1), ...nrm })); else if (aoOn) sp.setMRT(mrt({ output, ...nrm }));   // (motion blur: velocity for each thing's own move)
     const U = this.U;
-    // temporal anti-aliasing (three.js's TRAA, top tiers when the picture isn't upscaled: SGSR 2 does its
-    // own): the camera moves by a fraction of a pixel each frame and each pixel blends with where it was
-    // last frame (following the motion picture, dropping what's newly uncovered), in place of MSAA.
-    // It takes the scene's colour before anything else reads it, so AO, bloom and the grade see the smooth one
     let colT = sp.getTextureNode('output');
     // (OIT: the see-through things are blended over the scene by the pass node itself, so that's what's read on)
     if (oitOn) colT = rtt(sp, null, null, { type: HalfFloatType, depthBuffer: false });
@@ -1107,31 +1099,26 @@ export class GpuChain {
     // near them, worked out each frame, so it follows a moving sun, a lamp switched on, a door opened.
     // 'screen': three's SSGI (what's on screen bounces); 'voxel': three's VXGI (the level as voxels, light
     // traced through them in cones: off-screen walls count too, the level's shape built once).
-    // Before TRAA, which smooths its noise frame to frame
+    // (its noise is the same every frame: no pass right after it averages a changing one over frames)
     if (giOn && aoOn) {
       const dN = sp.getTextureNode('depth'), nN = sp.getTextureNode('normal'), dif = sp.getTextureNode('diffuse'), C = colT;
       let g;
       if (giOn === 'voxel') {
-        const n = this.giN = vxgi(dN, nN, this.scene, this.cam, this.giRes || 64); n.useTemporalFiltering = traaOn; n.bounces = 1;
+        const n = this.giN = vxgi(dN, nN, this.scene, this.cam, this.giRes || 64); n.useTemporalFiltering = false; n.bounces = 1;
         if (this.giBox) n.volume.bounds.copy(this.giBox);
         const gi = n.getGINode(), vao = n.getAONode();
         g = Fn(() => vec4(C.sample(uv()).rgb.mul(mix(float(1), vao.sample(uv()).r, .5)).add(dif.sample(uv()).rgb.mul(gi.sample(uv()).rgb).mul(U.giK)), 1))();
       } else {
-        const n = this.giN = ssgi(C, dN, nN, this.cam); n.useTemporalFiltering = traaOn;
-        n.sliceCount.value = traaOn ? 2 : 3; n.stepCount.value = 8; n.radius.value = 6; n.giIntensity.value = 4; n.aoIntensity.value = 0;
+        const n = this.giN = ssgi(C, dN, nN, this.cam); n.useTemporalFiltering = false;
+        n.sliceCount.value = 3; n.stepCount.value = 8; n.radius.value = 6; n.giIntensity.value = 4; n.aoIntensity.value = 0;
         const gt = n.getGINode();
         g = Fn(() => vec4(C.sample(uv()).rgb.add(dif.sample(uv()).rgb.mul(gt.sample(uv()).rgb).mul(U.giK)), 1))();
       }
       this.giT = rtt(g, 1, 1, { type: HalfFloatType, depthBuffer: false }); colT = this.giT;
     }
     // reflections: three's screen-space reflections on the things the game marked, added to the scene's colour
-    // (before TRAA, like the bounce light, so its history smooths them)
+    // (after the bounce light, before the ambient occlusion and everything else the chain does to the picture)
     if (reflOn) colT = reflStage(this, sp, colT);
-    // (then AMD FidelityFX's contrast-adaptive sharpening, three's RCAS, gives back the crispness the blending takes, as engines do after TAA)
-    if (traaOn) {
-      this.traaN = traa(colT, sp.getTextureNode('depth'), sp.getTextureNode('velocity'), this.cam);
-      this.casN = sharpen(this.traaN.getTextureNode(), uniform(TRAA_SHARP)); colT = this.casN.getTextureNode();
-    }
     let lit = colT.rgb, aoF = float(1);
     if (aoOn) {
       this.aoN = ao(sp.getTextureNode('depth'), sp.getTextureNode('normal'), this.cam);
@@ -1313,7 +1300,7 @@ export class GpuChain {
     if (o.gi) { this.giRes = o.gi.res; this.giBox = o.gi.box; }
     // gs.fx3d's screen effects and reflections have a key of their own: the chain is built again when it changes
     { const xk = this.clear ? '' : fxPlan(this, o.fx) + (o.refl ? '|refl' : ''); this.reflOn = !!o.refl; if (xk !== this.xKey) { this.xKey = xk; this.key = ''; } }
-    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, f ? (o.s2Plain ? 'plain' : true) : false, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !f && !s1 && !!o.traa, !this.clear && !!o.lut, !this.clear && !!o.oit, !this.clear && !!o.flare, !this.clear && o.ao > 0 && o.gi ? o.gi.kind : false);
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, f ? (o.s2Plain ? 'plain' : true) : false, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !!o.lut, !this.clear && !!o.oit, !this.clear && !!o.flare, !this.clear && o.ao > 0 && o.gi ? o.gi.kind : false);
     if (this.s1) this.s1.size(o.w, o.h);
     // the passes size themselves from the canvas: upscaled, the canvas is the screen's size, so scale them down
     const k = f || s1 ? (o.w + .5) / o.fw : 1;

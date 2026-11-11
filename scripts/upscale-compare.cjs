@@ -10,7 +10,7 @@
 // WebGPU draws no film grain here (it is most of the error otherwise, and SGSR 2 averaging it away
 // looks like a better picture); WebGL has no switch for it, so read its numbers as rough.
 //   node scripts/upscale-compare.cjs [--scale 1.5] [--webgpu] [--tier 0..3] [--warm 80] [--modes plain,sgsr2] [--shots dir]
-//   --tier: the quality tier (2 and 3 have MSAA and TRAA); --warm: frames with nothing moving before each run
+//   --tier: the quality tier (2 and 3 have MSAA); --warm: frames with nothing moving before each run
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
 (async () => {
