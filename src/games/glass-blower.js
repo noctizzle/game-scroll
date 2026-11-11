@@ -78,7 +78,7 @@ function make(api) {
       const top0 = TOP; layout(h); const d = TOP - top0;
       if (curY != null) curY += d; if (hold) hold.y += d;
     },
-    reset() { vase = 0; lives = 3; score = 0; hold = null; spin = 0; t = 0; curY = (TOP + BOT) / 2; newVase(); feel.clear(); ready.reset(); },
+    reset() { hiss?.stop(); hiss = null; vase = 0; lives = 3; score = 0; hold = null; spin = 0; t = 0; curY = (TOP + BOT) / 2; newVase(); feel.clear(); ready.reset(); },
     update(dt) {
       feel.update(dt); t += dt; spin += dt * (2 + heat * 4);
       if (!hiss) hiss = bed({ vol: 0, from: 2600, filter: 'highpass' });
