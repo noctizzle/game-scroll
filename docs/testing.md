@@ -34,7 +34,7 @@ How to check a change without waiting longer than you need to. Written for peopl
 | The AR kit (`ar3d.js`, `ar-floor.js`, `native-ar.js`) or a native AR plugin | `npm run kit-test` (rooms played through the floor search), then `node scripts/ar-floor.cjs [word] [--shots dir]`: Bin Flick against a pretend native AR phone ([ar-3d.md](ar-3d.md), Testing). Then AR Lab on a real phone | about 2 min |
 | Next Gen / AR on WebGPU | `node scripts/gpu-games.cjs [id ...]` | about 25 s a game |
 | Shaders built mid-round (hd3d `holdNew`) | `node scripts/shader-hold.cjs [--webgpu]` | about a minute |
-| Frame generation | `node scripts/framegen-test.cjs --check` (12 suites against `scripts/framegen-test/baseline.json`; `--save` after a change meant to move the numbers), `node scripts/framegen-games.cjs [--jobs n]` | about 3 min, then 1 to 4 min |
+| Frame generation | `node scripts/framegen-test.cjs --check` (13 suites against `scripts/framegen-test/baseline.json`; `--save` after a change meant to move the numbers), `node scripts/framegen-games.cjs [--jobs n]` | about 3 min, then 1 to 4 min |
 | The upscalers (SGSR 1 and 2, `hd3d-gpu.js` `sgsr2Gpu`, `sgsr2.js`) | `node scripts/upscale-compare.cjs --webgpu [--scale 1.8] [--tier 2] [--warm 80]`: error and flicker against the scene drawn at twice the size; fails if SGSR 2 is worse than a plain stretch, or our changes to it worse than Qualcomm's shader as it was | about 4 min |
 | Engine speed (CPU per frame) | `node scripts/perf-bench.cjs [id ...] --json before.json` before, `--vs before.json` after (see below) | about 15 s a game per backend |
 | The frame lab (`src/framelab.js`) | `node scripts/framelab-test.cjs [2d-id] [3d-id] [--shots dir] [--report file.html]` | about 3 min |

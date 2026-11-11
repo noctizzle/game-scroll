@@ -1381,7 +1381,8 @@ export class GpuChain {
     this.fgMode = mode;
     const vel = sp.getTexture('velocity');
     this.U.gk.value = vel.image.width / o.fw;
-    fg.real({ color, prevColor: before, velocity: vel, reactive: sp.getTexture('reactive'), depth: sp.getTextureNode('depth').value,
+    // (the picture is tone mapped and in sRGB by now: in 0..1 unless the screen is HDR, where it goes past white)
+    fg.real({ color, prevColor: before, eightBit: !r.gsHdr, velocity: vel, reactive: sp.getTexture('reactive'), depth: sp.getTextureNode('depth').value,
       renderSize: [vel.image.width, vel.image.height], outputSize: [o.fw, o.fh], camera: cam, jitter: fgo.jit, jitterDelta: fgo.jd });
     // the gap since the last real frame, in refreshes as the screen saw them (one that can't be a refresh
     // count, like a test's slow frames, counts as the usual one)

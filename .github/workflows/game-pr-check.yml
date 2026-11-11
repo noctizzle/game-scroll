@@ -285,7 +285,7 @@ jobs:
         if: steps.changed.outputs.run
         run: node scripts/mutants.mjs
 
-  # Frame generation quality: made frames scored against the scene really drawn at that moment, in 12
+  # Frame generation quality: made frames scored against the scene really drawn at that moment, in 13
   # suites (blend, ahead, two frames between, hard cases, upscaled...), each scene no worse than
   # scripts/framegen-test/baseline.json. Then the upscalers against the same scene drawn at twice the
   # size: SGSR 2 no worse than a plain stretch, and our changes to it no worse than Qualcomm's shader

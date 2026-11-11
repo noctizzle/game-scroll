@@ -489,6 +489,11 @@ jitter back out of the motion, and costs a few milliseconds of compute instead o
 - **Size changes are cheap:** the frame generator's shaders take every size as a uniform, so a
   resolution step mid-round reuses them instead of stalling to build new ones; the stutter shield
   never changes the resolution.
+- **Memory:** the made frame and its unfilled copy are kept in 8 bits a channel when the screen is
+  not HDR (the picture is already finished screen colour by then, and it scored the same as 16 bits
+  on every test scene), which halves those two screen-size stores: about 34 MB on an unfolded Fold.
+  The motion and depth stores at the drawn size are the larger part and stay as they are. An HDR
+  screen keeps 16 bits throughout.
 - **Cuts:** after a cut nothing is made until two new real frames. Another view drawing, a pause and
   big camera jumps (turning more than 20 degrees, moving 8 metres or zooming by a quarter in one frame) are found by themselves;
   call `v.cut()` when the camera switches somewhere new in a smaller step (it also restarts SGSR 2).
