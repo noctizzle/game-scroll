@@ -67,6 +67,7 @@ function make(api) {
 
   return {
     reset() {
+      hiss?.stop(); hiss = null;   // the app stops beds with each round, so make a fresh one per round
       level = 1; score = 0; fx = tx = W / 2; hold = false; tick = 0; feel.clear(); ready.reset(); startLevel();
       dunes = Array.from({ length: 3 }, (_, i) => ({ y: 330 - 516 + i * 38, a: rnd(0, 7), s: rnd(.008, .016) }));
       hiss?.set({ vol: 0 }, .05);
