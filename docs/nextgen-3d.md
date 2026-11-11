@@ -112,14 +112,19 @@ so its next round starts there instead of stuttering down again.
   outweigh the moving ones (20,000 triangles or more, at least twice the moving ones), for sun and
   spot lights with one map. `__hd.shadowCache = false` turns it off; `node scripts/shadow-check.cjs <id> [--gpu]`
   checks the pictures match a full redraw.
-- On WebGPU at high and ultra, when the picture isn't upscaled, edges are smoothed by temporal
-  anti-aliasing (three.js's TRAA, then its RCAS sharpening from AMD FidelityFX) instead of MSAA:
-  smoother thin lines and edges, less memory. Small bright moving things blend away in its history,
-  so a view with particles keeps MSAA unless it sets `v.aa = 'traa'` (`v.aa = 'msaa'` always keeps
-  MSAA). `__hd.traa = false` turns it off everywhere. A camera jump (`v.cut()`) starts its history again.
-- WebGPU times each frame on the graphics chip where the phone allows it (`__hd.info.gpuMs`). The
-  quality steps use it: a frame slowed by the CPU doesn't give up resolution (it wouldn't help), and
-  a GPU with plenty of room gets sharpness back sooner.
+- On WebGPU, SGSR 2 is the anti-aliasing of every Next Gen view that isn't AR (it runs at full size too),
+  so the scene under it is drawn without MSAA: the picture measured the same with it and without, and
+  the multisampled colour, depth and motion pictures are saved. Only a view kept off SGSR 2
+  (`v.upscaler = 'sgsr1'`, or `__hd.upscaler = 'sgsr1'`) that isn't upscaled gets, at high and ultra,
+  three.js's TRAA (then its RCAS sharpening from AMD FidelityFX) instead of MSAA. Small bright moving
+  things blend away in TRAA's history, so there a view with particles keeps MSAA unless it sets
+  `v.aa = 'traa'` (`v.aa = 'msaa'` always keeps MSAA). `__hd.traa = false` turns TRAA off everywhere. A
+  camera jump (`v.cut()`) starts either history again. Measured on the test scene at full size, SGSR 2
+  is closer to the true picture than TRAA with the camera still, moving, and with a thing moving.
+- WebGPU times each frame on the graphics chip where the phone allows it (`__hd.info.gpuMs`: every
+  pass since the last real frame, the made frames and other compute work included, which
+  `__hd.info.gpuCompute` gives on its own). The quality steps use it: a frame slowed by the CPU
+  doesn't give up resolution (it wouldn't help), and a GPU with plenty of room gets sharpness back sooner.
 - Detailed meshes (3,000 triangles or more, skinned ones too) get simpler copies from meshoptimizer
   in the background, one mesh a frame, and each frame draws the simplest copy whose change would
   show as under a pixel: far soldiers and props need a fraction of their triangles and look the
@@ -214,7 +219,7 @@ It waits at most `__hd.holdMs` (500 ms). Mark something that must show on its ve
 player, say) `userData.noHold = true`; it then builds in the frame as before. `__hd.hold = false`
 turns waiting off; `__hd.info.held` says how many things are waiting. `node scripts/shader-hold.cjs
 [--webgpu]` measures the difference.
-`__hd.info` reports `{ calls, tris, cpu, shadows, upscaled, backend, framegen }` for the last frame. The 3D frame is rendered at the tier's pixel count (and lower while the phone struggles), then upscaled to the card's full resolution with **Snapdragon Game Super Resolution 2** (Qualcomm's temporal upscaler, `src/kit/sgsr2.js`): the camera is nudged by a fraction of a pixel each frame and each new small frame is blended into the full-size picture of the frames before, moved by the camera's own move. That gives a sharper, steadier picture than one frame can, and it also runs at full size as anti-aliasing (grass, leaves, wires and thin poles stop shimmering; FXAA is off then). Things that move fast across a still camera can leave a short soft trail (there are no per-object motion vectors), so a view can set `v.upscaler = 'sgsr1'` to use **SGSR 1** (`src/kit/sgsr.js`, one frame, edge-aware sharpening). AR views and frames with screen-space reflections use SGSR 1 too, and `HD.upscaler = 'sgsr1'` switches every view. `HD.upscale = false` shows the plain stretched picture for comparison, and `node scripts/upscale-compare.cjs` scores plain, SGSR 1 and SGSR 2 against a supersampled picture (`--webgpu` for the WebGPU path, which has its own TSL versions of both). The 2D HUD is always drawn at
+`__hd.info` reports `{ calls, tris, cpu, shadows, upscaled, backend, framegen }` for the last frame. The 3D frame is rendered at the tier's pixel count (and lower while the phone struggles), then upscaled to the card's full resolution with **Snapdragon Game Super Resolution 2** (Qualcomm's temporal upscaler, `src/kit/sgsr2.js`): the camera is nudged by a fraction of a pixel each frame and each new small frame is blended into the full-size picture of the frames before, moved by the camera's own move. That gives a sharper, steadier picture than one frame can, and it also runs at full size as anti-aliasing (grass, leaves, wires and thin poles stop shimmering; FXAA is off then). Things that move fast across a still camera can leave a short soft trail (there are no per-object motion vectors), so a view can set `v.upscaler = 'sgsr1'` to use **SGSR 1** (`src/kit/sgsr.js`, one frame, edge-aware sharpening). AR views and frames with screen-space reflections use SGSR 1 too, and `HD.upscaler = 'sgsr1'` switches every view. `HD.upscale = false` shows the plain stretched picture for comparison, and `node scripts/upscale-compare.cjs` scores plain, SGSR 1 and SGSR 2 against a supersampled picture (`--webgpu` for the WebGPU path, which has its own TSL versions of both). On WebGPU, SGSR 2 has two changes of ours to Qualcomm's upscale pass (`hd3d-gpu.js` `sgsr2Gpu`): the history is read sharply (Catmull-Rom) instead of bilinearly, which was softening it a little every frame the camera moved, and a pixel that stays put lets its history count for more (up to four times), so a still picture shimmers less. `__hd.sgsrTune = false` draws it as it was, and the comparison draws both and fails if ours comes out worse. The 2D HUD is always drawn at
 full resolution on top. `v.onTier(T => ...)` lets a game react (for example `spotLight.setTier(T)`).
 
 Rules of thumb:

@@ -3,14 +3,15 @@
 // picture into the full-size picture of the frames before, moved to where things are now. Over a few
 // frames that gives a sharper, steadier picture than one frame can (SGSR 1), with smoother edges.
 // Used by Next Gen (hd3d.js) when the 3D is drawn below the screen's size; AR, screen-space
-// reflections and WebGPU keep SGSR 1 or a plain stretch.
+// reflections keep SGSR 1 or a plain stretch.
 //
 // Ported to WebGL 2 from sgsr/v2/include/glsl_2_pass_fs (sgsr2_convert.fs, sgsr2_upscale.fs) in
 // github.com/SnapdragonStudios/snapdragon-gsr. Changes: textureGather (not in WebGL 2) is done with
 // four texelFetch reads; there is no motion vector buffer, so every pixel's motion comes from its depth
 // and the camera's move (the shader's own fallback); depth is WebGL's 0..1, turned into -1..1 for the
 // reprojection; texelFetch reads are clamped to the picture; it reads three.js's vUv; the output is
-// opaque.
+// opaque. (The WebGPU version is hd3d-gpu.js sgsr2Gpu, written in TSL from the same two passes, with
+// per-pixel motion and two more changes of ours listed there.)
 //
 // ---------------------------------------------------------------------------------------------------
 // Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.

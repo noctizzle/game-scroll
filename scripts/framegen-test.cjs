@@ -20,6 +20,8 @@ const SUITES = {
   thirds: '&steps=3', 'thirds-ahead': '&steps=3&mode=ahead',
   upscaled: '&scale=1.5', 'upscaled-hard': `&scale=1.5&kinds=${HARD}`,
   flow: `&kinds=${FLOW}`, 'flow-ahead': `&kinds=${FLOW}&mode=ahead`, 'flow-upscaled': `&scale=1.5&kinds=${FLOW}`,
+  // the last frame's picture handed in instead of copied (how the app feeds it): the same numbers as blend's
+  handed: '&kinds=strafe,pan,curve&handed',
 };
 const BASELINE = path.join(__dirname, 'framegen-test', 'baseline.json');
 // how much worse than the baseline a scene may score before the check fails (SwiftShader gives the same

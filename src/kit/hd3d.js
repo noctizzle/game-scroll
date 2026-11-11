@@ -117,14 +117,29 @@ function startGame(def) {
   Q.tier = Math.min(CAP, s?.tier ?? START[phoneClass()] ?? 2); Q.lvl = Math.min(LEVELS.length - 1, s?.lvl ?? 0); Q.ceil = Q.lvl; Q.ceilT = performance.now(); Q.tierCeil = 3;
   Q.sum = Q.cnt = Q.late = Q.slow = Q.fast = Q.easy = Q.gsum = Q.gcnt = 0; Q.lastT = 0; Q.want = null; Q.hold = HOLD; Q.upT = -1e9; Q.fpsHold = 60000;
 }
-// WebGPU timestamps: three adds up every pass's GPU time between two reads, so each read is divided by
-// the frames drawn since (one read at a time: the answer comes back a frame or two later)
+// WebGPU timestamps: three times every pass on the GPU, the picture's and the compute passes' (frame
+// generation, GPU particles, culling), and a read brings back all of them since the last read. Its own
+// answer is only the last refresh's draw passes (a refresh that showed a made frame has next to nothing
+// in it, and with two or three frames between reads the rest were dropped), so the passes are added up
+// here, both kinds, and divided by the frames drawn since: the GPU's time for a real frame and whatever
+// was made after it. (One read at a time: the answer comes back a frame or two later.)
 const GT = { n: 0, busy: false };
 function gpuTime(r) {
   GT.n++;
-  if (GT.busy || !r.backend?.trackTimestamp) return;
+  const be = r.backend;
+  if (GT.busy || !be?.trackTimestamp) return;
   const n = GT.n; GT.n = 0; GT.busy = true;
-  r.resolveTimestampsAsync('render').then(ms => { if (ms > 0 && n > 0) { const f = ms / n; HD.info.gpuMs = f; if (f < 100) { Q.gsum += f; Q.gcnt++; } } }, () => {}).finally(() => { GT.busy = false; });
+  // (a read that brought nothing new leaves three's list as it was: its frames list is a new one after each real read)
+  const read = type => {
+    const pool = be.timestampQueryPool?.[type], was = pool?.frames;
+    if (!pool) return 0;
+    return r.resolveTimestampsAsync(type).then(() => { let s = 0; if (pool.frames !== was) for (const ms of pool.timestamps.values()) if (ms > 0 && ms < 1000) s += ms; return s; });
+  };
+  Promise.all([read('render'), read('compute')]).then(([draw, comp]) => {
+    if (!(draw > 0)) { GT.n += n; return; }   // nothing read: those frames count towards the next read
+    const f = (draw + comp) / n; HD.info.gpuMs = f; HD.info.gpuCompute = comp / n;
+    if (f < 100) { Q.gsum += f; Q.gcnt++; }
+  }, () => {}).finally(() => { GT.busy = false; });
 }
 function adapt(gap) {
   if (Q.force != null || !(gap > 0 && gap < 100)) return;
@@ -173,7 +188,7 @@ export const HD = {
   /** Last frame: draw calls, triangles, milliseconds spent in render() on the CPU, and whether the shadows were redrawn. */
   /** GPU culling of gs.props copies on WebGPU: 'auto' (sets of GPU_CULL_MIN copies or more), true (every set), false (CPU). Off while frame generation runs. */
   gpuCull: 'auto',
-  info: { gpuMs: null, calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0, fgSteps: 0, still: false, rw: 0, rh: 0, ow: 0, oh: 0 },
+  info: { gpuMs: null, gpuCompute: 0, calls: 0, tris: 0, cpu: 0, shadows: false, upscaled: false, backend: 'webgl', webgl: '', framegen: false, fgMs: 0, fgSteps: 0, still: false, rw: 0, rh: 0, ow: 0, oh: 0 },
   /** Things needing a shader not built yet wait (hidden) at most this long while it builds in the background (v.holdNew); hold = false: build it in the frame instead. */
   holdMs: 500, hold: true,
   /** WebGPU: the kit's code-made textures packed into the chip's compressed formats (spark.js); false: plain (tests). */
@@ -182,6 +197,10 @@ export const HD = {
   upscale: true,
   /** Which upscaler: 'sgsr2' (Snapdragon GSR 2, temporal; Next Gen without reflections) or 'sgsr1' (one frame). AR and the rest use SGSR 1. */
   upscaler: 'sgsr2',
+  /** Tests: film grain strength on WebGPU (null: the usual; 0: none, so two pictures can be compared pixel by pixel). */
+  grain: null,
+  /** Tests and the frame lab's A/B: false draws SGSR 2 on WebGPU as Qualcomm's shader has it, without our changes (hd3d-gpu.js sgsr2Gpu) and with the tier's MSAA under it. */
+  sgsrTune: true,
   /** Tests: draw the 3D at this fraction of the screen's size (null: the tier and frame rate decide). */
   scale: null,
   /** Tests: frame generation on ('blend' | 'ahead') whatever the screen and settings, or null (speed.js decides). Needs WebGPU and direct. */
@@ -1834,11 +1853,16 @@ export class HDView {
     // SGSR 2: the scene at pw x ph (ph the passes' own rounding of the canvas height), upscaled to the canvas
     const pw = up ? up.pw : r.domElement.width, ph = up ? Math.max(1, Math.floor(up.fh * (pw + .5) / up.fw)) : r.domElement.height;
     const o = { tone: this.tone, w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, s1: !!up?.s1, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, lut: this.lutAmount > 0 ? this.lutTex() : null, lutK: this.lutAmount, oit: !!this.oit, flare: this.bloom > 0 ? this.flareSet() : null, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
-      dofOn: false, lens: null, near: this.cam.near, far: this.cam.far, shaftsOn: false, shaft: 0, shaftCol: null };
+      dofOn: false, lens: null, near: this.cam.near, far: this.cam.far, shaftsOn: false, shaft: 0, shaftCol: null, grain: HD.grain };
     // temporal anti-aliasing in place of MSAA (three.js's TRAA) where the tier pays for smooth edges and the
     // picture isn't upscaled (SGSR 2 is temporal itself); card pictures keep MSAA (one frame has no history)
     // Small bright moving things (particles, sparks) blend away in its history and look dimmer, so a view
     // with particles keeps MSAA unless the game asks for it (v.aa = 'traa'; 'msaa' keeps MSAA anyway)
+    // SGSR 2 smooths every edge from its history (also at full size, where it is the anti-aliasing), and the
+    // picture measured the same with MSAA under it as without: so the scene is drawn without, which saves the
+    // multisampled colour, depth and motion pictures and their resolves
+    if (s2 && HD.sgsrTune !== false) o.msaa = 0;
+    o.s2Plain = HD.sgsrTune === false;
     const traaOk = this.aa === 'traa' || (this.aa !== 'msaa' && !this.parts.length);
     if (HD.traa !== false && traaOk && T.msaa && !up && !baking && !off && !this.clearBg) { o.traa = true; o.msaa = 0; o.smooth = false; }
     const g = this.grade;

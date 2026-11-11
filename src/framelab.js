@@ -165,7 +165,8 @@ function hitch(now, iv, exp, s, upd, drw) {
   if (now - C.hiddenAt < 1500) why.push('app came back to the front');
   const lf = loafAt(now - iv, now); if (lf) why.push(lf);
   if (upd + drw > exp) why.push(`game CPU over the beat (update ${r1(upd)} + draw ${r1(drw)} ms)`);
-  const gpu = HD?.info.gpuMs; if (gpu != null && gpu > exp) why.push(`GPU over the beat (${r1(gpu)} ms)`);
+  // (the GPU's time is for a real frame and the frames made after it: with frame generation, that many refreshes)
+  const gpu = HD?.info.gpuMs; if (gpu != null && gpu > exp * (HD.info.framegen ? HD.info.fgSteps || 2 : 1)) why.push(`GPU over the beat (${r1(gpu)} ms)`);
   if (!why.length) why.push(HD && is3D(s?.def) ? 'no cause seen (GPU / driver / system?)' : 'no cause seen (system?)');
   event('H', why.join(', '), now, iv);
 }
@@ -296,14 +297,15 @@ const nextGrab = (maxSide) => new Promise(res => {
 const PAIRS = {
   sgsr: { title: 'Upscaler off vs on', a: 'SGSR off (stretched)', b: 'SGSR on', set: on => { HD.upscale = on; } },
   sgsr12: { title: 'SGSR 1 vs SGSR 2', a: 'SGSR 1', b: 'SGSR 2', set: on => { HD.upscaler = on ? 'sgsr2' : 'sgsr1'; } },
+  sgsrTune: { title: 'SGSR 2 as it was vs tuned', a: 'SGSR 2 as Qualcomm has it', b: 'SGSR 2 with our changes', set: on => { HD.sgsrTune = on; }, needs: () => HD.info.backend === 'webgpu', no: 'Only SGSR 2 on WebGPU has the changes, so there is nothing to compare.' },
   backend: { title: 'WebGL vs WebGPU', a: 'WebGL', b: 'WebGPU', set: async on => { setGpuPick(on ? 'webgpu' : 'webgl'); if (on) await prepareGPU(); }, needs: () => !!webgpu() || gpuPick() === 'webgl' },
   res: { title: 'Half vs full resolution', a: '50% of the 3D size', b: 'the tier\'s own size', set: on => { HD.scale = on ? null : HD.info.rw && HD.info.ow ? .5 * HD.info.rw / HD.info.ow : .5; } },
   tier: { title: 'Low vs ultra tier', a: 'low', b: 'ultra', set: on => { HD.force = on ? 3 : 0; } },
 };
 async function runAB(key) {
   const s = UI.s, P = PAIRS[key]; if (!s || !HD || !is3D(s.def)) return UI.flash('A/B needs a Next Gen or AR game on screen.');
-  if (P.needs && !P.needs()) return UI.flash('This phone has no WebGPU, so there is nothing to compare.');
-  const keep = { upscale: HD.upscale, upscaler: HD.upscaler, scale: HD.scale, force: HD.force, pick: gpuPick() }, was = frozen;
+  if (P.needs && !P.needs()) return UI.flash(P.no || 'This phone has no WebGPU, so there is nothing to compare.');
+  const keep = { upscale: HD.upscale, upscaler: HD.upscaler, scale: HD.scale, force: HD.force, tune: HD.sgsrTune, pick: gpuPick() }, was = frozen;
   setFrozen(true); UI.busy(`A/B: ${P.title}…`);
   try {
     const shotsAB = [];
@@ -317,7 +319,7 @@ async function runAB(key) {
     shots.push(shot); viewer(shot);
   } catch (e) { UI.flash('A/B did not finish: ' + (e?.message || e)); }
   finally {
-    HD.upscale = keep.upscale; HD.upscaler = keep.upscaler; HD.scale = keep.scale; HD.force = keep.force; if (gpuPick() !== keep.pick) setGpuPick(keep.pick);
+    HD.upscale = keep.upscale; HD.upscaler = keep.upscaler; HD.scale = keep.scale; HD.force = keep.force; HD.sgsrTune = keep.tune; if (gpuPick() !== keep.pick) setGpuPick(keep.pick);
     setFrozen(was); UI.busy('');
   }
 }
@@ -327,25 +329,39 @@ async function runShimmer() {
   const s = UI.s; if (!s || s.state !== 'playing') return UI.flash('Start a round first: shimmer is checked on a frozen frame of play.');
   const was = frozen; setFrozen(true); UI.busy('Shimmer: settling…');
   try {
+    // 16 pictures of the frozen frame: how far each pixel's brightness swings across them
+    const measure = async () => {
+      const L = []; let w = 0, h = 0, first = null;
+      for (let n = 0; n < 16; n++) {
+        const cv = await nextGrab(900); if (!cv) break;
+        if (!first) first = cv;
+        const d = pixels(cv).data; w = cv.width; h = cv.height; const l = new Uint8Array(w * h);
+        for (let i = 0; i < l.length; i++) l[i] = (d[i * 4] * 54 + d[i * 4 + 1] * 183 + d[i * 4 + 2] * 19) >> 8;
+        L.push(l);
+      }
+      if (L.length < 4) throw new Error('too few pictures');
+      const v = new Float32Array(w * h); let flagged = 0;
+      for (let i = 0; i < v.length; i++) {
+        let lo = 255, hi = 0; for (const l of L) { const x = l[i]; if (x < lo) lo = x; if (x > hi) hi = x; }
+        const r = hi - lo; v[i] = r < 10 ? 0 : (r - 10) / 50; if (r >= 16) flagged++;
+      }
+      return { w, h, v, first, n: L.length, share: flagged / v.length };
+    };
     await waitFrames(30, 600); UI.busy('Shimmer: 16 pictures…');
-    const L = []; let w = 0, h = 0, first = null;
-    for (let n = 0; n < 16; n++) {
-      const cv = await nextGrab(900); if (!cv) break;
-      if (!first) first = cv;
-      const d = pixels(cv).data; w = cv.width; h = cv.height; const l = new Uint8Array(w * h);
-      for (let i = 0; i < l.length; i++) l[i] = (d[i * 4] * 54 + d[i * 4 + 1] * 183 + d[i * 4 + 2] * 19) >> 8;
-      L.push(l);
+    const { w, h, v, first, n, share } = await measure(), still = HD?.info.still;
+    // SGSR 2 on WebGPU: the same frame again as Qualcomm's shader has it, to see what our changes to it do
+    // here (not while the 3D shows a still frame again: nothing is being redrawn to compare)
+    let plain = null;
+    if (HD && !still && HD.info.upscaled === 'sgsr2' && HD.info.backend === 'webgpu' && HD.sgsrTune !== false) {
+      UI.busy('Shimmer: again with SGSR 2 as it was…');
+      const keep = HD.still; HD.sgsrTune = false; HD.still = false;
+      try { await waitFrames(45, 900); plain = (await measure()).share; } finally { HD.sgsrTune = true; HD.still = keep; }
     }
-    if (L.length < 4) throw new Error('too few pictures');
-    const v = new Float32Array(w * h); let flagged = 0;
-    for (let i = 0; i < v.length; i++) {
-      let lo = 255, hi = 0; for (const l of L) { const x = l[i]; if (x < lo) lo = x; if (x > hi) hi = x; }
-      const r = hi - lo; v[i] = r < 10 ? 0 : (r - 10) / 50; if (r >= 16) flagged++;
-    }
-    const share = flagged / v.length, still = HD?.info.still;
     const shot = {
       kind: 'shimmer', title: 'Shimmer on a frozen frame', game: s.def.id, heat: { cv: heatCanvas(w, h, v), boxes: hotspots(w, h, v, .1) },
-      notes: [`${(share * 100).toFixed(2)}% of pixels change by 16+ levels across ${L.length} pictures while nothing moves${still ? ' (the 3D kit was showing a still frame again, so the 3D itself was not redrawn)' : ''}`, `${config(s).upscaler ? 'upscaler ' + config(s).upscaler + ', ' : ''}${config(s).backend}`],
+      notes: [`${(share * 100).toFixed(2)}% of pixels change by 16+ levels across ${n} pictures while nothing moves${still ? ' (the 3D kit was showing a still frame again, so the 3D itself was not redrawn)' : ''}`,
+        ...(plain != null ? [`${(plain * 100).toFixed(2)}% with SGSR 2 as Qualcomm has it (without our changes to it)`] : []),
+        `${config(s).upscaler ? 'upscaler ' + config(s).upscaler + ', ' : ''}${config(s).backend}`],
       images: [{ label: 'frame', cv: first }],
     };
     shots.push(shot); viewer(shot);
@@ -690,7 +706,7 @@ function text(now) {
     const pct = i.ow ? Math.round(100 * i.rw / i.ow) : 0;
     L.push(`${i.backend} ${cfg.tier} (step ${Math.round(HD.res * 100)}%) · 3D ${i.rw}×${i.rh} → ${i.ow}×${i.oh} ${pct}% · ${i.upscaled || 'no upscaler'}`);
     L.push(`FG ${i.framegen ? `${i.framegen} ×${i.fgSteps} ${r1(i.fgMs)} ms` : 'off'} · ${frameGenStatus(d) || ''}`.slice(0, 120));
-    L.push(`CPU upd ${r2(last.upd)} draw ${r2(last.drw)} 3D ${r2(i.cpu)} ms · GPU ${i.gpuMs != null ? r2(i.gpuMs) + ' ms' : 'n/a'} · ${i.calls} calls ${(i.tris / 1000).toFixed(0)}k tris${i.still ? ' · still' : ''}`);
+    L.push(`CPU upd ${r2(last.upd)} draw ${r2(last.drw)} 3D ${r2(i.cpu)} ms · GPU ${i.gpuMs != null ? r2(i.gpuMs) + ' ms' + (i.gpuCompute > .05 ? ` (${r2(i.gpuCompute)} compute)` : '') : 'n/a'} · ${i.calls} calls ${(i.tris / 1000).toFixed(0)}k tris${i.still ? ' · still' : ''}`);
   } else if (s) {
     L.push(`${cfg.backend} canvas ${s.canvas.width}×${s.canvas.height}${s.lite ? ' (eased: phone fell behind)' : ''} · CPU upd ${r2(last.upd)} draw ${r2(last.drw)} ms`);
   }

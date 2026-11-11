@@ -1,8 +1,10 @@
 <!doctype html><meta charset="utf-8"><body style="margin:0;background:#000">
 <script type="module">
-// Upscaler comparison for scripts/upscale-compare.cjs: the same Next Gen scene drawn at full size (the
-// reference) and drawn smaller then upscaled by plain stretch, SGSR 1 and SGSR 2, with the camera
-// still and moving, and a box moving across the scene. Each is scored against the full-size picture.
+// Upscaler comparison for scripts/upscale-compare.cjs: the same Next Gen scene drawn at twice the size
+// and scaled down (the reference) and drawn smaller then upscaled by plain stretch, SGSR 1 and SGSR 2,
+// with the camera still and moving, and a box moving across the scene. Each is scored against the
+// reference. On WebGPU also SGSR 2 as Qualcomm's shader has it (-plain), to hold our changes to it
+// (hd3d-gpu.js sgsr2Gpu) against what they changed.
 import gs, { loadParts } from '../../src/gamescroll.js';
 import { setGpuPick, prepareGPU } from '../../src/kit/gpu.js';
 // ?gpu: on WebGPU (upscale-compare.cjs --webgpu), with hd3d-gpu.js's TSL versions of SGSR 1 and 2
@@ -11,7 +13,10 @@ setGpuPick(GPU ? 'webgpu' : 'webgl');
 await loadParts();
 if (GPU && !await prepareGPU()) { window.result = { error: 'WebGPU did not start in this browser' }; throw new Error(window.result.error); }
 const T = gs.THREE, HD = window.__hd, W = 480, H = 640, Q = new URLSearchParams(location.search), K = +(Q.get('scale') || 1.5);
-HD.force = 0;
+// &tier=0..3 (the quality tier: 2 and 3 have MSAA), &grain=.035 (film grain as in the app; WebGPU draws
+// none here, since grain is otherwise most of the error and hides what the upscalers do), &modes=plain,sgsr2
+// (which upscalers), &warm=80 (that many frames with nothing moving first, so the history has settled)
+HD.force = +(Q.get('tier') || 0); HD.grain = Q.has('grain') ? +Q.get('grain') : 0;
 const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .002, amb: .3 }), c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
 const sun = gs.hd.sun('#fff2d8', 3, 18, [-.45, 1, .35]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
 const ground = new T.Mesh(new T.PlaneGeometry(60, 60).rotateX(-Math.PI / 2), gs.hd.pbr('#6a7a58', { rough: .9 })); v.scene.add(ground);
@@ -25,38 +30,50 @@ v.grade = { saturation: 1.1, contrast: 1.05 };
 const pose = f => { const a = f * .004; v.cam.position.set(Math.sin(a) * 9, 4, Math.cos(a) * 9); v.cam.lookAt(0, 1, 0); v.cam.updateMatrixWorld(); };
 const place = f => { mover.position.x = -3 + f * .05; };
 // modes: full (the reference: drawn at twice the size and scaled down, no jaggies), plain, sgsr1 and sgsr2
-// (drawn at 1/K size), native (full size, FXAA) and aa (full size, SGSR 2 as anti-aliasing)
-const set = mode => {
-  HD.upscale = !['full', 'plain', 'native'].includes(mode); HD.upscaler = mode === 'sgsr1' ? 'sgsr1' : 'sgsr2';
-  HD.scale = mode === 'full' ? 2 : mode === 'native' || mode === 'aa' ? 1 : 1 / K;
-};   // the reference: drawn at twice the size and scaled down (no jaggies)
+// (drawn at 1/K size), native (full size, FXAA or the tier's MSAA), aa (full size, SGSR 2 as anti-aliasing)
+// and traa (full size, three.js's TRAA: WebGPU, tiers with MSAA); sgsr2-plain and aa-plain: SGSR 2 as it was
+const set = m => {
+  const mode = m.replace('-plain', ''); HD.sgsrTune = mode === m;
+  HD.upscale = !['full', 'plain', 'native'].includes(mode); HD.upscaler = mode === 'sgsr1' || mode === 'traa' ? 'sgsr1' : 'sgsr2';
+  HD.traa = mode === 'traa';
+  HD.scale = mode === 'full' ? 2 : mode === 'native' || mode === 'aa' || mode === 'traa' ? 1 : 1 / K;
+};
 const draw = () => { v.t = 0; v.render(x, W, H); return x.getImageData(0, 0, W, H).data; };
 const err = (a, b) => { let s = 0; for (let i = 0; i < a.length; i += 4) s += (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])) / 3; return s / (a.length / 4); };
-// flicker: how much the picture changes from frame to frame with nothing moving
-const out = { scale: K, scenes: {} }, shots = {};
-const run = async (name, frames, moveCam, moveBox, modes = ['plain', 'sgsr1', 'sgsr2']) => {
-  set('full'); pose(moveCam ? frames : 0); place(moveBox ? frames : 0);
-  draw(); for (let i = 0; i < 2; i++) await new Promise(r => requestAnimationFrame(r)); const ref = draw();   // (a resized WebGPU canvas shows the old picture until the next frame)
-  const res = {};
+// error: how far the last 8 frames are from the reference's same frames. flicker: how much the picture
+// changes from frame to frame over them; the reference's own (ref) is what the motion itself changes, so
+// more than that is crawl or shimmer and less is blur
+const out = { scale: K, scenes: {} }, shots = {}, LAST = 8, tick = () => new Promise(r => requestAnimationFrame(r));
+const MODES = Q.get('modes')?.split(','), AA = ['native', 'aa', ...(GPU ? ['aa-plain'] : []), ...(GPU && HD.force >= 2 ? ['traa'] : [])].filter(m => !MODES || MODES.includes(m));
+const run = async (name, frames, moveCam, moveBox, modes = MODES?.filter(m => !/^(native|aa|traa)/.test(m)) || ['plain', 'sgsr1', 'sgsr2', ...(GPU ? ['sgsr2-plain'] : [])]) => {
+  const at = f => { pose(moveCam ? f : 0); place(moveBox ? f : 0); };
+  set('full'); at(frames - LAST); draw(); await tick(); await tick();   // (a resized WebGPU canvas shows the old picture until the next frame)
+  const refs = [];
+  for (let f = frames - LAST; f <= frames; f++) { at(f); draw(); if (GPU) { await tick(); draw(); } refs.push(draw()); await tick(); }
+  let rf = 0; for (let i = 1; i < refs.length; i++) rf += err(refs[i], refs[i - 1]) / LAST;
+  const res = { ref: { error: 0, flicker: +rf.toFixed(2), ms: 0, used: 'reference', backend: HD.info.backend } };
   for (const mode of modes) {
-    set(mode); let prev = null, flick = 0, ms = 0;
+    set(mode); let prev = null, flick = 0, e = 0, ms = 0;
+    pose(0); place(0); for (let i = +(Q.get('warm') || 0); i > 0; i--) { draw(); await tick(); }
     for (let f = 0; f <= frames; f++) {
-      pose(moveCam ? f : 0); place(moveBox ? f : 0);
+      at(f);
       const t0 = performance.now(); let d = draw(); ms += performance.now() - t0;
-      if (GPU && f === frames) d = draw();   // the last frame again, so the copy has caught up
-      if (prev && f > frames - 8) flick += err(d, prev) / 8; prev = d;
-      if (f === frames) { res[mode] = { error: +err(d, ref).toFixed(2), flicker: +flick.toFixed(2), ms: +(ms / (frames + 1)).toFixed(1), used: HD.info.upscaled, backend: HD.info.backend }; if (Q.has('shots')) shots[name + '.' + mode] = c.toDataURL(); }
-      await new Promise(r => requestAnimationFrame(r));
+      if (f > frames - LAST) { flick += err(d, prev) / LAST; e += err(d, refs[f - frames + LAST]) / LAST; }
+      prev = d;
+      if (f === frames) { res[mode] = { error: +e.toFixed(2), flicker: +flick.toFixed(2), ms: +(ms / (frames + 1)).toFixed(1), used: HD.info.upscaled || (mode === 'traa' && window.__hdView?._gpuChain?.traaN ? 'traa' : false), backend: HD.info.backend }; if (Q.has('shots')) shots[name + '.' + mode] = c.toDataURL(); }
+      await tick();
     }
   }
-  if (Q.has('shots')) { set('full'); pose(moveCam ? frames : 0); place(moveBox ? frames : 0); draw(); shots[name + '.full'] = c.toDataURL(); }
+  if (Q.has('shots')) { set('full'); at(frames); draw(); await tick(); draw(); shots[name + '.full'] = c.toDataURL(); }
   out.scenes[name] = res;
 };
 try {
   await run('still', 24, false, false);
   await run('camera-moves', 40, true, false);
   await run('box-moves', 40, false, true);
-  await run('anti-aliasing', 24, true, false, ['native', 'aa']);
-  HD.scale = null; out.shots = shots; window.result = out;
+  await run('anti-aliasing', 24, true, false, AA);
+  await run('anti-aliasing-still', 24, false, false, AA);
+  await run('anti-aliasing-box', 40, false, true, AA);
+  HD.scale = null; HD.sgsrTune = true; out.shots = shots; window.result = out;
 } catch (e) { window.result = { error: e.message + '\n' + e.stack }; }
 </script>

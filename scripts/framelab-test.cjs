@@ -79,13 +79,14 @@ const SIZES = { cover: { width: 374, height: 591 }, inner: { width: 549, height:
   };
   await ab('sgsr');
   await ab('res');
+  if (gpu) await ab('sgsrTune');   // SGSR 2 as Qualcomm has it against ours (WebGPU)
   if (gpu) await ab('backend');
-  const restored = await p.evaluate(() => ({ up: __hd.upscale, sc: __hd.scale, f: __hd.force }));
-  check(restored.up === true && restored.sc == null && restored.f == null, 'A/B puts the settings back');
+  const restored = await p.evaluate(() => ({ up: __hd.upscale, sc: __hd.scale, f: __hd.force, tune: __hd.sgsrTune }));
+  check(restored.up === true && restored.sc == null && restored.f == null && restored.tune === true, 'A/B puts the settings back');
 
   await p.evaluate(async () => (await __gs.lab(true)).shimmer());
-  const sh = await p.evaluate(async () => { const L = await __gs.lab(true); const s = L.shots[L.shots.length - 1]; return s && s.kind === 'shimmer' ? s.notes[0] : ''; });
-  check(!!sh, 'shimmer scan: ' + sh); await shot('shimmer');
+  const sh = await p.evaluate(async () => { const L = await __gs.lab(true); const s = L.shots[L.shots.length - 1]; return s && s.kind === 'shimmer' ? s.notes.slice(0, -1).join('; ') : ''; });
+  check(!!sh && await p.evaluate(() => __hd.sgsrTune === true), 'shimmer scan: ' + sh); await shot('shimmer');
   await p.evaluate(() => document.querySelector('.fl-view [data-a="x"]')?.click());
 
   if (gpu && info.backend === 'webgpu') {

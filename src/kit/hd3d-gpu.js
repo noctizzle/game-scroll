@@ -44,7 +44,7 @@ import ClusteredLightsNode from 'three/examples/jsm/tsl/lighting/ClusteredLights
 import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { FrameGen, StillCheck, frameGenMRT, fgPrevVP, newPose, copyPose, homography, warpUV, refreshesSince } from './framegen.js';
+import { FrameGen, StillCheck, frameGenMRT, fgPrevVP, newPose, copyPose, homography, warpUV, refreshesSince, sharpAt } from './framegen.js';
 
 const LUM = vec3(.2126, .7152, .0722);
 
@@ -827,7 +827,7 @@ function touches(U, col, t, k) {
   const d = screenUV.sub(.5), r2 = dot(d, d);
   col = col.mul(float(1).sub(U.vig.mul(smoothstep(.12, .62, r2.mul(1.6)))));                       // vignette
   const p = floor(vec2(screenCoordinate.x, screenSize.y.sub(screenCoordinate.y)).mul(k)).add(.5).add(t);   // (WebGL counts pixel rows from the bottom)
-  col = col.add(fract(sin(dot(p, vec2(12.9898, 78.233))).mul(43758.5453)).sub(.5).mul(.035));     // grain
+  col = col.add(fract(sin(dot(p, vec2(12.9898, 78.233))).mul(43758.5453)).sub(.5).mul(U.grain));     // grain
   return mix(col, col.mul(vec3(1.25, .45, .4)).add(vec3(.12, 0, 0)), U.hurt.mul(smoothstep(.04, .4, r2)));   // hurt
 }
 // Snapdragon GSR 1 on WebGPU: sgsr.js's one pass (Qualcomm, BSD 3-Clause; the licence and what changed
@@ -885,7 +885,18 @@ function sgsr1Gpu(src) {
 // With them, things that move by themselves are followed (the shader's motion vector input; without, all
 // motion comes from the depth and the camera's move, so moving things smear), and see-through things
 // (sparks, smoke, glass) lean on the new frame instead of the history, so they leave no trails.
-function sgsr2Gpu(fin, depthT, mo = null) {
+// tuned (the usual; HD.sgsrTune = false is Qualcomm's shader as it was, for comparing): two changes of
+// ours to the upscale pass, each kept because it measured better (scripts/upscale-compare.cjs):
+// - the history is read sharply (framegen.js sharpAt: Catmull-Rom in 5 reads) where the shader read it
+//   bilinearly. It is read again every frame the camera moves, and bilinear softens it a little each
+//   time: with the camera moving the picture came out no closer to the full-size one than a plain stretch
+// - a pixel that stays put settles: how long it has been left alone is kept in the history's alpha and
+//   makes the history count for more there, up to S2_HOLD times, so a still picture shimmers less on
+//   thin things and edges. Anything that moves, a cut or a see-through thing starts from the usual again
+// (Tried and left out, each measured worse or no better: sharpening after the upscale, a colour box
+// from 9 pixels in place of 5, and a looser colour box at full size.)
+const S2_HOLD = 4;
+function sgsr2Gpu(fin, depthT, mo = null, tuned = true) {
   const U = { rs: uniform(new Vector2(1, 1)), os: uniform(new Vector2(1, 1)), jit: uniform(new Vector2()), sr: uniform(new Vector2(1, 1)),
     fov: uniform(1), minLerp: uniform(0), reset: uniform(1), c2p: uniform(new Matrix4()), jd: uniform(new Vector2()) };
   const low = rtt(fin, 1, 1, { depthBuffer: false });
@@ -920,14 +931,14 @@ function sgsr2Gpu(fin, depthT, mo = null) {
   // frame's from the other. (Copying into a single history picture broke after a resize, like
   // unfolding a Fold: a picture that is only copied into keeps its old size on the GPU.)
   const H2 = [0, 1].map(() => new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false }));
-  let cur = 0;
+  let cur = 0, fresh = true;   // fresh: nothing drawn yet, so the first frame starts the history (as after a cut)
   const histT = texture(H2[1].texture), outT = texture(H2[0].texture);
   // upscale: Lanczos of the 5 nearest small pixels, a colour box, history clamped to it, then blended
   const upscale = Fn(() => {
     const H = screenUV, J = clamp(H.add(U.jit.div(U.rs)), 0, 1), IP = ivec2(J.mul(U.rs)), hi = ivec2(U.rs).sub(1);
     const mda = mdc.sample(J), M = mda.xy, df = mda.z, see = mo ? smoothstep(.1, .6, mda.w).mul(.9) : float(0);
     const prevUV = clamp(vec2(M.x.mul(-.5).add(H.x), M.y.mul(.5).add(H.y)), 0, 1);
-    const histC = histT.sample(prevUV).rgb;
+    const hist = tuned ? sharpAt(histT, prevUV) : histT.sample(prevUV), histC = hist.rgb;
     const biasmax = U.sr.x, biasmin = max(float(1), biasmax.mul(.3).add(.3));
     const kb = mix(biasmax, biasmin, df.mul(.25)).mul(.5), kb2 = kb.mul(kb);
     const mlen = length(M.mul(U.os));
@@ -945,7 +956,10 @@ function sgsr2Gpu(fin, depthT, mo = null) {
     }
     cen = cen.div(sb); vr = abs(vr.div(sb).sub(cen.mul(cen))).sqrt();
     const upc = clamp(scw.div(sw), bmin.sub(.075), bmax.add(.075)), upw = sw.mul(1 / 3);
-    let base = float(1).sub(df);
+    // how much more the history counts for where the pixel has settled (its alpha: 0 the usual .. 1 S2_HOLD
+    // times); a pixel that moves (a tenth of a pixel is enough) is back to the usual
+    const held = tuned ? min(clamp(hist.a, 0, 1).mul(S2_HOLD - 1).add(1), mix(float(S2_HOLD), float(1), clamp(mlen.mul(10), 0, 1))) : float(1);
+    let base = held.mul(float(1).sub(df));
     base = min(base, mix(base, upw.mul(10), clamp(mlen.mul(10), 0, 1)));
     base = min(base, mix(base, upw, clamp(mlen.mul(.05), 0, 1)));
     const boxsize = mix(U.sr.y, float(1), max(df, clamp(mlen.mul(.05), 0, 1)));
@@ -957,8 +971,12 @@ function sgsr2Gpu(fin, depthT, mo = null) {
     const lerpC = clamp(select(outside, start, float(1)), 0, 1);
     const h = mix(clamped, histC, lerpC);
     const ba = mix(min(base, .1), base, lerpC);
-    const a = max(clamp(upw.div(max(1.192e-07, ba.add(upw))).add(U.reset), 0, 1), see);
-    return vec4(mix(h, upc, a), 1);
+    const own = upw.div(max(1.192e-07, ba.add(upw)));
+    const a = max(clamp(own.add(U.reset), 0, 1), see);
+    // settles a little more each frame (by the new frame's weight, so only as fast as the picture gathers),
+    // and starts again where the new frame was put in over the history (a cut, see-through things)
+    const settled = tuned ? select(a.greaterThan(own.add(1e-4)), float(0), clamp(held.add(upw).sub(1).div(S2_HOLD - 1), 0, 1)) : float(1);
+    return vec4(mix(h, upc, a), settled);
   })();
   const upMat = new NodeMaterial(); upMat.fragmentNode = upscale; upMat.name = 'SGSR2';
   const cpMat = new NodeMaterial(); cpMat.fragmentNode = vec4(outT.sample(screenUV).rgb, 1); cpMat.name = 'SGSR2 out';
@@ -971,7 +989,7 @@ function sgsr2Gpu(fin, depthT, mo = null) {
     },
     set(f) {
       U.rs.value.copy(f.renderSize); U.os.value.copy(f.outputSize); U.jit.value.copy(f.jitter); U.sr.value.copy(f.scaleRatio);
-      U.fov.value = f.fovH; U.minLerp.value = f.minLerp; U.reset.value = f.reset; U.c2p.value.copy(f.clipToPrevClip);
+      U.fov.value = f.fovH; U.minLerp.value = f.minLerp; U.reset.value = fresh ? 1 : f.reset; fresh = false; U.c2p.value.copy(f.clipToPrevClip);
       if (f.jd) U.jd.value.set(f.jd[0], f.jd[1]);
     },
     // draw (the scene and the small finished picture are drawn on the way, by the nodes the upscale reads);
@@ -987,6 +1005,8 @@ function sgsr2Gpu(fin, depthT, mo = null) {
     },
     /** The picture the last render() made (it stays until the render after next: the two take turns). */
     last() { return H2[1 - cur].texture; },
+    /** The picture the render before that made (it stays until the next render draws over it). */
+    before() { return H2[cur].texture; },
     dispose() { low.dispose(); mdc.dispose(); for (const t of H2) t.dispose(); upMat.dispose(); cpMat.dispose(); },
   };
 }
@@ -1013,7 +1033,7 @@ export class GpuChain {
       // the mask's start, full and cap brightness and scale (hd3d.js ShaftsPass.bright, from v.shaftsAt)
       shThr: uniform(1.1), shHi: uniform(1.1 * 2.2), shCap: uniform(1e9), shGain: uniform(1),
       // frame generation's last touches: the grain's own clock and size (touches())
-      gt: uniform(0), gk: uniform(1),
+      gt: uniform(0), gk: uniform(1), grain: uniform(.035),
     };
     // volumetric light and motion blur (hd3d.js VOL and MB: the same numbers, from beamsFrame and blurFrame)
     this.V = {
@@ -1253,20 +1273,21 @@ export class GpuChain {
     }
     // live, the last touches go on as each refresh is shown (show()), not here
     const fin = live ? vec4(out.rgb, 1) : Fn(() => vec4(touches(U, out.rgb, U.t, float(1)), 1))();
-    if (s2) { this.s2 = sgsr2Gpu(fin, sp.getTextureNode('depth'), mrtOn ? { vel: sp.getTextureNode('velocity'), rea: sp.getTextureNode('reactive') } : null); return; }
+    if (s2) { this.s2 = sgsr2Gpu(fin, sp.getTextureNode('depth'), mrtOn ? { vel: sp.getTextureNode('velocity'), rea: sp.getTextureNode('reactive') } : null, s2 !== 'plain'); return; }
     if (s1) this.s1 = sgsr1Gpu(fin);
     this.pp.outputNode = s1 ? this.s1.node : fin; this.pp.needsUpdate = true;
   }
   /** Sets the numbers from the view and tier, then draws. o: { ao (AO resolution, 0 = off), msaa, bloomScale, smooth, bloom, t, hurt, grade, glare, sunUV, sunCol, aspect,
    *  fg (frame generation: { mode: 'blend' | 'ahead', reset, jd: SGSR 2's jitter change in NDC }) }. With fg, returns what it showed ('real' | 'made'). */
   render(o) {
-    // o.s2: SGSR 2's frame numbers (sgsr2.js SgsrFrame): the scene and effects at o.w x o.h, upscaled to o.fw x o.fh;
+    // o.s2: SGSR 2's frame numbers (sgsr2.js SgsrFrame): the scene and effects at o.w x o.h, upscaled to o.fw x o.fh
+    // (o.s2Plain: Qualcomm's shader as it was, without our changes: see sgsr2Gpu);
     // o.s1: the same sizes, upscaled by SGSR 1. o.live: the game on screen (drawn into a picture and shown);
     // o.mrt: the scene's pass also writes motion and the see-through mask (frame generation, SGSR 2)
     const f = !this.clear && o.s2 ? o.s2 : null, s1 = !f && !!o.s1, live = !!o.live;
     DRAWN.n++;
     if (o.gi) { this.giRes = o.gi.res; this.giBox = o.gi.box; }
-    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, !!f, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !f && !s1 && !!o.traa, !this.clear && !!o.lut, !this.clear && !!o.oit, !this.clear && !!o.flare, !this.clear && o.ao > 0 && o.gi ? o.gi.kind : false);
+    this.build(!this.clear && o.ao > 0, !!o.smooth && !f, o.msaa, f ? (o.s2Plain ? 'plain' : true) : false, !this.clear && !!o.dofOn, !this.clear && !!o.shaftsOn, live, s1, !this.clear && !!o.volOn, !this.clear && !!o.mbOn, !!o.mrt, o.tone, !this.clear && !f && !s1 && !!o.traa, !this.clear && !!o.lut, !this.clear && !!o.oit, !this.clear && !!o.flare, !this.clear && o.ao > 0 && o.gi ? o.gi.kind : false);
     if (this.s1) this.s1.size(o.w, o.h);
     // the passes size themselves from the canvas: upscaled, the canvas is the screen's size, so scale them down
     const k = f || s1 ? (o.w + .5) / o.fw : 1;
@@ -1275,7 +1296,7 @@ export class GpuChain {
       const U = this.U;
       if (this.aoN && this.aoN.resolutionScale !== o.ao * k) this.aoN.resolutionScale = o.ao * k;
       this.bloomK.value = Math.max(0, o.bloom) * .8; this.bloomN.size(o.w, o.h, o.bloomScale || .5);
-      U.t.value = o.t; U.hurt.value = o.hurt;
+      U.t.value = o.t; U.hurt.value = o.hurt; U.grain.value = o.grain ?? .035;
       if (this.r.gsHdr) { U.hdrK.value = Math.max(0, (o.headroom ?? 2) - 1); U.hdrExp.value = this.r.toneMappingExposure; }
       const g = o.grade; U.gradeOn.value = g ? 1 : 0;
       if (g) { U.sat.value = g.sat; U.con.value = g.con; U.lo.value.copy(g.lo); U.hi.value.copy(g.hi); }
@@ -1322,11 +1343,16 @@ export class GpuChain {
     this.owe = false;
     // particles' own motion is measured from the camera as the last real frame drew it
     fgPrevVP.value.copy(this.vpLast ||= cam.projectionMatrix.clone().multiply(cam.matrixWorldInverse));
-    let color;
-    if (this.s2) { this.s2.size(o.w, o.h, o.fw, o.fh); this.s2.set(f); this.s2.render(r, false); color = this.s2.last(); }
+    // the frame's picture, and the last frame's: two pictures taking turns (SGSR 2's own two, or ours), so
+    // frame generation reads the last frame where it is instead of copying a screen-sized picture every frame
+    let color, before;
+    if (this.s2) { this.s2.size(o.w, o.h, o.fw, o.fh); this.s2.set(f); this.s2.render(r, false); color = this.s2.last(); before = this.s2.before(); }
     else {
-      const rt = this.fgRT ||= new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false });
-      if (rt.width !== o.fw || rt.height !== o.fh) rt.setSize(o.fw, o.fh);
+      // (the second picture only once frame generation runs for this view)
+      const mk = () => new RenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false }), two = this.fgRT ||= [mk()];
+      if (fgo && two.length < 2) two.push(mk());
+      const turn = two.length > 1 ? (this.fgTurn ^= 1) : 0, rt = two[turn]; before = two.length > 1 ? two[turn ^ 1].texture : null;
+      for (const t of two) if (t.width !== o.fw || t.height !== o.fh) t.setSize(o.fw, o.fh);
       const was = r.getRenderTarget(); r.setRenderTarget(rt);
       try { this.pp.render(); } finally { r.setRenderTarget(was); }
       color = rt.texture;
@@ -1341,7 +1367,7 @@ export class GpuChain {
     this.fgMode = mode;
     const vel = sp.getTexture('velocity');
     this.U.gk.value = vel.image.width / o.fw;
-    fg.real({ color, velocity: vel, reactive: sp.getTexture('reactive'), depth: sp.getTextureNode('depth').value,
+    fg.real({ color, prevColor: before, velocity: vel, reactive: sp.getTexture('reactive'), depth: sp.getTextureNode('depth').value,
       renderSize: [vel.image.width, vel.image.height], outputSize: [o.fw, o.fh], camera: cam, jitter: fgo.jit, jitterDelta: fgo.jd });
     // the gap since the last real frame, in refreshes as the screen saw them (one that can't be a refresh
     // count, like a test's slow frames, counts as the usual one)
@@ -1359,7 +1385,7 @@ export class GpuChain {
   showAt(k) {
     const S = this.sched, fg = this.fg, t = 1 + (k - S.D) / S.gap;
     if (!fg.ready || Math.abs(t - 1) < .02) { this.showFrame(this.lastColor, 1); return 'real'; }
-    if (t < .02) { this.showFrame(fg.prevColor, 0); return 'real'; }
+    if (t < .02) { this.showFrame(fg.prev, 0); return 'real'; }
     if (t > 2.6) return false;   // too far past the newest to guess: the screen keeps what it has
     fg.make(t); this.showFrame(fg.output, t); return 'made';
   }
@@ -1403,7 +1429,7 @@ export class GpuChain {
   }
   dispose() {
     this.aoN?.dispose?.(); this.dnN?.dispose?.(); this.bloomN?.dispose?.(); this.s2?.dispose(); this.s1?.dispose(); this.dofT?.renderTarget?.dispose(); this.shM?.renderTarget?.dispose(); this.shB?.renderTarget?.dispose(); for (const t of [this.volT, this.baseT, this.mbT]) t?.renderTarget?.dispose(); this.pp.dispose?.();
-    this.fg?.dispose(); this.still?.dispose(); this.fgRT?.dispose(); this.showQ?.material.dispose(); this.fg = this.still = this.fgRT = this.showQ = null; this.sched = null; this.lastColor = null;
+    this.fg?.dispose(); this.still?.dispose(); for (const t of this.fgRT || []) t.dispose(); this.showQ?.material.dispose(); this.fg = this.still = this.fgRT = this.showQ = null; this.sched = null; this.lastColor = null;
   }
 }
 const AIM_POSE = newPose(), AIM_HOLD = 150;   // fresh aim: the pose a frame was made for; ms the input counts as turning the camera after it last did

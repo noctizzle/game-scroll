@@ -50,7 +50,8 @@ The numbers, over the last 5 seconds:
   final picture's size** (the resolution counter, straight from the 3D kit, so no pixel counting
   needed), the upscaler (SGSR 1 or 2), frame generation (mode, frames made per real one, its cost)
   and why it's on or off, CPU time of the game's `update()`, `draw()` and the 3D render, GPU time
-  (once the 3D kit measures it: `HD.info.gpuMs`), draw calls and triangles.
+  (`HD.info.gpuMs`: every pass for a real frame and the frames made after it, with the compute
+  share in brackets: frame generation, GPU particles, culling), draw calls and triangles.
 - 2D games: the canvas size, and whether it was eased because the phone fell behind.
 - the phone: heat (Android thermal status and headroom, iPhone thermal state), battery, heap, and
   **CPU speed**: a fixed bit of work timed every 2 seconds, as a share of its best time. When the
@@ -79,8 +80,8 @@ Every stutter during play is checked for what happened since the picture before 
 | **● Rec** | Records up to 60 s of every refresh, hitch and phone reading. Tap again to stop. |
 | **Freeze** | Stops the game's clock but keeps drawing: the picture settles and nothing moves. |
 | **Tint** | Tints the card magenta on every made frame, so you see frame generation working. |
-| **A/B** | On a frozen frame, two pictures with one setting changed: SGSR off vs on, SGSR 1 vs 2, WebGL vs WebGPU, half vs full resolution, low vs ultra tier. Settings go back afterwards. |
-| **Shimmer** | On a frozen frame, 16 pictures in a row and a heat map of pixels that still change while nothing moves: shimmering edges, upscaler or anti-aliasing jitter. |
+| **A/B** | On a frozen frame, two pictures with one setting changed: SGSR off vs on, SGSR 1 vs 2, SGSR 2 as Qualcomm has it vs with our changes (WebGPU), WebGL vs WebGPU, half vs full resolution, low vs ultra tier. Settings go back afterwards. |
+| **Shimmer** | On a frozen frame, 16 pictures in a row and a heat map of pixels that still change while nothing moves: shimmering edges, upscaler or anti-aliasing jitter. With SGSR 2 on WebGPU it then measures the same frame again as Qualcomm's shader has it, and the notes give both numbers. |
 | **FG check** | While you play a WebGPU game: grabs real, made, real frames and flags made pixels that match neither real frame nearby (ghosting, smears, holes behind moving things). Turns frame generation on for the check if it's off. |
 | **Report** | Shares a self-contained HTML report (Android and iPhone share sheet; a download on the web). |
 | **Copy** | Puts a text summary on the clipboard, to paste into chat. |

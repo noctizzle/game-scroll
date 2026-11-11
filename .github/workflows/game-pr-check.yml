@@ -271,10 +271,12 @@ jobs:
         if: steps.changed.outputs.run
         run: node scripts/mutants.mjs
 
-  # Frame generation quality: made frames scored against the scene really drawn at that moment, in 8
-  # suites (blend, ahead, two frames between, hard cases, upscaled), each scene no worse than
-  # scripts/framegen-test/baseline.json. WebGPU in software (SwiftShader), so no GPU needed. Runs when
-  # frame generation, the 3D kit's WebGPU path, SGSR 2, the frame pacing or the check change.
+  # Frame generation quality: made frames scored against the scene really drawn at that moment, in 12
+  # suites (blend, ahead, two frames between, hard cases, upscaled...), each scene no worse than
+  # scripts/framegen-test/baseline.json. Then the upscalers against the same scene drawn at twice the
+  # size: SGSR 2 no worse than a plain stretch, and our changes to it no worse than Qualcomm's shader
+  # as it was. WebGPU in software (SwiftShader), so no GPU needed. Runs when frame generation, the 3D
+  # kit's WebGPU path, SGSR 2, the frame pacing or the checks change.
   framegen:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -288,7 +290,7 @@ jobs:
         env:
           BASE: ${{ github.base_ref }}
         run: |
-          if git diff --name-only "origin/$BASE...HEAD" | grep -qE '^(src/kit/(framegen|hd3d|hd3d-gpu|sgsr2|speed|particles-gpu|power)\.js|scripts/framegen-test|package(-lock)?\.json|\.github/workflows/game-pr-check\.yml)'; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "No frame generation changes."; fi
+          if git diff --name-only "origin/$BASE...HEAD" | grep -qE '^(src/kit/(framegen|hd3d|hd3d-gpu|sgsr2|speed|particles-gpu|power)\.js|scripts/(framegen-test|upscale-compare)|package(-lock)?\.json|\.github/workflows/game-pr-check\.yml)'; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "No frame generation changes."; fi
 
       - uses: actions/setup-node@v7
         if: steps.changed.outputs.run
@@ -324,6 +326,10 @@ jobs:
       - name: Made frames no worse than the baseline
         if: steps.changed.outputs.run
         run: node scripts/framegen-test.cjs --check
+
+      - name: SGSR 2 no worse than a plain stretch, and our changes to it no worse than without
+        if: steps.changed.outputs.run
+        run: node scripts/upscale-compare.cjs --webgpu
 
   # The app around a game (screen kept on in a round, finer touch, even pixels and the LCD look, the
   # one-line soundtrack, the phone-only save) and the sound itself (every ready-made sound is heard and

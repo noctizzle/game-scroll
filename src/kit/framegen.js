@@ -142,6 +142,22 @@ const warpUV = (u, Hm) => { const h = Hm.mul(vec3(ndcOf(u), 1)), z = max(h.z, 1e
 export { warpUV };
 
 /**
+ * A picture read sharp between its pixels (TSL): a Catmull-Rom curve through the 4 x 4 pixels round uv, in
+ * five linear samples (the corners left out), on the picture's own pixels (its size, read from it). A plain
+ * linear sample softens whatever it moves by a fraction of a pixel; this keeps it as sharp as it was drawn,
+ * and on a pixel's centre gives that pixel back exactly. Never below 0.
+ */
+export const sharpAt = (T, uv) => {
+  const ts = vec2(T.size(int(0))), P = uv.mul(ts), c = floor(P.sub(.5)).add(.5), f = P.sub(c), f2 = f.mul(f), f3 = f2.mul(f);
+  const w0 = f3.mul(-.5).add(f2).sub(f.mul(.5)), w1 = f3.mul(1.5).sub(f2.mul(2.5)).add(1), w2 = f3.mul(-1.5).add(f2.mul(2)).add(f.mul(.5)), w3 = f3.mul(.5).sub(f2.mul(.5));
+  const w12 = w1.add(w2), t12 = c.add(w2.div(w12)).div(ts), t0 = c.sub(1).div(ts), t3 = c.add(2).div(ts);
+  const at = (x, y) => T.sample(vec2(x, y)).level(0);
+  const a = w12.x.mul(w0.y), b = w0.x.mul(w12.y), m = w12.x.mul(w12.y), d = w3.x.mul(w12.y), e = w12.x.mul(w3.y);
+  const sum = at(t12.x, t0.y).mul(a).add(at(t0.x, t12.y).mul(b)).add(at(t12.x, t12.y).mul(m)).add(at(t3.x, t12.y).mul(d)).add(at(t12.x, t3.y).mul(e));
+  return max(sum.div(a.add(b).add(m).add(d).add(e)), vec4(0));
+};
+
+/**
  * One view's frame generator. The pictures it is given are three.js textures: color is the finished
  * frame at the screen's size (after SGSR 2), velocity is three's velocity MRT (NDC now minus NDC last
  * frame, at the render size) and depth is the scene's depth (0 near, 1 far, at the render size).
@@ -162,15 +178,18 @@ export class FrameGen {
   }
 
   /* (re)makes the buffers and the compute passes for a size */
-  build(rw, rh, ow, oh) {
-    const key = `${rw}x${rh}>${ow}x${oh}`;
+  build(rw, rh, ow, oh, handed = false) {
+    const key = `${rw}x${rh}>${ow}x${oh}${handed ? ' handed' : ''}`;
     if (key === this.key) return;
     this.dispose(); this.key = key; this.frames = 0; this.ready = false;
     const n = rw * rh, on = ow * oh, U = this.U, upscaled = ow * oh > rw * rh * 1.1;
     const st = (w, h, type = HalfFloatType, filter = NearestFilter) => { const s = new StorageTexture(w, h); s.type = type; s.minFilter = s.magFilter = filter; return s; };
     // last real frame's colour (screen size), and at the render size its depth (x), see-through mask (y)
-    // and motion back to the frame before it (zw: for the curve through three frames), kept at keep()
-    this.prevColor = st(ow, oh, HalfFloatType, LinearFilter);
+    // and motion back to the frame before it (zw: for the curve through three frames), kept at keep().
+    // handed: the caller still has the last frame's picture and passes it to real() (o.prevColor), so the
+    // colour isn't copied and has no picture of its own here (a screen-sized one, and a pass over it each frame)
+    this.prevColor = handed ? null : st(ow, oh, HalfFloatType, LinearFilter);
+    const blank = this.prevColor || (this.blank = st(1, 1, HalfFloatType, LinearFilter));
     this.prevDepth = st(rw, rh, FloatType);
     // mid-frame motion: one depth key per render pixel (atomic min), then the motion that won it
     this.keysAttr = new StorageBufferAttribute(new Uint32Array(n), 1);
@@ -199,9 +218,9 @@ export class FrameGen {
     this.cutAttr = new StorageBufferAttribute(new Uint32Array(72), 1);
     const keys = storage(this.keysAttr, 'uint', n).toAtomic(), keysR = storage(this.keysAttr, 'uint', n);
     // the inputs change every frame (SGSR 2 takes turns between two pictures): nodes whose value real() sets
-    const col = this.colN = texture(this.prevColor), vel = this.velN = texture(this.prevColor), dep = this.depN = texture(this.prevDepth);
+    const col = this.colN = texture(blank), vel = this.velN = texture(blank), dep = this.depN = texture(this.prevDepth);
     const rea = this.reaN = texture(NO_REACTIVE);
-    const pcol = texture(this.prevColor), pdep = texture(this.prevDepth), mm = texture(this.midMotion), mb = texture(this.midBend);
+    const pcol = this.pcolN = texture(blank), pdep = texture(this.prevDepth), mm = texture(this.midMotion), mb = texture(this.midBend);
     const fm = texture(this.filled), fb = texture(this.filledBend);
     // (the sizes are uniforms, never numbers written into the shaders: a new size, which the resolution steps
     // make mid-round, then reuses the shaders already built instead of stalling to build new ones)
@@ -387,16 +406,6 @@ export class FrameGen {
     // frame from where it was at t = 0, each kept only if it sees the same surface (its depth isn't in
     // front of it), blended by time. Ahead of the newest frame (t > 1) there is only the newest to take from.
     const OW = int(U.os.x);
-    // (on the picture's own pixels: its size, read from it)
-    const sharpAt = (T, uv) => {
-      const ts = vec2(T.size(int(0))), P = uv.mul(ts), c = floor(P.sub(.5)).add(.5), f = P.sub(c), f2 = f.mul(f), f3 = f2.mul(f);
-      const w0 = f3.mul(-.5).add(f2).sub(f.mul(.5)), w1 = f3.mul(1.5).sub(f2.mul(2.5)).add(1), w2 = f3.mul(-1.5).add(f2.mul(2)).add(f.mul(.5)), w3 = f3.mul(.5).sub(f2.mul(.5));
-      const w12 = w1.add(w2), t12 = c.add(w2.div(w12)).div(ts), t0 = c.sub(1).div(ts), t3 = c.add(2).div(ts);
-      const at = (x, y) => T.sample(vec2(x, y)).level(0);
-      const a = w12.x.mul(w0.y), b = w0.x.mul(w12.y), m = w12.x.mul(w12.y), d = w3.x.mul(w12.y), e = w12.x.mul(w3.y);
-      const sum = at(t12.x, t0.y).mul(a).add(at(t0.x, t12.y).mul(b)).add(at(t12.x, t12.y).mul(m)).add(at(t3.x, t12.y).mul(d)).add(at(t12.x, t3.y).mul(e));
-      return max(sum.div(a.add(b).add(m).add(d).add(e)), vec4(0));
-    };
     const fromN = (u, m, e) => u.sub(m.xy.mul(float(1).sub(U.t))).sub(e), fromP = (u, m, e) => u.add(m.xy.mul(U.t)).sub(e);
     this.cCompose = Fn(() => {
       const i = int(instanceIndex), q = ivec2(i.mod(OW), i.div(OW)), u = vec2(q).add(.5).div(U.os);
@@ -518,7 +527,7 @@ export class FrameGen {
     })().compute(on, [64]);
 
     // 6 keep the newest frame as next time's last frame (with its motion, for next time's curve)
-    this.cKeepC = Fn(() => { const i = int(instanceIndex), q = ivec2(i.mod(OW), i.div(OW)); textureStore(this.prevColor, q, col.sample(vec2(q).add(.5).div(U.os)).level(0)); })().compute(on, [64]);
+    this.cKeepC = handed ? null : Fn(() => { const i = int(instanceIndex), q = ivec2(i.mod(OW), i.div(OW)); textureStore(this.prevColor, q, col.sample(vec2(q).add(.5).div(U.os)).level(0)); })().compute(on, [64]);
     this.cKeepD = Fn(() => {
       const p = xy(instanceIndex), r = rea.load(p), cover = select(movingOf(r, U.rs).greaterThan(.5), max(r.x, .001).negate(), r.x);
       textureStore(this.prevDepth, p, vec4(dep.load(p).x, cover, back(vel.load(p).xy)));
@@ -528,12 +537,16 @@ export class FrameGen {
   /**
    * After a real frame: keeps it. o: { color, velocity, reactive (optional: frameGenMRT's mask), depth (three Textures), renderSize, outputSize
    * (Vector2 or [w, h]), camera (for its near and far, and its turn), jitter (this frame's SGSR 2 jitter in NDC, [0, 0] if none),
-   * jitterDelta (this frame's jitter minus last frame's, in NDC; [0, 0] if none) }.
-   * The previous frame stays in prevColor until keep(), so make() works between the last two real frames.
+   * jitterDelta (this frame's jitter minus last frame's, in NDC; [0, 0] if none), prevColor (optional: the last real frame's
+   * finished picture, when the caller still has it and leaves it alone until the next real frame: then it is read where it is
+   * instead of being copied. Every frame or none: changing over starts again) }.
+   * The previous frame stays in prev until keep(), so make() works between the last two real frames.
    */
   real(o) {
     const rs = o.renderSize, os = o.outputSize, rw = rs.x ?? rs[0], rh = rs.y ?? rs[1], ow = os.x ?? os[0], oh = os.y ?? os[1];
-    this.build(rw, rh, ow, oh);
+    this.build(rw, rh, ow, oh, !!o.prevColor);
+    /** The last real frame's finished picture (the one handed in, or our copy). */
+    this.prev = this.pcolN.value = o.prevColor || this.prevColor;
     this.colN.value = o.color; this.velN.value = o.velocity; this.depN.value = o.depth; this.reaN.value = o.reactive || NO_REACTIVE; this.U.rs.value.set(rw, rh); this.U.os.value.set(ow, oh);
     const U = this.U, P = this.poses;
     if (o.camera) { U.near.value = o.camera.near; U.far.value = o.camera.far; }
@@ -549,7 +562,7 @@ export class FrameGen {
   }
   /** Call after the last make() between a pair and BEFORE the next real frame is drawn: copies the newest frame to be next time's last frame. */
   keep() {
-    if (this.frames) this.r.compute([this.cKeepC, this.cKeepD]);
+    if (this.frames) this.r.compute(this.cKeepC ? [this.cKeepC, this.cKeepD] : [this.cKeepD]);
   }
   /** The camera's pose at t (0 the last real frame, 1 the newest, more is past it), into out. */
   poseAt(t, out = newPose()) { return this.frames >= 2 ? lerpPose(this.poses[1], this.poses[0], t, out) : copyPose(this.poses[0], out); }
@@ -575,11 +588,11 @@ export class FrameGen {
   /** Forget the last frames (a camera cut, a new round, a resize): nothing is made until two new real frames. */
   reset() { this.frames = 0; this.ready = false; this.flowFor = -1; }
   dispose() {
-    for (const k of ['prevColor', 'prevDepth', 'midMotion', 'midBend', 'filled', 'filledBend', 'raw', 'output']) { this[k]?.dispose(); this[k] = null; }
+    for (const k of ['prevColor', 'blank', 'prevDepth', 'midMotion', 'midBend', 'filled', 'filledBend', 'raw', 'output']) { this[k]?.dispose(); this[k] = null; }
     for (const k of ['lum', 'flow', 'pyr']) { for (const t of this[k] || []) t.dispose(); this[k] = null; }
     for (const k of ['cClear', 'cSplat', 'cResolve', 'cFill', 'cCompose', 'cKeepC', 'cKeepD', 'cCutClear', 'cCutDecide', 'cInpaint']) { this[k]?.dispose?.(); this[k] = null; }
     for (const k of ['cLum', 'cFlow', 'cPyr']) { for (const c of this[k] || []) c.dispose?.(); this[k] = null; }
-    this.keysAttr = this.cutAttr = null; this.key = ''; this.flowFor = -1;
+    this.keysAttr = this.cutAttr = this.prev = null; this.key = ''; this.flowFor = -1;
   }
 }
 const TP = newPose();
