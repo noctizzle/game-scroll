@@ -54,16 +54,50 @@ The rules for new 3D code until then:
 
 | Part | Where | What it needs for WebGPU |
 | --- | --- | --- |
-| Reflections | three's `SSRPass` | Three's TSL `ssr()` node |
-| Light probe baking | `hd3d.js` `bakeLight` (`WebGLCubeRenderTarget` + `CubeCamera`) | A cube target on the WebGPU renderer (`v.bounce`, three's LightProbeGrid, already works on both) |
-| Game screen effects | `gs.fx3d` (EffectComposer passes) | TSL versions (three has outline, pixelate, DOF...) |
 | Classic Console | `src/kit/toon3d.js` ink pass; toon shading is already stock `MeshToonMaterial` | A TSL edge-detect pass, then Console views on WebGPU |
-| 3D text | troika-three-text (patches shaders) | Three's own text geometry or an SDF text node |
-| 3D particles | three.quarks 0.17 (needs three ≥ 0.182, works on 0.186) | Check its WebGPU support; else our own node particles |
 | Sky glow cap and shafts threshold | `sky.js` soft knee in the physical dome, `v.shaftsAt`; `hd3d.js` `ShaftsPass.bright()` (`thr`/`hi`/`cap`/`gain`) | The same knee in `gpuMaterials.skyDome` and the same mask numbers in `GpuChain`'s shafts |
 | Sized points | `gs.sky` stars and snow (`PointsMaterial` with `size`) | WebGPU draws points 1 pixel wide whatever the size: sprites (instanced quads) instead. They don't keep a view on WebGL; they are just thin |
 
 Status from `gpu-games.cjs` (2026-11-09): all 20 Next Gen and AR games draw on WebGPU with no errors.
+
+## Done: gs.fx3d, reflections and light probes on both
+
+Nothing a game can ask for from `gs.fx3d`, `v.reflect()` or `v.bakeLight()` keeps a view on WebGL any more
+(`hd3d.js` `gpuFits`); only a screen pass of the game's own (one not made by `gs.fx3d`) still does.
+
+- **3D text** (`src/kit/text3d.js`): distance-field letters made on the phone from the app's fonts with
+  TinySDF, drawn by a stock `MeshBasicMaterial` with the `sdf` look (`lookPatch` on WebGL, `sdfLook` in
+  `hd3d-gpu-fx.js` as nodes). troika-three-text is gone.
+- **3D particles** (`src/kit/particles3d.js`): the kit moves the dots and draws them as camera-facing
+  quads in two meshes with stock materials, so there is no shader to port. three.quarks is gone.
+- **Screen effects** (`hd3d-gpu-fx.js`): outline, trails (three's `OutlineNode`, `AfterImageNode`), glitch
+  and pixelate as stages of `GpuChain`, each reading its numbers from the pass the game holds
+  (`pass.gsFx`). A pass that is removed leaves its stage switched off, so an effect that comes and goes
+  doesn't build the chain again. Depth of field was already the view's own (`v.focus`).
+- **Reflections**: the scene's pass writes one more picture (which pixels are the marked shiny things,
+  and how rough) and three's `ssr()` node traces only those; on high (half size) and ultra here, where
+  WebGL has them on ultra only.
+- **Light probes**: `v.bakeLight()` bakes with the renderer the view draws with (a `CubeRenderTarget`
+  on WebGPU).
+- **The scene pass's pictures**: each extra picture is 8 bytes a pixel and WebGPU promises only 32 in
+  all, so `gpu.js` asks the chip for up to 64 and `GpuChain` leaves out what still doesn't fit
+  (reflections first, then live bounce light).
+- **Materials with one look**: on WebGPU three keys a classic material's shader by its settings, not
+  by its nodes, so two materials with the same look shared the first one's numbers and pictures.
+  `lookPatch` now gives each a `gsGpuKey` saying whose `{ value }` objects it holds; a look whose
+  nodes read from the material being drawn (`gpuShared`, 3D text) shares one shader.
+- **One shader build at a time**: three's `compileAsync` keeps a single state, so two builds running
+  together on one renderer left it broken ("Async render pipeline creation failed", now and then, in
+  games that warm a level while new things appear). Every WebGPU build goes through `compileGPU()` in
+  `hd3d.js`, which queues them; nothing in the kit calls `r.compileAsync` on WebGPU directly.
+- **A shadow-only floor with shadows off**: when the quality tier switches shadows off, a light still
+  holds the shadow node it made before, and three's `ShadowMaterial` (the AR floor, a board game's
+  table) multiplied by it and got nothing ("Invalid generated code, expected a float"; the floor drew
+  dark all over). `hd3d-gpu.js` makes a switched-off shadow answer "no shadow".
+
+Checked by `look-compare` (`fx-text`, `fx-parts`, `fx-outline`, `fx-pixelate`, `fx-trails`, `fx-probe`,
+`pulse-two`, `shadow-off` against WebGL; `gpu-fx-glitch` and `gpu-fx-reflect` by eye) and by
+`scripts/framegen-games.cjs`, which fails on any console error.
 
 ## GPU particles
 

@@ -1087,7 +1087,57 @@ export interface ArPart { ARView: new (...a: Loose[]) => Loose; FLOOR: Loose; ar
 export interface BricksPart { BRICK: Loose; BRICK_KEYS: Loose; STUD: Loose; brick: Loose; brick3d: Loose; stud: Loose; stud3d: Loose }
 /** Rapier 3D (lazy). */
 export interface Physics3dPart { World3D: new (o?: Loose) => Loose; loadPhysics3D(): Promise<Loose>; physics3DReady(): boolean }
-export interface Fx3dPart { text3d: Loose; Particles3D: new (...a: Loose[]) => Loose; outline: Loose; glitch: Loose; trails: Loose; focus: Loose; pixelate: Loose; loadFx3d(): Promise<Loose> }
+/** A place in 3D for gs.fx3d: { x, y, z } (a three.js Vector3 fits). */
+export interface Fx3dPos { x?: number; y?: number; z?: number }
+/** A piece of text in the 3D world (a three.js Mesh: add it to a scene or a model). Change a field, then sync(). */
+export interface Text3d {
+  text: string; size: number; color: Loose; align: 'left' | 'center' | 'right'; outline: number; outlineColor: Loose; maxWidth: number;
+  /** Its size in world units after the last sync(). */ readonly width: number; readonly height: number;
+  /** Lays the letters out again after a change. */ sync(): Text3d;
+  dispose(): void; [k: string]: Loose;
+}
+/** One running effect of a Particles3D. */
+export interface Fx3dEffect {
+  /** Where it makes its particles (a Vector3). */ readonly pos: Loose;
+  /** Moves it. */ at(p: Fx3dPos): Fx3dEffect;
+  /** Stops it making new particles; the ones flying finish. */ stop(): Fx3dEffect;
+  /** Takes it and its particles away at once. */ remove(): void;
+}
+/** 3D text, 3D particle effects and extra screen effects (lazy). All of it draws on WebGL and on WebGPU. */
+export interface Fx3dPart {
+  /**
+   * Sharp text inside the 3D world: scores over heads, signs, labels. size: the height of a capital letter in world
+   * units; font: 'regular' | 'bold' | 'pixel', any gs.fonts name, or [name, weight]; outline: its width in world units;
+   * maxWidth wraps at spaces; face: true always faces the camera.
+   */
+  text3d(str: string, o?: { size?: number; color?: Loose; font?: 'regular' | 'bold' | 'pixel' | FontName | [FontName, number]; align?: 'left' | 'center' | 'right'; outline?: number; outlineColor?: Loose; maxWidth?: number; face?: boolean }): Text3d;
+  /** Particle effects for one scene: fx = new Particles3D(view.scene), then fx.update(dt) every frame. seed: the same particles every time (replays). */
+  Particles3D: new (scene: Loose, o?: { seed?: number | null }) => {
+    /** Your own effect: life, speed and size are [min, max]; colors [from, to]; rate a second, burst at the start; glow: false for soft dots like smoke. */
+    make(pos: Fx3dPos, o?: { life?: number | [number, number]; speed?: number | [number, number]; size?: number | [number, number]; colors?: Loose[]; rate?: number; burst?: number; loop?: boolean; duration?: number; shape?: 'point' | 'sphere' | 'cone'; radius?: number; angle?: number; up?: boolean; gravity?: number; glow?: boolean; shrink?: boolean; grow?: boolean; fade?: boolean }): Fx3dEffect;
+    /** A flame that keeps burning. */ fire(pos: Fx3dPos, o?: { size?: number; color?: Loose; end?: Loose }): Fx3dEffect;
+    /** Rising smoke (keeps going). */ smoke(pos: Fx3dPos, o?: { size?: number; color?: Loose }): Fx3dEffect;
+    /** A quick shower of sparks. */ sparks(pos: Fx3dPos, o?: { color?: Loose; count?: number; power?: number }): Fx3dEffect;
+    /** An explosion: fire, smoke and sparks. */ boom(pos: Fx3dPos, o?: { size?: number }): Fx3dEffect;
+    /** Twinkly magic (keeps going). */ magic(pos: Fx3dPos, o?: { color?: Loose; end?: Loose }): Fx3dEffect;
+    /** Falling snow over an area round pos (keeps going). */ snow(pos: Fx3dPos, o?: { area?: number; rate?: number }): Fx3dEffect;
+    /** How many particles are flying now. */ readonly count: number;
+    update(dt: number): void;
+    /** Takes every effect and particle away. */ clear(): void;
+    dispose(): void;
+  };
+  /** A glowing edge round things (Next Gen views). pass.selectedObjects = [...] changes them; pass.remove() takes it off. */
+  outline(view: Loose, objects: Loose[], o?: { color?: Loose; hidden?: Loose; strength?: number; thickness?: number; pulse?: number }): { selectedObjects: Loose[]; edgeStrength: number; edgeThickness: number; edgeGlow: number; pulsePeriod: number; visibleEdgeColor: Loose; hiddenEdgeColor: Loose; remove(): void; [k: string]: Loose };
+  /** A digital glitch (Next Gen views): const g = glitch(view); a moment later g.remove(). */
+  glitch(view: Loose, o?: { wild?: boolean }): { goWild: boolean; remove(): void; [k: string]: Loose };
+  /** Motion trails (Next Gen views). damp 0..1: how long they linger (pass.damp = .9 changes it). */
+  trails(view: Loose, damp?: number): { damp: number; remove(): void; [k: string]: Loose };
+  /** Depth of field (Next Gen views): things `focus` units away are sharp. f.focus = 4 moves it, f.remove() turns it off. */
+  focus(view: Loose, o?: { focus?: number; aperture?: number; maxblur?: number }): { focus: number; remove(): void };
+  /** Big chunky pixels (Next Gen views). size in screen pixels (pass.size = 8 changes it). */
+  pixelate(view: Loose, size?: number): { size: number; remove(): void; [k: string]: Loose };
+  loadFx3d(): Promise<Loose>;
+}
 export type RigMode = 'chase' | 'shoulder' | 'first' | 'top' | 'side' | 'orbit' | 'rail' | 'fixed';
 export interface CameraPart {
   CameraRig: new (view: Loose, o?: { mode?: RigMode; distance?: number; height?: number; side?: number; look?: number; lag?: number; lead?: number; fov?: number; walls?: Loose[]; pitchMin?: number; pitchMax?: number; rail?: Loose; at?: Loose }) => {

@@ -5,6 +5,7 @@
 // later, WebGPU against WebGL) pixel by pixel. Everything here is seeded: no randomness, no time.
 import gs, { loadParts } from '../../src/gamescroll.js';
 import { setGpuPick, prepareGPU, setHdr } from '../../src/kit/gpu.js';
+import '@fontsource/rubik/latin-400.css'; import '@fontsource/rubik/latin-700.css'; import '@fontsource/press-start-2p/latin-400.css';   // the app's own fonts (3D text)
 // ?hdr: WebGPU's HDR output on (a half-float, extended-range canvas), as on an HDR phone screen
 if (new URLSearchParams(location.search).has('hdr')) setHdr(true);
 // ?gpu: draw on WebGPU (look-compare.cjs --webgpu), to compare with a set saved on WebGL
@@ -574,7 +575,82 @@ async function cullScene(on) {
   return [c.toDataURL(), window.__hd.info.backend + ', ' + N + ' trees, gpu ' + onGpu.join('/') + ', cpu p50 ' + cpu[15].toFixed(2) + ' ms, list ' + (syncMs / 33).toFixed(2) + ' ms'];
 }
 // ?pick=materials,gpu-pcss draws only those (a quick look while working on one)
-const SCENES = { river: () => riverScene(), flood: () => floodScene(), city: () => cityScene(), 'outdoor-tier1': () => outdoor(1), 'outdoor-tier3': () => outdoor(3), 'outdoor-physical': () => outdoor(3, true), 'gpu-cull': () => cullScene(true), 'gpu-cull-cpu': () => cullScene(false), area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene(), 'gpu-fog': () => fogScene(), 'gpu-mblur': () => objBlurScene(), 'gpu-gi-none': () => giScene(null), 'gpu-gi-screen': () => giScene('screen'), 'gpu-gi-voxel': () => giScene('voxel'), recipes: () => recipesScene(), 'gpu-recipes-near': () => recipesScene(true), wear: () => wearScene(), props: () => propsScene(), sculpt: () => sculptScene(), trees: () => treesScene(), buildings: () => buildingsScene(), humans: () => humansScene() };
+// gs.fx3d on both renderers: 3D text (distance-field letters), 3D particles (seeded), each screen effect,
+// reflections (v.reflect()) and a baked light probe (v.bakeLight()). One small yard; kind picks what's added
+async function fxScene(kind) {
+  window.__hd.force = kind === 'reflect' ? 3 : 2;
+  const v = new HV({ bg: '#243044', fog: 0, env: .3, amb: kind === 'probe' ? .05 : .25 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 2.2, 6); v.cam.lookAt(0, .8, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 8, [.5, .8, .4]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const W = (w, h, d, col, px, py, pz, o = {}) => { const m = new T.Mesh(new T.BoxGeometry(w, h, d), gs.hd.pbr(col, o)); m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; v.scene.add(m); return m; };
+  const floor = W(10, .1, 10, '#8a8f98', 0, -.05, 0, { rough: kind === 'reflect' ? .08 : .8 });
+  const red = W(1, 1, 1, '#d5503a', -1.4, .5, 0), blue = W(.8, 1.6, .8, '#3a7bd5', 1.3, .8, -.6);
+  const ball = new T.Mesh(new T.SphereGeometry(.5, 32, 20), gs.hd.pbr('#e8c040', { rough: .3, metal: 1 })); ball.position.set(0, .5, .8); ball.castShadow = true; v.scene.add(ball);
+  // (a part that is still loading says so: wait for it and make the thing again, as the app does)
+  const make = async fn => { for (;;) try { return fn(); } catch (e) { if (!e.kitLoading) throw e; await e.kitLoading; } };
+  const { text3d, Particles3D, outline, pixelate, trails, glitch } = gs.fx3d;
+  let step = null, frames = 4;
+  if (kind === 'text') {
+    const a = await make(() => text3d('SCORE 1200', { size: .45, color: '#ffffff', outline: .05, outlineColor: '#102040' })); a.position.set(0, 2.9, 0); v.scene.add(a);
+    const b = await make(() => text3d('Bangers!', { size: .5, color: '#ffd400', font: 'Bangers' })); b.position.set(-1.4, 1.5, 0); b.rotation.y = .5; v.scene.add(b);
+    const d = await make(() => text3d('a sign that wraps over three lines', { size: .16, color: '#202020', font: 'regular', maxWidth: 1.1, align: 'left' })); d.position.set(.85, 1.45, -.19); blue.add(d); d.position.set(-.38, .45, .41);
+    const e = await make(() => text3d('P1', { size: .22, color: '#40ff80', font: 'pixel', face: true, outline: .03 })); e.position.set(0, 1.25, .8); v.scene.add(e);
+    const f = await make(() => text3d('far away', { size: 1.2, color: '#ff8060' })); f.position.set(-6, 3, -30); v.scene.add(f);
+  }
+  if (kind === 'parts') {
+    const fx = new Particles3D(v.scene, { seed: 7 });
+    fx.fire({ x: -1.4, y: 1, z: 0 }); fx.smoke({ x: 1.3, y: 1.6, z: -.6 }); fx.magic({ x: 0, y: 1.2, z: .8 }); fx.snow({ x: 0, y: 3.2, z: 1 }, { area: 6, rate: 120 }); fx.boom({ x: 0, y: 2.2, z: -1.5 });
+    for (let i = 0; i < 20; i++) fx.update(1 / 30);
+    step = () => fx.update(1 / 30);
+  }
+  if (kind === 'outline') await make(() => outline(v, [ball, red], { color: '#ffd400', hidden: '#40a0ff', strength: 4, thickness: 1.5 }));
+  if (kind === 'pixelate') await make(() => pixelate(v, 6));
+  if (kind === 'trails') { await make(() => trails(v, .9)); frames = 8; step = i => { ball.position.x = -1 + i * .28; ball.position.y = .5 + Math.abs(Math.sin(i * .8)) * .9; }; }
+  // (the glitch throws dice each frame: the same throws every run here, so WebGL can be compared with WebGL)
+  const dice = Math.random; if (kind === 'glitch') { let sd = 12345; Math.random = () => (sd = (sd * 16807) % 2147483647) / 2147483647; await make(() => glitch(v, { wild: true })); }
+  if (kind === 'reflect') v.reflect(floor);
+  if (kind === 'probe') {
+    const lamp = new T.Mesh(new T.BoxGeometry(3, 2, .1), new T.MeshBasicMaterial({ color: '#ff3020' })); lamp.position.set(-3.4, 1.2, 1); lamp.rotation.y = Math.PI / 2; v.scene.add(lamp);
+    const lamp2 = new T.Mesh(new T.BoxGeometry(3, 2, .1), new T.MeshBasicMaterial({ color: '#2060ff' })); lamp2.position.set(3.4, 1.2, 1); lamp2.rotation.y = Math.PI / 2; v.scene.add(lamp2);
+    v.render(x, 240, 320); await frame();
+    const p = await v.bakeLight([0, 1, 1], { radius: 8, strength: 2.5 });
+    if (!p) throw new Error('bakeLight gave no probe');
+  }
+  for (let i = 0; i < frames - 1; i++) { step?.(i); v.t = 0; v.render(x, 240, 320); await frame(); }
+  step?.(frames - 1); v.t = 0; v.render(x, 240, 320); Math.random = dice;
+  return [c.toDataURL(), window.__hd.info.backend + (window.__hd.info.webgl ? ' (' + window.__hd.info.webgl + ')' : '')];
+}
+// two materials with one look each keep their own numbers (on WebGPU three keys a classic material's
+// shader by its settings, so the second once drew the first one's ring: looks.js gsGpuKey)
+async function pulseTwoScene() {
+  window.__hd.force = 2;
+  const v = new HV({ bg: '#02060a', fog: .04, env: .2, amb: .15 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 5, 7); v.cam.lookAt(0, 0, 0); v.cam.updateMatrixWorld();
+  const A = gs.hd.pulse(gs.hd.pbr('#5a626c', { rough: 1 }), { at: { value: new T.Vector3(-2.5, 0, 0) }, radius: { value: 1.5 }, strength: { value: 2.2 } });
+  const B = gs.hd.pulse(gs.hd.pbr('#5a626c', { rough: 1 }), { at: { value: new T.Vector3(2.5, 0, 0) }, radius: { value: .8 }, strength: { value: 2.2 }, color: [1, .5, .2] });
+  const a = new T.Mesh(new T.PlaneGeometry(4.8, 8).rotateX(-Math.PI / 2), A); a.position.x = -2.5; const b = new T.Mesh(new T.PlaneGeometry(4.8, 8).rotateX(-Math.PI / 2), B); b.position.x = 2.5; v.scene.add(a, b);
+  for (let i = 0; i < 3; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
+// A shadow-only floor (an AR floor, a board game's table) when the quality drops to the tier without shadows:
+// it must draw nothing. (three r187 on WebGPU: the light kept its shadow from the frames before, the floor's
+// shader asked for it and got nothing back, and the floor went dark all over; hd3d-gpu.js noShadow)
+async function shadowOffScene() {
+  window.__hd.force = 2;
+  const v = new HV({ bg: '#243044', fog: 0, env: .3, amb: .25 }), c = document.createElement('canvas'); c.width = 240; c.height = 320; const x = c.getContext('2d');
+  v.cam.position.set(0, 2.2, 6); v.cam.lookAt(0, .8, 0); v.cam.updateMatrixWorld();
+  const sun = gs.hd.sun('#fff2d8', 3, 8, [.5, .8, .4]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
+  const floor = new T.Mesh(new T.BoxGeometry(10, .1, 10), gs.hd.pbr('#8a8f98', { rough: .8 })); floor.position.y = -.05; v.scene.add(floor);
+  const box = new T.Mesh(new T.BoxGeometry(1, 1, 1), gs.hd.pbr('#d5503a')); box.position.set(-.6, .5, 0); box.castShadow = true; v.scene.add(box);
+  const catcher = new T.Mesh(new T.PlaneGeometry(8, 8).rotateX(-Math.PI / 2), new T.ShadowMaterial({ color: 0x000000, opacity: .5 })); catcher.position.y = .01; catcher.receiveShadow = true; v.scene.add(catcher);
+  for (let i = 0; i < 3; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  window.__hd.force = 0;
+  for (let i = 0; i < 4; i++) { v.t = 0; v.render(x, 240, 320); await frame(); }
+  v.t = 0; v.render(x, 240, 320);
+  return [c.toDataURL(), window.__hd.info.backend];
+}
+const SCENES = { 'shadow-off': () => shadowOffScene(), 'pulse-two': () => pulseTwoScene(), 'fx-text': () => fxScene('text'), 'fx-parts': () => fxScene('parts'), 'fx-outline': () => fxScene('outline'), 'fx-pixelate': () => fxScene('pixelate'), 'fx-trails': () => fxScene('trails'), 'gpu-fx-glitch': () => fxScene('glitch'), 'gpu-fx-reflect': () => fxScene('reflect'), 'fx-probe': () => fxScene('probe'), river: () => riverScene(), flood: () => floodScene(), city: () => cityScene(), 'outdoor-tier1': () => outdoor(1), 'outdoor-tier3': () => outdoor(3), 'outdoor-physical': () => outdoor(3, true), 'gpu-cull': () => cullScene(true), 'gpu-cull-cpu': () => cullScene(false), area: () => areaScene(), 'gpu-sss': () => sssScene(), 'gpu-oit': () => oitScene(), flare: () => flareScene(), 'gpu-pom': () => pomScene(), batch: () => batchScene(), materials: () => materialsScene(), 'gpu-pcss': () => pcssScene(), 'gpu-fog': () => fogScene(), 'gpu-mblur': () => objBlurScene(), 'gpu-gi-none': () => giScene(null), 'gpu-gi-screen': () => giScene('screen'), 'gpu-gi-voxel': () => giScene('voxel'), recipes: () => recipesScene(), 'gpu-recipes-near': () => recipesScene(true), wear: () => wearScene(), props: () => propsScene(), sculpt: () => sculptScene(), trees: () => treesScene(), buildings: () => buildingsScene(), humans: () => humansScene() };
 const PICK = new URLSearchParams(location.search).get('pick');
 if (PICK) try { for (const n of PICK.split(',')) if (n === 'beams') { const [pics, be] = await beamsScene(); [out['beams-sun'], out['beams-lamp'], out['motion-blur']] = pics; backends['beams-sun'] = backends['beams-lamp'] = backends['motion-blur'] = be; } else [out[n], backends[n]] = await SCENES[n](); } catch (e) { out.error = String(e && e.stack || e); }
 else try {
@@ -584,6 +660,8 @@ else try {
   [out['nextgen-lut'], backends['nextgen-lut']] = await nextgen(3, 0, 'film');   // a colour look (v.lut)
   for (const t of [0, 3]) [out['dark-tier' + t], backends['dark-tier' + t]] = await dark(t);   // rain on the air: WebGL only so far
   [out.pulse, backends.pulse] = await pulseScene();
+  [out['pulse-two'], backends['pulse-two']] = await pulseTwoScene();
+  [out['shadow-off'], backends['shadow-off']] = await shadowOffScene();
   [out.sparks, backends.sparks] = await sparksScene();
   [out.people, backends.people] = await peopleScene();
   [out.room, backends.room] = await roomScene();
@@ -614,6 +692,8 @@ else try {
   [out.city, backends.city] = await cityScene();
   for (const t of [1, 3]) [out['outdoor-tier' + t], backends['outdoor-tier' + t]] = await outdoor(t);
   [out['outdoor-physical'], backends['outdoor-physical']] = await outdoor(3, true);
+  for (const k of ['text', 'parts', 'outline', 'pixelate', 'trails', 'probe']) [out['fx-' + k], backends['fx-' + k]] = await fxScene(k);
+  for (const k of ['glitch', 'reflect']) [out['gpu-fx-' + k], backends['gpu-fx-' + k]] = await fxScene(k);
   out.console = consoleScene();
 } catch (e) { out.error = String(e && e.stack || e); }
 window.__hd.force = null;

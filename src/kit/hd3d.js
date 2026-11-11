@@ -1344,16 +1344,23 @@ export class HDView {
    * v.clearProbes() removes them all.
    */
   bakeLight(at, { radius = 10, strength = 1, size = 32 } = {}) {
-    const r = renderer(); if (!r) return Promise.resolve(null);
-    gpuSwap(this, null);
+    // on the renderer the view draws with: baking on WebGL built every WebGL shader for a view that never uses them
+    const G = gpuFor(this), r = G ? G.r : renderer(); if (!r) return Promise.resolve(null);
+    gpuSwap(this, G);
     const pos = at.isVector3 ? at.clone() : new Vector3(...at);
-    const rt = new WebGLCubeRenderTarget(size, { type: HalfFloatType }), cc = new CubeCamera(.05, 400, rt);
-    cc.position.copy(pos); this.scene.add(cc);
     const was = this.probe?.intensity ?? 0; if (this.probe) this.probe.intensity = 0;   // don't bake the probe into itself
-    const env = this.scene.environment; this.scene.environment = this.env || envTex;
-    try { this.scene.updateMatrixWorld(); cc.update(r, this.scene); } catch { rt.dispose(); return Promise.resolve(null); }
-    finally { this.scene.environment = env; if (this.probe) this.probe.intensity = was; cc.removeFromParent(); r.setRenderTarget(null); }
-    // the read back is async (as it will be on WebGPU): the probe joins once its numbers are in
+    const env = this.scene.environment; let rt = null;
+    try {
+      this.scene.updateMatrixWorld(); this.scene.environment = this.envFor(G);
+      if (G) rt = G.fx.bakeProbe(r, this.scene, pos, size);
+      else {
+        rt = new WebGLCubeRenderTarget(size, { type: HalfFloatType });
+        const cc = new CubeCamera(.05, 400, rt); cc.position.copy(pos); this.scene.add(cc);
+        try { cc.update(r, this.scene); } finally { cc.removeFromParent(); r.setRenderTarget(null); }
+      }
+    } catch { rt?.dispose(); return Promise.resolve(null); }
+    finally { this.scene.environment = env; if (this.probe) this.probe.intensity = was; }
+    // the read back is async (it has to be on WebGPU): the probe joins once its numbers are in
     const gen = this.probeGen ||= 1;
     return LightProbeGenerator.fromCubeRenderTarget(r, rt).then(probe => {
       rt.dispose();
@@ -1464,9 +1471,14 @@ export class HDView {
       let j = jobs.get(k);
       if (!j) {
         jobs.set(k, j = { t0: now, done: false });
-        const rt0 = r.getRenderTarget(), m0 = r.getMRT?.();
-        try { r.setRenderTarget(rt); r.setMRT?.(mrt); Promise.resolve(r.compileAsync(o, this.cam, this.scene)).then(() => { j.done = true; }, () => { j.done = true; }); }
-        catch (_) { j.done = true; } finally { r.setRenderTarget(rt0); r.setMRT?.(m0 ?? null); }
+        const fin = () => { j.done = true; };
+        // built for the picture the scene is drawn into, with the thing on the camera's layer when its
+        // build starts (on WebGPU it waits its turn, compileGPU, and by then the thing is held back)
+        const forPicture = go => {
+          const rt0 = r.getRenderTarget(), m0 = r.getMRT?.(), lm = o.layers.mask;
+          try { o.layers.mask = lm | 1; r.setRenderTarget(rt); r.setMRT?.(mrt); return go(); } finally { o.layers.mask = lm; r.setRenderTarget(rt0); r.setMRT?.(m0 ?? null); }
+        };
+        try { (r.isWebGPURenderer ? compileGPU(r, o, this.cam, this.scene, forPicture) : Promise.resolve(forPicture(() => r.compileAsync(o, this.cam, this.scene)))).then(fin, fin); } catch (_) { fin(); }
       }
       if (!j.done) { held.set(o, j); o.layers.mask = (o.layers.mask & ~1) | (1 << HOLD_LAYER); }
     });
@@ -1616,7 +1628,7 @@ export class HDView {
    * Marks shiny surfaces (a wet floor, a polished wall, a car) for screen-space reflections. They
    * show on top-end phones (the ultra tier); elsewhere the surfaces keep their usual look.
    */
-  reflect(...meshes) { for (const m of meshes.flat()) if (m && !this.reflectors.includes(m)) this.reflectors.push(m); return this; }
+  reflect(...meshes) { for (const m of meshes.flat()) if (m && !this.reflectors.includes(m)) { this.reflectors.push(m); m.userData.gsReflect = true; } return this; }
   /**
    * Soft contact shadows on a floor: the dark, blurry patch right under things that makes them sit
    * on the ground. y: the floor height; size: metres across; follow it with cs.at(x, z). Medium tier
@@ -1696,7 +1708,7 @@ export class HDView {
   // view that had just come to fit WebGPU swapped its WebGPU materials in, and WebGL then drew them)
   warmOn(G, extra = []) {
     this.holdBase = 'all';   // (what it builds never waits: holdNew)
-    if (G) { gpuSwap(this, G); this.warmed = true; try { this.envMaker?.(); } catch (e) { /* the studio reflections stay */ } this.scene.environment = this.envFor(G); G.r.compileAsync(this.scene, this.cam).catch(() => {}); return; }
+    if (G) { gpuSwap(this, G); this.warmed = true; try { this.envMaker?.(); } catch (e) { /* the studio reflections stay */ } this.scene.environment = this.envFor(G); compileGPU(G.r, this.scene, this.cam).catch(() => {}); return; }
     const r = renderer(); if (!r) return; this.warmed = true; gpuSwap(this, null);
     const hidden = [], tmp = [];
     this.scene.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true; } });
@@ -1729,7 +1741,7 @@ export class HDView {
     const G = gpuFor(this);
     if (G) {
       gpuSwap(this, G); this.scene.environment = this.envFor(G); this.warmed = true;
-      return G.r.compileAsync(this.scene, this.cam).catch(() => {}).then(() => { this.ready = true; this.holdBase = 'all'; });
+      return compileGPU(G.r, this.scene, this.cam).catch(() => {}).then(() => { this.ready = true; this.holdBase = 'all'; });
     }
     const r = renderer(); if (!r) return Promise.resolve();
     gpuSwap(this, null);
@@ -1855,6 +1867,7 @@ export class HDView {
     if (!baking && !off) this.t += 1 / 60;
     gpuSwap(this, G);
     if (this.gi || this.rooms?.length) this.bakeExtras(G, r);
+    if (this.probes.length > 1) this.blendProbes();
     // (built for the screen, not the chain's own picture: a pipeline built for that picture also bound it to read, which WebGPU refuses)
     this.holdNew(r, baking || off, now);
     const shc = this.shadowCams ||= []; shc.length = 0;
@@ -1868,6 +1881,10 @@ export class HDView {
     const pw = up ? up.pw : r.domElement.width, ph = up ? Math.max(1, Math.floor(up.fh * (pw + .5) / up.fw)) : r.domElement.height;
     const o = { tone: this.tone, w: pw, h: ph, fw: r.domElement.width, fh: r.domElement.height, s2: null, s1: !!up?.s1, ao: T.ao, msaa: T.msaa, bloomScale: T.bloom, smooth: !T.msaa, bloom: this.bloom, t: this.t % 10, hurt: this.hurt, grade: null, glare: 0, lut: this.lutAmount > 0 ? this.lutTex() : null, lutK: this.lutAmount, oit: !!this.oit, flare: this.bloom > 0 ? this.flareSet() : null, sunUV: GQ.set(.5, .5), sunCol: C_WARM, aspect: this.W / this.H,
       dofOn: false, lens: null, near: this.cam.near, far: this.cam.far, shaftsOn: false, shaft: 0, shaftCol: null, grain: HD.grain };
+    // gs.fx3d's screen effects, and reflections where the game marked shiny things: high and
+    // ultra here (WebGL: ultra only), traced at half size on high
+    o.fx = this.extras?.length ? this.extras : null;
+    o.refl = this.reflectors.length && T.ao > 0 && !this.clearBg ? (T.ssr ? REFL_FULL : REFL_HALF) : null;
     // temporal anti-aliasing in place of MSAA (three.js's TRAA) where the tier pays for smooth edges and the
     // picture isn't upscaled (SGSR 2 is temporal itself); card pictures keep MSAA (one frame has no history)
     // Small bright moving things (particles, sparks) blend away in its history and look dimmer, so a view
@@ -1924,7 +1941,7 @@ export class HDView {
         sh.needsUpdate = false;
       }
     }
-    if (!this.warmed && !off) { this.warmed = true; r.compileAsync(this.scene, this.cam).catch(() => {}); }
+    if (!this.warmed && !off) { this.warmed = true; compileGPU(r, this.scene, this.cam).catch(() => {}); }
     // an instanced mesh made with room for none (an empty list in a game) has a zero-size buffer that WebGPU
     // won't bind; it draws nothing anyway, so it sits this frame out
     const empty = []; this.scene.traverseVisible(o => { if (o.isInstancedMesh && (!o.count || !o.instanceMatrix.count)) empty.push(o); });
@@ -2195,12 +2212,14 @@ export class HDView {
 }
 
 /* ---------- WebGPU (gpu.js, hd3d-gpu.js) ---------- */
+const REFL_FULL = { scale: 1 }, REFL_HALF = { scale: .5 };
 // A view draws on WebGPU when the player switched it on, it's ready, and everything in the view has a
 // WebGPU version so far. Anything else keeps the view on WebGL: game effects (gs.fx3d), GPU particles,
 // contact shadows, reflections, sun shafts, light probes, a sky's own reflections, cloud shadows and
 // rain on the air, and any material with its own shader (ShaderMaterial or a shader patch that isn't
 // one of the kit's ported look effects). docs/webgpu-move.md lists what's left to port.
 const PORTED_LOOKS = new Set(['air', 'pulse', 'ground', 'hills', 'rock', 'leaves', 'room', 'flow', 'lava']);
+PORTED_LOOKS.add('sdf');   // gs.fx3d's 3D text (text3d.js)
 // kit ShaderMaterials with a node material twin (hd3d-gpu.js gpuMaterials; material.userData.gsGpu)
 const GPU_TWINS = new Set(['skyDome']);
 // (gs.props' InstancedMesh2 puts a material's own onBeforeCompile back as an own property after each draw: not a shader of its own)
@@ -2214,10 +2233,9 @@ function materialFits(m) {
 /** '' if every part of this view has a WebGPU version, else what keeps it on WebGL (HD.info.webgl). */
 export function gpuFits(v) {
   const T = tier();
-  if (v.extras?.length) return 'screen effects (gs.fx3d)';
-  if (v.probes.length) return 'light probes';
+  // (gs.fx3d's own effects have WebGPU versions, hd3d-gpu-fx.js; a pass a game made itself hasn't)
+  if (v.extras?.some(p => !p.gsFx)) return 'a screen effect of the game\'s own';
   if (v.env && !v.envSrc) return 'sky reflections (a texture of its own)';
-  if (T.ssr && v.reflectors.length) return 'reflections';
   let why = '';
   // (every frame: no array is made per thing, so the walk leaves no garbage behind)
   const no = (o, m) => { why = `a material with its own shader (${m.type}${o.name ? ' on ' + o.name : ''})`; };
@@ -2247,6 +2265,17 @@ const gpuLooked = new WeakSet(), gpuTwins = new WeakMap(), sunRoles = new WeakMa
 // (so walking up to a wall never hides it while a shader builds)
 const GPU_CULL_MIN = 2000;   // copies in one gs.props set before the chip picks them (HD.gpuCull 'auto'): below it the CPU's list is quick
 const NEAR_S = new Sphere(), nearBusy = new WeakSet();
+// Shaders built ahead on WebGPU, one build at a time for each renderer. three.js keeps its place in a
+// build in one field of the renderer, so two builds running at once trip over each other: one of them
+// throws, the renderer's count of nested renders is left one too high, every render after that starts on
+// a fresh set of render states, and builds still waiting make pipelines for a depth picture that has
+// gone ("Async render pipeline creation failed"). A build waits its turn, so `around` (optional) sets
+// up what it needs when it starts (which picture, which material) and puts it back: around(go) => go().
+function compileGPU(r, o, cam, scene, around = null) {
+  const go = () => r.compileAsync(o, cam, scene), p = (r.gsCompiling || Promise.resolve()).then(() => around ? around(go) : go());
+  r.gsCompiling = p.catch(() => {});
+  return p;
+}
 function swapTwins(scene, G, cam = null) {
   scene.traverse(o => {
     if (!o.isMesh) return;
@@ -2265,10 +2294,10 @@ function swapTwins(scene, G, cam = null) {
         else if (close && !tw.building && !nearBusy.has(G.r)) {
           // one close-up build at a time per renderer: many at once can stall the graphics chip (and a
           // phone's frame) while they all compile; a build that never settles frees the queue after 4 s
-          tw.building = true; nearBusy.add(G.r); const keep = o.material; o.material = near;
+          tw.building = true; nearBusy.add(G.r);
           const done = () => { nearBusy.delete(G.r); clearTimeout(cap); }, cap = setTimeout(done, 4000);
-          try { G.r.compileAsync(o, cam, scene).then(() => { tw.nearOk = true; done(); }, done); } catch (e) { done(); /* stays far */ }
-          o.material = keep;
+          const withNear = go => { const keep = o.material; o.material = near; try { return go(); } finally { o.material = keep; } };
+          compileGPU(G.r, o, cam, scene, withNear).then(() => { tw.nearOk = true; done(); }, done);   // (a build that fails: it stays far)
         }
       }
       o.material = use;

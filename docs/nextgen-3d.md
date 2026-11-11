@@ -281,9 +281,10 @@ side). Keep the HUD anchored to the edges of `W` × `H` and it just works.
 
 ## Reflections and contact shadows
 
-- `v.reflect(floor, carBody)` marks shiny surfaces for screen-space reflections. They're drawn on the
-  ultra tier only (tests and `HD.force = 3`: play stops at high); on other phones those surfaces keep their normal look, so mark the
-  few that matter (a wet floor, a polished hall), not everything.
+- `v.reflect(floor, carBody)` marks shiny surfaces for screen-space reflections. On WebGPU they're drawn
+  on the high tier (traced at half size) and ultra; on WebGL on ultra only (tests and `HD.force = 3`:
+  play stops at high). On other phones those surfaces keep their normal look, so mark the few that
+  matter (a wet floor, a polished hall), not everything. A rougher material reflects less sharply.
 - `const cs = v.contact({ y: 0, size: 8 })` lays soft contact shadows on a floor (medium tier and up),
   so things look like they're standing on it even where real shadows are off. In a big level, keep it
   under the action with `cs.at(x, z)`.

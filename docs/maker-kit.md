@@ -122,7 +122,7 @@ belongs to the app and isn't on `gs`. Save with `api.save()`, find the player wi
 
 `gs` sends each call to the right place underneath: our own kits, or the best free library for the
 job (Rapier for physics, Yuka for AI, Recast for 3D path finding, MediaPipe for faces and hands,
-Tone.js, ZzFX, three.quarks, troika-three-text, simplex-noise, rot.js, WaveFunctionCollapse, three-pinata,
+Tone.js, ZzFX, TinySDF, simplex-noise, rot.js, WaveFunctionCollapse, three-pinata,
 InstancedMesh2, THREE.Terrain, Yoga, pokersolver, SCOWL, anime.js, pitchy, the phone's own speech). If we swap a library later, games don't change.
 
 **Big parts load when first used.** Physics, 3D physics, 3D path finding, 3D extras, face tracking, Tone.js, the
@@ -1124,13 +1124,25 @@ gives the mouth shapes over time for a line, for mouths you draw yourself.
 `const { text3d, Particles3D, outline, glitch, trails, focus, pixelate } = gs.fx3d;` (make them in
 `make()` or `reset()`: they load first).
 
-- `text3d('PLAYER 1', { size, color, font: 'bold' | 'regular' | 'pixel', outline, face: true })`:
-  sharp text in the 3D world ([troika-three-text](https://protectwise.github.io/troika/troika-three-text/)).
+- `text3d('PLAYER 1', { size, color, font, outline, outlineColor, align, maxWidth, face: true })`:
+  sharp text in the 3D world at any size and distance, in any 3D style. `font` is `'bold'`, `'regular'`,
+  `'pixel'` or any `gs.fonts` name (`'Bangers'`, or `['Fredoka', 700]` for a weight); `size` is the height
+  of a capital letter in world units and `outline` a width in the same units; `maxWidth` wraps at
+  spaces; `face: true` always faces the camera. Change `label.text = 'NEW'` (or `color`, `size`...) and
+  call `label.sync()`; `label.width` and `label.height` say how big it came out. (Each letter is kept as
+  a distance field made on the phone with [TinySDF](https://github.com/mapbox/tiny-sdf), so one small
+  picture per font serves every size.)
 - `fx = new Particles3D(scene)`, then `fx.fire(pos)`, `fx.smoke(pos)`, `fx.magic(pos)`, `fx.snow(pos)`
   (keep going: `.stop()`, `.remove()`, `.at(pos)`) and `fx.boom(pos)`, `fx.sparks(pos)` (one-off), or
-  your own with `fx.make(pos, { ... })`. Call `fx.update(dt)` every frame ([three.quarks](https://github.com/Alchemist0823/three.quarks)).
+  your own with `fx.make(pos, { life, speed, size, colors, rate, burst, shape, gravity, glow... })`.
+  Call `fx.update(dt)` every frame; `fx.count` is how many are flying. `new Particles3D(scene, { seed: 7 })`
+  makes the same particles every time (replays). These are small effects (tens to hundreds of dots,
+  moved by the kit and drawn in two draw calls); for thousands, Next Gen has `gs.hd.GPUParticles`.
 - Next Gen views only: `outline(view, objects, { color })`, `glitch(view)`, `trails(view, .85)`,
-  `focus(view, { focus: 10 })` (depth of field), `pixelate(view, 4)`. Each returns a pass with `remove()`.
+  `focus(view, { focus: 10 })` (depth of field), `pixelate(view, 4)`. Each returns a pass with `remove()`
+  whose numbers you can change while it runs (`pass.selectedObjects`, `pass.damp`, `pass.size`).
+
+All of it draws on WebGL and on WebGPU, so none of it changes which one a view uses.
 
 ## Face and hands
 

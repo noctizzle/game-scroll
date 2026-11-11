@@ -2110,5 +2110,48 @@ console.log('physics ok');
   console.log(`gs.real: sun (day, night, dawn, dusk, polar, guess), moon phases, battery and headphones ok`);
 }
 
+// gs.fx3d's screen effects on WebGPU: each pass a game holds takes a slot of its kind in the chain; a pass
+// taken away leaves its slot switched off (no rebuild), a new kind or another order builds again
+{
+  const { fxPlan } = await import('../src/kit/hd3d-gpu-fx.js');
+  const pass = kind => ({ gsFx: { kind } }), ch = {}, out = pass('outline'), gl = pass('glitch'), px = pass('pixelate');
+  assert.equal(fxPlan(ch, null), '', 'no effects: no slots');
+  assert.equal(fxPlan(ch, [out, gl]), 'outline,glitch', 'two effects, in the order they were added');
+  const slots = ch.fxSlots;
+  assert.equal(fxPlan(ch, [out]), 'outline,glitch', 'the glitch taken away: the same slots (no rebuild)');
+  assert.ok(ch.fxSlots === slots && slots[0].pass === out && slots[1].pass === null, 'and its slot is switched off');
+  const gl2 = pass('glitch');
+  assert.equal(fxPlan(ch, [out, gl2]), 'outline,glitch', 'another glitch later takes the empty slot');
+  assert.ok(ch.fxSlots === slots && slots[1].pass === gl2, 'in place');
+  assert.equal(fxPlan(ch, [gl2]), 'outline,glitch', 'the first one taken away instead');
+  assert.ok(slots[0].pass === null && slots[1].pass === gl2, 'leaves the first slot off');
+  assert.equal(fxPlan(ch, [gl2, out]), 'glitch,outline', 'another order: built again');
+  assert.equal(fxPlan(ch, [gl2, out, px]), 'glitch,outline,pixelate', 'a new kind: built again');
+  assert.equal(fxPlan(ch, [px]), 'glitch,outline,pixelate', 'then only the last one left');
+  assert.deepEqual(ch.fxSlots.map(s => s.pass), [null, null, px], 'the others are off');
+  console.log('gs.fx3d on WebGPU: effect slots (a removed effect switches off in place; a new kind or order rebuilds) ok');
+}
+
+// looks on WebGPU: three keys a classic material's shader there by its settings, so material.gsGpuKey tells
+// two materials with one look apart by whose { value } objects they hold (they shared the first one's)
+{
+  const { lookPatch } = await import('../src/kit/looks.js');
+  const { MeshStandardMaterial, MeshBasicMaterial } = await import('three');
+  const shared = { value: 1 }, A = new MeshStandardMaterial(), B = new MeshStandardMaterial(), C = new MeshStandardMaterial(), D = new MeshStandardMaterial();
+  lookPatch(A, 'testLook', { uniforms: { k: shared, own: { value: 2 } } });
+  lookPatch(B, 'testLook', { uniforms: { k: shared, own: { value: 2 } } });
+  assert.ok(A.gsGpuKey && B.gsGpuKey && A.gsGpuKey !== B.gsGpuKey, 'the same look with its own numbers: a shader each on WebGPU');
+  const both = { uniforms: { k: shared } };
+  lookPatch(C, 'testLook', both); lookPatch(D, 'testLook', both);
+  assert.equal(C.gsGpuKey, D.gsGpuKey, 'the same look reading the same numbers: one shader');
+  const before = A.gsGpuKey; lookPatch(A, 'testLook2', { uniforms: {} });
+  assert.ok(A.gsGpuKey.startsWith(before) && A.gsGpuKey !== before, 'a second look adds to the key');
+  const E = new MeshBasicMaterial(), F = new MeshBasicMaterial();
+  lookPatch(E, 'testShared', { uniforms: { a: { value: 1 } }, gpuShared: true }); lookPatch(F, 'testShared', { uniforms: { a: { value: 2 } }, gpuShared: true });
+  assert.ok(E.gsGpuKey === undefined && F.gsGpuKey === undefined, 'a look that reads from the material being drawn shares one shader (3D text)');
+  assert.ok(B.customProgramCacheKey() === C.customProgramCacheKey(), 'WebGL still shares one program between them (its numbers are uniforms there)');
+  console.log('looks on WebGPU: a key for each material that holds its own numbers ok');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);

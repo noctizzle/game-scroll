@@ -284,7 +284,10 @@ export class View {
         normRT.depthTexture.type = UnsignedIntType;
       }
       const bg = this.scene.background, fog = this.scene.fog; this.scene.background = null; this.scene.fog = null; this.scene.overrideMaterial = normMat;
+      // (gs.fx3d's text and particles are added straight to the scene: no ink lines round letters and sparks)
+      const hid = []; this.scene.traverse(o => { if (o.userData.gsNoInk && o.visible) { o.visible = false; hid.push(o); } });
       cam.layers.set(0); r.setRenderTarget(normRT); r.setClearColor(0x8080ff, 1); r.clear(); r.render(this.scene, cam);
+      for (const o of hid) o.visible = true;
       this.scene.background = bg; this.scene.fog = fog; this.scene.overrideMaterial = null; cam.layers.enableAll(); r.setRenderTarget(null);
       const k = Math.max(1, Math.round(.75 * ph / h));
       inkU.tN.value = normRT.texture; inkU.tD.value = normRT.depthTexture; inkU.px.value.set(k / pw, k / ph);
