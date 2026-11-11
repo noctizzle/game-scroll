@@ -33,7 +33,7 @@ const { Zipline } = gs.gadgets;
 const { Campaign } = gs.campaign;
 const { shatter } = gs.destruction;
 const { human } = gs.models;
-const { Group, Mesh, InstancedMesh, Object3D, Vector3, BoxGeometry, CylinderGeometry, ConeGeometry, PlaneGeometry, SphereGeometry, TorusGeometry, Color } = THREE;
+const { Group, Mesh, InstancedMesh, Object3D, Vector3, BoxGeometry, CylinderGeometry, PlaneGeometry, SphereGeometry, TorusGeometry, Color } = THREE;
 
 let W = 300, H = 420;
 const TAU = Math.PI * 2;
@@ -358,6 +358,12 @@ function solid() {
       if (caps) { b.face([...lo], col, uv); if (r1 > 0) b.face([...hi].reverse(), col, uv); }
       return b;
     },
+    // a pointed roof: seg flat sides from a ring of radius r up to a point h above its middle, tiles in rows along each eave
+    spire(x, y0, z, r, h, seg, col, uv = 1, turn = 0) {
+      const top = new Vector3(x, y0 + h, z), at = i => new Vector3(x + Math.cos(turn + i / seg * TAU) * r, y0, z - Math.sin(turn + i / seg * TAU) * r);
+      for (let i = 0; i < seg; i++) b.face([at(i), at(i + 1), top], col, uv);
+      return b;
+    },
     get empty() { return !P.length; },
     geo() {
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
@@ -376,17 +382,23 @@ function villageTextures() {
     speckle(col, S, 1600, '#968b7a', 1.3, .22); speckle(h, S, 2800, '#000', 1.2, .35); speckle(h, S, 900, '#fff', 1.4, .3);
     h.strokeStyle = '#3338'; h.lineWidth = 1; for (let i = 0; i < 6; i++) { let x = R() * S, y = R() * S; h.beginPath(); h.moveTo(x, y); for (let k = 0; k < 8; k++) { x += (R() - .5) * 14; y += 4 + R() * 8; h.lineTo(x, y); } h.stroke(); }
   }, { strength: 1.6 });
-  const tiles = surface(256, ({ col, h, size: S }) => {
-    const rows = 8, per = 10, th = S / rows, tw = S / per;
+  const tiles = surface(512, ({ col, h, size: S }) => {
+    const rows = 8, per = 10, th = S / rows, tw = S / per, grey = q => `rgb(${q = Math.round(q * 255)},${q},${q})`;
     for (let j = 0; j < rows; j++) for (let i = -1; i <= per; i++) {
       const x = (i + (j % 2) * .5) * tw, y = j * th, hue = 10 + R() * 12, sat = 40 + R() * 20, l = 30 + R() * 13;
       const g = col.createLinearGradient(x, 0, x + tw, 0); g.addColorStop(0, `hsl(${hue},${sat}%,${l * .5}%)`); g.addColorStop(.42, `hsl(${hue},${sat}%,${l * 1.18}%)`); g.addColorStop(1, `hsl(${hue},${sat}%,${l * .45}%)`);
       col.fillStyle = g; col.fillRect(x, y, tw, th);
-      const hg = h.createLinearGradient(x, 0, x + tw, 0); hg.addColorStop(0, '#383838'); hg.addColorStop(.45, '#e0e0e0'); hg.addColorStop(1, '#383838'); h.fillStyle = hg; h.fillRect(x, y, tw, th);
+      // height (read by the roofs' depth): a round barrel across each tile
+      const hg = h.createLinearGradient(x, 0, x + tw, 0); for (let k = 0; k <= 8; k++) hg.addColorStop(k / 8, grey(.16 + .84 * Math.sqrt(1 - (k / 4 - 1) ** 2))); h.fillStyle = hg; h.fillRect(x, y, tw, th);
     }
-    for (let j = 0; j < rows; j++) { col.fillStyle = 'rgba(24,10,4,.5)'; col.fillRect(0, j * th + th - 3, S, 3); h.fillStyle = '#111'; h.fillRect(0, j * th + th - 2, S, 2); }
-    speckle(col, S, 600, '#2e2216', 1.3, .3); blot(col, S, 10, 'rgba(70,84,40,.35)', 'rgba(60,70,36,.25)', [4, 10]);
-  }, { strength: 2.2 });
+    // each row laps over the one below: it rises toward its lower end, drops at its lip and shades the tile under it
+    for (let j = 0; j < rows; j++) {
+      const y = j * th, lap = h.createLinearGradient(0, y, 0, y + th), sh = col.createLinearGradient(0, y, 0, y + 10);
+      lap.addColorStop(0, 'rgba(0,0,0,.5)'); lap.addColorStop(1, 'rgba(0,0,0,0)'); h.fillStyle = lap; h.fillRect(0, y, S, th);
+      sh.addColorStop(0, 'rgba(24,10,4,.62)'); sh.addColorStop(1, 'rgba(24,10,4,0)'); col.fillStyle = sh; col.fillRect(0, y, S, 10);
+    }
+    speckle(col, S, 2400, '#2e2216', 2, .3); blot(col, S, 10, 'rgba(70,84,40,.35)', 'rgba(60,70,36,.25)', [8, 20]);
+  }, { strength: 3.6 });
   const stone = surface(256, ({ col, h, size: S }) => {
     col.fillStyle = '#5a554c'; col.fillRect(0, 0, S, S); h.fillStyle = '#1a1a1a'; h.fillRect(0, 0, S, S);
     for (let y = 0; y < S;) {
@@ -455,10 +467,10 @@ function world() {
   const wood = surface(128, ({ col, h, size: S }) => { col.fillStyle = '#6b4a30'; col.fillRect(0, 0, S, S); for (let i = 0; i < 40; i++) { col.fillStyle = `rgba(30,18,10,${Math.random() * .3})`; col.fillRect(0, Math.random() * S, S, 1 + Math.random() * 2); } h.fillStyle = '#888'; h.fillRect(0, 0, S, S); });
   // the stone stands out from its mortar as you look across it (parallax occlusion, WebGPU)
   const M = {
-    wall: pbr('#ffffff', { tex: plaster, rep: [2, 2], rough: .92 }), roof: pbr('#ffffff', { tex: tiles, rep: [3, 2], rough: .8 }),
+    wall: pbr('#ffffff', { tex: plaster, rep: [2, 2], rough: .92 }),
     stone: pbr('#d8d2c6', { tex: stone, rough: .9, depth: .035 }), wood: pbr('#ffffff', { tex: wood, rough: .85 }),
     // the village's own: the textures tinted by each part's colour
-    wallV: pbr('#ffffff', { tex: plaster, rough: .93, vertexColors: true }), roofV: pbr('#ffffff', { tex: tiles, rough: .78, vertexColors: true }),
+    wallV: pbr('#ffffff', { tex: plaster, rough: .93, vertexColors: true }), roofV: pbr('#ffffff', { tex: tiles, rough: .78, vertexColors: true, depth: .024 }),
     stoneV: pbr('#ffffff', { tex: stone, rough: .9, vertexColors: true, depth: .035 }), woodV: pbr('#ffffff', { tex: VT.boards, rough: .82, vertexColors: true }),
     strawV: pbr('#ffffff', { tex: VT.straw, rough: 1, vertexColors: true }), lit: pbr('#2a2018', { rough: .3, glow: 0, glowCol: '#ffb860' }),
     glass: pbr('#1a2128', { rough: .15, metal: .4, glow: 0, glowCol: '#ffb860' }), iron: pbr('#3a3c3e', { rough: .45, metal: .8 }),
@@ -604,7 +616,7 @@ function world() {
   mesh(rbox(5, 17, 5, .08), M.stone, CHURCH.x, cy + 8.5, CHURCH.tz); box(CHURCH.x, cy, CHURCH.tz, 5, 17, 5, 'stone');
   for (const [dx, dz] of [[-2.2, -2.2], [2.2, -2.2], [-2.2, 2.2], [2.2, 2.2]]) mesh(new BoxGeometry(.6, 4, .6), M.stone, CHURCH.x + dx, cy + 19, CHURCH.tz + dz);
   mesh(new BoxGeometry(5.4, .6, 5.4), M.stone, CHURCH.x, cy + 21.2, CHURCH.tz); box(CHURCH.x, cy + 20.9, CHURCH.tz, 5.4, .6, 5.4, 'stone');
-  mesh(new ConeGeometry(3.6, 7, 4), M.roof, CHURCH.x, cy + 25, CHURCH.tz, Math.PI / 4);
+  K.roof.spire(CHURCH.x, cy + 21.5, CHURCH.tz, 3.6, 7, 4, WHITE, .38, Math.PI / 4);
   WD.bell = mesh(new CylinderGeometry(.35, .8, 1.1, 12, 1, true), M.brass, CHURCH.x, cy + 20, CHURCH.tz);
   WD.churchTop = { x: CHURCH.x, y: cy + 17, z: CHURCH.tz };
 
@@ -672,7 +684,7 @@ function world() {
   const ch = NESTS.chapel, chy = ground(ch.x, ch.z) - .2;
   mesh(rbox(4.4, 11, 4.4, .1), M.stone, ch.x, chy + 5.5, ch.z); box(ch.x, chy, ch.z, 4.4, 11, 4.4, 'stone');
   for (const [dx, dz] of [[-1.9, -1.9], [1.9, -1.9], [-1.9, 1.9], [1.9, 1.9]]) mesh(new BoxGeometry(.5, 2.6, .5), M.stone, ch.x + dx, chy + 12.3, ch.z + dz);
-  mesh(new ConeGeometry(3.4, 3.6, 4), M.roof, ch.x, chy + 15.4, ch.z, Math.PI / 4);
+  K.roof.spire(ch.x, chy + 13.6, ch.z, 3.4, 3.6, 4, WHITE, .38, Math.PI / 4);
   { // the ladder up the belfry's east face (Wren climbs it at the start of mission 2)
     const lx = ch.x + 2.2 + .18, top = chy + 11.6, LW = C_('#6a5444');
     for (const sz of [-.26, .26]) K.wood.box(lx, chy - .2, ch.z + sz, .07, top - chy + .2, .07, 0, LW, .6);
@@ -683,7 +695,7 @@ function world() {
   // the windmill on the ridge (M2's second nest) with turning sails
   const wm = { x: NESTS.mill2.x, z: NESTS.mill2.z + 3.4 }, wmy = ground(wm.x, wm.z) - .2;
   mesh(new CylinderGeometry(2.4, 3.6, 10, 12), M.wall, wm.x, wmy + 5, wm.z);
-  mesh(new ConeGeometry(2.8, 3, 12), M.roof, wm.x, wmy + 11.4, wm.z);
+  K.roof.spire(wm.x, wmy + 9.9, wm.z, 2.8, 3, 12, WHITE, .38);
   K.wood.box(wm.x, wmy, wm.z + 3.38, 1.1, 2.3, .3, 0, C_('#1a1410'), .6).box(wm.x - .62, wmy, wm.z + 3.4, .16, 2.45, .36, 0, C_('#6a5444'), .6).box(wm.x + .62, wmy, wm.z + 3.4, .16, 2.45, .36, 0, C_('#6a5444'), .6).box(wm.x, wmy + 2.35, wm.z + 3.42, 1.4, .18, .38, 0, C_('#6a5444'), .6);   // the door
   const sails = new Group(); sails.position.set(wm.x - 3.1, wmy + 9.6, wm.z); sails.rotation.y = Math.PI / 2;
   for (let i = 0; i < 4; i++) { const s = new Mesh(new BoxGeometry(1.4, 9, .1), M.cloth); s.position.y = 4.6; const arm = new Group(); arm.rotation.z = i * Math.PI / 2; arm.add(s); sails.add(arm); }
@@ -1817,7 +1829,7 @@ function make(api) {
     for (const [dx, dz] of [[-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]]) { const l = new Mesh(new BoxGeometry(.3, 7, .3), M.wood); l.position.set(dx, 3.5, dz); g.add(l); }
     const deck = new Mesh(new BoxGeometry(4.2, .3, 4.2), M.wood); deck.position.y = 7; g.add(deck);
     const hut = new Mesh(new BoxGeometry(3.6, 1.2, 3.6), M.wood); hut.position.y = 7.7; g.add(hut);
-    const top = new Mesh(new ConeGeometry(3.2, 1.6, 4), M.roof); top.position.y = 9.6; top.rotation.y = Math.PI / 4; g.add(top);
+    const top = new Mesh(solid().spire(0, 0, 0, 3.2, 1.6, 4, new Color('#ffffff'), .38, Math.PI / 4).geo(), M.roofV); top.position.y = 8.8; g.add(top);
     g.position.set(x, y, z); g.traverse(m => { if (m.isMesh) m.castShadow = m.receiveShadow = true; }); WD.v.scene.add(g);
     return { g, x, z, y, pieces: [] };
   }
