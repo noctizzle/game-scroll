@@ -15,6 +15,7 @@ import { buildSamples, SAMPLE_RATE } from './zzfx.js';
 import { lazy } from './lazy.js';
 import { register, own } from './cleanup.js';
 import { SETS, VOICES, KITS, voiceFor, makeVoice, makeKit } from './instruments.js';
+import { cast as castVoice, wantOf, describe as describeVoice } from './voices.js';
 
 /* ---------- notes ---------- */
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -701,40 +702,115 @@ register('mixer', { stop: () => mixer.reset() });
 //   say('Watch out!', { pitch: 1.4, rate: 1.1 })      // returns a promise that ends when it's said
 //   say('Bonjour', { lang: 'fr-FR' });  stopTalking();  talking() -> true while speaking
 //   say(line, { onWord: at => ... })   at: where in the text each word starts, as it's spoken (where the phone says; lip sync)
-// pitch .5..2, rate .5..2 (1 normal), volume 0..1 (the player's volume applies on top). Lines are
-// cut at 300 characters. A new line stops the one before. Music dips while it talks. Speech
-// follows the player's mute; it stops when the round ends. Always show the words on screen too
-// (some players play muted, and not every phone has every language).
+// A cast: give each character a voice of their own, picked from the voices this phone has.
+//   say('Minuted.', { voice: 'woman' })                               // 'woman' | 'man' | 'any'
+//   say("I'll have that back.", { voice: { kind: 'man', lang: ['en-AU', 'en-GB'], take: 1 } })
+//       lang: the accents to try, in order. take: the second (third...) such voice, so two men in one
+//       scene sound different. like: ['Daniel', 'rjs'] asks for a voice by name where the phone has it.
+//       A phone with no voice of that kind uses its own, a little lower or higher, so a cast still differs.
+// Timing: an array says its parts one after another, with pauses (seconds) between, and a part can
+// have its own pitch, rate and voice: the pause before a punchline, a slower last word.
+//   say(['Bold.', .3, 'Visionary.', .5, { text: 'Rectangular.', rate: .85 }], { voice: 'woman' })
+// voices() resolves to what this phone has: [{ name, lang, kind: 'woman' | 'man' | null }].
+// pitch .5..2, rate .5..2 (1 normal), volume 0..1 (the player's volume applies on top). A voice at
+// its own pitch sounds most human: prefer casting to bending pitch far from 1. Lines are cut at
+// 300 characters (600 for all the parts of an array). A new line stops the one before. Music dips
+// while it talks. Speech follows the player's mute; it stops when the round ends. Always show the
+// words on screen too (some players play muted, and not every phone has every language).
 const TTS = Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('TextToSpeech') ? registerPlugin('TextToSpeech') : null;
-let talkingNow = 0, talkGen = 0;
+let talkingNow = 0, talkGen = 0, cancelTalk = null, voiceList = null;
+const badVoices = new Set();   // voices that failed here (not downloaded, say): not cast again this session
 const clampN = (v, lo, hi, d) => Math.max(lo, Math.min(hi, Number.isFinite(+v) ? +v : d));
-export function say(text, { pitch = 1, rate = 1, volume = 1, lang = 'en-GB', onWord = null } = {}) {
-  text = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
+const langOk = l => /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(l);
+/** The phone's voices as it lists them (kit use). */
+function listVoices() {
+  return voiceList ||= (async () => {
+    try {
+      if (TTS) return (await TTS.getSupportedVoices()).voices || [];
+      const S = globalThis.speechSynthesis; if (!S?.getVoices) return [];
+      let v = S.getVoices();
+      if (!v.length) {   // browsers fill the list a moment after the page loads
+        await new Promise(res => { const t = setTimeout(res, 600); S.addEventListener?.('voiceschanged', () => { clearTimeout(t); res(); }, { once: true }); });
+        v = S.getVoices();
+      }
+      if (!v.length) voiceList = null;   // none yet: look again next time
+      return [...v];
+    } catch { voiceList = null; return []; }
+  })();
+}
+/** What voices this phone has to cast from: [{ name, lang, kind: 'woman' | 'man' | null }] (joke voices left out). */
+export const voices = () => listVoices().then(l => l.map(v => ({ v, d: describeVoice(v) })).filter(x => !x.d.joke).map(({ v, d }) => ({ name: String(v.name || v.voiceURI || ''), lang: String(v.lang || ''), kind: d.sex === 'f' ? 'woman' : d.sex === 'm' ? 'man' : null })));
+/** One part of a line, said in the phone's voice or a cast one. Resolves true when it was said. */
+async function sayPart(p, gen, from, onWord, stopped) {
+  let list = null, pick = null;
+  if (p.voice) {
+    list = await Promise.race([listVoices(), stopped]); if (gen !== talkGen || !list) return false;
+    pick = castVoice(list, wantOf(p.voice, p.lang), { native: !!TTS, bad: badVoices });
+  }
+  const lang = [].concat(p.lang).find(langOk) || 'en-GB', pitch = clampN(p.pitch * (pick ? pick.pitch : 1), .5, 2, 1);
+  const cast = pick && pick.at >= 0 ? list[pick.at] : null;
+  // a part that never reports its end (a lost callback) must not hold up the rest of the line
+  let timer = null;
+  const late = new Promise(res => { timer = setTimeout(res, 4000 + p.text.length * 120 / p.rate, 'late'); });
+  try {
+    if (TTS) {
+      const o = { text: p.text, lang, pitch, rate: p.rate, volume: p.volume, category: 'ambient', queueStrategy: 0 };
+      const go = opt => Promise.race([TTS.speak(opt).then(() => true, () => false), stopped, late]);
+      let ok = await go(cast ? { ...o, voice: pick.at, lang: langOk(cast.lang) ? cast.lang : lang } : o);
+      if (ok === false && cast && gen === talkGen) { badVoices.add(cast.voiceURI); ok = await go(o); }   // that voice isn't on this phone after all: its own voice
+      return ok === true || ok === 'late';
+    }
+    const S = globalThis.speechSynthesis, U = globalThis.SpeechSynthesisUtterance;
+    if (!S || !U) return false;
+    const said = new Promise(res => {
+      try {
+        const u = new U(p.text); u.lang = lang; u.pitch = pitch; u.rate = p.rate; u.volume = p.volume;
+        const all = S.getVoices?.() || [];
+        const v = cast || all.find(x => x.lang === lang) || all.find(x => x.lang?.startsWith(lang.slice(0, 2)));
+        if (v) { u.voice = v; if (cast && v.lang) u.lang = v.lang; }
+        u.onend = () => res(true); u.onerror = () => res(false);
+        if (typeof onWord === 'function') u.onboundary = e => { if (gen === talkGen && (!e.name || e.name === 'word')) try { onWord(from + e.charIndex); } catch { /* the game's */ } };
+        S.speak(u);
+      } catch { res(false); }
+    });
+    const ok = await Promise.race([said, stopped, late]);
+    return ok === true || ok === 'late';
+  } finally { clearTimeout(timer); }
+}
+export function say(text, { pitch = 1, rate = 1, volume = 1, lang = 'en-GB', voice = null, onWord = null } = {}) {
+  // the parts of the line: strings (or { text, pitch, rate, volume, voice, lang }) and pauses in seconds
+  const parts = []; let room = Array.isArray(text) ? 600 : 300, any = false;
+  for (const raw of Array.isArray(text) ? text : [text]) {
+    if (typeof raw === 'number') { if (raw > 0) parts.push(Math.min(5, raw)); continue; }
+    const o = raw && typeof raw === 'object' ? raw : { text: raw };
+    const t = String(o.text ?? '').replace(/\s+/g, ' ').trim().slice(0, Math.min(300, room));
+    if (!t) continue;
+    room -= t.length; any = true;
+    parts.push({ text: t, pitch: clampN(o.pitch ?? pitch, .5, 2, 1), rate: clampN(o.rate ?? rate, .5, 2, 1), volume: clampN(o.volume ?? volume, 0, 1, 1) * sound.volume, voice: o.voice ?? voice, lang: o.lang ?? lang });
+  }
   stopTalking();
-  if (!text || sound.muted || !sound.volume) return Promise.resolve(false);
-  const gen = ++talkGen, vol = clampN(volume, 0, 1, 1) * sound.volume;
-  const o = { text, lang: /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(lang) ? lang : 'en-GB', pitch: clampN(pitch, .5, 2, 1), rate: clampN(rate, .5, 2, 1), volume: vol };
+  if (!any || sound.muted || !sound.volume) return Promise.resolve(false);
+  const gen = ++talkGen;
   talkingNow++;
   const g = channelNode('music');
   if (g) { const t = g.context.currentTime; g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(g.level * .35, t, .05); }
-  const done = ok => { talkingNow = Math.max(0, talkingNow - 1); if (gen === talkGen && g) setLevel(g, g.level, .4); return ok; };
-  if (TTS) return TTS.speak({ ...o, category: 'ambient', queueStrategy: 0 }).then(() => done(true), () => done(false));
-  const S = globalThis.speechSynthesis, U = globalThis.SpeechSynthesisUtterance;
-  if (!S || !U) return Promise.resolve(done(false));
-  return new Promise(res => {
-    try {
-      const u = new U(o.text); u.lang = o.lang; u.pitch = o.pitch; u.rate = o.rate; u.volume = o.volume;
-      const v = S.getVoices?.().find(x => x.lang === o.lang) || S.getVoices?.().find(x => x.lang?.startsWith(o.lang.slice(0, 2)));
-      if (v) u.voice = v;
-      u.onend = () => res(done(true)); u.onerror = () => res(done(false));
-      if (typeof onWord === 'function') u.onboundary = e => { if (gen === talkGen && (!e.name || e.name === 'word')) try { onWord(e.charIndex); } catch { /* the game's */ } };
-      S.speak(u);
-    } catch { res(done(false)); }
-  });
+  const done = ok => { if (gen === talkGen) { talkingNow = Math.max(0, talkingNow - 1); cancelTalk = null; if (g) setLevel(g, g.level, .4); } return ok; };
+  const stopped = new Promise(res => { cancelTalk = () => res(null); });
+  return (async () => {
+    let ok = false, from = 0;
+    for (const p of parts) {
+      if (gen !== talkGen) return false;
+      if (typeof p === 'number') { await Promise.race([new Promise(res => setTimeout(res, p * 1000)), stopped]); continue; }
+      if (await sayPart(p, gen, from, onWord, stopped)) ok = true;
+      from += p.text.length + 1;
+    }
+    return gen === talkGen ? done(ok) : false;
+  })().catch(() => done(false));
 }
 /** Stops speaking straight away. */
 export function stopTalking() {
   talkGen++;
+  if (cancelTalk) { cancelTalk(); cancelTalk = null; }
   if (talkingNow) { talkingNow = 0; const g = mix?.buses.get('music'); if (g) setLevel(g, g.level, .3); }
   try { if (TTS) TTS.stop(); else globalThis.speechSynthesis?.cancel(); } catch { /* none */ }
 }

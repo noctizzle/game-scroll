@@ -1773,9 +1773,20 @@ and Tone.js, `'voice'`, or your own with `tone(f, { bus: 'alarm' })`), then a sh
 stunned, inside a box). It all goes back to normal when the round ends.
 
 **Speech** (`gs.sound.say('Watch out!', { pitch, rate, lang })`): characters talk with the phone's own
-voice (no sound files; iPhone and Android speech, the browser's on the web). It returns a promise
+voices (no sound files; iPhone and Android speech, the browser's on the web). It returns a promise
 that ends when the line is said, dips the music while it talks, follows the player's mute and stops
 with the round. `stopTalking()`, `talking()`. Always show the words on screen too.
+
+Give each character **a voice of their own**, cast from the voices the phone has:
+`say('Minuted.', { voice: 'woman' })`, `say("I'll have that back.", { voice: { kind: 'man', lang: ['en-AU', 'en-GB'], take: 1 } })`.
+`kind` is `'woman'`, `'man'` or `'any'`; `lang` lists the accents to try, in order; `take: 1` is the
+second such voice, so two men in one scene sound different; `like: ['Daniel']` prefers a voice by name
+where the phone has it. A phone with no voice of that kind uses its own, a little lower or higher, so
+the cast still differs. A real voice at its own pitch sounds far more human than one bent a long way,
+so cast first and keep `pitch` near 1. `voices()` resolves to what this phone has.
+
+**Timing** is most of a line's character. An array is said part by part, with pauses in seconds
+between, and a part can have its own delivery: `say(['Bold.', .3, 'Visionary.', .5, { text: 'Rectangular.', rate: .85 }], { voice: 'woman' })`.
 
 **Timelines** (`gs.juice.Timeline`, anime.js; loads on first use, so make it in `make()` or `reset()`):
 steps one after another, together or staggered, in seconds and driven by your `dt` so they pause

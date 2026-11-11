@@ -1245,6 +1245,53 @@ console.log('physics ok');
   const snd = await import('../src/kit/sound.js');
   snd.mixer.volume('music', .5).duck('music').room('cave').muffle(.5).reset();
   assert.equal(await snd.say(''), false, 'nothing to say'); assert.equal(snd.talking(), false);
+  assert.equal(await snd.say(['', .2, '  ']), false, 'no words in the parts either');
+  // a cast: each character gets a voice from the phone's list (src/kit/voices.js)
+  {
+    const { cast, wantOf, describe } = await import('../src/kit/voices.js');
+    const G = n => ({ name: 'English', lang: n.slice(0, 2) + '-' + n.slice(3, 5).toUpperCase(), voiceURI: n, localService: !n.endsWith('network') });
+    const android = ['en-GB-language', 'en-au-x-aub-local', 'en-gb-x-fis-local', 'en-gb-x-gba-local', 'en-gb-x-gbb-network', 'en-gb-x-gbd-local', 'en-gb-x-rjs-local', 'en-us-x-sfg-local', 'de-de-x-deb-local'].map(G);
+    const pick = (list, w, o = { native: true }) => { const r = cast(list, wantOf(w), o); return (r.at < 0 ? 'default' : list[r.at].voiceURI) + '@' + r.pitch.toFixed(2); };
+    assert.equal(pick(android, 'woman'), 'en-gb-x-fis-local@1.00', 'a woman with the accent asked for');
+    assert.equal(pick(android, 'man'), 'en-gb-x-gbd-local@1.00', 'a man, and not the one that needs the network');
+    assert.equal(pick(android, { kind: 'man', take: 1 }), 'en-gb-x-rjs-local@1.00', 'take 1 is a different man');
+    assert.equal(pick(android, { kind: 'man', take: 2 }), 'en-gb-x-gbd-local@0.90', 'more takes than voices: the first again, a little lower');
+    assert.equal(pick(android, { kind: 'man', lang: ['en-AU', 'en-GB'] }), 'en-au-x-aub-local@1.00', 'accents in the order asked');
+    assert.equal(pick(android, { kind: 'woman', lang: 'en-IE' }), 'en-gb-x-fis-local@1.00', 'no such accent: the same language');
+    assert.equal(pick(android, { kind: 'man', lang: 'fr-FR' }), 'default@0.86', "no voice in that language: the phone's own, leaning lower for a man");
+    assert.equal(pick(android, { kind: 'man', like: ['Daniel', 'rjs'] }), 'en-gb-x-rjs-local@1.00', 'asked for by name');
+    assert.equal(pick(android, 'man', { native: true, bad: new Set(['en-gb-x-gbd-local']) }), 'en-gb-x-rjs-local@1.00', 'a voice that failed is not cast again');
+    const A = (name, q = 'compact', lang = 'en-GB') => ({ name, lang, voiceURI: `com.apple.voice.${q}.${lang}.${name}`, localService: true });
+    const ios = [A('Daniel'), A('Daniel', 'enhanced'), A('Kate'), A('Serena', 'premium'), { name: 'Grandpa', lang: 'en-GB', voiceURI: 'com.apple.eloquence.en-GB.Grandpa', localService: true }];
+    assert.equal(pick(ios, 'man'), 'com.apple.voice.enhanced.en-GB.Daniel@1.00', 'the better recording of a voice');
+    assert.equal(pick(ios, 'woman'), 'com.apple.voice.premium.en-GB.Serena@1.00', 'the best voice first');
+    assert.equal(pick(ios, { kind: 'man', take: 1 }), 'com.apple.voice.enhanced.en-GB.Daniel@0.90', 'joke voices are never cast, and one voice is not counted twice');
+    assert.equal(pick(ios, { kind: 'man', like: 'grandpa' }), 'com.apple.eloquence.en-GB.Grandpa@1.00', 'unless asked for by name');
+    const web = [{ name: 'Google UK English Female', lang: 'en-GB', voiceURI: 'Google UK English Female', localService: false }, { name: 'Google UK English Male', lang: 'en_GB', voiceURI: 'Google UK English Male', localService: false }];
+    assert.equal(pick(web, 'man', { native: false }), 'Google UK English Male@1.00', "a browser's voices, with either spelling of the language");
+    const odd = [{ name: 'English', lang: 'en-GB', voiceURI: 'en-GB-voice-a', localService: true }, { name: 'English', lang: 'en-GB', voiceURI: 'en-GB-voice-b', localService: true }];
+    assert.equal(pick(odd, 'woman'), 'en-GB-voice-a@1.00', 'voices nobody knows the kind of still make a cast');
+    assert.equal(pick(odd, { kind: 'man', take: 1 }), 'en-GB-voice-b@0.86', 'a man leans lower when the phone does not say');
+    assert.equal(pick([], 'woman'), 'default@1.00'); assert.equal(pick(null, { kind: 'man', take: 1 }), 'default@0.77');
+    assert.deepEqual(describe(G('en-us-x-sfg#male_2-local')), { sex: 'm', tier: 1, joke: false, lang: 'en-us' }, 'the name can say the kind itself');
+    assert.deepEqual(wantOf({ kind: 'MAN', lang: ['en_AU', 'nonsense!'], take: 1.7 }), { kind: 'man', langs: ['en-au'], take: 1, like: [] });
+  }
+  // say() with a cast and parts, against a made-up browser: the right voice, in order, with the pauses
+  {
+    const spoken = [], list = [{ name: 'Google UK English Female', lang: 'en-GB', voiceURI: 'f' }, { name: 'Google UK English Male', lang: 'en-GB', voiceURI: 'm' }];
+    globalThis.SpeechSynthesisUtterance = class { constructor(t) { this.text = t; } };
+    globalThis.speechSynthesis = { getVoices: () => list, cancel() {}, speak(u) { spoken.push([u.text, u.voice?.voiceURI, +u.pitch.toFixed(2), +u.rate.toFixed(2), Date.now()]); setTimeout(() => u.onend(), 5); } };
+    const p = snd.say(['Bold.', .12, { text: 'Rectangular.', rate: .8, voice: 'man' }], { voice: 'woman', pitch: .95 });
+    assert.equal(snd.talking(), true, 'talking while the parts play');
+    assert.equal(await p, true); assert.equal(snd.talking(), false);
+    assert.deepEqual(spoken.map(x => x.slice(0, 4)), [['Bold.', 'f', .95, 1], ['Rectangular.', 'm', .95, .8]], 'parts, each in its voice');
+    assert.ok(spoken[1][4] - spoken[0][4] >= 110, 'the pause between them: ' + (spoken[1][4] - spoken[0][4]) + ' ms');
+    const cut = snd.say(['One.', 2, 'Two.'], { voice: 'woman' }); await new Promise(r => setTimeout(r, 30)); snd.stopTalking();
+    assert.equal(await cut, false, 'stopped mid-line'); assert.equal(spoken.length, 3, 'and the rest is never said');
+    assert.equal(await snd.say('Plain.'), true, 'a plain line still works'); assert.equal(spoken.at(-1)[1], 'f', "in the language's first voice, as before");
+    assert.deepEqual((await snd.voices()).map(v => v.kind), ['woman', 'man'], 'voices() says what the phone has');
+    delete globalThis.speechSynthesis; delete globalThis.SpeechSynthesisUtterance;
+  }
   // living music: tension builds with close calls and settles, the tempo leans to the player's pace
   const mcalls = { i: [], s: [] }, fake = { intensity: x => mcalls.i.push(x), speed: x => mcalls.s.push(x) };
   const live = snd.follow(fake, { pace: 2 });
