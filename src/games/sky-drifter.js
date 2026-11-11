@@ -6,7 +6,7 @@ const { PAL } = gs.palettes;
 const { Feel } = gs.effects;
 const { Ready } = gs.rounds;
 const { text } = gs.pixel;
-const { sounds } = gs.sound;
+const { sounds, bed } = gs.sound;
 const { haptic } = gs.device;
 const { pix, clamp } = gs.util;
 
@@ -19,6 +19,7 @@ const LIFE = ['.000.', '02120', '02120', '.000.', '..0..'];
 function make(api) {
   const feel = new Feel({ pixel: true, sound: false, buzz: false });
   const ready = new Ready({ eat: false });
+  let roar = null;
   let x, yb, vx, vy, heat, burn, keyBurn, winds, offs, shuffle, warn, ground, target, lives, score, landings, phase, pt, tleft, tmax, msg, ml, t;
 
   const dist = (a, b) => { const d = Math.abs(a - b) % W; return Math.min(d, W - d); };
@@ -64,6 +65,7 @@ function make(api) {
 
   return {
     reset() {
+      roar?.stop(); roar = null;   // the app stops beds with each round, so make a fresh one per round
       x = 20; yb = 80; vx = 0; vy = 0; heat = .5; burn = false; keyBurn = false; landings = 0; score = 0; lives = 3; phase = 'fly'; pt = 0; msg = ''; ml = 0; t = 0;
       offs = [0, 0, 0, 0]; newWinds(); newField(); feel.clear(); ready.reset();
     },
@@ -72,6 +74,10 @@ function make(api) {
       t += dt;
       for (let i = 0; i < 4; i++) offs[i] += winds[i] * dt;   // the streamers drift even before the start
       if (!ready.update(dt)) return;
+      // the burner roars while it fires: a low rumble with a flickering edge
+      const roaring = phase === 'fly' && (burn || keyBurn);
+      if (!roar) roar = bed({ vol: 0, from: 240, filter: 'lowpass', q: .9 });
+      roar.set({ vol: roaring ? .07 : 0, from: roaring ? 200 + Math.random() * 160 : 140 }, roaring ? .06 : .18);
       if (ml > 0) ml -= dt;
       shuffle -= dt;
       if (shuffle < 1.5 && !warn) { warn = true; sounds.gust(); }
@@ -84,7 +90,7 @@ function make(api) {
       tleft -= dt;
       if (tleft <= 0) {   // the field gives up on you: a balloon lost, a new field, and you keep flying
         lives--; say('TOO LATE'); sounds.buzzer(); haptic('error'); feel.juice.shake(3);
-        if (lives <= 0) return api.over();
+        if (lives <= 0) { roar?.set({ vol: 0 }, .05); return api.over(); }
         newField(); return;
       }
       const on = burn || keyBurn;
@@ -144,6 +150,7 @@ function make(api) {
     },
     down() { ready.go(); burn = true; if (phase === 'fly') { sounds.whoosh(.7); haptic('tick'); } },
     up() { burn = false; },
+    pause() { roar?.set({ vol: 0 }, .05); },
     key(k, d) { if (k === ' ' || k === 'ArrowUp') { if (d) ready.go(); keyBurn = d; } },
   };
 }
