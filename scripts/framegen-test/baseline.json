@@ -75,5 +75,10 @@
     "strafe": {"error":0.4,"broken":0.12},
     "pan": {"error":2.09,"broken":0.12},
     "curve": {"error":0.37,"broken":0.1}
+  },
+  "eight": {
+    "strafe": {"error":0.4,"broken":0.12},
+    "pan": {"error":2.1,"broken":0.12},
+    "curve": {"error":0.37,"broken":0.11}
   }
 }

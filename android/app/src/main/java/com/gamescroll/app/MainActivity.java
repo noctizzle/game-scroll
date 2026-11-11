@@ -22,6 +22,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         transientBars();
+        noScrollBars();
         watchCutouts();
     }
 
@@ -34,6 +35,15 @@ public class MainActivity extends BridgeActivity {
     private void transientBars() {
         WindowInsetsControllerCompat c = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
         c.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+    }
+
+    // The feed fills the screen, so the web view scrolls it as the page itself and Android draws its own
+    // grey scroll bar down the right edge while it moves. The page's styles can't reach that one.
+    private void noScrollBars() {
+        if (bridge == null) return;
+        WebView wv = bridge.getWebView();
+        wv.setVerticalScrollBarEnabled(false);
+        wv.setHorizontalScrollBarEnabled(false);
     }
 
     // With the status bar hidden, the safe-area inset at the top is only there for the camera (a punch

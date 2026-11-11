@@ -49,7 +49,7 @@
 // (FSR 3's are a little softer). refreshesSince() counts refreshes by the clock, so a refresh the
 // phone skipped doesn't hold the picture back a step (stop and go).
 import {
-  StorageTexture, StorageBufferAttribute, DataTexture, HalfFloatType, FloatType, Vector2, Matrix3, Matrix4, Quaternion,
+  StorageTexture, StorageBufferAttribute, DataTexture, HalfFloatType, FloatType, UnsignedByteType, Vector2, Matrix3, Matrix4, Quaternion,
   LinearFilter, NearestFilter, Node, BlendMode, MaterialBlending, NormalBlending, NoBlending, AdditiveBlending,
 } from 'three/webgpu';
 import {
@@ -178,8 +178,8 @@ export class FrameGen {
   }
 
   /* (re)makes the buffers and the compute passes for a size */
-  build(rw, rh, ow, oh, handed = false) {
-    const key = `${rw}x${rh}>${ow}x${oh}${handed ? ' handed' : ''}`;
+  build(rw, rh, ow, oh, handed = false, eight = false) {
+    const key = `${rw}x${rh}>${ow}x${oh}${handed ? ' handed' : ''}${eight ? ' 8' : ''}`;
     if (key === this.key) return;
     this.dispose(); this.key = key; this.frames = 0; this.ready = false;
     const n = rw * rh, on = ow * oh, U = this.U, upscaled = ow * oh > rw * rh * 1.1;
@@ -188,7 +188,12 @@ export class FrameGen {
     // and motion back to the frame before it (zw: for the curve through three frames), kept at keep().
     // handed: the caller still has the last frame's picture and passes it to real() (o.prevColor), so the
     // colour isn't copied and has no picture of its own here (a screen-sized one, and a pass over it each frame)
-    this.prevColor = handed ? null : st(ow, oh, HalfFloatType, LinearFilter);
+    // eight: the pictures are finished screen colours (0..1, as the screen's own 8 bits a channel take them),
+    // so the made frame and its unfilled copy are kept in 8 bits too: half the bytes of the 16-bit ones, at
+    // the screen's size, written and read for every made frame. (The gap pyramid stays 16-bit: it adds up
+    // colours times small weights. HDR pictures go past 1, so they keep 16 bits throughout.)
+    const colT = eight ? UnsignedByteType : HalfFloatType;
+    this.prevColor = handed ? null : st(ow, oh, colT, LinearFilter);
     const blank = this.prevColor || (this.blank = st(1, 1, HalfFloatType, LinearFilter));
     this.prevDepth = st(rw, rh, FloatType);
     // mid-frame motion: one depth key per render pixel (atomic min), then the motion that won it
@@ -197,8 +202,8 @@ export class FrameGen {
     this.midBend = st(rw, rh);        // xy: how far the camera's turn and the curve put it off the straight line (uv)
     this.filled = st(rw, rh, FloatType);      // the same with the holes filled from the background round them
     this.filledBend = st(rw, rh);
-    this.raw = st(ow, oh, HalfFloatType, LinearFilter);   // the made frame before its gaps are filled (alpha: 0 a gap, else how far the surface is)
-    this.output = st(ow, oh, HalfFloatType, LinearFilter);
+    this.raw = st(ow, oh, colT, LinearFilter);   // the made frame before its gaps are filled (alpha: 0 a gap, else how far the surface is)
+    this.output = st(ow, oh, colT, LinearFilter);
     // optical flow (the second motion, read from the pictures: FSR 3's optical flow field), once per real
     // frame: both frames' brightness at 1/2 .. 1/16 of the screen (x the newest, y the last), and the flow
     // in blocks of 64, 32, 16 and 8 screen pixels (xy: uv from the newest back to the last; z: how well it
@@ -539,12 +544,13 @@ export class FrameGen {
    * (Vector2 or [w, h]), camera (for its near and far, and its turn), jitter (this frame's SGSR 2 jitter in NDC, [0, 0] if none),
    * jitterDelta (this frame's jitter minus last frame's, in NDC; [0, 0] if none), prevColor (optional: the last real frame's
    * finished picture, when the caller still has it and leaves it alone until the next real frame: then it is read where it is
-   * instead of being copied. Every frame or none: changing over starts again) }.
+   * instead of being copied. Every frame or none: changing over starts again), eightBit (optional: true when the pictures
+   * are finished screen colours in 0..1, not HDR: the made frame is then kept in 8 bits a channel, as the screen shows it) }.
    * The previous frame stays in prev until keep(), so make() works between the last two real frames.
    */
   real(o) {
     const rs = o.renderSize, os = o.outputSize, rw = rs.x ?? rs[0], rh = rs.y ?? rs[1], ow = os.x ?? os[0], oh = os.y ?? os[1];
-    this.build(rw, rh, ow, oh, !!o.prevColor);
+    this.build(rw, rh, ow, oh, !!o.prevColor, !!o.eightBit);
     /** The last real frame's finished picture (the one handed in, or our copy). */
     this.prev = this.pcolN.value = o.prevColor || this.prevColor;
     this.colN.value = o.color; this.velN.value = o.velocity; this.depN.value = o.depth; this.reaN.value = o.reactive || NO_REACTIVE; this.U.rs.value.set(rw, rh); this.U.os.value.set(ow, oh);

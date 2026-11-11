@@ -3,8 +3,8 @@
 // Upscaler comparison for scripts/upscale-compare.cjs: the same Next Gen scene drawn at twice the size
 // and scaled down (the reference) and drawn smaller then upscaled by plain stretch, SGSR 1 and SGSR 2,
 // with the camera still and moving, and a box moving across the scene. Each is scored against the
-// reference. On WebGPU also SGSR 2 as Qualcomm's shader has it (-plain), to hold our changes to it
-// (hd3d-gpu.js sgsr2Gpu) against what they changed.
+// reference. Also SGSR 2 as Qualcomm's shader has it (-plain), to hold our changes to it (hd3d-gpu.js
+// sgsr2Gpu, sgsr2.js) against what they changed.
 import gs, { loadParts } from '../../src/gamescroll.js';
 import { setGpuPick, prepareGPU } from '../../src/kit/gpu.js';
 // ?gpu: on WebGPU (upscale-compare.cjs --webgpu), with hd3d-gpu.js's TSL versions of SGSR 1 and 2
@@ -13,8 +13,8 @@ setGpuPick(GPU ? 'webgpu' : 'webgl');
 await loadParts();
 if (GPU && !await prepareGPU()) { window.result = { error: 'WebGPU did not start in this browser' }; throw new Error(window.result.error); }
 const T = gs.THREE, HD = window.__hd, W = 480, H = 640, Q = new URLSearchParams(location.search), K = +(Q.get('scale') || 1.5);
-// &tier=0..3 (the quality tier: 2 and 3 have MSAA), &grain=.035 (film grain as in the app; WebGPU draws
-// none here, since grain is otherwise most of the error and hides what the upscalers do), &modes=plain,sgsr2
+// &tier=0..3 (the quality tier: 2 and 3 have MSAA), &grain=.035 (film grain as in the app; none is
+// drawn here, since grain is otherwise most of the error and hides what the upscalers do), &modes=plain,sgsr2
 // (which upscalers), &warm=80 (that many frames with nothing moving first, so the history has settled)
 HD.force = +(Q.get('tier') || 0); HD.grain = Q.has('grain') ? +Q.get('grain') : 0;
 const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .002, amb: .3 }), c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
@@ -26,17 +26,32 @@ for (let i = 0; i < 5; i++) { const m = new T.Mesh(gs.hd.rbox(1, 1.6, 1), gs.hd.
 for (let i = 0; i < 24; i++) { const p = new T.Mesh(new T.BoxGeometry(.04, 1.2, .04), gs.hd.pbr('#eee')); p.position.set(-4 + i * .35, .6, 2); v.scene.add(p); }
 for (let j = 0; j < 3; j++) { const w = new T.Mesh(new T.BoxGeometry(8.4, .02, .02), gs.hd.pbr('#222')); w.position.set(0, .3 + j * .4, 2); v.scene.add(w); }
 const mover = new T.Mesh(gs.hd.rbox(.8, .8, .8), gs.hd.pbr('#f80', { rough: .4 })); mover.position.set(0, .4, 3.5); v.scene.add(mover);
+// the textured runs: the ground, three walls and a strip of floor in code-made tiling textures (cobbles,
+// brick, tiles, planks, stone), fine enough that the size the 3D is drawn at decides which mip level is
+// read. The tiles wall has parallax depth and the strip is scattered: on WebGPU those two read their
+// textures in shaders of their own (hd3d-gpu.js pom, recipeTwin). Hidden in the other runs.
+HD.pack = false;   // (plain uploads: a texture swapping to its packed copy mid-run would move the numbers)
+const tex = new T.Group(); tex.visible = false; v.scene.add(tex);
+const tm = (name, u, w, o) => gs.models.material(name, { repeat: [u, w], closeUp: false, ...o });
+const tground = new T.Mesh(new T.PlaneGeometry(60, 60).rotateX(-Math.PI / 2), tm('cobbles', 24, 24)); tex.add(tground);
+[['brick', -4.2, -3.5, .5, 3, 2], ['tiles', 0, -5, 0, 4, 3, { depth: .03 }], ['planks', 4.2, -3.5, -.5, 3, 2]].forEach(([n, px, pz, ry, u, w, o]) => {
+  const m = new T.Mesh(new T.PlaneGeometry(3.6, 2.4), tm(n, u, w, o)); m.position.set(px, 1.2, pz); m.rotation.y = ry; tex.add(m);
+});
+const strip = new T.Mesh(new T.PlaneGeometry(8, 2.4).rotateX(-Math.PI / 2), tm('stone', 6, 2, { scatter: true })); strip.position.set(0, .01, 5.2); tex.add(strip);
+const textured = on => { tex.visible = on; ground.visible = !on; };
 v.grade = { saturation: 1.1, contrast: 1.05 };
 const pose = f => { const a = f * .004; v.cam.position.set(Math.sin(a) * 9, 4, Math.cos(a) * 9); v.cam.lookAt(0, 1, 0); v.cam.updateMatrixWorld(); };
 const place = f => { mover.position.x = -3 + f * .05; };
 // modes: full (the reference: drawn at twice the size and scaled down, no jaggies), plain, sgsr1 and sgsr2
-// (drawn at 1/K size), native (full size, FXAA or the tier's MSAA), aa (full size, SGSR 2 as anti-aliasing)
-// and traa (full size, three.js's TRAA: WebGPU, tiers with MSAA); sgsr2-plain and aa-plain: SGSR 2 as it was
+// (drawn at 1/K size), native (full size, FXAA or the tier's MSAA), aa (full size, SGSR 2 as anti-aliasing);
+// sgsr2-plain and aa-plain: SGSR 2 as it was; sgsr2-soft: SGSR 2 with the textures read as the small picture
+// reads them (no mip bias: WebGPU's sharper textures under SGSR 2 off), and &mip=-.5 for more or less of it
+const MIP = Q.has('mip') ? +Q.get('mip') : null;
+const ONLY = Q.get('scenes')?.split(',');   // &scenes=textured: only the runs whose names start so
 const set = m => {
-  const mode = m.replace('-plain', ''); HD.sgsrTune = mode === m;
-  HD.upscale = !['full', 'plain', 'native'].includes(mode); HD.upscaler = mode === 'sgsr1' || mode === 'traa' ? 'sgsr1' : 'sgsr2';
-  HD.traa = mode === 'traa';
-  HD.scale = mode === 'full' ? 2 : mode === 'native' || mode === 'aa' || mode === 'traa' ? 1 : 1 / K;
+  const mode = m.replace(/-plain|-soft/, ''); HD.sgsrTune = !m.endsWith('-plain'); HD.mipBias = m.endsWith('-soft') ? false : MIP;
+  HD.upscale = !['full', 'plain', 'native'].includes(mode); HD.upscaler = mode === 'sgsr1' ? 'sgsr1' : 'sgsr2';
+  HD.scale = mode === 'full' ? 2 : mode === 'native' || mode === 'aa' ? 1 : 1 / K;
 };
 const draw = () => { v.t = 0; v.render(x, W, H); return x.getImageData(0, 0, W, H).data; };
 const err = (a, b) => { let s = 0; for (let i = 0; i < a.length; i += 4) s += (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2])) / 3; return s / (a.length / 4); };
@@ -44,8 +59,9 @@ const err = (a, b) => { let s = 0; for (let i = 0; i < a.length; i += 4) s += (M
 // changes from frame to frame over them; the reference's own (ref) is what the motion itself changes, so
 // more than that is crawl or shimmer and less is blur
 const out = { scale: K, scenes: {} }, shots = {}, LAST = 8, tick = () => new Promise(r => requestAnimationFrame(r));
-const MODES = Q.get('modes')?.split(','), AA = ['native', 'aa', ...(GPU ? ['aa-plain'] : []), ...(GPU && HD.force >= 2 ? ['traa'] : [])].filter(m => !MODES || MODES.includes(m));
-const run = async (name, frames, moveCam, moveBox, modes = MODES?.filter(m => !/^(native|aa|traa)/.test(m)) || ['plain', 'sgsr1', 'sgsr2', ...(GPU ? ['sgsr2-plain'] : [])]) => {
+const MODES = Q.get('modes')?.split(','), AA = ['native', 'aa', 'aa-plain'].filter(m => !MODES || MODES.includes(m));
+const run = async (name, frames, moveCam, moveBox, modes = MODES?.filter(m => !/^(native|aa)/.test(m)) || ['plain', 'sgsr1', 'sgsr2', 'sgsr2-plain']) => {
+  if (ONLY && !ONLY.some(s => name.startsWith(s))) return;
   const at = f => { pose(moveCam ? f : 0); place(moveBox ? f : 0); };
   set('full'); at(frames - LAST); draw(); await tick(); await tick();   // (a resized WebGPU canvas shows the old picture until the next frame)
   const refs = [];
@@ -53,14 +69,14 @@ const run = async (name, frames, moveCam, moveBox, modes = MODES?.filter(m => !/
   let rf = 0; for (let i = 1; i < refs.length; i++) rf += err(refs[i], refs[i - 1]) / LAST;
   const res = { ref: { error: 0, flicker: +rf.toFixed(2), ms: 0, used: 'reference', backend: HD.info.backend } };
   for (const mode of modes) {
-    set(mode); let prev = null, flick = 0, e = 0, ms = 0;
+    set(mode); v.cut(); let prev = null, flick = 0, e = 0, ms = 0;   // (a cut: every mode starts from a clean history, whatever ran before it)
     pose(0); place(0); for (let i = +(Q.get('warm') || 0); i > 0; i--) { draw(); await tick(); }
     for (let f = 0; f <= frames; f++) {
       at(f);
       const t0 = performance.now(); let d = draw(); ms += performance.now() - t0;
       if (f > frames - LAST) { flick += err(d, prev) / LAST; e += err(d, refs[f - frames + LAST]) / LAST; }
       prev = d;
-      if (f === frames) { res[mode] = { error: +e.toFixed(2), flicker: +flick.toFixed(2), ms: +(ms / (frames + 1)).toFixed(1), used: HD.info.upscaled || (mode === 'traa' && window.__hdView?._gpuChain?.traaN ? 'traa' : false), backend: HD.info.backend }; if (Q.has('shots')) shots[name + '.' + mode] = c.toDataURL(); }
+      if (f === frames) { res[mode] = { error: +e.toFixed(2), flicker: +flick.toFixed(2), ms: +(ms / (frames + 1)).toFixed(1), used: HD.info.upscaled, backend: HD.info.backend }; if (Q.has('shots')) shots[name + '.' + mode] = c.toDataURL(); }
       await tick();
     }
   }
@@ -74,6 +90,12 @@ try {
   await run('anti-aliasing', 24, true, false, AA);
   await run('anti-aliasing-still', 24, false, false, AA);
   await run('anti-aliasing-box', 40, false, true, AA);
-  HD.scale = null; HD.sgsrTune = true; out.shots = shots; window.result = out;
+  // textures: SGSR 2 with and without the sharper textures (WebGPU), against a plain stretch
+  const TEX = (MODES || ['plain', 'sgsr2', 'sgsr2-soft']).filter(m => !/^(native|aa)/.test(m) && (GPU || m !== 'sgsr2-soft'));
+  textured(true);
+  await run('textured-still', 24, false, false, TEX);
+  await run('textured-camera', 40, true, false, TEX);
+  textured(false);
+  HD.scale = null; HD.sgsrTune = true; HD.mipBias = null; out.shots = shots; window.result = out;
 } catch (e) { window.result = { error: e.message + '\n' + e.stack }; }
 </script>

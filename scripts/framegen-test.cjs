@@ -22,6 +22,8 @@ const SUITES = {
   flow: `&kinds=${FLOW}`, 'flow-ahead': `&kinds=${FLOW}&mode=ahead`, 'flow-upscaled': `&scale=1.5&kinds=${FLOW}`,
   // the last frame's picture handed in instead of copied (how the app feeds it): the same numbers as blend's
   handed: '&kinds=strafe,pan,curve&handed',
+  // and with the made frame kept in 8 bits (what the app does when the screen is not HDR): within a hundredth of handed's
+  eight: '&kinds=strafe,pan,curve&handed&eight',
 };
 const BASELINE = path.join(__dirname, 'framegen-test', 'baseline.json');
 // how much worse than the baseline a scene may score before the check fails (SwiftShader gives the same
