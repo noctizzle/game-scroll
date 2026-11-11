@@ -185,6 +185,7 @@ export const HIDDEN = {
   phoneai: ['phoneAIStatus'],
   brains: ['liveBrains', 'brainStats'],   // the debug overlay's list of live brains
   hd: ['FINAL_EFFECTS', 'gpuFits'],
+  toon: ['TOON', 'celReady'],   // test switches, and whether three's toon shader still has the lines the cel look changes
   props: ['simplifyReady'],
   tabletop: ['loadChess'],
   models: ['ready'],   // (the app waits for the saved bakes while the 3D parts load)   // the Next Gen screen shader in pieces, for the WebGPU port (docs/webgpu-move.md)
@@ -250,7 +251,9 @@ export const LAZY_PARTS = Object.freeze(Object.keys(groupOf));
 /** Loads the parts these names need ('toon', 'hd.HDView', ...), or every part if none are given. */
 export function loadParts(names) {
   const tops = names ? [...new Set(names.map(n => n.split('.')[0]))] : LAZY_PARTS;
-  return Promise.all([...new Set(tops.filter(t => groupOf[t]).map(t => groupOf[t]))].map(loadGroup)).then(() => {});
+  const groups = Promise.all([...new Set(tops.filter(t => groupOf[t]).map(t => groupOf[t]))].map(loadGroup));
+  // a Console game draws on its own WebGPU renderer where the device has one (src/kit/gpu.js): ready before the game runs
+  return (tops.includes('toon') ? groups.then(() => import('./kit/gpu.js')).then(g => g.prepareConsoleGPU()) : groups).then(() => {});
 }
 /** Are these parts loaded? */
 export const partsReady = names => (names || LAZY_PARTS).every(n => !groupOf[n.split('.')[0]] || n.split('.')[0] in loaded);
@@ -327,7 +330,7 @@ const gs = {};
 for (const [k, v] of Object.entries(core)) Object.defineProperty(gs, k, { value: v, enumerable: true });
 for (const k of LAZY_PARTS) Object.defineProperty(gs, k, {
   enumerable: true,
-  get() { if (k in loaded) return loaded[k]; throw new StillLoading('gs.' + k, loadGroup(groupOf[k])); },
+  get() { if (k in loaded) return loaded[k]; throw new StillLoading('gs.' + k, loadParts([k])); },
 });
 Object.freeze(gs);
 export default gs;

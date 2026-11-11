@@ -158,6 +158,40 @@ try {
   // made levels load rot.js and WaveFunctionCollapse on first use, like the other lazy parts
   { let ge; try { gs.gen.dungeon(30, 20, { seed: 1 }); } catch (x) { ge = x; } ok(ge?.kitLoading, 'gs.gen StillLoading first'); await ge.kitLoading;
     ok(gs.gen.dungeon(30, 20, { seed: 1 }).text.includes('S') && !!gs.gen.pattern('.#.\n###\n.#.', 12, 12, { seed: 3 }), 'dungeon and pattern in the browser'); }
+  // Classic Console 2.0: real toon shadows, the rim of light, retro looks (drawn for real; the test switch draws shadows whatever this machine is)
+  {
+    const { View, part, G } = gs.toon, T3 = gs.THREE, frame = () => new Promise(r => requestAnimationFrame(r));
+    ok(window.__toon?.shadows === true && !('TOON' in gs.toon), 'Console test switches: under automation only, and not on gs.toon');
+    const draw = async (opts, more) => {
+      const cv = document.createElement('canvas'); cv.width = 384; cv.height = 320; const x = cv.getContext('2d'); x.setTransform(2, 0, 0, 2, 0, 0);
+      const v = new View({ bg: '#88c8f0', ...opts }); v.board(192, 160, .9);
+      v.scene.add(part(new T3.BoxGeometry(30, 30, 30), '#e04848', { y: 15 })); more?.(v);
+      for (let i = 0; i < 3; i++) { v.render(x, 192, 160); await frame(); }
+      return { v, d: x.getImageData(0, 0, 384, 320).data };
+    };
+    const at = (d, px, py) => [d[(py * 384 + px) * 4], d[(py * 384 + px) * 4 + 1], d[(py * 384 + px) * 4 + 2]], lum = p => p[0] * .3 + p[1] * .6 + p[2] * .1;
+    const on = await draw({}), off = await draw({ shadows: false }), sky = await draw({ floor: false }), dull = await draw({ rim: 0 });
+    // the sun is up and to the left, towards the camera: the box's shadow falls to its right on the bare background
+    const SH = [236, 150], BG = [40, 40], bg = lum(at(on.d, ...BG)), sh = lum(at(on.d, ...SH));
+    ok(sh < bg * .9 && sh > bg * .6 && Math.abs(lum(at(off.d, ...SH)) - bg) < 2 && Math.abs(lum(at(sky.d, ...SH)) - bg) < 2, `a real shadow on the bare background: ${sh.toFixed(0)} against ${bg.toFixed(0)}; none with shadows: false or floor: false (${on.v.onGpu ? 'WebGPU' : 'WebGL'})`);
+    ok(on.d[(SH[1] * 384 + SH[0]) * 4 + 3] === 255, 'the picture stays solid under the shadow');
+    // the rim: only brighter pixels, a thin line of them (on the box's sunny edges)
+    let lit = 0, darker = 0; for (let i = 0; i < on.d.length; i += 4) { const a = on.d[i] + on.d[i + 1] + on.d[i + 2], b = dull.d[i] + dull.d[i + 1] + dull.d[i + 2]; if (a > b + 12) lit++; else if (a < b - 12) darker++; }
+    ok(lit > 60 && lit < 4000 && darker === 0, `the rim of light: ${lit} brighter pixels along the sunny edges, none darker`);
+    // a wall's shadow on a lit floor has one clean edge: the floor shows two shades, not a ramp of them
+    const fl = await draw({}, v => { v.add(part(G.plane, '#b4bcac', { sx: 400, sz: 400, line: false })); });
+    const shades = new Set(); for (let px = 200; px < 330; px += 2) shades.add(at(fl.d, px, 150).join()); const lf = lum(at(fl.d, 40, 40)), sf = lum(at(fl.d, ...SH));
+    ok(sf < lf * .9 && shades.size <= 4, `on a toon floor the shadow is the ramp's dark band (${sf.toFixed(0)} against ${lf.toFixed(0)}) with a clean edge (${shades.size} shades across it)`);
+    // retro looks: fewer lines up the picture, 32 shades a colour with a dither, scanlines
+    const chunky = await draw({ retro: 'chunky' }), soft = await draw({ retro: 'soft' }), tube = await draw({ retro: 'tube' });
+    // (ink lines and the background's shadow are laid over the picture afterwards: they are the few that aren't)
+    const grid = d => { let o = 0, n = 0; for (let i = 0; i < d.length; i += 4 * 37) for (let k = 0; k < 3; k++) { n++; const q = d[i + k] / 255 * 31; if (Math.abs(q - Math.round(q)) > .08) o++; } return o / n; };
+    ok(grid(chunky.d) < .08 && grid(soft.d) > .5, `chunky: colours are cut to 32 shades, the background's too (${(grid(chunky.d) * 100).toFixed(1)}% of samples are not, against ${(grid(soft.d) * 100).toFixed(0)}% in the soft look)`);
+    let rows = 0; for (let y = 1; y < 320; y++) { let same = true; for (let px = 0; px < 384 && same; px += 3) if (chunky.d[(y * 384 + px) * 4] !== chunky.d[((y - 1) * 384 + px) * 4]) same = false; if (!same) rows++; }
+    ok(rows <= 240, `chunky: hard pixels, ${rows} different rows up a 320-row picture`);
+    const mean = d => { let m = 0; for (let i = 0; i < d.length; i += 4) m += d[i] + d[i + 1] + d[i + 2]; return m / (d.length / 4 * 3); };
+    ok(mean(tube.d) < mean(soft.d) * .95 && mean(tube.d) > mean(soft.d) * .75, `tube: scanlines darken the soft picture (${mean(tube.d).toFixed(0)} against ${mean(soft.d).toFixed(0)})`);
+  }
   // round 6: 3D levels from text, sky and weather, a car with suspension
   {
     const { Level3D } = gs.level3d, { Sky, Weather } = gs.sky, { View, toon } = gs.toon, { HDView } = gs.hd;

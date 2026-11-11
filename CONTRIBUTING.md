@@ -250,8 +250,8 @@ start. Good for platformers, RPG battles, karts and tactics.
 ### Classic · Console (3D)
 
 Home-console and PC inspired games from the 32 to 128-bit era (they appear under **Classic · Console**). These are real-time 3D using three.js through the shared kit
-`gs.toon` (`src/kit/toon3d.js`): toon shading with a three-band light ramp and ink outlines, giving a cel-shaded
-cartoon look. The HUD and text are drawn in normal 2D on top, at full resolution.
+`gs.toon` (`src/kit/toon3d.js`): toon shading with a three-band light ramp, ink outlines, real toon shadows and
+a rim of light, giving a cel-shaded cartoon look. The HUD and text are drawn in normal 2D on top, at full resolution.
 
 ```js
 import gs from '../gamescroll.js';
@@ -268,9 +268,10 @@ function view3d(W, H) {
 // in draw(c): const v = view3d(W, H); v.frame(); v.put('hero', v.at(x, y)); v.render(c, W, H); then 2D HUD
 ```
 
-Read [`docs/console-3d.md`](docs/console-3d.md) for cameras (`board`, `side`, `persp`), prefabs and
-performance rules. Never create your own WebGL renderer: phones only allow a few, so all Console games
-share one. A Console game should look clearly 3D; if yours doesn't, make it an Advance game instead.
+Read [`docs/console-3d.md`](docs/console-3d.md) for cameras (`board`, `side`, `persp`), prefabs, shadows,
+retro looks (`new View({ retro: 'chunky' })`), jointed characters (`figure()`) and performance rules. Never
+create your own renderer: phones only allow a few, so all Console games share one (WebGPU where the phone
+has it, WebGL elsewhere). A Console game should look clearly 3D; if yours doesn't, make it an Advance game instead.
 Run `npm run sweep` on Console games (see [Testing](#testing-your-game)).
 
 ### Next Gen · Console (HD 3D)

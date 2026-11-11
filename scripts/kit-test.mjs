@@ -2261,5 +2261,73 @@ console.log('physics ok');
   console.log('bundled games: a fresh copy of each game file can be loaded ok');
 }
 
+// ---- Classic Console 2.0 (toon3d.js): real toon shadows, the rim of light, retro looks, a jointed figure
+{
+  const T = await import('three');
+  const { View, part, grp, G, blob, figure, toon, flat, celReady, TOON } = await import('../src/kit/toon3d.js');
+  const { HIDDEN } = await import('../src/gamescroll.js');
+  // the cel look folds the sun's shadow into the ramp by changing two pieces of three's toon shader: if a
+  // three.js update rewrites them, this is where it shows (the look would fall back to no real shadows)
+  assert.ok(celReady, 'three\'s toon shader still has the lines the cel look changes');
+  assert.ok(HIDDEN.toon.includes('TOON') && HIDDEN.toon.includes('celReady'), 'the test switches stay off gs.toon');
+  const lit = toon('#c04040'), glass = toon('#80c0ff', { opacity: .4 }), paint = flat('#ffffff', .8);
+  assert.deepEqual([lit.userData.gsLooks, paint.userData.gsLooks], [['cel'], ['retro']], 'toon() carries the cel look, flat() the retro one');
+  // who casts and who takes shadows: lit solid things cast, see-through and flat ones don't, blob() discs never
+  const was = TOON.shadows; TOON.shadows = true;
+  const v = new View(); v.board(192, 160, .9);
+  assert.deepEqual([v.shadows, v.rim, v.floor, v.retro], [true, .35, true, null], 'a view: shadows, a rim of light and a floor under a board by default; no retro look');
+  const wall = v.add(part(G.box, '#806090', { sx: 6, sy: 30, sz: 60, x: -80, y: 15 })), floor = v.add(part(G.plane, '#b4bcac', { sx: 150, sz: 150, line: false })), pane = v.add(part(G.box, glass, { s: 14 }));
+  v.def('crate', () => grp(part(G.box, '#b08850', { s: 16, y: 8 }), blob(12, .3))).def('mark', () => blob(1, .35)).def('ball', () => part(G.ball, '#f04060', { s: 6 }));
+  v.frame();
+  const crate = v.put('crate', v.at(40, 60)), air = v.put('mark', v.at(60, 120, .2), { s: 7 }), under = v.put('mark', v.at(110, 120, .2), { s: 9 });
+  v.put('ball', v.at(60, 120, 30)); v.put('crate', v.at(110, 120), { s: .7 });
+  assert.equal(v.prep(true), '', 'three\'s own materials with the kit\'s looks: the view can draw on WebGPU');
+  assert.ok(v.shadowsOn && v.sun.castShadow && v.catcher.visible, 'shadows on: the sun casts, the bare background of a board takes them');
+  assert.deepEqual([wall.castShadow, wall.receiveShadow, floor.castShadow, floor.receiveShadow, pane.castShadow], [true, true, false, true, false], 'a wall casts and takes; a flat floor only takes; a see-through box casts nothing');
+  let disc; crate.traverse(k => { if (k.userData.gsBlob) disc = k; });
+  assert.ok(disc && !disc.visible && !disc.castShadow && crate.children[0].castShadow, 'a thing with a blob() disc: its real shadow takes the disc\'s place');
+  assert.deepEqual([air.visible, under.visible], [true, false], 'a disc put on its own stays under a ball in the air and goes when a crate stands on it');
+  // off: discs again, nothing cast
+  TOON.shadows = false; v.frame(); v.put('crate', v.at(40, 60)); v.prep(false);
+  assert.ok(!v.shadowsOn && !v.sun.castShadow && !v.catcher.visible && disc.visible, 'no shadows (a low-end phone): the discs show, as they always did');
+  TOON.shadows = true;
+  const off = new View({ shadows: false, floor: false, rim: 0 }); off.board(192, 160); off.prep(false);
+  assert.ok(!off.shadowsOn && !off.sun.castShadow && off.rim === 0, 'new View({ shadows: false }): the game\'s own choice');
+  const sky = new View({ floor: false }); sky.board(192, 160); sky.prep(false);
+  assert.ok(sky.shadowsOn && !sky.catcher.visible, 'floor: false: nothing lands on the background');
+  const side = new View(); side.side(192, 160); side.prep(false);
+  assert.ok(side.shadowsOn && !side.catcher.visible, 'a side view has no floor under it');
+  // a material with its own shader keeps the view on WebGL, and says why
+  v.add(new T.Mesh(G.box, new T.ShaderMaterial()));
+  assert.match(v.prep(true), /its own shader \(ShaderMaterial\)/, 'a ShaderMaterial has no WebGPU version: the view says so');
+  // the sun's shadow is fitted to the view without moving the game's sun
+  const at = v.sun.position.clone(), sh = v.sun.shadow;
+  v.render({ canvas: { width: 384, height: 320 }, fillRect() {}, set fillStyle(_) {} });   // (no renderer in Node: the frame is prepared and the background filled)
+  v.scene.updateMatrixWorld(); sh.updateMatrices(v.sun);
+  assert.ok(v.sun.position.equals(at) && Math.abs(sh.camera.right - v.fit.r) < 1e-6 && v.fit.r > 100 && v.fit.r < 250, 'the shadow covers the board (' + v.fit.r.toFixed(0) + ' units round) and the sun stays where the game put it');
+  const eye = new T.Vector3().setFromMatrixPosition(sh.camera.matrixWorld), dir = at.clone().normalize();
+  assert.ok(eye.clone().normalize().distanceTo(dir) < 1e-4 && Math.abs(eye.length() - v.fit.r * 3) < 1e-3, 'its camera looks along the sun\'s direction from outside the view');
+  const fog = new View({ fog: ['#fff', 10, 44] }); fog.persp(192, 160, 60, .1, 200); fog.cam.position.set(0, 2.6, 6); fog.cam.lookAt(0, .8, -6); fog.cam.updateMatrixWorld();
+  fog.render({ canvas: { width: 384, height: 320 }, fillRect() {}, set fillStyle(_) {} });
+  assert.ok(fog.fit.snap && Math.abs(fog.fit.r - 44 * .55) < 1e-6 && fog.fit.c.z < -10, 'a free camera: the shadow reaches as far as the fog, ahead of the camera, stepping a texel at a time');
+  // retro looks
+  const R = k => new View({ retro: k }).retro;
+  assert.deepEqual(R('chunky'), { lines: 240, smooth: false, snap: true, bits: 5, scan: 0 });
+  assert.ok(R('soft').smooth && !R('soft').snap && R('tube').scan > 0 && R('nope') === null, 'soft, tube; an unknown name is no look');
+  assert.deepEqual(R({ lines: 120, bits: 4 }), { lines: 120, smooth: false, snap: false, bits: 4, scan: 0 }, 'your own mix');
+  // the jointed figure
+  const f = figure({ h: 30, hair: null }), box = new T.Box3().setFromObject(f);
+  assert.ok(Math.abs(box.min.y) < .8 && box.max.y > 28 && box.max.y < 34, 'figure(): 30 units tall with its feet on the ground (' + box.min.y.toFixed(1) + ' to ' + box.max.y.toFixed(1) + ')');
+  assert.ok(f.rig && ['hips', 'spine', 'head', 'armL', 'foreL', 'armR', 'foreR', 'legL', 'shinL', 'legR', 'shinR'].every(k => f.rig.parts[k]?.isObject3D), 'it has the gs.poses joints');
+  const legX = () => f.rig.parts.legL.rotation.x; const still = legX();
+  f.rig.play('walk'); let swing = 0; for (let i = 0; i < 40; i++) { f.rig.update(1 / 30, { speed: 1.5 }); swing = Math.max(swing, Math.abs(legX() - still)); }
+  assert.ok(swing > .2, 'rig.play(\'walk\'): its legs swing (' + swing.toFixed(2) + ' rad)');
+  v.def('hero', () => figure({ h: 24 })); v.frame(); const a = v.put('hero', v.at(20, 20)), b2 = v.put('hero', v.at(60, 20), { s: 2 });
+  assert.ok(a.rig && b2.rig && a.rig !== b2.rig && b2.scale.x === 2 && b2.children[0].scale.x === 24 / 1.8, 'each copy a view draws has a rig of its own, and put()\'s size multiplies the figure\'s');
+  assert.equal(v.pools.get('hero').casts, true, 'and it casts a shadow');
+  TOON.shadows = was;
+  console.log('Classic Console 2.0: who casts and takes shadows, discs out of the way, the fitted shadow, retro looks, the jointed figure ok');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);
