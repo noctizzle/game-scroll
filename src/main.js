@@ -521,7 +521,7 @@ function whenCalm(fn){calmJobs.push(fn);if(!calmT)calmT=setTimeout(calmTick,QUIE
 function calmTick(){
   calmT=0;if(!calmJobs.length)return;
   if(!calm()){calmT=setTimeout(calmTick,100);return}
-  idleSlot(()=>{if(!calm()){calmT=setTimeout(calmTick,100);return}const f=calmJobs.shift();try{f()}catch(e){console.error(e)}if(calmJobs.length)calmT=setTimeout(calmTick,60)});
+  idleSlot(()=>{if(!calm()){calmT=setTimeout(calmTick,100);return}const f=calmJobs.shift();if(f)try{f()}catch(e){console.error(e)}if(calmJobs.length)calmT=setTimeout(calmTick,60)});   // (f can be missing: a job queued while a slot was waiting starts a second timer, and the slower slot then finds the queue already emptied)
 }
 speed.busy=()=>!calm();speed.playing=()=>!!active&&active.state==='playing';
 function topUpLater(wait=QUIET){
