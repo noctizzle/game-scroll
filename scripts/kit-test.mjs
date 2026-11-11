@@ -2012,7 +2012,8 @@ console.log('physics ok');
   assert.ok(!has('nope') && data('nope') === null && path('nope') === null);
   assert.deepEqual(find('potion'), ['health-potion', 'round-potion', 'standing-potion']);
   assert.equal(icon({}, 'nope', 0, 0, 20), false, 'an unknown name draws nothing and says so'); assert.equal(remembered(), 0);
-  assert.ok(readFileSync(new URL('../src/licences.js', import.meta.url), 'utf8').includes('game-icons.net'), 'the icons are in the licence list');
+  const { OPEN_SOURCE } = await import('../src/licences.js');
+  assert.ok(OPEN_SOURCE.some(p => p.name === 'Game Icons' && p.spdx === 'CC-BY-3.0' && p.vendored === 'src/kit/icon-data.js' && /Lorc, Delapouite/.test(p.notice)), 'the icons are in the licence list, with their makers named');
   console.log(`gs.icons: ${names.length} icons, ${Object.keys(words).length} plain words, all paths, names and credit ok`);
 }
 
