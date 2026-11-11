@@ -1,6 +1,7 @@
 import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
+const { Ready } = gs.rounds;
 
 // Pairs of jelly blobs drop into a well. Slide them with your finger, tap to spin, flick down to
 // drop. Four or more touching blobs of one colour pop, and blobs that fall into new groups pop as
@@ -11,7 +12,8 @@ const JUNK = 9;
 let W = 160, H = 192, CS = 14;
 
 function make(api) {
-  let g, cur, next, score, t, fallT, speed, lock, phase, chain, pops, msg, drag, kinds, junkT, dead;
+  const ready = new Ready({ eat: false });   // the first pair waits for the first touch
+  let g, cur, next, score, t, fallT, speed, phase, chain, pops, msg, drag, kinds, junkT, dead;
   const L = () => Math.max(4, (W - COLS * CS - 48) >> 1), T = () => H - ROWS * CS - 4;
   const size = () => { CS = Math.max(10, Math.min(22, Math.floor((H - 8) / ROWS), Math.floor((W - 56) / COLS))); };
   const pair = () => ({ a: Math.random() * kinds | 0, b: Math.random() * kinds | 0 });
@@ -61,9 +63,10 @@ function make(api) {
     msg = { txt: 'JUNK!', l: 1 }; sfx(160, .2, 'square', .04, -60); haptic('medium');
   }
   const self = {
-    reset() { size(); g = Array.from({ length: ROWS }, () => Array(COLS).fill(null)); kinds = 4; score = 0; t = 0; fallT = 0; speed = .7; chain = 0; pops = []; msg = { txt: 'MATCH 4 TO POP', l: 2 }; drag = null; junkT = 45; dead = 0; phase = 'play'; next = pair(); spawn(); },
+    reset() { size(); g = Array.from({ length: ROWS }, () => Array(COLS).fill(null)); kinds = 4; score = 0; t = 0; fallT = 0; speed = .7; chain = 0; pops = []; msg = { txt: 'MATCH 4 TO POP', l: 2 }; drag = null; junkT = 45; dead = 0; phase = 'play'; self.soft = false; ready.reset(); next = pair(); spawn(); },
     resize(w, h) { W = w; H = h; size(); },
     update(dt) {
+      if (!ready.update(dt)) return;
       t += dt; for (const p of pops) p.l -= dt; pops = pops.filter(p => p.l > 0); if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
       if (dead) { dead += dt; if (dead > 1.6) return api.over(); return; }
       if (t > 60 && kinds === 4) { kinds = 5; msg = { txt: 'NEW COLOUR!', l: 1.5 }; }
@@ -115,7 +118,7 @@ function make(api) {
       if (t < 6 && !msg) { c.fillStyle = '#100818c0'; c.fillRect(l, tp + ROWS * CS - 26, COLS * CS, 22); c.fillStyle = '#f8f0ff'; c.fillText('SLIDE · TAP SPIN', l + COLS * CS / 2, tp + ROWS * CS - 17); c.fillText('FLICK DOWN DROP', l + COLS * CS / 2, tp + ROWS * CS - 8); }
       if (dead) { c.fillStyle = '#000a'; c.fillRect(0, H / 2 - 12, W, 22); c.fillStyle = '#f84848'; c.font = '8px "Press Start 2P", monospace'; c.fillText('TOPPED OUT', W / 2, H / 2 + 2); }
     },
-    down(x, y) { drag = { x0: x, y0: y, x, y, t: performance.now(), col: cur ? cur.x : 0, moved: false }; },
+    down(x, y) { ready.go(); drag = { x0: x, y0: y, x, y, t, col: cur ? cur.x : 0, moved: false }; },
     move(x, y, p) {
       if (!p || !drag || !cur || phase !== 'play') return; drag.x = x; drag.y = y;
       const dx = Math.round((x - drag.x0) / (CS * 1.1)); if (Math.abs(x - drag.x0) > 6) drag.moved = true;
@@ -123,10 +126,10 @@ function make(api) {
       if (y - drag.y0 > CS * 1.5 && Math.abs(y - drag.y0) > Math.abs(x - drag.x0) * 1.5) { drag.moved = true; self.soft = true; }
     },
     up() {
-      if (drag && cur && phase === 'play') { const dt = performance.now() - drag.t, dy = drag.y - drag.y0; if (dy > CS * 2 && dt < 260) { while (tryMove(0, 1)); place(); sfx(180, .08, 'square', .05, -80); } else if (!drag.moved && dt < 300) spin(); }
+      if (drag && cur && phase === 'play') { const dt = t - drag.t, dy = drag.y - drag.y0; if (dy > CS * 2 && dt < .26) { while (tryMove(0, 1)); place(); sfx(180, .08, 'square', .05, -80); } else if (!drag.moved && dt < .3) spin(); }
       drag = null; self.soft = false;
     },
-    key(k, d) { if (!d) { if (k === 'ArrowDown') self.soft = false; return; } if (!cur || phase !== 'play') return; if (k === 'ArrowLeft') tryMove(-1, 0); if (k === 'ArrowRight') tryMove(1, 0); if (k === 'ArrowUp' || k === ' ') spin(); if (k === 'ArrowDown') self.soft = true; },
+    key(k, d) { if (!d) { if (k === 'ArrowDown') self.soft = false; return; } ready.go(); if (!cur || phase !== 'play') return; if (k === 'ArrowLeft') tryMove(-1, 0); if (k === 'ArrowRight') tryMove(1, 0); if (k === 'ArrowUp' || k === ' ') spin(); if (k === 'ArrowDown') self.soft = true; },
   };
   return self;
 }

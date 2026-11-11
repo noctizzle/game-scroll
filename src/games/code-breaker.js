@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
 
 // Crack a hidden code of four symbols (six kinds, repeats allowed) in eight tries. After each guess,
 // a black pip means right symbol, right place; a white pip means right symbol, wrong place.
@@ -18,6 +19,7 @@ function sym(c, x, y, k, col) {
 }
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
   let code, rows, cur, score, solved, t, wait, reveal;
   function newCode() { code = [0, 1, 2, 3].map(() => Math.random() * 6 | 0); rows = []; cur = []; reveal = false; }
   function grade(g) {
@@ -28,15 +30,17 @@ function make(api) {
   }
   function submit() {
     if (cur.length < 4 || wait > 0) return; const r = grade(cur); rows.push({ g: cur, ...r }); cur = [];
-    if (r.black === 4) { solved++; score += TRIES - rows.length + 1 + 2; api.score(score); haptic('success'); sfx(990, .25, 'square', .05, 300); wait = 1.2; reveal = true; }
-    else if (rows.length >= TRIES) { haptic('error'); sfx(130, .4, 'square', .05, -40); reveal = true; wait = 1.6; solved = -1; }
+    if (r.black === 4) { solved++; score += TRIES - rows.length + 1 + 2; api.score(score); haptic('success'); sfx(990, .25, 'square', .05, 300); wait = 1.2; reveal = true; feel.juice.burst(141, 65, { n: 16, speed: 60, life: .6, size: 2, color: [P[0], P[1]] }); }
+    else if (rows.length >= TRIES) { haptic('error'); sfx(130, .4, 'square', .05, -40); reveal = true; wait = 1.6; solved = -1; feel.juice.shake(4); }
     else { haptic(r.black ? 'medium' : 'light'); sfx(400 + r.black * 120 + r.white * 40, .06, 'square', .03); }
   }
   return {
-    reset() { score = 0; solved = 0; t = 0; wait = 0; newCode(); },
-    update(dt) { t += dt; if (wait > 0) { wait -= dt; if (wait <= 0) { if (solved < 0) return api.over(); newCode(); } } },
+    reset() { score = 0; solved = 0; t = 0; wait = 0; feel.clear(); newCode(); },
+    fx(dt) { feel.update(dt); },
+    update(dt) { feel.update(dt); t += dt; if (wait > 0) { wait -= dt; if (wait <= 0) { if (solved < 0) return api.over(); newCode(); } } },
     draw(c) {
       c.fillStyle = P[3]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       // board: 8 rows of guesses
       for (let i = 0; i < TRIES; i++) {
         const y = 28 + i * 11.4, row = rows[i], live = i === rows.length;
@@ -53,6 +57,7 @@ function make(api) {
       for (let k = 0; k < 6; k++) { const x = 6 + k * 22; c.fillStyle = P[1]; c.fillRect(x, 120, 20, 18); sym(c, x + 10, 129, k, P[3]); }
       c.fillStyle = P[1]; c.fillRect(138, 120, 18, 18); c.fillStyle = P[3]; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText('<', 147, 132);
       c.fillStyle = cur.length === 4 ? P[0] : P[2]; c.fillRect(6, 141, 150, 15); c.fillStyle = P[3]; c.fillText('CHECK', 81, 152);
+      feel.end(c, W, H);
       c.fillStyle = P[0]; c.textAlign = 'left'; c.fillText(`#${Math.max(0, solved) + 1}`, 4, 8);
     },
     down(x, y) {

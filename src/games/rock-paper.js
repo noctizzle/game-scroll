@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
 
 // Rock, paper, scissors against opponents with habits. Each one plays by a hidden rule you can
 // read from their history. Beat five rounds to face the next one. Three losses and you're out.
@@ -26,25 +27,28 @@ function icon(c, x, y, m, s, col = P[0]) {
 }
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
   let style, me, op, res, wins, lives, score, t, show;
   function nextFoe() { const pool = STYLES.filter(s => s !== style); style = pool[Math.random() * pool.length | 0]; me = []; op = []; res = []; wins = 0; }
   function play(m) {
     if (show) return;
     const o = style.pick(me, op, res); me.push(m); op.push(o);
     const r = m === o ? 'tie' : beats(o) === m ? 'win' : 'lose'; res.push(r);
-    if (r === 'win') { wins++; score++; api.score(score); haptic('success'); sfx(880, .1, 'square', .04, 200); }
-    else if (r === 'lose') { lives--; haptic('error'); sfx(140, .25, 'square', .05, -40); }
+    if (r === 'win') { wins++; score++; api.score(score); haptic('success'); sfx(880, .1, 'square', .04, 200); feel.juice.burst(110, 84, { n: 10, speed: 55, life: .45, size: 2, color: [P[0], P[1]] }); }
+    else if (r === 'lose') { lives--; haptic('error'); sfx(140, .25, 'square', .05, -40); feel.juice.shake(4); }
     else { haptic('light'); sfx(400, .06, 'square', .03); }
     show = { m, o, r, l: 1 };
   }
   return {
-    reset() { style = null; lives = 3; score = 0; t = 0; show = null; nextFoe(); },
+    reset() { style = null; lives = 3; score = 0; t = 0; show = null; feel.clear(); nextFoe(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
-      t += dt;
+      feel.update(dt); t += dt;
       if (show) { show.l -= dt; if (show.l <= 0) { show = null; if (lives <= 0) return api.over(); if (wins >= 5) { score += 3; api.score(score); haptic('success'); nextFoe(); } } }
     },
     draw(c) {
       c.fillStyle = P[3]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.font = '6px "Press Start 2P", monospace'; c.fillStyle = P[0]; c.textAlign = 'left'; c.fillText(`VS ${style.name}`, 4, 10);
       for (let i = 0; i < 3; i++) { c.fillStyle = i < lives ? P[0] : P[2]; c.fillRect(W - 10 - i * 8, 4, 5, 5); }
       // history: their last 8 moves (top row) over yours (bottom row)
@@ -62,6 +66,7 @@ function make(api) {
         const x = 6 + i * 51; c.fillStyle = P[1]; c.fillRect(x, 118, 46, 36); icon(c, x + 23, 132, i, 1, P[3]);
         c.fillStyle = P[3]; c.textAlign = 'center'; c.fillText(NAMES[i], x + 23, 151);
       }
+      feel.end(c, W, H);
     },
     down(x, y) { if (y > 114) play(Math.max(0, Math.min(2, Math.floor((x - 4) / 51)))); },
     key(k, d) { if (!d) return; const m = { r: 0, p: 1, s: 2, 1: 0, 2: 1, 3: 2 }[k]; if (m != null) play(m); if (k === ' ') play(beats(style.pick(me, op, res))); },

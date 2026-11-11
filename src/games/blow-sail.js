@@ -2,7 +2,7 @@
 // the storm, dragging to steer round rocks and through buoy gates. No mic? Hold a finger down to
 // blow, and slide it to steer.
 import gs from '../gamescroll.js';
-const { Feel } = gs.effects;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 const { startMic, stopMic, haptic } = gs.device;
 const { sfx, bed } = gs.sound;
 const { clamp, rnd } = gs.util;
@@ -12,6 +12,7 @@ let W = 360, H = 640;
 
 function make(api) {
   const feel = new Feel();
+  const ready = new Ready({ eat: false, text: 'Tap to set sail' });     // the storm waits for the first touch
   let mic, asked, boat, cam, rocks, gates, nextY, storm, score, dist, lives, t, wind, steerX, holding, hurt, puffs, waves, windBed;
 
   function spawn() {
@@ -29,11 +30,11 @@ function make(api) {
       boat = { x: W / 2, y: 0, vx: 0, speed: 0, heading: 0 }; cam = -H * .7;
       rocks = []; gates = []; nextY = -260; storm = 260; score = 0; dist = 0; lives = 3; t = 0; wind = 0; steerX = null; holding = false; hurt = 0; puffs = []; windBed = null;
       waves = Array.from({ length: 40 }, () => ({ x: Math.random() * W, y: Math.random() * H, l: 8 + Math.random() * 14 }));
-      spawn(); feel.clear();
+      spawn(); feel.clear(); ready.reset();
     },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      feel.update(dt); if (feel.frozen) return;
+      feel.update(dt); if (!ready.update(dt) || feel.frozen) return;
       t += dt;
       if (!asked) { asked = true; startMic().then(m => { mic = m; }); windBed = bed({ vol: .0, from: 600, filter: 'lowpass' }); }
       // wind from the breath (or a held finger)
@@ -43,7 +44,7 @@ function make(api) {
       if (breath > .2 && Math.random() < dt * 30) puffs.push({ x: boat.x + rnd(-40, 40), y: boat.y + 70, l: .6 });
       // sailing: wind pushes, water drags
       boat.speed += (wind * 260 - boat.speed * .9) * dt;
-      if (hurt > 0) { hurt -= dt; boat.speed *= .97; }
+      if (hurt > 0) { hurt -= dt; boat.speed *= Math.pow(.97, dt * 60); }
       if (steerX != null) boat.vx = approach(boat.vx, clamp((steerX - boat.x) * 4, -220, 220), 8, dt);
       else boat.vx = approach(boat.vx, 0, 3, dt);
       boat.x = clamp(boat.x + boat.vx * dt, 16, W - 16);
@@ -107,11 +108,12 @@ function make(api) {
       c.fillStyle = '#ffffff30'; c.fillRect(W - 110, H - 34, 90, 10); c.fillStyle = '#9ff0ff'; c.fillRect(W - 110, H - 34, 90 * wind, 10);
       c.fillStyle = '#ffffffcc'; c.font = '600 12px Rubik, sans-serif'; c.textAlign = 'right'; c.fillText('WIND', W - 116, H - 25);
       if (t < 5) { c.textAlign = 'center'; c.font = '700 17px Rubik, sans-serif'; c.fillStyle = '#fff'; c.fillText(mic ? 'Blow on the mic to sail!' : 'Hold to blow · slide to steer', W / 2, H * .3); c.font = '500 13px Rubik, sans-serif'; c.fillText(mic ? 'Drag to steer · or hold to blow' : 'The storm is behind you', W / 2, H * .3 + 22); }
+      ready.draw(c, W, H);
     },
-    down(x) { steerX = x; holding = true; if (!mic) sfx(400, .05, 'sine', .02); },
+    down(x) { ready.go(); steerX = x; holding = true; if (!mic) sfx(400, .05, 'sine', .02); },
     move(x, y, p) { if (p) steerX = x; },
     up() { steerX = null; holding = false; },
-    key(k, d) { if (k === ' ') holding = d; if (k === 'ArrowLeft') steerX = d ? 0 : null; if (k === 'ArrowRight') steerX = d ? W : null; },
+    key(k, d) { if (d) ready.go(); if (k === ' ') holding = d; if (k === 'ArrowLeft') steerX = d ? 0 : null; if (k === 'ArrowRight') steerX = d ? W : null; },
   };
 }
 

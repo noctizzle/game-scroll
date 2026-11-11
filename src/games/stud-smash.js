@@ -95,7 +95,7 @@ function make(api) {
       for (const o of things) { o.wob = Math.max(0, o.wob - dt); const cx = clamp(pl.x, o.x, o.x + o.w), cy = clamp(pl.y, o.y, o.y + o.h), dx = pl.x - cx, dy = pl.y - cy, d = Math.hypot(dx, dy); if (d < 5) { if (d > 0) { pl.x = cx + dx / d * 5; pl.y = cy + dy / d * 5; } else pl.y = o.y + o.h + 5; } }
       pl.x = clamp(pl.x, 5, W - 5); pl.y = clamp(pl.y, top + 5, H - 5);
       for (const s of studs) {
-        s.age += dt; s.x += s.vx * dt; s.y += s.vy * dt; s.vx *= .9; s.vy *= .9; s.x = clamp(s.x, 4, W - 4); s.y = clamp(s.y, top + 4, H - 4);
+        s.age += dt; s.x += s.vx * dt; s.y += s.vy * dt; { const k = Math.pow(.9, dt * 60); s.vx *= k; s.vy *= k; } s.x = clamp(s.x, 4, W - 4); s.y = clamp(s.y, top + 4, H - 4);
         const dx = pl.x - s.x, dy = pl.y - s.y, d = Math.hypot(dx, dy);
         if (s.age > .35 && d < 30) { s.x += dx / d * 140 * dt; s.y += dy / d * 140 * dt; }
         if (s.age > .35 && d < 6) { s.got = true; const v = s.kind === 'gold' ? 10 : 1; bank += v; total += v; api.score(total); sfx(s.kind === 'gold' ? 1500 : 1200 + Math.random() * 200, .03, 'square', .02, 200); }

@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { rnd } = gs.util;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 
 // A one-minute daily workout for your brain: four quick drills, fifteen seconds each. Quick sums,
 // count the dots, remember the lit squares, pick the bigger side, and tap 1 to 9 in order. Every
@@ -10,7 +11,9 @@ const DRILLS = ['SUMS', 'DOTS', 'MEMORY', 'BIGGER', 'ORDER'];
 let W = 176, H = 192;
 
 function make(api) {
-  let plan, di, phase, pt, q, score, per, t, fx, done, results;
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready();                                            // the first drill waits for a tap
+  let plan, di, phase, pt, q, score, per, t, fx, done, results, tx = 0, ty = 0;
   function newQ() {
     const d = plan[di], lvl = per[di] || 0;
     if (d === 'SUMS') { const op = lvl > 4 && Math.random() < .5 ? '-' : lvl > 8 && Math.random() < .3 ? 'x' : '+', a = op === 'x' ? 2 + (Math.random() * 8 | 0) : 2 + (Math.random() * (9 + lvl * 2) | 0), b = op === 'x' ? 2 + (Math.random() * 8 | 0) : 1 + (Math.random() * (8 + lvl) | 0), A = op === '-' ? Math.max(a, b) : a, B = op === '-' ? Math.min(a, b) : b, ans = op === '+' ? A + B : op === '-' ? A - B : A * B; const opts = new Set([ans]); while (opts.size < 4) opts.add(Math.max(0, ans + (Math.random() * 7 | 0) - 3)); q = { text: `${A} ${op === 'x' ? '×' : op} ${B}`, ans, opts: [...opts].sort(() => Math.random() - .5) }; }
@@ -21,13 +24,15 @@ function make(api) {
     q.t = 0;
   }
   const area = () => ({ x: 8, y: 40, w: W - 16, h: H - 48 });
-  function right(x, y) { score++; per[di] = (per[di] || 0) + 1; api.score(score); fx = { ok: true, l: .25 }; haptic('light'); sfx(880 + (per[di] % 5) * 60, .06, 'square', .04, 200); }
-  function wrong() { pt += 1; fx = { ok: false, l: .3 }; haptic('error'); sfx(160, .12, 'sawtooth', .04, -40); }
+  function right(x, y) { score++; per[di] = (per[di] || 0) + 1; api.score(score); fx = { ok: true, l: .25 }; haptic('light'); sfx(880 + (per[di] % 5) * 60, .06, 'square', .04, 200); feel.juice.burst(tx, ty, { n: 8, speed: 70, life: .35, size: 2, color: ['#48a868', '#f0b030'] }); }
+  function wrong() { pt += 1; fx = { ok: false, l: .3 }; haptic('error'); sfx(160, .12, 'sawtooth', .04, -40); feel.juice.shake(3); }
   function optRects(n) { const a = area(), bw = (a.w - 6) / 2, bh = 30, y0 = a.y + a.h - bh * 2 - 6; return Array.from({ length: n }, (_, i) => ({ x: a.x + (i % 2) * (bw + 6), y: y0 + (i >> 1) * (bh + 6), w: bw, h: bh })); }
   const self = {
-    reset() { plan = [...DRILLS].sort(() => Math.random() - .5).slice(0, 4); di = 0; phase = 'intro'; pt = 0; score = 0; per = []; t = 0; fx = null; done = 0; results = []; newQ(); },
+    reset() { plan = [...DRILLS].sort(() => Math.random() - .5).slice(0, 4); di = 0; phase = 'intro'; pt = 0; score = 0; per = []; t = 0; fx = null; done = 0; results = []; feel.clear(); ready.reset(); newQ(); },
+    fx(dt) { feel.update(dt); },
     resize(w, h) { W = w; H = h; },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; if (fx) { fx.l -= dt; if (fx.l <= 0) fx = null; }
       if (phase === 'end') { done += dt; if (done > 2.6) api.over(); return; }
       pt += phase === 'play' ? dt : 0; if (q) q.t += dt;
@@ -35,6 +40,11 @@ function make(api) {
       if (pt >= 15) { results.push(per[di] || 0); di++; if (di >= plan.length) { phase = 'end'; sfx(660, .5, 'square', .05, 300); haptic('success'); return; } phase = 'intro'; newQ(); q.t = 0; }
     },
     draw(c) {
+      c.fillStyle = '#f4f0e8'; c.fillRect(0, 0, W, H);
+      feel.begin(c); self.scene(c); feel.end(c, W, H);
+      ready.draw(c, W, H, { pixel: true, color: '#2c3848', y: Math.round(H * .7), text: 'TAP TO START' });
+    },
+    scene(c) {
       c.fillStyle = '#f4f0e8'; c.fillRect(0, 0, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
       c.fillStyle = '#2c3848'; c.fillRect(0, 0, W, 14); c.fillStyle = '#f4f0e8'; c.textAlign = 'left'; c.fillText(`DRILL ${Math.min(di + 1, 4)}/4`, 4, 10); c.textAlign = 'right'; c.fillText(String(score), W - 4, 10);
@@ -63,13 +73,14 @@ function make(api) {
       if (fx) { c.strokeStyle = fx.ok ? '#48a868' : '#e04848'; c.lineWidth = 3; c.strokeRect(2, 20, W - 4, H - 22); c.lineWidth = 1; }
     },
     down(x, y) {
+      if (ready.go()) return; tx = x; ty = y;
       if (phase !== 'play') return; const d = plan[di], a = area();
       if (d === 'SUMS' || d === 'DOTS') { if (d === 'DOTS' && q.t < q.show) return; const i = optRects(4).findIndex(r => x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h); if (i < 0) return; if (q.opts[i] === q.ans) { right(); newQ(); } else { wrong(); newQ(); } }
       else if (d === 'MEMORY') { if (q.t < q.show) return; const s = Math.min(a.w, a.h) / 4 - 4, gx = (W - (s + 4) * 4) / 2, gy = a.y + (a.h - (s + 4) * 4) / 2, cx = Math.floor((x - gx) / (s + 4)), cy = Math.floor((y - gy) / (s + 4)); if (cx < 0 || cx > 3 || cy < 0 || cy > 3) return; const i = cy * 4 + cx; if (q.got.includes(i)) return; if (q.cells.includes(i)) { q.got.push(i); sfx(700, .04, 'square', .03); if (q.got.length === q.cells.length) { right(); newQ(); } } else { wrong(); newQ(); } }
       else if (d === 'BIGGER') { const bw = (a.w - 8) / 2, side = x < a.x + bw + 4 ? 0 : 1; if ((side === 0) === (q.L.v > q.R.v)) right(); else wrong(); newQ(); }
       else { const p = q.nums.find(p => Math.hypot(a.x + p.x * a.w - x, a.y + p.y * a.h - y) < 14); if (!p) return; if (p.n === q.next) { q.next++; sfx(500 + p.n * 60, .04, 'square', .03); haptic('tick'); if (q.next > 9) { right(); newQ(); } } else if (p.n > q.next) { wrong(); } }
     },
-    move() {}, up() {}, key() {},
+    move() {}, up() {}, key(k, d) { if (d) ready.go(); },
   };
   return self;
 }

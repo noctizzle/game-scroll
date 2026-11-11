@@ -3,16 +3,22 @@ const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { rnd } = gs.util;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
 
 // Climb a shaft by leaping between two walls. Tap to jump across. Spikes grow out of the walls
 // and birds fly across the gap. Tapping mid-air does nothing, so time each leap.
 const P = PAL.mono, W = 160, H = 160, LW = 22, RW = 138, NY = 112, JUMP = .32;
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready({ eat: false });                             // the climb starts with the first leap
   let side, air, things, dist, speed, t, gap, score, trail;
   return {
-    reset() { side = 0; air = 0; things = []; dist = 0; speed = 38; t = 0; gap = 40; score = 0; trail = []; },
+    reset() { side = 0; air = 0; things = []; dist = 0; speed = 38; t = 0; gap = 40; score = 0; trail = []; feel.clear(); ready.reset(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; speed = Math.min(95, 38 + dist / 60); const dy = speed * dt; dist += dy;
       const s = Math.floor(dist / 10); if (s !== score) { score = s; api.score(score); }
       gap -= dy;
@@ -28,12 +34,13 @@ function make(api) {
       const nx = air > 0 ? (side ? RW - (RW - LW) * (air / JUMP) : LW + (RW - LW) * (air / JUMP)) : (side ? RW : LW);
       trail.push([nx, NY]); if (trail.length > 6) trail.shift(); for (const p of trail) p[1] += dy;
       for (const o of things) {
-        if (o.k === 'spike' && air === 0 && o.side === side && NY > o.y - 4 && NY - 10 < o.y + o.len) return die();
-        if (o.k === 'bird' && Math.abs(o.x - nx) < 7 && Math.abs(o.y - (NY - 5)) < 7) return die();
+        if (o.k === 'spike' && air === 0 && o.side === side && NY > o.y - 4 && NY - 10 < o.y + o.len) return die(nx);
+        if (o.k === 'bird' && Math.abs(o.x - nx) < 7 && Math.abs(o.y - (NY - 5)) < 7) return die(nx);
       }
     },
     draw(c) {
       c.fillStyle = P[3]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = P[1]; c.fillRect(0, 0, LW - 4, H); c.fillRect(RW + 4, 0, W - RW - 4, H);
       c.fillStyle = P[2]; for (let y = -16; y < H; y += 16) { const yy = Math.round((y + dist) % 16 + y - y % 16); c.fillRect(0, yy, LW - 4, 1); c.fillRect(RW + 4, yy, W - RW, 1); }
       for (const o of things) {
@@ -46,12 +53,13 @@ function make(api) {
       c.fillStyle = P[0]; const x = Math.round(nx);
       c.fillRect(x - 3, NY - 10, 7, 10); c.fillStyle = P[3]; c.fillRect(x - 2, NY - 8, 5, 1); c.fillStyle = P[0];
       c.fillRect(x + (side ? 4 : -6), NY - 9, 2, 1);   // headband tail
+      feel.end(c, W, H);
       if (t < 3) { c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillStyle = P[1]; c.fillText('TAP TO LEAP', 80, 150); }
     },
-    down() { if (air > 0) return; side = 1 - side; air = JUMP; haptic('tick'); sfx(520, .05, 'square', .03, 300); },
-    key(k, d) { if (d && (k === ' ' || k === 'ArrowLeft' || k === 'ArrowRight') && air === 0) { side = 1 - side; air = JUMP; } },
+    down() { ready.go(); if (air > 0) return; side = 1 - side; air = JUMP; haptic('tick'); sfx(520, .05, 'square', .03, 300); },
+    key(k, d) { if (d && (k === ' ' || k === 'ArrowLeft' || k === 'ArrowRight')) this.down(); },
   };
-  function die() { haptic('error'); sfx(140, .3, 'square', .05, -60); api.over(); }
+  function die(x) { haptic('error'); sfx(140, .3, 'square', .05, -60); feel.juice.shake(5).burst(x, NY - 5, { n: 10, speed: 55, life: .45, size: 2, color: [P[0], P[1]] }); api.over(); }
 }
 
 export default {

@@ -2,7 +2,7 @@
 // parcel left or right to hop it onto the next belt so it lands in the bin with its shape. The bins
 // swap their labels now and then. Three wrong drops and the shift is over.
 import gs from '../gamescroll.js';
-const { Feel } = gs.effects;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 const { PAL } = gs.palettes;
 const { text } = gs.pixel;
 const { haptic } = gs.device;
@@ -14,6 +14,7 @@ const SHAPES = ['ROUND', 'BOX', 'TRI'];
 
 function make(api) {
   const feel = new Feel({ pixel: true });
+  const ready = new Ready({ eat: false });                              // the belts start with the first touch
   let items, bins, strikes, score, t, spawn, speed, swapT, grabbed, combo, flashBin;
   const laneX = l => Math.round(W * (l + .5) / 3), binY = () => H - 22;
 
@@ -25,10 +26,10 @@ function make(api) {
   }
 
   return {
-    reset() { items = []; bins = [0, 1, 2]; strikes = 0; score = 0; t = 0; spawn = .5; speed = 22; swapT = 20; grabbed = null; combo = 0; flashBin = [0, 0, 0]; feel.clear(); },
+    reset() { items = []; bins = [0, 1, 2]; strikes = 0; score = 0; t = 0; spawn = .5; speed = 22; swapT = 20; grabbed = null; combo = 0; flashBin = [0, 0, 0]; feel.clear(); ready.reset(); },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      feel.update(dt); if (feel.frozen) return;
+      feel.update(dt); if (!ready.update(dt) || feel.frozen) return;
       t += dt; spawn -= dt; swapT -= dt;
       speed = 22 + t * .45;
       if (spawn <= 0) { spawn = Math.max(.55, 1.6 - t / 50); items.push({ lane: Math.random() * 3 | 0, x: 0, y: -8, s: Math.random() * 3 | 0 }); items[items.length - 1].x = laneX(items[items.length - 1].lane); }
@@ -69,8 +70,10 @@ function make(api) {
       for (let i = 0; i < 3; i++) text(c, i < strikes ? 'X' : '-', 4 + i * 6, 4, { color: R[0] });
       if (combo >= 4) text(c, `${combo} IN A ROW`, W - 4, 4, { color: R[0], align: 'right' });
       if (t < 4) text(c, 'SWIPE PARCELS TO THE RIGHT BIN', W / 2, Math.max(20, Math.ceil(api.scoreArea().bottom) + 2), { align: 'center', color: R[0], outline: R[3] });
+      ready.draw(c, W, H, { text: 'TAP TO START', pixel: true, color: R[0], shadow: R[3], y: Math.round(H * .5) });
     },
     down(x, y) {
+      ready.go();
       // grab the parcel nearest the touch on that belt (forgiving)
       let best = null, bd = 30; for (const it of items) { const d = Math.hypot(it.x - x, (it.y - y) * .7); if (d < bd) { bd = d; best = it; } }
       grabbed = best ? { it: best, x } : null;

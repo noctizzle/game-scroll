@@ -1,6 +1,7 @@
 import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
+const { Feel } = gs.effects;
 
 // Tap two matching tiles to clear them, but only if a path with at most two turns joins them through empty space.
 const W = 360, H = 640, C = 6, Rn = 8, CS = 52, OX = (W - C * CS) / 2, OY = 130;
@@ -8,6 +9,7 @@ const ICONS = ['★', '♥', '♦', '♣', '♠', '●', '▲', '■', '☀', '�
 const HUES = [45, 350, 200, 130, 260, 20, 170, 300, 60, 220, 100, 330];
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
   let g, sel, time, score, t, line, dead, board;
   const at = (x, y) => (x < 0 || y < 0 || x >= C || y >= Rn) ? -1 : g[y * C + x];
   function deal() {
@@ -30,16 +32,18 @@ function make(api) {
   }
   function anyMove() { for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) if (g[i] !== null && g[i] === g[j] && path({ x: i % C, y: i / C | 0 }, { x: j % C, y: j / C | 0 })) return true; return false; }
   return {
-    reset() { time = 60; score = 0; t = 0; dead = 0; line = null; board = 0; deal(); },
-    update(dt) { t += dt; if (line) { line.l -= dt; if (line.l <= 0) line = null; } time -= dt; if (time <= 0) { haptic('warning'); return api.over(); } },
-    fx(dt) { dead += dt; },
+    reset() { time = 60; score = 0; t = 0; dead = 0; line = null; board = 0; feel.clear(); deal(); },
+    update(dt) { feel.update(dt); t += dt; if (line) { line.l -= dt; if (line.l <= 0) line = null; } time -= dt; if (time <= 0) { haptic('warning'); return api.over(); } },
+    fx(dt) { dead += dt; feel.update(dt); },
     draw(c) {
       c.fillStyle = '#1f2a1f'; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       for (let i = 0; i < g.length; i++) { if (g[i] === null) continue; const x = OX + (i % C) * CS, y = OY + (i / C | 0) * CS, s = sel === i;
         c.fillStyle = s ? '#ffe9a8' : '#f3ead6'; c.beginPath(); c.roundRect(x + 3, y + 3, CS - 6, CS - 6, 8); c.fill(); c.fillStyle = '#c9bb98'; c.fillRect(x + 6, y + CS - 8, CS - 12, 3);
         c.fillStyle = `hsl(${HUES[g[i]]} 65% 42%)`; c.font = '28px Rubik, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(ICONS[g[i]], x + CS / 2, y + CS / 2); }
       c.textBaseline = 'alphabetic';
       if (line) { c.strokeStyle = `rgba(255,211,74,${line.l * 3})`; c.lineWidth = 4; c.beginPath(); line.pts.forEach(([x, y], i) => { const px = OX + x * CS + CS / 2, py = OY + y * CS + CS / 2; i ? c.lineTo(px, py) : c.moveTo(px, py); }); c.stroke(); }
+      feel.end(c, W, H);
       c.fillStyle = time < 8 ? '#ff6b6b' : '#ffffffcc'; c.font = '400 14px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(`${Math.ceil(time)}s`, W / 2, 100);
     },
     down(x, y) {
@@ -49,8 +53,9 @@ function make(api) {
       if (g[sel] !== g[i]) { sel = i; haptic('tick'); sfx(250, .04, 'square', .02); return; }
       const p = path({ x: sel % C, y: sel / C | 0 }, { x: cx, y: cy });
       if (!p) { haptic('warning'); sfx(160, .1, 'square', .03); sel = i; return; }
+      for (const k of [sel, i]) feel.juice.burst(OX + (k % C + .5) * CS, OY + ((k / C | 0) + .5) * CS, { n: 9, speed: 150, life: .4, size: 3.5, color: [`hsl(${HUES[g[k]]} 65% 55%)`, '#f3ead6'] });
       line = { pts: p, l: .35 }; g[sel] = g[i] = null; sel = null; score++; api.score(score); haptic('light'); sfx(700, .08, 'triangle', .04, 200);
-      if (g.every(v => v === null)) { board++; time += 25; haptic('success'); deal(); }
+      if (g.every(v => v === null)) { board++; time += 25; feel.win(W / 2, 300); feel.juice.pop(W / 2, 130, '+25s', { color: '#7dff9a', size: 22 }); haptic('success'); deal(); }
       else if (!anyMove()) { const left = g.filter(v => v !== null); for (let k = left.length - 1; k > 0; k--) { const j = Math.random() * (k + 1) | 0; [left[k], left[j]] = [left[j], left[k]]; } let n = 0; g = g.map(v => v === null ? null : left[n++]); }
     },
   };

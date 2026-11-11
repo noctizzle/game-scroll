@@ -1,6 +1,7 @@
 import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
+const { Ready } = gs.rounds;
 const { clamp, rnd } = gs.util;
 const { backdrop, glow } = gs.gfx;
 const { brick, stud, brick3d, stud3d } = gs.bricks;
@@ -16,6 +17,7 @@ let W = 192, H = 144;
 
 function make(api) {
   let who, p, obs, studsL, cam, genX, dist, studs, hp, t, parts, msg, dead, inv, sw, tagT;
+  const ready = new Ready({ eat: false });                              // the run starts with the first tap
   const gy = () => H - 18;
   const HERO = { big: { jump: 210, jumps: 1, h: 20, w: 12 }, small: { jump: 230, jumps: 2, h: 11, w: 8 } };
   let v3;
@@ -59,9 +61,10 @@ function make(api) {
   function burst(x, y, col, n = 10) { for (let i = 0; i < n; i++) parts.push({ x, y, vx: rnd(-60, 60), vy: rnd(-90, 0), l: .5, col }); }
   const score = () => Math.floor(dist / 10) + studs;
   const self = {
-    reset() { who = 'big'; p = { x: 30, y: gy(), vy: 0, ground: true, jumps: 0 }; obs = []; studsL = []; cam = 0; genX = 0; dist = 0; studs = 0; hp = 3; t = 0; parts = []; msg = { txt: 'SWIPE DOWN TO TAG', l: 2.2 }; dead = 0; inv = 0; sw = null; tagT = 0; gen(W + 200); },
+    reset() { who = 'big'; p = { x: 30, y: gy(), vy: 0, ground: true, jumps: 0 }; obs = []; studsL = []; cam = 0; genX = 0; dist = 0; studs = 0; hp = 3; t = 0; parts = []; msg = { txt: 'SWIPE DOWN TO TAG', l: 2.2 }; dead = 0; inv = 0; sw = null; tagT = 0; gen(W + 200); ready.reset(); },
     resize(w, h) { const dy = h - H; W = w; H = h; if (p && dy) { p.y += dy; for (const s of studsL) s.y += dy; } },
     update(dt) {
+      if (!ready.update(dt)) return;
       t += dt; tagT = Math.max(0, tagT - dt); for (const q of parts) { q.l -= dt; if (q.vx != null) { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 300 * dt; } else q.y -= 14 * dt; } parts = parts.filter(q => q.l > 0);
       if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
       if (dead) { dead += dt; p.vy += G * dt; p.y += p.vy * dt; if (dead > 1.4) api.over(); return; }
@@ -115,8 +118,9 @@ function make(api) {
       c.fillStyle = who === 'big' ? '#f86048' : '#60d070'; c.fillText(who === 'big' ? 'BRUISER' : 'SPARK', 32, 9);
       c.textAlign = 'right'; c.fillStyle = '#f8f8f0'; c.fillText(String(score()), W - 4, 9);
       if (msg) { c.textAlign = 'center'; c.fillStyle = '#000a'; c.fillRect(0, H * .4 - 9, W, 13); c.fillStyle = '#f0c020'; c.fillText(msg.txt, W / 2, H * .4); }
+      ready.draw(c, W, H, { text: 'TAP TO RUN', pixel: true, color: '#f8f8f0', shadow: '#101018', y: Math.round(H * .62) });
     },
-    down(x, y) { sw = { x, y, used: false }; },
+    down(x, y) { ready.go(); sw = { x, y, used: false }; },
     move(x, y, pr) { if (!pr || !sw || sw.used) return; if (y - sw.y > 18 && Math.abs(y - sw.y) > Math.abs(x - sw.x)) { sw.used = true; self.tag(); } else if (sw.y - y > 18) { sw.used = true; self.jump(); } },
     up() { if (sw && !sw.used) self.jump(); sw = null; },
     jump() { if (dead) return; const Hh = HERO[who]; if (p.ground || p.jumps < Hh.jumps) { if (!p.ground && p.jumps === 0) p.jumps = 1; p.vy = -Hh.jump * (p.jumps ? .85 : 1); p.jumps++; p.ground = false; sfx(who === 'big' ? 300 : 600, .07, 'square', .04, 300); haptic('light'); } },
@@ -125,7 +129,7 @@ function make(api) {
       if (n === 'big' && obs.some(o => o.k === 'vent' && p.x > o.x - 4 && p.x < o.x + o.w + 4)) return; // no room to grow in a vent
       who = n; tagT = .3; haptic('medium'); sfx(n === 'big' ? 220 : 880, .1, 'square', .05, n === 'big' ? -60 : 300);
     },
-    key(k, d) { if (!d) return; if (k === ' ' || k === 'ArrowUp') self.jump(); if (k === 'ArrowDown' || k === 'Tab' || k === 'x') self.tag(); },
+    key(k, d) { if (!d) return; ready.go(); if (k === ' ' || k === 'ArrowUp') self.jump(); if (k === 'ArrowDown' || k === 'Tab' || k === 'x') self.tag(); },
   };
   return self;
 }

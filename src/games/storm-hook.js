@@ -3,6 +3,7 @@ const { Timers } = gs.math;
 const { sounds, noise, tone } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Ready } = gs.rounds;
 const { HDView, Particles, pbr, rbox, surface, speckle, sun, THREE } = gs.hd;
 const { Group, Mesh, InstancedMesh, Object3D, Vector3, CylinderGeometry, SphereGeometry, CapsuleGeometry, BoxGeometry, PlaneGeometry, OctahedronGeometry, ConeGeometry, Color } = THREE;
 
@@ -48,6 +49,8 @@ function make(api) {
   const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   let v, hero, rope, ropeMesh, anchors, towers, gems, gemMesh, sunL, rain, spark, built, mx = new Object3D();
   let press = false, p, vel, hook, steer, holding, fingers, keys, t, dist, bonus, msg, flashT, nextBolt, best, farZ, gemN, swingT;
+  const ready = new Ready({ eat: false, text: 'Hold to hook on' });     // the hero hangs in the air until the first touch
+  let fdt = 1 / 60;
   const tmp = new Vector3(), tmp2 = new Vector3(), camPos = new Vector3();
 
   function setup() {
@@ -110,9 +113,9 @@ function make(api) {
     for (let i = 0; i < 40; i++) { const nx = x + rnd(-4, 4); spark.emit({ x: nx, y, z, life: .25, size: .9, col: [3, 3.5, 6] }); y -= 2; }
   }
   function update(dt) { timers.update(dt);
+    fdt = dt; if (!ready.update(dt)) return fx(dt);
     t += dt; flashT = Math.max(0, flashT - dt); nextBolt -= dt; if (nextBolt <= 0) bolt();
     if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
-    if (t < 1.5) return fx(dt);
     const k = keys; let s = steer;
     if (k.has('ArrowLeft') || k.has('a')) s = -1; else if (k.has('ArrowRight') || k.has('d')) s = 1;
     const want = holding || k.has(' ');
@@ -166,9 +169,9 @@ function make(api) {
     gemMesh.instanceMatrix.needsUpdate = true;
     // camera behind, a bit above and to the side
     tmp.set(p.x * .6 + 2, p.y + 4, p.z - 12);
-    if (!camPos.lengthSq() || camPos.distanceTo(tmp) > 30) camPos.copy(tmp); camPos.lerp(tmp, .1);
+    if (!camPos.lengthSq() || camPos.distanceTo(tmp) > 30) camPos.copy(tmp); camPos.lerp(tmp, 1 - Math.pow(.9, fdt * 60));
     v.cam.position.copy(camPos); v.cam.lookAt(p.x * .8, p.y + 1, p.z + 10);
-    const fov = 66 + clamp((sp - 15) * .5, 0, 14); if (Math.abs(v.cam.fov - fov) > .2) { v.cam.fov += (fov - v.cam.fov) * .1; v.cam.updateProjectionMatrix(); }
+    const fov = 66 + clamp((sp - 15) * .5, 0, 14); if (Math.abs(v.cam.fov - fov) > .2) { v.cam.fov += (fov - v.cam.fov) * (1 - Math.pow(.9, fdt * 60)); v.cam.updateProjectionMatrix(); }
     sunL.follow(p.x, 0, p.z + 10);
     v.placeLamps(anchors.map(a => ({ x: a.p.x, y: a.p.y + 1, z: a.p.z, col: '#ffcc66', i: 45 })), p.x, p.y, p.z, t);
     v.exposure = 1 + flashT * 6; v.hemi.intensity = .55 + flashT * 6;
@@ -185,8 +188,9 @@ function make(api) {
     // where the next anchor is, when it's off to the side
     if (nxt) { const [sx, sy, sz] = v.toScreen(nxt.p.x, nxt.p.y, nxt.p.z); if (sz < 1 && sx > 0 && sx < W && sy > 0 && sy < H) { c.strokeStyle = '#4ad8ff'; c.lineWidth = 2 * u; c.beginPath(); c.arc(sx, sy, 12 * u + Math.sin(t * 8) * 2 * u, 0, 7); c.stroke(); } }
     if (msg) { c.textAlign = 'center'; c.globalAlpha = clamp(msg.l * 2, 0, 1); c.fillStyle = msg.col; c.font = `800 ${16 * u}px Rubik, sans-serif`; c.fillText(msg.txt, W / 2, H * .3); c.globalAlpha = 1; }
-    if (t < 4) { c.textAlign = 'center'; c.fillStyle = '#ffffffd8'; c.font = `600 ${8.5 * u}px Rubik, sans-serif`; c.fillText('Hold to hook the glowing anchor · let go to fly · slide to steer', W / 2, H * .6); }
+    if (ready.playing && t < 4) { c.textAlign = 'center'; c.fillStyle = '#ffffffd8'; c.font = `600 ${8.5 * u}px Rubik, sans-serif`; c.fillText('Hold to hook the glowing anchor · let go to fly · slide to steer', W / 2, H * .6); }
     c.restore();
+    ready.draw(c, W, H, { size: 13 * u, y: H * .8 });
   }
   const self = {
     reset() { timers.clear();
@@ -195,13 +199,14 @@ function make(api) {
       t = 0; dist = 0; bonus = 0; msg = null; flashT = 0; nextBolt = 2.5; farZ = 0; gemN = 0; gems = []; tI = 0; aI = 0; swingT = 0;
       for (let i = 0; i < 120; i++) { mx.scale.setScalar(0); mx.updateMatrix(); towers.setMatrixAt(i, mx.matrix); }
       spawnAnchor(8); while (farZ < 140) spawnAnchor(farZ + rnd(16, 23));
-      camPos.set(0, 0, 0); rain.clear(); spark.clear(); v.warmed = false;
+      camPos.set(0, 0, 0); rain.clear(); spark.clear(); v.warmed = false; ready.reset();
     },
     resize(w, h) { W = w; H = h; },
     update, draw,
     fx(dt) { if (v) { rain.update(dt); spark.update(dt); } },
     // a finger on the left half steers (when another finger holds the hook); otherwise any finger holds the hook and steers by sliding
     down(x, y, id = 0) {
+      ready.go();
       const f = { id, ax: x, x };
       if (!fingers.hook && (x >= W / 2 || fingers.steer)) { fingers.hook = f; holding = true; press = true; }
       else if (!fingers.steer) { fingers.steer = f; if (!fingers.hook) { fingers.hook = f; holding = true; press = true; } }
@@ -211,7 +216,7 @@ function make(api) {
       if (fingers.hook?.id === id) { fingers.hook = null; holding = false; if (fingers.steer?.id === id) fingers.steer = null; steer = fingers.steer ? steer : 0; }
       else if (fingers.steer?.id === id) { fingers.steer = null; steer = 0; }
     },
-    key(k, d) { if (d && k === ' ' && !keys.has(' ')) press = true; if (d) keys.add(k); else keys.delete(k); },
+    key(k, d) { if (d) ready.go(); if (d && k === ' ' && !keys.has(' ')) press = true; if (d) keys.add(k); else keys.delete(k); },
   };
   return self;
 }

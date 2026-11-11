@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 
 // A gauntlet of four-second micro games, back to back. Each one flashes a single word telling
 // you what to do: tap, catch, dodge, pop, stop, rub, plug, flick or wait. Win to keep going;
@@ -40,7 +41,7 @@ const MICROS = [
   { verb: 'FLICK UP!', init(s) { s.ball = { x: W / 2, y: H - 20, vy: 0, vx: 0, fly: false }; s.bin = { x: rnd(30, W - 30) }; s.st = null; },
     update(s, dt) { const b = s.ball; if (b.fly && !s.win) { b.x += b.vx * dt; b.y += b.vy * dt; b.vy += 300 * dt; if (b.vy > 0 && b.y > 36 && b.y < 46 && Math.abs(b.x - s.bin.x) < 14) s.win = true; if (b.y > H + 10) s.lose = true; } },
     draw(s, c) { c.fillStyle = '#707880'; c.fillRect(s.bin.x - 13, 40, 26, 18); c.fillStyle = '#909aa0'; c.fillRect(s.bin.x - 14, 38, 28, 3); if (!s.win) { c.fillStyle = '#f8f8f0'; c.beginPath(); c.arc(s.ball.x, s.ball.y, 5, 0, 7); c.fill(); } },
-    down(s, x, y) { s.st = { x, y, t: performance.now() }; }, up(s, x, y) { if (!s.st || s.ball.fly || x == null) return; const dx = x - s.st.x, dy = y - s.st.y; if (dy > -20) return; s.ball.fly = true; s.ball.vx = clamp(dx / -dy * 80, -160, 160); s.ball.vy = -300; } },
+    down(s, x, y) { s.st = { x, y }; }, up(s, x, y) { if (!s.st || s.ball.fly || x == null) return; const dx = x - s.st.x, dy = y - s.st.y; if (dy > -20) return; s.ball.fly = true; s.ball.vx = clamp(dx / -dy * 80, -160, 160); s.ball.vy = -300; } },
   { verb: 'DON\'T TOUCH!', survive: true, init(s) { s.btn = { x: W / 2, y: H * .6 }; },
     update() {},
     draw(s, c) { c.fillStyle = '#801818'; c.beginPath(); c.ellipse(s.btn.x, s.btn.y + 5, 26, 12, 0, 0, 7); c.fill(); c.fillStyle = (s.t * 6 | 0) % 2 ? '#f84040' : '#e02828'; c.beginPath(); c.ellipse(s.btn.x, s.btn.y, 26, 12, 0, 0, 7); c.fill(); c.fillStyle = '#f8f8f0'; c.textAlign = 'center'; c.font = '6px "Press Start 2P", monospace'; c.fillText('PRESS ME', s.btn.x, s.btn.y + 2); },
@@ -48,6 +49,8 @@ const MICROS = [
 ];
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready();                                            // the first micro game waits for a tap
   let cur, s, wins, lives, t, phase, pt, speed, order, last;
   function next() {
     if (!order.length) { order = MICROS.map((_, i) => i).sort(() => Math.random() - .5); if (order[0] === last) order.push(order.shift()); }
@@ -55,9 +58,11 @@ function make(api) {
   }
   const dur = () => Math.max(2.6, 4.2 - (speed - 1) * 1.6);
   const self = {
-    reset() { wins = 0; lives = 4; t = 0; speed = 1; order = []; last = -1; next(); phase = 'intro'; pt = -.6; },
+    reset() { wins = 0; lives = 4; t = 0; speed = 1; order = []; last = -1; feel.clear(); ready.reset(); next(); phase = 'intro'; pt = -.6; },
+    fx(dt) { feel.update(dt); },
     resize(w, h) { W = w; H = h; if (cur && phase !== 'play') { s = { t: 0, sp: speed, win: false, lose: false }; cur.init(s); } },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; pt += dt;
       if (phase === 'intro') { if (pt > .8) { phase = 'play'; pt = 0; sfx(660, .08, 'square', .04, 200); } return; }
       if (phase === 'play') {
@@ -66,8 +71,8 @@ function make(api) {
         if (done && !s.endT) s.endT = pt;
         if (s.endT != null && pt - s.endT > (out ? 0 : .45)) {
           const won = cur.survive ? !s.lose : s.win && !s.lose;
-          if (won) { wins++; api.score(wins); haptic('success'); sfx(880, .2, 'square', .05, 400); if (wins % 5 === 0) speed = Math.min(2, speed + .15); }
-          else { lives--; haptic('error'); sfx(150, .35, 'sawtooth', .05, -60); }
+          if (won) { wins++; api.score(wins); haptic('success'); sfx(880, .2, 'square', .05, 400); feel.juice.burst(W / 2, H / 2, { n: 20, speed: 110, life: .6, size: 2, color: ['#f8f8f0', '#f8e040'] }); if (wins % 5 === 0) speed = Math.min(2, speed + .15); }
+          else { lives--; haptic('error'); sfx(150, .35, 'sawtooth', .05, -60); feel.juice.shake(4); }
           phase = 'result'; pt = 0; s.won = won;
         }
         return;
@@ -76,6 +81,10 @@ function make(api) {
       if (phase === 'over' && pt > 1) api.over();
     },
     draw(c) {
+      feel.begin(c); self.scene(c); feel.end(c, W, H);
+      ready.draw(c, W, H, { pixel: true, color: '#f8f8f0', y: Math.round(H / 2 + 34), text: 'TAP TO START' });
+    },
+    scene(c) {
       const bg = ['#f8c838', '#48b8f8', '#f87898', '#68d868', '#b888f8'][wins % 5];
       c.fillStyle = phase === 'result' ? (s.won ? '#58c858' : '#e04848') : bg; c.fillRect(0, 0, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
@@ -95,7 +104,7 @@ function make(api) {
       c.fillStyle = '#f8a020'; c.fillRect(2 + (W - 4) * clamp(left, 0, 1) - 2, 2, 4, 8);
       c.fillStyle = '#202028'; c.textAlign = 'left'; c.fillText(cur.verb, 4, 22);
     },
-    down(x, y) { if (phase === 'play' && cur.down && !s.endT) cur.down(s, x, y); },
+    down(x, y) { if (ready.go()) return; if (phase === 'play' && cur.down && !s.endT) cur.down(s, x, y); },
     move(x, y, p) { if (phase === 'play' && cur.move && !s.endT) cur.move(s, x, y, p); },
     up(x, y) { if (phase === 'play' && cur.up && !s.endT) cur.up(s, x, y); },
     key(k, d) { if (d && k === ' ') self.down(W / 2, H / 2); else if (!d && k === ' ') self.up(W / 2, H / 4); },

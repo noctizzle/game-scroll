@@ -16,7 +16,7 @@ const DAY = 22, SEASON = 6, PS = 20;
 let W = 160, H = 176;
 
 function make(api) {
-  let plots, cols, rows, coins, earned, seasonEarn, target, season, day, clock, seed, unlocked, crows, fx, score, t, rain, msg;
+  let plots, cols, rows, coins, earned, seasonEarn, target, season, day, clock, seed, unlocked, crows, fx, score, t, rain, msg, started;
   const TOP = 20, BAR = 28;
   const ox = () => (W - cols * PS) / 2, oy = () => TOP + Math.max(0, (H - TOP - BAR - rows * PS) / 2);
   function layout() { const nc = clamp(Math.floor((W - 12) / PS), 5, 10), nr = clamp(Math.floor((H - TOP - BAR - 30) / PS), 4, 9); if (nc !== cols || nr !== rows || !plots) { const old = plots || []; cols = nc; rows = nr; plots = Array.from({ length: cols * rows }, (_, i) => old[i] || { crop: null }); } }
@@ -38,10 +38,12 @@ function make(api) {
     if (!p.crop.wet) { p.crop.wet = true; haptic('light'); sfx(500, .08, 'triangle', .03, -200); for (let k = 0; k < 4; k++) fx.push({ i, drop: true, dx: rnd(3, 17), dy: rnd(-4, 4), l: .4 }); }
   }
   const self = {
-    reset() { plots = null; layout(); coins = 12; earned = 0; seasonEarn = 0; target = 30; season = 1; day = 0; clock = 0; seed = 0; unlocked = 2; crows = []; fx = []; score = 0; t = 0; rain = false; newDay(); msg = { txt: 'SEASON 1', sub: 'TARGET $30', l: 2 }; },
+    reset() { plots = null; layout(); coins = 12; earned = 0; seasonEarn = 0; target = 30; season = 1; day = 0; clock = 0; seed = 0; unlocked = 2; crows = []; fx = []; score = 0; t = 0; rain = false; started = false; self.lastDrag = -1; newDay(); msg = { txt: 'SEASON 1', sub: 'TARGET $30', l: 2 }; },
     resize(w, h) { W = w; H = h; if (plots) layout(); },
     update(dt) {
-      t += dt; clock += dt; if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
+      t += dt; if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
+      if (!started) return;                         // the first day starts with your first tap
+      clock += dt;
       if (clock >= DAY) { if (newDay()) { haptic('error'); sfx(130, .6, 'square', .05, -60); return api.over(); } }
       if (Math.random() < dt * (.025 + season * .02)) { const grown = plots.map((p, i) => p.crop ? i : -1).filter(i => i >= 0); if (grown.length) { const i = grown[Math.random() * grown.length | 0]; if (!crows.some(c => c.plot === i)) crows.push({ plot: i, state: 'land', x: -10, y: 10, k: 0, eat: 4 }); sfx(1300, .05, 'square', .02, -300); } }
       for (const c of crows) {
@@ -84,13 +86,14 @@ function make(api) {
       if (t < 6 && season === 1 && day === 1) { c.textAlign = 'center'; c.fillStyle = '#101018'; c.fillText('TAP SOIL TO PLANT', W / 2, oy() - 6 > 22 ? oy() - 6 : H - BAR - 4); }
     },
     down(x, y) {
+      started = true;
       if (y >= H - BAR) { const i = Math.floor(x / (W / 4)); if (i < unlocked) { seed = i; haptic('tick'); sfx(600, .03, 'square', .02); } else haptic('warning'); return; }
       for (const cw of crows) if (cw.state === 'eat' && Math.hypot(cw.x - x, cw.y - y) < 10) { cw.state = 'fly'; haptic('light'); sfx(900, .08, 'square', .03, 300); return; }
       const cx = Math.floor((x - ox()) / PS), cy = Math.floor((y - oy()) / PS); if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return; act(cy * cols + cx);
     },
     move(x, y, p) { if (!p || y >= H - BAR) return; const cx = Math.floor((x - ox()) / PS), cy = Math.floor((y - oy()) / PS); if (cx < 0 || cy < 0 || cx >= cols || cy >= rows) return; const i = cy * cols + cx, pl = plots[i]; if (self.lastDrag !== i && pl.crop && !pl.crop.wet) { self.lastDrag = i; act(i); } },
     up() { self.lastDrag = -1; },
-    key(k, d) { if (!d) return; const n = '1234'.indexOf(k); if (n >= 0 && n < unlocked) seed = n; if (k === ' ') { const cw = crows.find(c => c.state === 'eat'); if (cw) { act(cw.plot); return; } const i = plots.findIndex(p => p.crop && (p.crop.age >= SEEDS[p.crop.s].days || !p.crop.wet)); act(i >= 0 ? i : plots.findIndex(p => !p.crop)); } },
+    key(k, d) { if (!d) return; started = true; const n = '1234'.indexOf(k); if (n >= 0 && n < unlocked) seed = n; if (k === ' ') { const cw = crows.find(c => c.state === 'eat'); if (cw) { act(cw.plot); return; } const i = plots.findIndex(p => p.crop && (p.crop.age >= SEEDS[p.crop.s].days || !p.crop.wet)); act(i >= 0 ? i : plots.findIndex(p => !p.crop)); } },
   };
   return self;
 }

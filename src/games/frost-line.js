@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sounds, noise, tone } = gs.sound;
 const { haptic, want, tilt, calibrateTilt } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Ready } = gs.rounds;
 const { HDView, Particles, pbr, rbox, surface, speckle, sun, THREE } = gs.hd;
 const { Group, Mesh, InstancedMesh, Object3D, Vector3, PlaneGeometry, ConeGeometry, CylinderGeometry, CapsuleGeometry, SphereGeometry, DodecahedronGeometry, BoxGeometry, Color } = THREE;
 
@@ -51,6 +52,8 @@ function make(api) {
   want('motion');
   let v, sunL, tiles, trees, rocks, ramps, flags, rider, snowFx, avFx, aval, built;
   let x, z, y, vy, hd, speed, air, spin, flip, trick, avGap, avSpeed, stumble, score, t, msg, fingers, keys, steer, dist, lastZ, objs;
+  const ready = new Ready({ eat: false, text: 'Tap to drop in' });      // the rider and the avalanche wait for the first touch
+  let fdt = 1 / 60;
   const mx = new Object3D(), camPos = new Vector3();
 
   function setup() {
@@ -118,6 +121,7 @@ function make(api) {
     spin = flip = 0; trick = null; rider.rotation.x = 0;
   }
   function update(dt) {
+    fdt = dt; if (!ready.update(dt)) { avFxStep(dt); return; }
     t += dt; stumble = Math.max(0, stumble - dt); if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
     if (t < 1.5) { avFxStep(dt); return; }
     // carve: tilt first, else drag
@@ -164,9 +168,9 @@ function make(api) {
     rider.position.set(x, y, z); rider.rotation.set(flip, hd + spin, -hd * .5 * (air ? 0 : 1)); rider.userData.body.rotation.x = stumble > 0 ? Math.sin(stumble * 9) * .5 : 0;
     const az = z - avGap - 6; aval.position.set(0, ground(0, az) + 2, az);
     // camera: behind and above, looking down the slope
-    const tx = x - Math.sin(hd) * 3, tz = z - 6.5; camPos.lerp(new Vector3(tx, Math.max(y, ground(tx, tz)) + 3.3, tz), camPos.lengthSq() ? .15 : 1);
+    const tx = x - Math.sin(hd) * 3, tz = z - 6.5; camPos.lerp(new Vector3(tx, Math.max(y, ground(tx, tz)) + 3.3, tz), camPos.lengthSq() ? 1 - Math.pow(.85, fdt * 60) : 1);
     v.cam.position.copy(camPos); v.cam.lookAt(x, y + .6, z + 8);
-    const fov = 62 + clamp((speed - 15) * .6, 0, 16); if (Math.abs(v.cam.fov - fov) > .2) { v.cam.fov += (fov - v.cam.fov) * .1; v.cam.updateProjectionMatrix(); }
+    const fov = 62 + clamp((speed - 15) * .6, 0, 16); if (Math.abs(v.cam.fov - fov) > .2) { v.cam.fov += (fov - v.cam.fov) * (1 - Math.pow(.9, fdt * 60)); v.cam.updateProjectionMatrix(); }
     sunL.follow(x, y, z + 6); v.hurt = avGap < 12 ? (12 - avGap) / 12 * .7 : 0;
     v.render(c, W, H); hud(c);
   }
@@ -181,8 +185,9 @@ function make(api) {
     c.fillStyle = '#ffffff30'; c.fillRect(x0, 16 * u, mw, 5 * u); c.fillStyle = k > .65 ? '#ff4a5a' : k > .4 ? '#ffb040' : '#8affdc'; c.fillRect(x0, 16 * u, mw * k, 5 * u);
     c.fillStyle = '#fff'; c.font = `700 ${7 * u}px Rubik, sans-serif`; c.textAlign = 'center'; c.fillText(`AVALANCHE ${Math.max(0, Math.round(avGap))} M`, x0 + mw / 2, 32 * u);
     if (msg) { c.globalAlpha = clamp(msg.l * 2, 0, 1); c.fillStyle = msg.col; c.font = `800 ${16 * u}px Rubik, sans-serif`; c.lineWidth = 3 * u; c.strokeStyle = '#0a183080'; c.strokeText(msg.txt, W / 2, H * .3); c.fillText(msg.txt, W / 2, H * .3); if (msg.sub) { c.font = `700 ${9 * u}px Rubik, sans-serif`; c.fillStyle = '#fff'; c.fillText(msg.sub, W / 2, H * .3 + 16 * u); } c.globalAlpha = 1; }
-    if (t < 4) { c.fillStyle = '#0a1830'; c.font = `600 ${8.5 * u}px Rubik, sans-serif`; c.fillText(tilt() ? 'Tilt to carve · kickers launch you · swipe in the air for tricks' : 'Drag to carve · kickers launch you · swipe in the air for tricks', W / 2, H * .62); }
+    if (ready.playing && t < 4) { c.fillStyle = '#0a1830'; c.font = `600 ${8.5 * u}px Rubik, sans-serif`; c.fillText(tilt() ? 'Tilt to carve · kickers launch you · swipe in the air for tricks' : 'Drag to carve · kickers launch you · swipe in the air for tricks', W / 2, H * .62); }
     c.restore();
+    ready.draw(c, W, H, { size: 13 * u, y: H * .62, color: '#0a1830', shadow: '#ffffffb0' });
   }
   function trickIn(dir) {
     if (!air || trick) return;
@@ -194,19 +199,19 @@ function make(api) {
       if (!v) setup();
       x = 0; z = 0; y = ground(0, 0); vy = 0; hd = 0; speed = 12; air = false; spin = flip = 0; trick = null; avGap = 30; avSpeed = 13; stumble = 0; score = 0; t = 0; msg = null; fingers = {}; keys = new Set(); steer = 0; dist = 0; objs = [];
       shapeTile(tiles[0], -30); shapeTile(tiles[1], -30 + TILE); populate(0, TILE * 2 - 30); writeObjs(); camPos.set(0, 0, 0); snowFx.clear(); avFx.clear();
-      calibrateTilt(); built = true; v.warmed = false;
+      calibrateTilt(); built = true; v.warmed = false; ready.reset();
     },
     resize(w, h) { W = w; H = h; },
     update, draw,
     fx(dt) { if (v) { snowFx.update(dt); avFx.update(dt); } },
-    down(x0, y0, id = 0) { const f = { id, ax: x0, ay: y0, t0: performance.now(), x: x0, y: y0 }; fingers[id] = f; if (!fingers.steer) fingers.steer = f; },
+    down(x0, y0, id = 0) { if (ready.waiting) { ready.go(); calibrateTilt(); } const f = { id, ax: x0, ay: y0, x: x0, y: y0 }; fingers[id] = f; if (!fingers.steer) fingers.steer = f; },
     move(x0, y0, p, id = 0) {
       const f = fingers[id]; if (!f || !p) return; const dx = x0 - f.x, dy = y0 - f.y; f.x = x0; f.y = y0;
       if (air && !trick && Math.hypot(x0 - f.ax, y0 - f.ay) > 26) { const ax = x0 - f.ax, ay = y0 - f.ay; trickIn(Math.abs(ax) > Math.abs(ay) ? (ax > 0 ? 'right' : 'left') : (ay < 0 ? 'up' : 'down')); f.ax = x0; f.ay = y0; return; }
       if (fingers.steer === f) steer = clamp((x0 - f.ax) / (W * .18), -1, 1);
     },
     up(x0, y0, id = 0) { const f = fingers[id]; delete fingers[id]; if (fingers.steer === f) { fingers.steer = Object.values(fingers).find(q => q.id !== undefined && q !== f) || null; steer = 0; } },
-    key(k, d) { if (d) keys.add(k); else keys.delete(k); if (d && air) { if (k === 'ArrowUp' || k === 'w') trickIn('up'); if (k === 'q') trickIn('left'); if (k === 'e') trickIn('right'); } },
+    key(k, d) { if (d) { ready.go(); keys.add(k); } else keys.delete(k); if (d && air) { if (k === 'ArrowUp' || k === 'w') trickIn('up'); if (k === 'q') trickIn('left'); if (k === 'e') trickIn('right'); } },
   };
   return self;
 }

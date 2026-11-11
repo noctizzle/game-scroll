@@ -3,12 +3,16 @@ const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
 
 // Roll a snowball down the slope. It grows on fresh snow and shrinks on bare patches. Small balls
 // shatter on fences, big ones smash through. Rocks stop anything. Drag to steer.
 const P = PAL.ice, W = 160, H = 160, BY = 46;
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready({ eat: false });                             // the ball sits still until the first touch
   let bx, size, things, dist, t, drag, spawn, score, smash, trail;
   function add() {
     const r = Math.random(), x = rnd(12, W - 12);
@@ -18,8 +22,10 @@ function make(api) {
     else things.push({ k: 'rock', x, y: H + 10, r: rnd(4, 7) });
   }
   return {
-    reset() { bx = 80; size = 4; things = []; dist = 0; t = 0; drag = null; spawn = 0; score = 0; smash = []; trail = []; },
+    reset() { bx = 80; size = 4; things = []; dist = 0; t = 0; drag = null; spawn = 0; score = 0; smash = []; trail = []; feel.clear(); ready.reset(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; const speed = 45 + size * 4 + Math.min(40, dist / 60), dy = speed * dt; dist += dy;
       const s = Math.floor(dist / 25); if (s !== score) { score = s; api.score(score); }
       if (drag) bx += clamp(drag.x - bx, -90 * dt, 90 * dt); bx = clamp(bx, size, W - size);
@@ -32,16 +38,17 @@ function make(api) {
         if (o.k === 'snow' || o.k === 'bare') { if (Math.abs(o.x - bx) < o.w / 2 && Math.abs(o.y - BY) < o.h / 2) { size = clamp(size + (o.k === 'snow' ? 3.5 : -4) * dt, 2.5, 16); if (o.k === 'snow' && Math.random() < dt * 8) haptic('tick'); } }
         else if (o.k === 'fence' && Math.abs(o.y - BY) < size && Math.abs(o.x - bx) < o.w / 2 + size * .6) {
           o.done = true;
-          if (size >= o.need) { size -= 1; haptic('medium'); sfx(160, .15, 'square', .05, -60); for (let i = 0; i < 6; i++) smash.push({ x: bx + rnd(-8, 8), y: BY, vx: rnd(-60, 60), vy: rnd(-80, -20), l: .6 }); }
-          else { haptic('error'); sfx(110, .4, 'square', .05, -40); return api.over(); }
+          if (size >= o.need) { size -= 1; haptic('medium'); sfx(160, .15, 'square', .05, -60); feel.juice.shake(3); for (let i = 0; i < 6; i++) smash.push({ x: bx + rnd(-8, 8), y: BY, vx: rnd(-60, 60), vy: rnd(-80, -20), l: .6 }); }
+          else { haptic('error'); sfx(110, .4, 'square', .05, -40); shatter(); return api.over(); }
         }
-        else if (o.k === 'rock' && Math.hypot(o.x - bx, o.y - BY) < o.r + size * .8) { haptic('error'); sfx(90, .4, 'square', .06, -30); return api.over(); }
+        else if (o.k === 'rock' && Math.hypot(o.x - bx, o.y - BY) < o.r + size * .8) { haptic('error'); sfx(90, .4, 'square', .06, -30); shatter(); return api.over(); }
       }
       things = things.filter(o => o.y > -30);
       for (const p of smash) { p.vy += 200 * dt; p.x += p.vx * dt; p.y += p.vy * dt - dy; p.l -= dt; } smash = smash.filter(p => p.l > 0);
     },
     draw(c) {
       c.fillStyle = P[2]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       for (const o of things) {
         if (o.k === 'snow') { c.fillStyle = P[3]; c.beginPath(); c.ellipse(o.x, o.y, o.w / 2, o.h / 2, 0, 0, 7); c.fill(); }
         if (o.k === 'bare') { c.fillStyle = P[1]; c.beginPath(); c.ellipse(o.x, o.y, o.w / 2, o.h / 2, 0, 0, 7); c.fill(); }
@@ -57,14 +64,16 @@ function make(api) {
       c.fillStyle = P[3]; c.beginPath(); c.arc(bx, BY, size, 0, 7); c.fill(); c.strokeStyle = P[1]; c.lineWidth = 1; c.stroke();
       c.fillStyle = P[2]; const a = dist / Math.max(3, size); c.fillRect(Math.round(bx + Math.cos(a) * size * .5), Math.round(BY + Math.sin(a) * size * .5), 2, 2);
       for (const p of smash) { c.fillStyle = P[0]; c.fillRect(Math.round(p.x), Math.round(p.y), 2, 1); }
+      feel.end(c, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = P[0]; c.fillText(`SIZE ${Math.floor(size)}`, 4, 10);
       if (t < 4) { c.textAlign = 'center'; c.fillText('DRAG TO STEER', 80, 154); }
     },
-    down(x) { drag = { x }; },
+    down(x) { ready.go(); drag = { x }; },
     move(x) { if (drag) drag.x = x; },
     up() { drag = null; },
-    key(k, d) { if (k === 'ArrowLeft' || k === 'ArrowRight') drag = d ? { x: k === 'ArrowLeft' ? 0 : W } : null; },
+    key(k, d) { if (d) ready.go(); if (k === 'ArrowLeft' || k === 'ArrowRight') drag = d ? { x: k === 'ArrowLeft' ? 0 : W } : null; },
   };
+  function shatter() { feel.juice.shake(6).burst(bx, BY, { n: 8 + Math.round(size), speed: 60, life: .5, size: 2, color: [P[3], P[1]] }); }
 }
 
 export default {

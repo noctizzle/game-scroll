@@ -2,6 +2,8 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
 
 // Two little scenes, five differences, drawn fresh every round. Tap a difference on either picture.
 // Wrong taps cost three seconds. Finish a pair to win more time.
@@ -43,6 +45,8 @@ function drawObj(c, o) {
 }
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready();                              // the pictures stay covered (and the clock stopped) until the first tap
   let a, b, diffs, found, time, score, t, marks, misses, round, flash;
   function newPair() {
     a = scene(); const idx = a.map((_, i) => i).sort(() => Math.random() - .5).slice(0, DIFFS);
@@ -50,35 +54,41 @@ function make(api) {
     marks = []; round++;
   }
   const self = {
-    reset() { time = 45; score = 0; t = 0; misses = []; round = 0; flash = 0; newPair(); },
+    reset() { time = 45; score = 0; t = 0; misses = []; round = 0; flash = 0; feel.clear(); ready.reset(); newPair(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; time -= dt; flash = Math.max(0, flash - dt * 3); if (time <= 0) { time = 0; haptic('error'); return api.over(); }
       for (const m of misses) m.l -= dt; misses = misses.filter(m => m.l > 0);
-      if (diffs.every(d => d.found)) { time += 20; haptic('success'); sfx(990, .25, 'triangle', .06, 300); flash = 1; newPair(); }
+      if (diffs.every(d => d.found)) { time += 20; haptic('success'); sfx(990, .25, 'triangle', .06, 300); flash = 1; feel.juice.pop(W / 2, 336, '+20s', { color: '#7dff9a', size: 18 }); newPair(); }
     },
     draw(c) {
       c.fillStyle = '#1b2236'; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       for (const [pi, top] of TOPS.entries()) {
         c.save(); c.translate(OX, top); c.beginPath(); c.roundRect(0, 0, SW, SH, 12); c.clip();
         const g = c.createLinearGradient(0, 0, 0, SH); g.addColorStop(0, '#8fd3ff'); g.addColorStop(.62, '#d8f1ff'); g.addColorStop(.62, '#8fd16a'); g.addColorStop(1, '#5aa84a'); c.fillStyle = g; c.fillRect(0, 0, SW, SH);
-        for (const o of pi ? b : a) drawObj(c, o);
+        if (!ready.waiting) for (const o of pi ? b : a) drawObj(c, o);
         for (const d of diffs) if (d.found) { c.strokeStyle = '#ff3d6b'; c.lineWidth = 4; c.beginPath(); c.arc(d.x, d.y, d.r, 0, 7); c.stroke(); }
         c.restore();
       }
       for (const m of misses) { c.globalAlpha = m.l; c.strokeStyle = '#ff3d3d'; c.lineWidth = 4; c.beginPath(); c.moveTo(m.x - 10, m.y - 10); c.lineTo(m.x + 10, m.y + 10); c.moveTo(m.x + 10, m.y - 10); c.lineTo(m.x - 10, m.y + 10); c.stroke(); c.globalAlpha = 1; }
+      feel.end(c, W, H);
+      ready.draw(c, W, H, { text: 'Tap to show the pictures', y: 341, size: 17 });
       c.font = '400 10px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = time < 8 ? '#ff6060' : '#ffffffcc'; c.fillText(`${Math.ceil(time)}s`, 14, 30);
       c.textAlign = 'right'; c.fillStyle = '#ffffffcc'; c.fillText(`${diffs.filter(d => d.found).length}/${DIFFS}`, W - 14, 30);
       c.textAlign = 'center'; c.fillStyle = '#ffffff60'; c.font = '600 12px Rubik, sans-serif'; c.fillText(t < 5 && round === 1 ? 'tap the 5 differences on either picture' : '', W / 2, 620);
       if (flash) { c.fillStyle = `rgba(255,255,255,${flash * .4})`; c.fillRect(0, 0, W, H); }
     },
     down(x, y) {
+      if (ready.go()) return;
       const pi = TOPS.findIndex(tp => y >= tp && y <= tp + SH); if (pi < 0 || x < OX || x > OX + SW) return;
       const sx = x - OX, sy = y - TOPS[pi];
       let best = null, bd = 1e9; for (const d of diffs) { if (d.found) continue; const dd = Math.hypot(d.x - sx, d.y - sy); if (dd < Math.max(d.r, 26) && dd < bd) { bd = dd; best = d; } }
-      if (best) { best.found = true; score++; api.score(score); haptic('success'); sfx(700 + diffs.filter(d => d.found).length * 80, .12, 'triangle', .05, 200); }
-      else if (!diffs.some(d => d.found && Math.hypot(d.x - sx, d.y - sy) < d.r)) { time = Math.max(0, time - 3); misses.push({ x, y, l: .8 }); haptic('warning'); sfx(160, .15, 'square', .04, -40); }
+      if (best) { best.found = true; score++; api.score(score); haptic('success'); sfx(700 + diffs.filter(d => d.found).length * 80, .12, 'triangle', .05, 200); for (const top of TOPS) feel.juice.burst(OX + best.x, top + best.y, { n: 10, speed: 150, life: .4, size: 3.5, color: ['#ff3d6b', '#ffe14d', '#ffffff'] }); }
+      else if (!diffs.some(d => d.found && Math.hypot(d.x - sx, d.y - sy) < d.r)) { time = Math.max(0, time - 3); misses.push({ x, y, l: .8 }); haptic('warning'); sfx(160, .15, 'square', .04, -40); feel.juice.shake(4).pop(x, y - 18, '-3s', { color: '#ff6060', size: 16 }); }
     },
-    key(k, d) { if (d && k === ' ') { const df = diffs.find(q => !q.found); if (df) self.down(df.x + OX, df.y + TOPS[0]); } },
+    key(k, d) { if (d && k === ' ') { if (ready.go()) return; const df = diffs.find(q => !q.found); if (df) self.down(df.x + OX, df.y + TOPS[0]); } },
   };
   return self;
 }

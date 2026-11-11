@@ -2,7 +2,7 @@
 // it, or tap a mess), BALL (flick it and the pet chases) and LAMP (lights out for a nap). Its four
 // needs drop faster and faster. Keep them all up to earn hearts; let one empty and it runs off.
 import gs from '../gamescroll.js';
-const { Feel } = gs.effects;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 const { C16 } = gs.palettes;
 const { text } = gs.pixel;
 const { haptic } = gs.device;
@@ -14,6 +14,7 @@ const TOOLS = ['FOOD', 'SOAP', 'BALL', 'LAMP'], NEEDS = ['food', 'clean', 'fun',
 
 function make(api) {
   const feel = new Feel({ pixel: true });
+  const ready = new Ready({ eat: false });                              // needs only start dropping once the pet is touched
   let pet, need, tool, ball, messes, dark, score, t, happy, rub, flick, bubbles, eat, gone;
   const floorY = () => H - 44;
 
@@ -24,11 +25,12 @@ function make(api) {
       pet = { x: W / 2, y: floorY(), vx: 0, hop: 0, look: 1, blink: 2 };
       need = { food: 70, clean: 80, fun: 60, rest: 75 };
       tool = 0; ball = null; messes = []; dark = false; score = 0; t = 0; happy = 0; rub = 0; flick = null; bubbles = []; eat = 0; gone = 0;
-      feel.clear();
+      feel.clear(); ready.reset();
     },
     resize(w, h) { W = w; H = h; if (pet) pet.y = Math.min(pet.y, floorY()); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
-      feel.update(dt); if (feel.frozen) return;
+      feel.update(dt); if (!ready.update(dt) || feel.frozen) return;
       t += dt;
       if (gone) { gone += dt; pet.x += 60 * dt; if (gone > 2) api.over(); return; }
       const k = 1 + t / 70;   // needs fall faster as time goes on
@@ -46,7 +48,7 @@ function make(api) {
       pet.blink -= dt; if (pet.blink < 0) pet.blink = 2 + Math.random() * 3;
       if (eat > 0) eat -= dt;
       if (ball) {
-        ball.vy += 400 * dt; ball.x += ball.vx * dt; ball.y += ball.vy * dt; ball.vx *= .995;
+        ball.vy += 400 * dt; ball.x += ball.vx * dt; ball.y += ball.vy * dt; ball.vx *= Math.pow(.995, dt * 60);
         if (ball.y > floorY() - 3) { ball.y = floorY() - 3; ball.vy *= -.6; ball.vx *= .8; if (Math.abs(ball.vy) > 40) sfx(300, .03, 'square', .02); }
         if (ball.x < 4 || ball.x > W - 4) { ball.vx *= -1; ball.x = clamp(ball.x, 4, W - 4); }
         if (!dark) { pet.vx = clamp((ball.x - pet.x) * 3, -90, 90); pet.look = Math.sign(ball.x - pet.x) || 1; }
@@ -54,7 +56,7 @@ function make(api) {
         else { ball.l -= dt; if (ball.l <= 0) ball = null; }
       } else if (!dark && Math.random() < dt * .5) pet.vx = rnd(-30, 30);
       if (dark) pet.vx = 0;
-      pet.x = clamp(pet.x + pet.vx * dt, 16, W - 16); pet.vx *= .98; if (Math.abs(pet.vx) > 5) pet.look = Math.sign(pet.vx);
+      pet.x = clamp(pet.x + pet.vx * dt, 16, W - 16); pet.vx *= Math.pow(.98, dt * 60); if (Math.abs(pet.vx) > 5) pet.look = Math.sign(pet.vx);
       pet.hop = Math.max(0, pet.hop - dt * 3);
       for (const b of bubbles) { b.y -= 20 * dt; b.l -= dt; } bubbles = bubbles.filter(b => b.l > 0);
     },
@@ -95,9 +97,11 @@ function make(api) {
       // tool bar
       const by = H - 20, bw = W / 4;
       TOOLS.forEach((name, i) => { c.fillStyle = i === tool ? C16[4] : C16[14]; c.fillRect(Math.round(i * bw) + 2, by, Math.round(bw) - 4, 17); c.fillStyle = C16[0]; c.fillRect(Math.round(i * bw) + 2, by + 16, Math.round(bw) - 4, 1); text(c, name === 'LAMP' && dark ? 'WAKE' : name, Math.round(i * bw + bw / 2), by + 6, { color: C16[0], align: 'center' }); });
+      ready.draw(c, W, H, { text: 'TAP TO START', pixel: true, color: C16[0], y: 84 });
       if (t < 4) text(c, ['TAP PET TO FEED', 'RUB PET TO WASH', 'FLICK THE BALL', 'TAP LAMP: NAP'][tool], W / 2, 70, { align: 'center', color: dark ? C16[1] : C16[0] });
     },
     down(x, y) {
+      ready.go();
       if (gone) return;
       if (y > H - 22) { const i = clamp(Math.floor(x / (W / 4)), 0, 3); if (i === 3) { dark = !dark; sfx(dark ? 300 : 600, .06, 'square', .03); haptic('tick'); tool = 3; } else { tool = i; sfx(800, .03, 'square', .02); } return; }
       rub = 0;

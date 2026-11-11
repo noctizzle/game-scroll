@@ -2,7 +2,7 @@
 // moving band of good wind to score. Tug too hard in a gust and the string snaps; let it sink and it
 // crashes. Birds cross the sky too. Three kites.
 import gs from '../gamescroll.js';
-const { Feel } = gs.effects;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 const { PAL } = gs.palettes;
 const { text } = gs.pixel;
 const { haptic } = gs.device;
@@ -15,6 +15,7 @@ let W = 160, H = 160;
 
 function make(api) {
   const feel = new Feel({ pixel: true });
+  const ready = new Ready({ eat: false });                              // the wind waits for the first tug
   let k, pull, tension, band, kites, score, t, inBand, birds, birdT, hurt, tailT, gust;
 
   function lose(why) {
@@ -24,10 +25,10 @@ function make(api) {
   }
 
   return {
-    reset() { k = { x: W * .55, y: H * .45, vx: 0, vy: 0 }; pull = false; tension = 0; band = { y: H * .35, h: 34 }; kites = 3; score = 0; t = 0; inBand = 0; birds = []; birdT = 4; hurt = 0; tailT = 0; gust = 0; feel.clear(); },
+    reset() { k = { x: W * .55, y: H * .45, vx: 0, vy: 0 }; pull = false; tension = 0; band = { y: H * .35, h: 34 }; kites = 3; score = 0; t = 0; inBand = 0; birds = []; birdT = 4; hurt = 0; tailT = 0; gust = 0; feel.clear(); ready.reset(); },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      feel.update(dt); if (feel.frozen) return;
+      feel.update(dt); if (!ready.update(dt) || feel.frozen) return;
       t += dt; if (hurt > 0) hurt -= dt;
       // the good-wind band wanders and narrows
       band.h = Math.max(18, 38 - t * .15);
@@ -85,10 +86,12 @@ function make(api) {
       text(c, 'PULL', W - 48, 4, { color: R[0], align: 'right' });
       for (let i = 0; i < kites; i++) { c.fillStyle = R[0]; c.fillRect(6 + i * 7, 4, 3, 1); c.fillRect(5 + i * 7, 5, 5, 2); c.fillRect(6 + i * 7, 7, 3, 1); }
       if (t < 4) { text(c, 'HOLD TO TUG, LET GO TO DRIFT', W / 2, H - 9, { align: 'center', color: R[0] }); }
+      ready.draw(c, W, H, { text: 'HOLD TO START', pixel: true, color: R[0], y: Math.round(H * .74) });
     },
-    down() { pull = true; sfx(400, .03, 'square', .02); },
+    fx(dt) { feel.update(dt); },
+    down() { ready.go(); pull = true; sfx(400, .03, 'square', .02); },
     up() { pull = false; },
-    key(k2, d) { if (k2 === ' ' || k2 === 'ArrowUp') pull = d; },
+    key(k2, d) { if (k2 === ' ' || k2 === 'ArrowUp') { if (d) ready.go(); pull = d; } },
   };
 }
 

@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic, want, tilt, calibrateTilt, onShake, startMic, stopMic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 
 // More four-second micro games, but these use the phone itself. Tilt to roll a ball into the hole,
 // blow to pop a balloon, shake a fizzy can, keep a tray level, hush when the baby sleeps, steer
@@ -15,7 +16,7 @@ function blowLvl() { const m = sense.mic ? clamp((sense.mic.level() - .12) * 2.5
 
 const MICROS = [
   { verb: 'ROLL IN!', init(s) { s.b = { x: rnd(30, W - 30), y: H * .75, vx: 0, vy: 0 }; s.hole = { x: rnd(30, W - 30), y: rnd(40, H * .45) }; },
-    update(s, dt) { if (s.win) return; const g = tl(), b = s.b; b.vx += g.x * 260 * dt; b.vy += g.y * 260 * dt; b.vx *= .985; b.vy *= .985; b.x += b.vx * dt; b.y += b.vy * dt; if (b.x < 8 || b.x > W - 8) { b.vx *= -.5; b.x = clamp(b.x, 8, W - 8); } if (b.y < 22 || b.y > H - 8) { b.vy *= -.5; b.y = clamp(b.y, 22, H - 8); } if (Math.hypot(b.x - s.hole.x, b.y - s.hole.y) < 8 && Math.hypot(b.vx, b.vy) < 140) { s.win = true; haptic('medium'); } },
+    update(s, dt) { if (s.win) return; const g = tl(), b = s.b; b.vx += g.x * 260 * dt; b.vy += g.y * 260 * dt; const k = Math.pow(.985, dt * 60); b.vx *= k; b.vy *= k; b.x += b.vx * dt; b.y += b.vy * dt; if (b.x < 8 || b.x > W - 8) { b.vx *= -.5; b.x = clamp(b.x, 8, W - 8); } if (b.y < 22 || b.y > H - 8) { b.vy *= -.5; b.y = clamp(b.y, 22, H - 8); } if (Math.hypot(b.x - s.hole.x, b.y - s.hole.y) < 8 && Math.hypot(b.vx, b.vy) < 140) { s.win = true; haptic('medium'); } },
     draw(s, c) { c.fillStyle = '#4a7a3a'; c.fillRect(0, 12, W, H - 12); c.fillStyle = '#183010'; c.beginPath(); c.arc(s.hole.x, s.hole.y, 9, 0, 7); c.fill(); c.fillStyle = '#f8f8f0'; c.fillRect(s.hole.x, s.hole.y - 22, 1, 22); c.fillStyle = '#f84040'; c.fillRect(s.hole.x + 1, s.hole.y - 22, 8, 5); if (!s.win) { c.fillStyle = '#f8f8f0'; c.beginPath(); c.arc(s.b.x, s.b.y, 5, 0, 7); c.fill(); } },
     tip: 'TILT (OR DRAG)' },
   { verb: 'BLOW!', init(s) { s.size = 8; },
@@ -28,7 +29,7 @@ const MICROS = [
       if (s.win) { c.fillStyle = '#f0e8c0'; for (let i = 0; i < 14; i++) c.fillRect(cx + Math.sin(i * 2.1 + s.t * 9) * (6 + i), cy - 34 - i * 5 - (s.t * 40 % 8), 4, 4); } },
     tip: 'SHAKE THE PHONE (OR RUB)' },
   { verb: 'KEEP LEVEL!', survive: true, init(s) { s.ang = 0; s.v = rnd(-.5, .5) || .3; s.cup = 0; },
-    update(s, dt) { const g = tl(); s.v += (Math.sin(s.t * 2.3) * .9 * s.sp - g.x * 3.2) * dt; s.v *= .97; s.ang += s.v * dt * 2; s.cup += s.ang * 90 * dt; s.cup *= .98; if (Math.abs(s.ang) > .45 || Math.abs(s.cup) > 52) s.lose = true; },
+    update(s, dt) { const g = tl(); s.v += (Math.sin(s.t * 2.3) * .9 * s.sp - g.x * 3.2) * dt; s.v *= Math.pow(.97, dt * 60); s.ang += s.v * dt * 2; s.cup += s.ang * 90 * dt; s.cup *= Math.pow(.98, dt * 60); if (Math.abs(s.ang) > .45 || Math.abs(s.cup) > 52) s.lose = true; },
     draw(s, c) { const cx = W / 2, cy = H * .62; c.save(); c.translate(cx, cy); c.rotate(s.ang); c.fillStyle = '#a07040'; c.fillRect(-56, 0, 112, 5); c.fillStyle = '#f8f8f0'; c.fillRect(s.cup - 6, -14, 12, 14); c.fillStyle = '#704020'; c.fillRect(s.cup - 5, -12, 10, 3); c.restore(); c.fillStyle = '#20202840'; c.fillRect(cx - 1, cy + 8, 2, 30); },
     tip: 'TILT (OR DRAG) TO BALANCE' },
   { verb: 'SHH!', survive: true, init(s) { s.noise = 0; },
@@ -50,6 +51,8 @@ const MICROS = [
 
 function make(api) {
   want('motion');
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready();                                            // the first micro game waits for a tap
   let cur, s, wins, lives, t, phase, pt, speed, order, last, unShake, dragStart;
   function next() {
     if (!order.length) { order = MICROS.map((_, i) => i).sort(() => Math.random() - .5); if (order[0] === last) order.push(order.shift()); }
@@ -57,9 +60,11 @@ function make(api) {
   }
   const dur = () => Math.max(3, 4.6 - (speed - 1) * 1.6);
   const self = {
-    reset() { stopMic(); sense.mic = null; wins = 0; lives = 4; t = 0; speed = 1; order = []; last = -1; if (!unShake) unShake = onShake(() => { sense.shakes++; haptic('light'); }); next(); pt = -.6; },
+    reset() { stopMic(); sense.mic = null; wins = 0; lives = 4; t = 0; speed = 1; order = []; last = -1; if (!unShake) unShake = onShake(() => { sense.shakes++; haptic('light'); }); feel.clear(); ready.reset(); next(); pt = -.6; },
+    fx(dt) { feel.update(dt); },
     resize(w, h) { W = w; H = h; if (cur && phase !== 'play') { s = { t: 0, sp: speed, win: false, lose: false }; cur.init(s); } },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; pt += dt; sense.tapBurst = Math.max(0, sense.tapBurst - dt * 2.5);
       if (phase === 'intro') { if (pt > 1.1) { phase = 'play'; pt = 0; sense.tapBurst = 0; sfx(660, .08, 'square', .04, 200); } return; }
       if (phase === 'play') {
@@ -68,8 +73,8 @@ function make(api) {
         if (done && !s.endT) s.endT = pt;
         if (s.endT != null && pt - s.endT > (out ? 0 : .45)) {
           const won = cur.survive ? !s.lose : s.win && !s.lose;
-          if (won) { wins++; api.score(wins); haptic('success'); sfx(880, .2, 'square', .05, 400); if (wins % 5 === 0) speed = Math.min(2, speed + .15); }
-          else { lives--; haptic('error'); sfx(150, .35, 'sawtooth', .05, -60); }
+          if (won) { wins++; api.score(wins); haptic('success'); sfx(880, .2, 'square', .05, 400); feel.juice.burst(W / 2, H / 2, { n: 20, speed: 110, life: .6, size: 2, color: ['#f8f8f0', '#f8e040'] }); if (wins % 5 === 0) speed = Math.min(2, speed + .15); }
+          else { lives--; haptic('error'); sfx(150, .35, 'sawtooth', .05, -60); feel.juice.shake(4); }
           phase = 'result'; pt = 0; s.won = won;
         }
         return;
@@ -78,6 +83,10 @@ function make(api) {
       if (phase === 'over' && pt > 1) api.over();
     },
     draw(c) {
+      feel.begin(c); self.scene(c); feel.end(c, W, H);
+      ready.draw(c, W, H, { pixel: true, color: '#f8f8f0', y: Math.round(H / 2 + 46), text: 'TAP TO START' });
+    },
+    scene(c) {
       const bg = ['#38c8b8', '#f89838', '#8878f8', '#f8d038', '#f86888'][wins % 5];
       c.fillStyle = phase === 'result' ? (s.won ? '#58c858' : '#e04848') : bg; c.fillRect(0, 0, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
@@ -98,6 +107,7 @@ function make(api) {
     },
     down(x, y) {
       if (!sense.mic) startMic().then(m => { if (m) sense.mic = m; });
+      if (ready.go()) return;
       dragStart = { x, y }; sense.lx = x; sense.ly = y;
       if (phase === 'play' && !s.endT) { sense.tapBurst += .35; if (cur.down) cur.down(s, x, y); }
     },

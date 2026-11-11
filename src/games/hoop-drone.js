@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic, want } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Ready } = gs.rounds;
 const { Particles, pbr, rbox, THREE } = gs.hd;
 const { ARView, arNote, FLOOR } = gs.ar;
 const { Group, Mesh, TorusGeometry, CylinderGeometry, IcosahedronGeometry, ConeGeometry, Vector3 } = THREE;
@@ -56,6 +57,7 @@ function make(api) {
   want('motion');
   let v, drone, hoops, mines, fx, pos, vel, time, score, t, lastA, flash, msg, msgT, tap, buzzT;
   const aim = new Vector3(), f = new Vector3(), tmp = new Vector3(), prev = new Vector3(), nrm = new Vector3(), O = new Vector3();
+  const ready = new Ready({ eat: false, text: 'Tap to launch' });       // the clock waits for the first touch
   let fresh = false;   // during reset: the new round starts at the origin, whatever last round's position was
   const eye = () => !fresh && v.eyePos || O;   // where the player is (older app kits keep it at the origin)
   function setup() {
@@ -88,6 +90,7 @@ function make(api) {
   function say(s, col) { msg = { s, col }; msgT = 1; }
   return {
     reset() {
+      ready.reset();
       v?.off(); v?.recenter();
       time = 12; score = 0; t = 0; lastA = 0; flash = 0; msg = null; msgT = 0; tap = null; buzzT = 0;
       if (v) {
@@ -103,6 +106,7 @@ function make(api) {
     resize(w, h) { W = w; H = h; },
     update(dt) {
       if (!v) return; v.live(); if (v.calibrating) return;   // floor calibration open: pause
+      if (!ready.update(dt)) { for (const p of drone.userData.props) p.rotation.y += dt * 60; fx.update(dt); return; }
       t += dt; msgT -= dt; flash = Math.max(0, flash - dt * 2);
       time -= dt; if (time <= 0) { time = 0; v.off(); haptic('error'); return api.over(); }
       // target: along where the phone points, as far out as the hoop you're going for
@@ -157,17 +161,18 @@ function make(api) {
       // aim dot where the drone is heading
       c.save(); c.strokeStyle = '#ffffffb0'; c.lineWidth = 1.5; c.beginPath(); c.arc(W / 2, H / 2, 6, 0, 7); c.stroke();
       // timer bar
-      const tw = W - 120, k = clamp(time / 15, 0, 1);
-      c.fillStyle = '#04110ecc'; c.beginPath(); c.roundRect(60, 16, tw, 12, 6); c.fill();
-      c.fillStyle = time < 4 ? '#ff5a6a' : '#19e3b1'; c.beginPath(); c.roundRect(60, 16, Math.max(6, tw * k), 12, 6); c.fill();
-      c.fillStyle = '#fff'; c.font = '700 12px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText(`${time.toFixed(1)}s`, W / 2, 44);
+      const tw = W - 120, k = clamp(time / 15, 0, 1), top = Math.round(api.scoreArea().bottom + 4);   // under the app's score badge
+      c.fillStyle = '#04110ecc'; c.beginPath(); c.roundRect(60, top, tw, 12, 6); c.fill();
+      c.fillStyle = time < 4 ? '#ff5a6a' : '#19e3b1'; c.beginPath(); c.roundRect(60, top, Math.max(6, tw * k), 12, 6); c.fill();
+      c.fillStyle = '#fff'; c.font = '700 12px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText(`${time.toFixed(1)}s`, W / 2, top + 28);
       if (msgT > 0 && msg) { c.font = '800 22px Rubik, sans-serif'; c.globalAlpha = Math.min(1, msgT * 2); c.lineWidth = 4; c.strokeStyle = '#000a'; c.strokeText(msg.s, W / 2, H * .32); c.fillStyle = msg.col; c.fillText(msg.s, W / 2, H * .32); c.globalAlpha = 1; }
       if (score === 0) { c.font = '600 12px Rubik, sans-serif'; c.fillStyle = '#ffffffd0'; c.fillText(v.sensor ? 'Point the phone to fly the drone through the hoop' : 'Drag to steer the drone through the hoop', W / 2, H - 52); }
       c.restore();
+      ready.draw(c, W, H, { size: 20, y: H * .8 });
       if (flash > 0) { c.fillStyle = `rgba(255,60,80,${flash * .3})`; c.fillRect(0, 0, W, H); }
       arNote(c, v, W, H);
     },
-    down(x, y, id) { if (v?.input?.('down', x, y, id)) return; tap = { x, y, id }; },
+    down(x, y, id) { if (v?.input?.('down', x, y, id)) return; ready.go(); tap = { x, y, id }; },
     move(x, y, pressed, id) { if (v?.input?.('move', x, y, id, pressed)) return; if (!pressed || !tap || tap.id !== id) return; v.drag(x - tap.x, y - tap.y); tap.x = x; tap.y = y; },
     up(x, y, id) { if (v?.input?.('up', x, y, id)) return; tap = null; },
   };

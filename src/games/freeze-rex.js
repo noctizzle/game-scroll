@@ -51,7 +51,7 @@ function makeRex() {
 function make(api) {
   want('motion');
   let v, rex, dust, flashFx, built;
-  let state, sT, target, lives, score, t, susp, freezes, msg, flash, tap, lastQ, lastP, motion, stepT, level, shots, charge, heading;
+  let state, sT, target, lives, score, t, susp, freezes, msg, flash, tap, lastQ, lastP, motion, stepT, level, shots, charge, heading, snapT;
   const tmp = new Vector3(), tq = new Quaternion();
 
   function setup() {
@@ -74,8 +74,8 @@ function make(api) {
   }
   let this_look = 3;
   function snap() {
-    if (state === 'charge' || flash > .6 || !v) return;
-    flash = 1; tone(2200, { len: .03, wave: 'square', vol: .05 }); noise(.08, { vol: .06, from: 6000, to: 3000, filter: 'highpass' }); haptic('light');
+    if (state === 'charge' || snapT > 0 || !v) return;   // the camera winds on between photos, so mashing the shutter doesn't pay
+    snapT = 1.5; flash = 1; tone(2200, { len: .03, wave: 'square', vol: .05 }); noise(.08, { vol: .06, from: 6000, to: 3000, filter: 'highpass' }); haptic('light');
     // how good is the photo: rex on screen, how big, how centred
     rex.userData.head.getWorldPosition(tmp); const [hx, hy, hz] = v.toScreen(tmp.x, tmp.y, tmp.z); const [fx, fy, fz] = v.toScreen(rex.position.x, rex.position.y, rex.position.z);
     if (hz > 1 || fz > 1 || hx < 0 || hx > W || hy < 0 || hy > H) { say('MISSED IT', '#ffffffb0', .8); return; }
@@ -86,7 +86,7 @@ function make(api) {
   }
   function update(dt) {
     if (!v) return; v.live(); if (v.calibrating) { lastQ = null; return; }
-    t += dt; sT += dt; flash = Math.max(0, flash - dt * 2.5); if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
+    t += dt; sT += dt; snapT = Math.max(0, snapT - dt); flash = Math.max(0, flash - dt * 2.5); if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
     // how much is the phone moving? turn rate (rad/s), plus walking speed in world mode
     v.look(dt);
     if (lastQ) { const ang = 2 * Math.acos(Math.min(1, Math.abs(lastQ.dot(v.cam.quaternion)))); const mv = lastP.distanceTo(v.cam.position); motion = motion * .7 + (ang / dt + mv / dt * 1.5) * .3; }
@@ -143,7 +143,7 @@ function make(api) {
     }
     if (msg) { c.textAlign = 'center'; c.globalAlpha = Math.min(1, msg.l * 2); c.lineWidth = 4; c.strokeStyle = '#000a'; c.font = '800 22px Rubik, sans-serif'; c.strokeText(msg.txt, W / 2, H * .3); c.fillStyle = msg.col; c.fillText(msg.txt, W / 2, H * .3); if (msg.sub) { c.font = '600 11px Rubik, sans-serif'; c.fillStyle = '#fff'; c.fillText(msg.sub, W / 2, H * .3 + 20); } c.globalAlpha = 1; }
     // shutter button
-    c.fillStyle = '#ffffffd0'; c.beginPath(); c.arc(W / 2, H - 70, 24, 0, 7); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(W / 2, H - 70, 30, 0, 7); c.stroke();
+    c.fillStyle = snapT > 0 ? '#ffffff50' : '#ffffffd0'; c.beginPath(); c.arc(W / 2, H - 70, 24, 0, 7); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(W / 2, H - 70, 30, -Math.PI / 2, -Math.PI / 2 + (1 - snapT / 1.5) * Math.PI * 2); c.stroke();
     if (t < 5 && shots === 0) { c.fillStyle = '#fff'; c.font = '600 12px Rubik, sans-serif'; c.fillText('Tap to take photos · when it sniffs, FREEZE', W / 2, H - 118); }
     c.restore();
     if (flash > 0) { c.fillStyle = `rgba(255,255,255,${flash * .8})`; c.fillRect(0, 0, W, H); }
@@ -151,7 +151,7 @@ function make(api) {
   }
   function this_reset() {
     v?.off(); v?.recenter();
-    lives = 1; score = 0; t = 0; susp = 0; freezes = 0; msg = null; flash = 0; tap = null; lastQ = null; motion = 0; stepT = 0; level = 0; shots = 0; heading = 0;
+    lives = 1; score = 0; t = 0; susp = 0; freezes = 0; msg = null; flash = 0; tap = null; lastQ = null; motion = 0; stepT = 0; level = 0; shots = 0; heading = 0; snapT = 0;
     if (v) { const e = { x: 0, z: 0 }; rex.position.set(e.x + rnd(-1, 1), FLOOR, e.z - 5); dust.clear(); state = 'walk'; sT = 0; target = new Vector3(rnd(-1.5, 1.5), FLOOR, -4); }
   }
   return {
@@ -172,7 +172,7 @@ export default {
   tag: 'AR · Stealth',
   retro: true, era: 'ar', pal: 'grape',
   w: 300, h: 460, maxW: 600, maxH: 680,
-  goal: 500, reward: 20,
+  goal: 1200, reward: 20,
   hint: 'A dinosaur stomps round your room through the camera, and you feel every footstep. Tap to take photos: closer and centred scores more. When it stops to sniff, FREEZE and hold the phone dead still until it looks away, or it charges. No camera? Drag to look around.',
   traits: ['theme:dino'],
   make,

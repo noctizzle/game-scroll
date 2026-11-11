@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects;
 
 // Five days running a lemonade stand. Each morning, read the forecast, then set how many cups to make
 // and what to charge. Hot days sell more and people pay more; rain keeps them home. Make the most money.
@@ -12,6 +13,7 @@ const WEATHER = [
 ];
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
   let day, cash, cups, price, wx, actual, phase, timer, sold, made, walkers, t, log, result;
   function morning() {
     day++; wx = Math.random() * 4 | 0;
@@ -25,12 +27,14 @@ function make(api) {
   function close() {
     const income = sold * price; cash += income; api.score(Math.max(0, Math.round((cash - 200) / 100)));
     result = { sold, made, income, cost: made * CUP_COST, profit: income - made * CUP_COST }; log.push(result.profit);
-    phase = 'night'; timer = 2.2; haptic(result.profit > 0 ? 'success' : 'warning'); sfx(result.profit > 0 ? 880 : 200, .2, 'triangle', .05, result.profit > 0 ? 200 : -50);
+    phase = 'night'; timer = 2.2; haptic(result.profit > 0 ? 'success' : 'warning');
+    if (result.profit > 0) feel.juice.burst(W / 2, 262, { n: 12 + Math.min(30, result.profit / 60 | 0), speed: 220, life: .8, size: 4, color: ['#ffe14d', '#ffffff', '#7cc46a'], gravity: 300 }); else feel.juice.shake(5); sfx(result.profit > 0 ? 880 : 200, .2, 'triangle', .05, result.profit > 0 ? 200 : -50);
   }
   return {
-    reset() { day = 0; cash = 200; cups = 30; price = 50; t = 0; log = []; morning(); },
+    reset() { day = 0; cash = 200; cups = 30; price = 50; t = 0; log = []; feel.clear(); morning(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
-      t += dt;
+      feel.update(dt); t += dt;
       if (phase === 'day') {
         timer -= dt; const W2 = WEATHER[actual];
         if (Math.random() < dt * 9 * W2.demand) walkers.push({ x: Math.random() < .5 ? -20 : W + 20, y: rnd(370, 420), dir: 0, buy: null, stop: 0 });
@@ -38,7 +42,7 @@ function make(api) {
           w.dir ||= w.x < 0 ? 1 : -1; w.x += w.dir * 90 * dt;
           if (w.buy === null && Math.abs(w.x - W / 2) < 20) {
             const willing = 60 * W2.pay * rnd(.5, 1.6); w.buy = sold < made && price <= willing;
-            if (w.buy) { sold++; w.stop = .5; haptic('tick'); sfx(1200, .04, 'square', .03); }
+            if (w.buy) { sold++; w.stop = .5; feel.juice.pop(w.x, w.y - 44, `+${price}¢`, { color: '#2e8a4a', size: 13 }); haptic('tick'); sfx(1200, .04, 'square', .03); }
           }
           if (w.stop > 0) { w.stop -= dt; w.x -= w.dir * 90 * dt; }
         }
@@ -50,11 +54,13 @@ function make(api) {
       const sky = phase === 'night' ? '#1a1a3a' : ['#ffd27a', '#8fd3ff', '#b8c4d0', '#7a8a9a'][phase === 'day' ? actual : wx];
       c.fillStyle = sky; c.fillRect(0, 0, W, H); c.fillStyle = '#7cc46a'; c.fillRect(0, 430, W, H - 430);
       c.fillStyle = '#d9d0c0'; c.fillRect(0, 360, W, 70);
+      feel.begin(c);
       // stand
       c.fillStyle = '#ffe14d'; c.fillRect(120, 300, 120, 80); c.fillStyle = '#ff6b8a'; for (let i = 0; i < 6; i++) c.fillRect(110 + i * 24, 270, 12, 30);
       c.fillStyle = '#fff'; c.fillRect(110, 270, 140, 6); c.fillStyle = '#7a4a22'; c.font = '700 14px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('LEMONADE', 180, 330); c.fillText(`${price}¢`, 180, 352);
       for (const w of walkers) { c.fillStyle = '#5a7ad0'; c.fillRect(w.x - 7, w.y - 20, 14, 22); c.fillStyle = '#f2c79a'; c.beginPath(); c.arc(w.x, w.y - 27, 7, 0, 7); c.fill(); if (w.buy) { c.fillStyle = '#ffe14d'; c.fillRect(w.x + 6, w.y - 14, 6, 9); } }
       if (phase === 'day' && actual === 3) { c.strokeStyle = '#ffffff70'; c.lineWidth = 1; for (let i = 0; i < 40; i++) { const x = (i * 37 + t * 60) % W, y = (i * 53 + t * 400) % 430; c.beginPath(); c.moveTo(x, y); c.lineTo(x - 3, y + 10); c.stroke(); } }
+      feel.end(c, W, H);
       // header
       c.fillStyle = '#00000060'; c.fillRect(0, 0, W, 54); c.fillStyle = '#fff'; c.font = '400 10px "Press Start 2P", monospace'; c.textAlign = 'left';
       c.fillText(`DAY ${day}/${DAYS}`, 12, 22); c.fillText(`$${(cash / 100).toFixed(2)}`, 12, 42);

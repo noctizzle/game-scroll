@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sounds, noise, tone } = gs.sound;
 const { haptic, want, tilt, calibrateTilt } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Ready } = gs.rounds;
 const { HDView, Particles, pbr, rbox, surface, speckle, sun, THREE } = gs.hd;
 const { Group, Mesh, InstancedMesh, Object3D, Vector3, BufferGeometry, BufferAttribute, ConeGeometry, CylinderGeometry, TorusGeometry, BoxGeometry, SphereGeometry, PlaneGeometry, MeshBasicMaterial, AdditiveBlending, Color } = THREE;
 
@@ -51,6 +52,8 @@ function make(api) {
   let v, sunL, jet, rings, ringIM, trail, dust, boom, built;
   let p, yaw, vyaw, climb, speed, shields, hurtT, score, mult, t, msg, fingers, keys, stick, boost, dist, prox, ringsGot;
   const mx = new Object3D(), camPos = new Vector3(), tmp = new Vector3();
+  const ready = new Ready({ eat: false, text: 'Tap to fly' });          // the jet holds its line until the first touch
+  let fdt = 1 / 60;
 
   function wallGeo(side) {   // a tall strip of rock on one side of the canyon, bulging in and out
     const rows = 7, pos = new Float32Array((NS + 1) * rows * 3), uv = new Float32Array((NS + 1) * rows * 2), idx = [];
@@ -91,6 +94,8 @@ function make(api) {
     for (let i = 0; i < 40; i++) boom.emit({ x: p.x, y: p.y, z: p.z + 2, vx: rnd(-8, 8), vy: rnd(-4, 8), vz: rnd(-4, 10), life: rnd(.3, .8), size: rnd(.4, 1), col: [6, 2.5, .6], drag: 2, grav: 6 });
   }
   function update(dt) {
+    fdt = dt;
+    if (!ready.update(dt)) return fx(dt);
     t += dt; hurtT = Math.max(0, hurtT - dt); boost = Math.max(0, boost - dt); if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
     if (t < 1.2) return fx(dt);
     // input: tilt is the stick (left/right banks, forward/back noses down/up); drag fallback
@@ -129,9 +134,9 @@ function make(api) {
     jet.position.copy(p); jet.rotation.set(-climb * .025, yaw, -vyaw * .9, 'YXZ'); jet.userData.flame.scale.set(1, boost > 0 ? 1.8 + Math.random() * .4 : .8 + Math.random() * .3, 1);
     jet.visible = hurtT <= 0 || (t * 12 | 0) % 2 === 0;
     tmp.set(p.x - Math.sin(yaw) * 13, p.y + 3.6, p.z - Math.cos(yaw) * 13);
-    if (!camPos.lengthSq()) camPos.copy(tmp); camPos.lerp(tmp, .18);
+    if (!camPos.lengthSq()) camPos.copy(tmp); camPos.lerp(tmp, 1 - Math.pow(.82, fdt * 60));
     v.cam.position.copy(camPos); v.cam.up.set(Math.sin(-vyaw * .25), 1, 0).normalize(); v.cam.lookAt(p.x + Math.sin(yaw) * 20, p.y + climb * .3, p.z + Math.cos(yaw) * 20);
-    const fov = 66 + (boost > 0 ? 12 : 0) + clamp((speed - 52) * .3, 0, 8); if (Math.abs(v.cam.fov - fov) > .2) { v.cam.fov += (fov - v.cam.fov) * .12; v.cam.updateProjectionMatrix(); }
+    const fov = 66 + (boost > 0 ? 12 : 0) + clamp((speed - 52) * .3, 0, 8); if (Math.abs(v.cam.fov - fov) > .2) { v.cam.fov += (fov - v.cam.fov) * (1 - Math.pow(.88, fdt * 60)); v.cam.updateProjectionMatrix(); }
     sunL.follow(p.x, p.y - 10, p.z + 20); writeRings(); v.hurt = hurtT * .4;
     v.render(c, W, H); hud(c);
   }
@@ -145,22 +150,23 @@ function make(api) {
     c.font = `800 ${22 * u}px Rubik, sans-serif`; c.fillText(`x${m}`, W - 14 * u, 24 * u); c.font = `700 ${7 * u}px Rubik, sans-serif`; c.fillText(m > 1 ? 'SKIMMING!' : 'GET CLOSER', W - 14 * u, 40 * u);
     if (stick.on) { c.strokeStyle = '#ffffff40'; c.lineWidth = 2 * u; c.beginPath(); c.arc(stick.ax, stick.ay, 34 * u, 0, 7); c.stroke(); c.fillStyle = '#ffffff55'; c.beginPath(); c.arc(stick.ax + stick.x * 34 * u, stick.ay + stick.y * 34 * u, 10 * u, 0, 7); c.fill(); }
     if (msg) { c.textAlign = 'center'; c.globalAlpha = clamp(msg.l * 2, 0, 1); c.fillStyle = msg.col; c.font = `800 ${16 * u}px Rubik, sans-serif`; c.fillText(msg.txt, W / 2, H * .26); if (msg.sub) { c.font = `700 ${8 * u}px Rubik, sans-serif`; c.fillStyle = '#fff'; c.fillText(msg.sub, W / 2, H * .26 + 15 * u); } c.globalAlpha = 1; }
-    if (t < 4) { c.textAlign = 'center'; c.fillStyle = '#fff'; c.font = `600 ${8.5 * u}px Rubik, sans-serif`; c.fillText(tilt() ? 'Tilt to fly · skim the rock for a bigger multiplier' : 'Drag to fly · skim the rock for a bigger multiplier', W / 2, H * .7); }
+    if (ready.playing && t < 4) { c.textAlign = 'center'; c.fillStyle = '#fff'; c.font = `600 ${8.5 * u}px Rubik, sans-serif`; c.fillText(tilt() ? 'Tilt to fly · skim the rock for a bigger multiplier' : 'Drag to fly · skim the rock for a bigger multiplier', W / 2, H * .7); }
     c.restore();
+    ready.draw(c, W, H, { size: 13 * u });
   }
   const self = {
     reset() {
       if (!v) setup();
       p = new Vector3(cx(20), floorY(20) + 12, 20); yaw = 0; vyaw = 0; climb = 0; speed = 52; shields = 3; hurtT = 0; score = 0; mult = 1; t = 0; msg = null; fingers = {}; keys = new Set(); boost = 0; dist = 2; prox = 20; ringsGot = 0;
-      stick = { on: false, x: 0, y: 0, ax: 0, ay: 0, id: null }; rings.forEach(r => r.got = false); camPos.set(0, 0, 0); trail.clear(); dust.clear(); boom.clear(); calibrateTilt(); built = true;
+      stick = { on: false, x: 0, y: 0, ax: 0, ay: 0, id: null }; rings.forEach(r => r.got = false); camPos.set(0, 0, 0); trail.clear(); dust.clear(); boom.clear(); calibrateTilt(); built = true; ready.reset();
     },
     resize(w, h) { W = w; H = h; },
     update, draw,
     fx(dt) { if (v) { trail.update(dt); dust.update(dt); boom.update(dt); } },
-    down(x, y, id = 0) { if (stick.id != null) return; stick.id = id; stick.on = true; stick.ax = x; stick.ay = y; stick.x = stick.y = 0; },
+    down(x, y, id = 0) { if (ready.waiting) { ready.go(); calibrateTilt(); } if (stick.id != null) return; stick.id = id; stick.on = true; stick.ax = x; stick.ay = y; stick.x = stick.y = 0; },
     move(x, y, pr, id = 0) { if (stick.id !== id || !pr) return; const R0 = Math.min(W, H) * .13, dx = x - stick.ax, dy = y - stick.ay, l = Math.hypot(dx, dy), k = l > R0 ? R0 / l : 1; stick.x = dx * k / R0; stick.y = dy * k / R0; },
     up(x, y, id = 0) { if (stick.id === id) { stick.id = null; stick.on = false; stick.x = stick.y = 0; } },
-    key(k, d) { if (d) keys.add(k); else keys.delete(k); },
+    key(k, d) { if (d) { ready.go(); keys.add(k); } else keys.delete(k); },
   };
   return self;
 }

@@ -2,12 +2,14 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp } = gs.util;
+const { Feel } = gs.effects;
 
 // Five frames of top-down bowling. Swipe up to roll: the swipe's direction aims it and a curved
 // swipe puts hook on the ball. Strikes earn +5, spares +3, on top of every pin knocked down.
 const W = 360, H = 640, LX = 70, LW = 220, BR = 15, PR = 9, PIN_Y = 120, FRAMES = 5;
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
   let ball, pins, frame, roll, score, pts, settle, msg, t, frameDown, done;
   function rack() {
     pins = []; for (let r = 0; r < 4; r++) for (let i = 0; i <= r; i++)
@@ -20,8 +22,8 @@ function make(api) {
     const knocked = pins.filter(p => p.down && !p.gone);
     const n = knocked.length; for (const p of knocked) p.gone = true;
     frameDown += n; score += n;
-    if (roll === 0 && frameDown === 10) { score += 5; msg = { txt: 'STRIKE!', life: 1.4 }; haptic('success'); sfx(880, .3, 'square', .05, 300); return nextFrame(); }
-    if (roll === 1 && frameDown === 10) { score += 3; msg = { txt: 'SPARE', life: 1.2 }; haptic('success'); sfx(700, .25, 'square', .05, 200); }
+    if (roll === 0 && frameDown === 10) { score += 5; msg = { txt: 'STRIKE!', life: 1.4 }; feel.win(W / 2, PIN_Y + 40); feel.juice.shake(8); haptic('success'); sfx(880, .3, 'square', .05, 300); return nextFrame(); }
+    if (roll === 1 && frameDown === 10) { score += 3; msg = { txt: 'SPARE', life: 1.2 }; feel.juice.burst(W / 2, PIN_Y + 40, { n: 24, speed: 200, life: .7, size: 3.5, color: ['#ffd34a', '#ffffff'], gravity: 260 }); haptic('success'); sfx(700, .25, 'square', .05, 200); }
     else if (n === 0) msg = { txt: ball.gutter ? 'GUTTER' : 'MISS', life: 1 };
     else msg = { txt: n + ' PINS', life: 1 };
     api.score(score);
@@ -35,9 +37,10 @@ function make(api) {
   }
   let trail = [], held = false;
   return {
-    reset() { frame = 0; roll = 0; score = 0; frameDown = 0; msg = null; t = 0; done = false; rack(); newBall(); },
+    reset() { frame = 0; roll = 0; score = 0; frameDown = 0; msg = null; t = 0; done = false; feel.clear(); rack(); newBall(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
-      t += dt; if (msg) msg.life -= dt;
+      feel.update(dt); t += dt; if (msg) msg.life -= dt;
       if (!ball.live) return;
       const steps = 4, h = dt / steps;
       for (let s = 0; s < steps; s++) {
@@ -51,7 +54,7 @@ function make(api) {
             const dx = p.x - ball.x, dy = p.y - ball.y, d = Math.hypot(dx, dy);
             if (d < BR + PR && d > 0) {
               const nx = dx / d, ny = dy / d, rel = ball.vx * nx + ball.vy * ny;
-              if (rel > 0) { p.vx += nx * rel * 1.6; p.vy += ny * rel * 1.6; ball.vx -= nx * rel * .12; ball.vy -= ny * rel * .12; if (!p.hit) { p.hit = true; haptic('light'); sfx(260 + Math.random() * 200, .05, 'square', .04); } }
+              if (rel > 0) { p.vx += nx * rel * 1.6; p.vy += ny * rel * 1.6; ball.vx -= nx * rel * .12; ball.vy -= ny * rel * .12; if (!p.hit) { p.hit = true; feel.juice.burst(p.x, p.y, { n: 5, speed: 150, life: .25, size: 2.5, color: ['#ffffff', '#e03a3a'], shape: 'spark' }).shake(1.5); haptic('light'); sfx(260 + Math.random() * 200, .05, 'square', .04); } }
               p.x = ball.x + nx * (BR + PR); p.y = ball.y + ny * (BR + PR);
             }
           }
@@ -81,6 +84,7 @@ function make(api) {
       c.strokeStyle = '#00000018'; c.lineWidth = 1; for (let i = 1; i < 11; i++) { c.beginPath(); c.moveTo(LX + i * LW / 11, 0); c.lineTo(LX + i * LW / 11, H); c.stroke(); }
       c.fillStyle = '#7a4a22'; for (let i = 0; i < 7; i++) { const ax = LX + 30 + i * (LW - 60) / 6, ay = 420 + Math.abs(i - 3) * 12; c.beginPath(); c.moveTo(ax, ay - 8); c.lineTo(ax - 5, ay + 4); c.lineTo(ax + 5, ay + 4); c.fill(); }
       c.fillStyle = '#c0392b'; c.fillRect(LX, H - 110, LW, 3);
+      feel.begin(c);
       for (const p of pins) {
         if (p.gone) continue;
         if (p.down) { c.fillStyle = '#ffffff99'; c.beginPath(); c.ellipse(p.x, p.y, PR + 3, PR - 3, Math.atan2(p.vy, p.vx), 0, 7); c.fill(); continue; }
@@ -92,6 +96,7 @@ function make(api) {
       c.fillStyle = '#10204a'; for (const [hx, hy] of [[-4, -5], [3, -6], [0, 2]]) { c.beginPath(); c.arc(hx, hy, 2.4, 0, 7); c.fill(); }
       c.restore();
       if (held && trail.length > 1) { c.strokeStyle = '#ffffff55'; c.lineWidth = 4; c.beginPath(); c.moveTo(trail[0].x, trail[0].y); for (const p of trail) c.lineTo(p.x, p.y); c.stroke(); }
+      feel.end(c, W, H);
       // frame boxes, top-left
       c.font = '400 9px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = '#ffffffaa'; c.fillText('FRAME ' + Math.min(frame + 1, FRAMES) + '/' + FRAMES, 10, 18);
       c.fillText('BALL ' + (roll + 1), 10, 32);

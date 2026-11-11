@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 
 // Brick breaker, colour edition. Drag to slide the paddle and keep the ball in play. Silver bricks
 // take extra hits and gold ones never break. Catch falling capsules: W wide paddle, M multiball,
@@ -19,7 +20,9 @@ const LAYOUTS = [
 let W = 160, H = 160;
 
 function make(api) {
-  let px, tx, pw, balls, bricks, caps, lasers, score, level, lives, wait, t, eff, msg, parts;
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready({ eat: false });                              // the first serve waits for the first touch
+  let px, tx, pw, balls, bricks, caps, lasers, score, level, lives, wait, t, eff, msg;
   const PY = () => H - 14;
   function build() {
     const C = Math.floor((W - 4) / 16), R = Math.min(9, 5 + (level >> 1)), ox = (W - C * 16) / 2 + .5, lay = LAYOUTS[(level - 1) % LAYOUTS.length];
@@ -37,7 +40,7 @@ function make(api) {
     if (k.gold) { sfx(1200, .03, 'square', .03); return; }
     k.hp--; if (k.hp > 0) { sfx(900, .04, 'square', .04); k.flash = .1; return; }
     bricks.splice(i, 1); score += 1; api.score(score); haptic('tick'); sfx(500 + (k.y - 22) * 8, .05, 'square', .04);
-    for (let j = 0; j < 4; j++) parts.push({ x: k.x + rnd(0, 15), y: k.y + 3, vx: rnd(-40, 40), vy: rnd(-30, 30), l: .4, col: k.col });
+    feel.juice.burst(k.x + 7, k.y + 3, { n: 5, speed: 45, life: .4, size: 2, color: [k.col, '#f8f8f0'] });
     if (Math.random() < .13) { const keys = Object.keys(CAPS); caps.push({ x: k.x + 7, y: k.y + 3, k: keys[Math.random() * keys.length | 0] }); }
   }
   function collide(b) {
@@ -48,14 +51,15 @@ function make(api) {
         hitBrick(k, i); return; } }
   }
   const self = {
-    reset() { W = W || 160; px = tx = W / 2; pw = 30; score = 0; level = 1; lives = 3; t = 0; eff = { W: 0, S: 0, L: 0 }; caps = []; lasers = []; msg = null; parts = []; build(); serve(); },
+    reset() { W = W || 160; px = tx = W / 2; pw = 30; score = 0; level = 1; lives = 3; t = 0; eff = { W: 0, S: 0, L: 0 }; caps = []; lasers = []; msg = null; feel.clear(); ready.reset(); build(); serve(); },
+    fx(dt) { feel.update(dt); },
     resize(w, h) { const ow = W, oh = H; W = w; H = h; if (bricks) { const dx = (w - ow) / 2; if (dx) { build(); } for (const b of balls) { b.x += dx; b.y += h - oh; } px = tx = clamp(px + dx, 0, w); } },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
       for (const k in eff) eff[k] = Math.max(0, eff[k] - dt);
       pw += ((eff.W > 0 ? 46 : 30) - pw) * Math.min(1, dt * 8);
       px += (tx - px) * Math.min(1, dt * 22); px = clamp(px, pw / 2, W - pw / 2);
-      for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.l -= dt; } parts = parts.filter(p => p.l > 0);
       for (const k of bricks) if (k.flash) k.flash = Math.max(0, k.flash - dt);
       if (eff.L > 0 && (t * 4 | 0) !== ((t - dt) * 4 | 0)) { lasers.push({ x: px - pw / 2 + 3, y: PY() }, { x: px + pw / 2 - 3, y: PY() }); sfx(1600, .03, 'square', .02, -800); }
       for (const l of lasers) { l.y -= 240 * dt; for (let i = 0; i < bricks.length; i++) { const k = bricks[i]; if (l.x > k.x && l.x < k.x + k.w && l.y > k.y && l.y < k.y + k.h) { l.dead = true; hitBrick(k, i); break; } } }
@@ -72,18 +76,19 @@ function make(api) {
           b.x += b.vx * h; b.y += b.vy * h;
           if (b.x < 1.5) { b.x = 1.5; b.vx = Math.abs(b.vx); } if (b.x > W - 1.5) { b.x = W - 1.5; b.vx = -Math.abs(b.vx); } if (b.y < 12) { b.y = 12; b.vy = Math.abs(b.vy); }
           const py = PY();
-          if (b.vy > 0 && b.y + 1.5 >= py && b.y - 1.5 <= py + 4 && b.x >= px - pw / 2 - 2 && b.x <= px + pw / 2 + 2) { const a = clamp((b.x - px) / (pw / 2), -1, 1) * 1.05, sp = Math.max(speed(), Math.hypot(b.vx, b.vy) * (eff.S > 0 ? .9 : 1.01)); b.vx = Math.sin(a) * sp; b.vy = -Math.cos(a) * sp; b.y = py - 1.5; sfx(520, .04, 'square', .04); haptic('light'); }
+          if (b.vy > 0 && b.y + 1.5 >= py && b.y - 1.5 <= py + 4 && b.x >= px - pw / 2 - 2 && b.x <= px + pw / 2 + 2) { const a = clamp((b.x - px) / (pw / 2), -1, 1) * 1.05, sp = Math.max(speed(), Math.min(240, Math.hypot(b.vx, b.vy) * (eff.S > 0 ? .9 : 1.01))); b.vx = Math.sin(a) * sp; b.vy = -Math.cos(a) * sp; b.y = py - 1.5; sfx(520, .04, 'square', .04); haptic('light'); }
           collide(b);
           if (b.y > H + 4) b.out = true;
         }
       }
       balls = balls.filter(b => !b.out);
-      if (!balls.length) { lives--; haptic('error'); sfx(160, .4, 'square', .05, -80); eff = { W: 0, S: 0, L: 0 }; caps = []; if (lives <= 0) return api.over(); msg = { txt: `${lives} LEFT`, l: 1 }; serve(); return; }
-      if (!bricks.some(k => !k.gold)) { api.win(); level++; score += 5; api.score(score); msg = { txt: `WALL ${level}`, l: 1.4 }; haptic('success'); sfx(990, .3, 'square', .05, 500); caps = []; lasers = []; build(); serve(); }
+      if (!balls.length) { lives--; haptic('error'); sfx(160, .4, 'square', .05, -80); feel.juice.shake(4); eff = { W: 0, S: 0, L: 0 }; caps = []; if (lives <= 0) return api.over(); msg = { txt: `${lives} LEFT`, l: 1 }; serve(); return; }
+      if (!bricks.some(k => !k.gold)) { api.win(); level++; score += 5; api.score(score); msg = { txt: `WALL ${level}`, l: 1.4 }; haptic('success'); sfx(990, .3, 'square', .05, 500); caps = []; lasers = []; feel.juice.burst(W / 2, H * .4, { n: 24, speed: 90, life: .7, size: 2, color: ROWC }).pop(W / 2, H * .5, '+5', { color: '#f8d838', size: 8 }); build(); serve(); }
     },
     draw(c) {
       const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#182048'); g.addColorStop(1, '#301838'); c.fillStyle = g; c.fillRect(0, 0, W, H);
       c.fillStyle = '#ffffff10'; for (let y = 0; y < H; y += 8) for (let x = (y / 8 % 2) * 8; x < W; x += 16) c.fillRect(x, y, 8, 8);
+      feel.begin(c);
       for (const k of bricks) {
         const x = Math.round(k.x), y = k.y;
         if (k.gold) { c.fillStyle = '#a07810'; c.fillRect(x, y, k.w, k.h); c.fillStyle = '#f8d838'; c.fillRect(x, y, k.w - 1, k.h - 1); c.fillStyle = '#fff0a0'; c.fillRect(x + 1, y + 1, 4, 1); continue; }
@@ -95,14 +100,14 @@ function make(api) {
       const py = PY(), x0 = Math.round(px - pw / 2), w = Math.round(pw);
       c.fillStyle = '#e8e8f0'; c.fillRect(x0, py, w, 4); c.fillStyle = eff.L > 0 ? '#e04848' : '#38b8e8'; c.fillRect(x0 + 3, py + 1, w - 6, 2); c.fillStyle = '#9898b0'; c.fillRect(x0, py + 3, w, 1);
       for (const b of balls) { c.fillStyle = '#f8f8f0'; c.fillRect(Math.round(b.x - 1.5), Math.round(b.y - 1.5), 3, 3); }
-      for (const p of parts) { c.fillStyle = p.col; c.fillRect(p.x | 0, p.y | 0, 2, 2); }
+      feel.end(c, W, H);
       for (let i = 0; i < lives - 1; i++) { c.fillStyle = '#38b8e8'; c.fillRect(3 + i * 9, H - 4, 7, 2); }
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = '#a0a0d0'; c.fillText(`W${level}`, 3, 8);
       if (msg) { c.textAlign = 'center'; c.fillStyle = '#f8d838'; c.fillText(msg.txt, W / 2, H * .62); }
-      if (t < 3 && level === 1) { c.textAlign = 'center'; c.fillStyle = '#a0a0d0'; c.fillText('DRAG TO MOVE', W / 2, H * .7); }
+      ready.draw(c, W, H, { pixel: true, color: '#a0a0d0', y: Math.round(H * .7), text: 'DRAG TO MOVE' });
     },
-    down(x) { tx = x; }, move(x, y, p) { if (p) tx = x; },
-    key(k, d) { if (!d) return; if (k === 'ArrowLeft') tx = px - 24; if (k === 'ArrowRight') tx = px + 24; },
+    down(x) { ready.go(); tx = x; }, move(x, y, p) { if (p) tx = x; },
+    key(k, d) { if (!d) return; ready.go(); if (k === 'ArrowLeft') tx = px - 24; if (k === 'ArrowRight') tx = px + 24; },
   };
   return self;
 }
