@@ -160,7 +160,7 @@ import { StillLoading } from './kit/lazy.js';
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
 // the install's anonymous id, and the hooks the app uses to stop things between rounds.
 export const HIDDEN = {
-  sound: ['sound', 'setSound', 'audio', 'setSfxOut', 'stopMusic', 'pauseMusic', 'resumeMusic'],
+  sound: ['sound', 'setSound', 'audio', 'setSfxOut', 'stopMusic', 'pauseMusic', 'resumeMusic', 'warm'],
   util: ['store', 'deviceId'],
   device: ['location', 'hapticSettings', 'setHaptics', 'stopSensors'],
   moves: ['stopMoves'],

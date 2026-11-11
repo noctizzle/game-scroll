@@ -50,7 +50,7 @@ function make(api) {
         const near = foes.filter(o => Math.abs(o.y - u.y) < (k.range || 22)).sort((a, b) => Math.abs(a.y - u.y) - Math.abs(b.y - u.y))[0];
         if (near) { if (u.cd <= 0) { u.cd = .8; near.hp -= k.atk * (k.beats === near.kind ? 2 : 1); if (near.hp <= 0 && u.side === 1) { score++; api.score(score); } sfx(200 + Math.random() * 100, .03, 'square', .02); } continue; }
         u.y -= u.side * k.speed * dt;
-        if (u.side === 1 && u.y <= TOPY - 10) { u.hp = 0; them -= 2; score += 2; api.score(score); feel.hit(laneX(u.lane), TOPY - 20, { size: .5 }); haptic('light'); }
+        if (u.side === 1 && u.y <= TOPY - 10) { u.hp = 0; them -= 2; score += 2; api.score(score); feel.hit(laneX(u.lane), TOPY - 20, { power: .5 }); haptic('light'); }
         if (u.side === -1 && u.y >= BOTY() + 10) { u.hp = 0; me -= 2; feel.hurt(laneX(u.lane), BOTY() + 20); haptic('error'); }
       }
       units = units.filter(u => u.hp > 0);

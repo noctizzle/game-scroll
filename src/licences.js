@@ -41,6 +41,8 @@ export const OPEN_SOURCE = [
   { name: 'pitchy (with fft.js)', for: 'hearing sung and whistled notes in mic games', licence: 'MIT', spdx: 'MIT', packages: ['pitchy'] },
   { name: 'Tonal', for: 'music theory (scales and modes) behind the music composer, by danigb', licence: 'MIT', spdx: 'MIT', packages: ['tonal'] },
   { name: 'Capacitor Text to Speech', for: 'characters that speak, by the Capacitor Community', licence: 'MIT', spdx: 'MIT', packages: ['@capacitor-community/text-to-speech'] },
+  { name: 'Capacitor Keep Awake', for: 'keeping the screen on while a round is played, by the Capacitor Community', licence: 'MIT', spdx: 'MIT', packages: ['@capacitor-community/keep-awake'] },
+  { name: 'fflate', for: 'packing game saves small, by Arjun Barrett', licence: 'MIT', spdx: 'MIT', packages: ['fflate'] },
   { name: 'Slop New York', for: 'the city kit\'s facade looks and lit windows, and its idea of building the city round the player, by Mr.doob', licence: 'MIT', spdx: 'MIT', vendored: 'src/kit/city.js', notice: '© 2026 Mr.doob' },
   { name: 'ZzFX', for: 'sound effects, by Frank Force', licence: 'MIT', spdx: 'MIT', vendored: 'src/kit/zzfx.js' },
   { name: 'simplex-noise', for: 'noise for terrain and motion', licence: 'MIT', spdx: 'MIT', packages: ['simplex-noise'] },

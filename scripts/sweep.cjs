@@ -29,7 +29,7 @@ const { jobs, pool } = require('./lib/pool.cjs');
     // until its lazy parts are in (the app remakes the game then)
     for (let i = 0; i < 80 && await p.evaluate(() => !__gs.active || __gs.active.loading); i++) await p.waitForTimeout(100);
     const res = await p.evaluate(async full => {
-      const s = __gs.active, g = s.game, c = s.canvas.getContext('2d');
+      const s = __gs.active, g = s.game, c = s.ctx;
       const hd = !full && window.__hd && (s.def.era === 'nextgen' || s.def.era === 'ar');
       // tall and wide extremes put a level's start and end on screen at once
       const sizes = [[200, 1400], [480, 200], [160, 300], [s.w || 200, s.h || 300]];

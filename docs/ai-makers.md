@@ -16,7 +16,7 @@ a dog by tilting the phone."*
 | Gemini CLI | `GEMINI.md` (which loads `AGENTS.md`) | |
 | GitHub Copilot | `.github/copilot-instructions.md` | |
 
-These tools can run the checks themselves (`game-lint`, `npm run games`, the smoke test) and fix
+These tools can run the checks themselves (`game-lint`, `game-types`, `npm run games`, the smoke test) and fix
 what fails. Ask them to.
 
 ## Chat apps (ChatGPT, Gemini, Claude.ai)
@@ -27,6 +27,7 @@ what fails. Ask them to.
 3. Save the code it gives you as `src/games/<id>.js` and run the checks:
    ```bash
    node scripts/game-lint.mjs <id>
+   node scripts/game-types.mjs <id>
    npm run games
    npm run build:bundled && node scripts/smoke.cjs <id>
    ```

@@ -1,51 +1,60 @@
 // __TITLE__: a starter Color (Pocket) game made with `npm run new`. Change anything you like.
-// Bright 16-colour pixels. Shows gestures (tap to jump, hold to jump higher), pixel juice and sounds.
+// Bright 16-colour pixels. It starts the way a finished game does: a fixed tick (the same jump on every
+// phone), Ready (nothing moves until the first tap), Feel for pixel styles (particles, shake, sound and
+// a buzz in one call), pixel text, gestures (tap to jump, hold to jump higher) and a chip tune in one line.
 import gs from '../gamescroll.js';
-const { sounds } = gs.sound;
-const { haptic } = gs.device;
 const { C16 } = gs.palettes;
-const { Juice } = gs.juice;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
+const { mix } = gs.tick;
+const { text } = gs.pixel;
 const { Gestures } = gs.controls;
 
 let W = 160, H = 176;
 const GROUND = () => H - 24;
 
 function make(api) {
-  const fx = new Juice({ pixel: true });
-  let y, vy, rocks, score, t, spawn, speed, holdJump, dead;
-  const jump = big => { if (y < GROUND() - .5 || dead) return; vy = big ? -190 : -150; sounds.jump(big ? 1.2 : 1); haptic('tick'); fx.burst(30, GROUND(), { n: 5, speed: 40, size: 2, color: C16[13], arc: 2, angle: -Math.PI / 2 }); };
-  const g = new Gestures({ tap: () => jump(false), hold: () => { holdJump = true; jump(true); } });
+  const feel = new Feel({ pixel: true });
+  const ready = new Ready({ eat: false });        // the first tap starts the round and is already a jump
+  let y, yWas, vy, rocks, score, t, spawn, speed, dead;
+  const jump = big => { if (y < GROUND() - .5 || dead) return; vy = big ? -190 : -150; feel.jump(30, GROUND()); };
+  const g = new Gestures({ tap: () => jump(false), hold: () => jump(true) });
 
   return {
-    reset() { y = GROUND(); vy = 0; rocks = []; score = 0; t = 0; spawn = 1; speed = 70; holdJump = false; dead = 0; fx.clear(); g.release(); },
+    reset() { y = yWas = GROUND(); vy = 0; rocks = []; score = 0; t = 0; spawn = 1; speed = 70; dead = 0; feel.clear(); ready.reset(); g.release(); },   // ALL round state here
     resize(w, h) { W = w; H = h; },
-    update(dt) {
-      fx.update(dt); g.update();
+    update(dt) {                                  // tick: 60 below, so dt is exactly 1/60 and the jump is the same height on every phone
+      feel.update(dt); g.update();
+      if (feel.frozen) return;                    // hit-stop
+      if (!ready.update(dt)) return;              // nothing runs until the first tap
       if (dead) { dead += dt; if (dead > .8) api.over(); return; }
       t += dt; speed = 70 + t * 2.5; spawn -= dt;
-      vy += 520 * dt; y = Math.min(GROUND(), y + vy * dt); if (y >= GROUND()) vy = 0;
-      if (spawn <= 0) { spawn = .8 + Math.random() * 1.1; rocks.push({ x: W + 8, h: Math.random() < .3 ? 14 : 8, passed: false }); }
+      yWas = y; vy += 520 * dt; y = Math.min(GROUND(), y + vy * dt);   // keep where it was: draw() shows the moment between
+      if (y >= GROUND()) { if (vy > 120) feel.land(30, GROUND(), vy); vy = 0; }
+      if (spawn <= 0) { spawn = .8 + Math.random() * 1.1; rocks.push({ x: W + 8, was: W + 8, h: Math.random() < .3 ? 14 : 8, passed: false }); }
       for (const r of rocks) {
-        r.x -= speed * dt;
-        if (!r.passed && r.x < 24) { r.passed = true; score++; api.score(score); fx.pop(30, y - 16, '+1', { color: C16[4] }); sounds.blip(1 + score * .01); }
-        if (Math.abs(r.x - 30) < 7 && y > GROUND() - r.h) { dead = .01; fx.shake(5).flash(C16[2], .4).burst(30, y - 4, { n: 16, speed: 90, size: 2, color: [C16[2], C16[3], C16[4]], gravity: 200 }); sounds.boom(); haptic('error'); }
+        r.was = r.x; r.x -= speed * dt;
+        if (!r.passed && r.x < 24) { r.passed = true; score++; api.score(score); feel.score(30, y - 16, 1, { color: C16[4] }); }
+        if (Math.abs(r.x - 30) < 7 && y > GROUND() - r.h) { dead = .01; feel.boom(30, y - 4, { size: .6, color: [C16[2], C16[3], C16[4]] }); feel.lose(); }
       }
       rocks = rocks.filter(r => r.x > -10);
     },
     draw(c) {
       c.fillStyle = C16[7]; c.fillRect(0, 0, W, H);
       c.fillStyle = C16[1]; for (let i = 0; i < 4; i++) { const x = ((i * 53 - t * 12) % (W + 40) + W + 40) % (W + 40) - 20; c.fillRect(Math.round(x), 20 + i * 11, 18, 5); }
-      fx.begin(c);
+      feel.begin(c);
       c.fillStyle = C16[5]; c.fillRect(0, GROUND(), W, 4); c.fillStyle = C16[11]; c.fillRect(0, GROUND() + 4, W, H);
-      for (const r of rocks) { c.fillStyle = C16[13]; c.fillRect(Math.round(r.x) - 5, GROUND() - r.h, 10, r.h); c.fillStyle = C16[14]; c.fillRect(Math.round(r.x) - 5, GROUND() - r.h, 10, 2); }
-      if (!dead) { const yy = Math.round(y); c.fillStyle = C16[9]; c.fillRect(24, yy - 12, 12, 12); c.fillStyle = C16[1]; c.fillRect(31, yy - 10, 3, 3); c.fillStyle = C16[0]; c.fillRect(32, yy - 9, 1, 1); }
-      fx.end(c, W, H);
-      if (t < 3) { c.fillStyle = C16[0]; c.font = '8px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText('TAP: JUMP', W / 2, 70); c.fillText('HOLD: BIG JUMP', W / 2, 82); }
+      for (const r of rocks) { const x = Math.round(mix(r.was, r.x)); c.fillStyle = C16[13]; c.fillRect(x - 5, GROUND() - r.h, 10, r.h); c.fillStyle = C16[14]; c.fillRect(x - 5, GROUND() - r.h, 10, 2); }   // whole pixels, between ticks
+      if (!dead) { const yy = Math.round(mix(yWas, y)); c.fillStyle = C16[9]; c.fillRect(24, yy - 12, 12, 12); c.fillStyle = C16[1]; c.fillRect(31, yy - 10, 3, 3); c.fillStyle = C16[0]; c.fillRect(32, yy - 9, 1, 1); }
+      feel.end(c, W, H);
+      // The app draws the score top centre (api.scoreArea() says where): keep HUDs out of it.
+      ready.draw(c, W, H, { pixel: true, text: 'TAP: JUMP', color: C16[0], y: 70 });   // crisp pixel letters
+      if (ready.waiting) text(c, 'HOLD: BIG JUMP', W / 2, 80, { color: C16[0], align: 'center' });
     },
-    down: (x, y, id) => g.down(x, y, id),
+    down(x, y, id) { ready.go(); g.down(x, y, id); },
     move: (x, y, p, id) => g.move(x, y, p, id),
     up: (x, y, id) => g.up(x, y, id),
-    key(k, d) { if (d && (k === ' ' || k === 'ArrowUp')) jump(false); },
+    key(k, d) { if (d && (k === ' ' || k === 'ArrowUp')) { ready.go(); jump(false); } },
     debug(c) { c.strokeStyle = '#f0f'; c.strokeRect(23, y - 12, 14, 12); for (const r of rocks) c.strokeRect(r.x - 5, GROUND() - r.h, 10, r.h); },
   };
 }
@@ -57,6 +66,8 @@ export default {
   tag: 'Color · Runner',
   retro: true, era: 'color', pal: 'lemon',
   w: 160, h: 176, maxW: 240,
+  tick: 60,                 // update(1/60) a whole number of times a frame: the same game at 30, 60 and 120 fps
+  music: 'chase',           // a soundtrack in one line (pixel styles get the chip sound): happy, calm, tense, spooky, heroic, sad, silly, chase, puzzle
   goal: 25,
   hint: 'Tap to jump over the rocks. Hold for a big jump over the tall ones.',
   creator: '__CREATOR__',

@@ -20,19 +20,34 @@ export interface GameApi {
   win(): void;
   /** Does the player own this shop item? */
   has(itemId: string): boolean;
-  /** Saves up to 2 KB of JSON for this game. False if it wasn't saved (too big, or a newer version of the game saved last). */
+  /** Saves up to 8 KB of JSON for this game; it follows the player to a new phone (cloud save). False if it wasn't saved (too big, or a newer version of the game saved last). */
   save(data: unknown): boolean;
-  load<T>(fallback: T): T;
+  /** A fresh copy of what save() kept, or `fallback` when there's nothing saved. */
+  load(fallback?: unknown): Loose;
   clearSave(): void;
+  /**
+   * A second, larger save that stays on this phone: up to 512 KB of JSON, for big things that wouldn't be missed on a
+   * new phone (a built world, drawings, recorded runs). False if it wasn't saved (too big, or a newer version saved last).
+   */
+  saveLocal(data: unknown): boolean;
+  /** The phone-only save, or `fallback`. Call it in make() or reset(): the first read takes a moment, and the app waits for it there ("Loading…"). */
+  loadLocal(fallback?: unknown): Loose;
+  clearLocal(): void;
   /** Seconds since this game last ran on this phone (at most a week; about 0 once it has run this session). For idle games. */
   away(): number;
-  /** The player's rounded position (needs `location` in the definition), or null. */
-  location(): Promise<{ lat: number; lon: number; accuracy?: number } | null>;
-  watchLocation(cb: (p: { lat: number; lon: number }) => void): () => void;
+  /** The player's rounded position (needs `location` in the definition). Never fails: with no location it gives a stand-in, real: false, and why. */
+  location(): Promise<GamePlace>;
+  /** Calls cb now and each time the player moves to another grid cell, until the round ends or the returned stop() is called. */
+  watchLocation(cb: (p: GamePlace) => void): () => void;
   /** Where the app's score badge sits (top centre), in game units, roomy enough for a 4-digit score: keep HUDs out of it. Changes with the screen (folding), so read it when drawing. */
   scoreArea(): { x: number; y: number; w: number; h: number; bottom: number };
-  [more: string]: Loose;
+  /** Where a finger that's down is heading by the next refresh, [x, y] in game units (id: that finger; none: the one that moved last). Null where the browser doesn't guess or the finger has stopped: draw to the real point then. */
+  ahead(id?: number): [number, number] | null;
+  /** Where this game's Tiny Brains keep what they learned. gs.brains reads it (new Brain(api, ...)); games don't. */
+  brains: Loose;
 }
+/** What api.location() and api.watchLocation() give: a rounded position, or the stand-in (real: false; reason says why: 'denied', 'unavailable', 'not-playing', 'undeclared'...). */
+export interface GamePlace { lat: number; lon: number; /** metres */ accuracy: number | null; real: boolean; precision: 'coarse' | 'precise' | null; reason?: string }
 
 export interface Game {
   /** Set up everything for a new round here (Play again calls it too). */
@@ -85,8 +100,25 @@ export interface GameDef {
   pal?: string;
   creator?: string;
   location?: 'coarse' | 'precise';
-  /** Save versions: raise version when the save's shape changes; migrate turns an older save into the new shape. */
-  save?: { version: number; migrate?(data: Loose, from: number): unknown };
+  /** Save versions: raise version when a save's shape changes; migrate turns an older save into the new shape (migrateLocal: the same for the phone-only save). */
+  save?: { version: number; migrate?(data: Loose, from: number): unknown; migrateLocal?(data: Loose, from: number): unknown };
+  /** 'fine': move() gets every reading of a finger that's down (screens read touches faster than they draw), several per frame, oldest first. For drawing and tracing games; leave it out if the game reads one move's distance as a speed. */
+  touch?: 'fine';
+  /**
+   * A soundtrack in one line: the app plays an original tune under each round, written from this mood and the
+   * game's id, and has it follow the action (it builds towards the goal, lifts when the player scores, holds on
+   * pause, stops at game over). 'happy' | 'calm' | 'tense' | 'spooky' | 'heroic' | 'sad' | 'silly' | 'chase' |
+   * 'puzzle', or { mood, set, vol, seed, tempo, key, bars, voices }. set: the instruments; left out, pocket styles
+   * play the chip sound and the others a synth group, band or orchestra to suit the mood. Leave `music` out of a
+   * game that plays its own with gs.sound.music().
+   */
+  music?: MusicMood | { mood: MusicMood; set?: MusicSet; vol?: number; seed?: string | number; tempo?: number; key?: string; bars?: 4 | 8; voices?: Record<string, VoiceName | KitName | 'chip'> };
+  /**
+   * Pocket styles only: the look of an old handheld's screen. true, or { grid, ghost }: grid is how strong the fine
+   * lines between pixels are (0 to .6), ghost how much of the last frame lingers (0 to .85; fast things leave a
+   * short trail). Left out, the game is shown clean. Pixels are the same size on every phone either way.
+   */
+  lcd?: boolean | { grid?: number | boolean; ghost?: number | boolean };
   /** The most frames a second this game wants (the app picks a rate per phone, never above this). */
   fps?: number;
   /**
@@ -96,35 +128,69 @@ export interface GameDef {
    * look flickers on purpose, or whose picture changes in ways motion can't follow).
    */
   frameGen?: false | 'ahead';
+  /** Credits paid for a win (10 if left out; double on the first win). */
+  reward?: number;
+  /** Things the player can buy for this game with credits; api.has(id) says whether one is in use this round. */
+  shop?: { id: string; name: string; price: number; /** 'boost': used up by a round. 'unlock': kept. */ kind?: 'boost' | 'unlock'; desc?: string }[];
+  /** true: this game gets its own best-score leaderboard (use sparingly: see docs/game-services.md). */
+  board?: boolean;
+  /** Fluid games (maxW / maxH): grow in steps of this many game units (a tile), not one at a time. */
+  step?: number;
+  /** Extra words for the feed's "For you" ranking, like 'theme:space'. */
+  traits?: string[];
+  /** 'world': needs native AR (walking around); the feed leaves it out on phones without it. */
+  ar?: 'world';
   make(api: GameApi): Game;
-  [more: string]: Loose;
 }
 
 // ---------- core parts (always there) ----------
 
 type SoundFx = (pitch?: number) => void;
+export type SoundName = 'coin' | 'jump' | 'hurt' | 'hit' | 'boom' | 'laser' | 'shoot' | 'powerup' | 'select' | 'blip' | 'pop' | 'splash' | 'click' | 'win' | 'lose' | 'levelup' | 'countdown' | 'tick' | 'tock' | 'toggle' | 'back' | 'confirm' | 'deny' | 'open' | 'close' | 'step' | 'land' | 'dash' | 'skid' | 'flap' | 'bounce' | 'boing' | 'swoosh' | 'whoosh' | 'slip' | 'slash' | 'punch' | 'block' | 'clang' | 'bow' | 'reload' | 'zap' | 'charge' | 'shield' | 'thud' | 'crack' | 'shatter' | 'crumble' | 'blast' | 'gem' | 'key' | 'heal' | 'star' | 'chest' | 'combo' | 'perfect' | 'unlock' | 'cash' | 'drip' | 'bubble' | 'gust' | 'thunder' | 'crackle' | 'chirp' | 'croak' | 'buzz' | 'squeak' | 'growl' | 'beep' | 'alarm' | 'siren' | 'ring' | 'door' | 'lever' | 'teleport' | 'warp' | 'robot' | 'rev' | 'go' | 'buzzer' | 'fanfare' | 'tada' | 'whistle' | 'gong' | 'bell' | 'roll' | 'horn' | 'sad' | 'heart' | 'wobble' | 'squish' | 'plop' | 'zip' | 'honk' | 'twinkle' | 'pluck' | 'munch' | 'gulp';
+/** Instrument sets for music(): 'chip' is square and triangle waves; the others are synths made in code (Tone.js). */
+export type MusicSet = 'chip' | 'synth' | 'band' | 'orchestra';
+/** Single voices, for music({ voices }) and instrument(). */
+export type VoiceName = 'saw' | 'sub' | 'warm' | 'pulse' | 'epiano' | 'bassguitar' | 'organ' | 'pick' | 'flute' | 'cello' | 'strings' | 'harp' | 'brass' | 'bell' | 'kalimba' | 'marimba' | 'steelpan';
+/** Drum kits, for music({ voices: { drums } }). */
+export type KitName = 'kit' | '808' | 'concert';
+export type MusicMood = 'happy' | 'calm' | 'tense' | 'spooky' | 'heroic' | 'sad' | 'silly' | 'chase' | 'puzzle';
 export interface SoundPart {
   /** One beep: frequency, duration (s), wave, volume, pitch slide (Hz). */
   sfx(f?: number, d?: number, type?: OscillatorType, vol?: number, slide?: number): void;
-  /** Ready-made sounds. */
-  sounds: Record<'coin' | 'jump' | 'hurt' | 'hit' | 'boom' | 'laser' | 'shoot' | 'powerup' | 'select' | 'blip' | 'pop' | 'splash' | 'click' | 'win' | 'lose' | 'levelup' | 'countdown', SoundFx> & Record<string, SoundFx>;
+  /**
+   * Ready-made sounds (98): sounds.coin(), sounds.step()... Each takes a pitch multiplier (1 = normal). Ones that
+   * repeat a lot (steps, hits, shots, whooshes) differ a touch each time; tuned ones (coins, jingles) play exact.
+   * Menus: tick tock toggle back confirm deny open close select blip click. Moving: jump step land dash skid flap
+   * bounce boing swoosh whoosh slip. Fights and breaking: hit hurt shoot laser boom blast slash punch block clang
+   * bow reload zap charge shield thud crack shatter crumble. Rewards: coin gem key heal star chest combo perfect
+   * unlock cash powerup levelup pop. Weather and animals: splash drip bubble gust thunder crackle chirp croak buzz
+   * squeak growl. Machines: beep alarm siren ring door lever teleport warp robot rev. The round: countdown go win
+   * lose buzzer fanfare tada whistle gong bell roll horn sad heart. Cartoon: wobble squish plop zip honk twinkle
+   * pluck munch gulp.
+   */
+  sounds: Record<SoundName, SoundFx>;
   /** A note name ('C5', 'F#3') to Hz. */
   freq(note: string | number): number;
-  tone(f: number | string, o?: { len?: number; wave?: OscillatorType; vol?: number; slide?: number; attack?: number; at?: number; out?: AudioNode; bus?: string }): void;
-  noise(len?: number, o?: { vol?: number; from?: number; to?: number; filter?: BiquadFilterType; q?: number; at?: number; attack?: number; out?: AudioNode; bus?: string }): void;
+  /** One note. hold: seconds at full volume before it fades (0: fades from the start, like a pluck). wobble: [times a second, Hz either way] wavers the pitch. */
+  tone(f: number | string, o?: { len?: number; wave?: OscillatorType; vol?: number; slide?: number; attack?: number; hold?: number; wobble?: [number, number]; at?: number; when?: number; out?: AudioNode; bus?: string }): void;
+  noise(len?: number, o?: { vol?: number; from?: number; to?: number; filter?: BiquadFilterType; q?: number; at?: number; when?: number; attack?: number; hold?: number; out?: AudioNode; bus?: string }): void;
   /** The sound of a place: a reverb made in code. Play into sp.in (sound + echo) or give it to new Ears({ space }). Null without audio. */
   space(o?: { seconds?: number; decay?: number; wet?: number; bright?: number; pre?: number }): { in: AudioNode; tail: AudioNode; set(o: { wet?: number; bright?: number }, seconds?: number): Loose } | null;
   /** A steady background of noise (wind, rain, a river) that glides with set(); stops with the round, quiet while paused. */
   bed(o?: { vol?: number; from?: number; filter?: BiquadFilterType; q?: number; gusts?: number; out?: AudioNode }): { set(o: { vol?: number; from?: number; q?: number }, seconds?: number): Loose; stop(): void; [k: string]: Loose };
   /** Plays a tune like 'C5 E5 G5 - C6' ('-' is a rest). */
-  notes(seq: string, o?: { len?: number; gap?: number; wave?: OscillatorType; vol?: number }): void;
-  /** Background music from patterns; start it in update(), not reset(). */
+  notes(seq: string, o?: { len?: number; gap?: number; wave?: OscillatorType; vol?: number; at?: number }): number;
   /** Living music: the tune follows the play (tension from close calls, settles, a loss calms it, tempo leans to the player's pace). */
   follow(song: Loose, o?: { calm?: number; ease?: number; tempo?: [number, number]; pace?: number; brain?: Brain }): { readonly tension: number; readonly speed: number; feel(x?: number): Loose; tap(): Loose; lost(): Loose; won(): Loose; update(dt: number): Loose };
   /** Writes an original looping tune from a mood and a seed (same seed, same tune): pass it to music(). */
-  compose(o?: { mood?: 'happy' | 'calm' | 'tense' | 'spooky' | 'heroic' | 'sad' | 'silly' | 'chase' | 'puzzle'; seed?: string | number; tempo?: number; key?: string; bars?: 4 | 8 }): { tempo: number; swing: number; layers: Record<string, number>; lead: string; bass: string; pad: string; pad2: string; arp: string; drums: string; drums2: string; lead2: string; info: { mood: string; key: string; mode: string; bars: number; chords: number[]; win: string; lose: string } };
+  compose(o?: { mood?: MusicMood; seed?: string | number; tempo?: number; key?: string; bars?: 4 | 8 }): { tempo: number; swing: number; layers: Record<string, number>; lead: string; bass: string; pad: string; pad2: string; arp: string; drums: string; drums2: string; lead2: string; info: { mood: string; key: string; mode: string; bars: number; chords: number[]; win: string; lose: string } };
   MOODS: Record<string, Loose>;
-  music(o?: { tempo?: number; vol?: number; swing?: number; lead?: string; bass?: string; drums?: string; layers?: Record<string, number>; [part: string]: Loose }): { start(): Loose; stop(): void; pause(): void; resume(): void; speed(x: number): Loose; layer(name: string, level?: number, fade?: number): Loose; intensity(x: number, fade?: number): Loose; readonly level: number; readonly playing: boolean; [k: string]: Loose };
+  /**
+   * Background music from patterns; start it in update(), not reset(). set: the instruments, 'chip' (the default),
+   * 'synth', 'band' or 'orchestra'; voices swaps single parts: { lead: 'bell', drums: 'kit' }. A set other than chip
+   * uses Tone.js, which loads by itself: the tune plays in the chip sound until it's in.
+   */
+  music(o?: { tempo?: number; vol?: number; swing?: number; lead?: string; bass?: string; drums?: string; layers?: Record<string, number>; set?: MusicSet; voices?: Record<string, VoiceName | KitName | 'chip'>; [part: string]: Loose }): { start(): Loose; stop(): void; pause(): void; resume(): void; speed(x: number): Loose; layer(name: string, level?: number, fade?: number): Loose; intensity(x: number, fade?: number): Loose; readonly level: number; readonly playing: boolean; /** Where the tune is as the player hears it, in steps (a fraction), or -1 when it isn't playing. */ readonly pos: number; /** True once the set's instruments are in. */ readonly tuned: boolean; [k: string]: Loose };
   /** 3D sound: the listener follows the camera; sounds play at points in the world (HRTF in headphones). */
   Ears: new (o?: { ref?: number; max?: number; rolloff?: number; hrtf?: boolean; flat?: boolean; space?: { tail: AudioNode } | null; send?: number }) => {
     place(pos: { x: number; y: number; z?: number }, forward?: { x: number; y: number; z: number }, up?: { x: number; y: number; z: number }): Loose; place2d(x: number, y: number, facing?: number): Loose;
@@ -138,6 +204,14 @@ export interface SoundPart {
   zsound(...params: number[]): () => void;
   /** Tone.js (lazy: call it in make() or reset()). */
   Tone(): Loose;
+  /** One instrument to play yourself (lazy: make it in make() or reset()): instrument('epiano').play('C4', { len: .4 }). */
+  instrument(name: VoiceName, o?: { vol?: number }): { name: string; play(note: string | number, o?: { len?: number; vol?: number; at?: number }): Loose; free(): void };
+  /** Which voice plays each part in each set, and the voices and drum kits themselves (their settings, read only). */
+  SETS: Record<MusicSet, Record<string, string> | null>;
+  VOICES: Record<VoiceName, Loose>;
+  KITS: Record<KitName, Loose>;
+  /** Seconds between a sound being played and the player hearing it (the phone's output, Bluetooth included where it says). gs.rhythm.Beat allows for it by itself. */
+  delay(): number;
   /** Channels ('sfx', 'music', 'voice' or your own), ducking, room echo and muffle. Reset when the round ends. */
   mixer: {
     volume(name: string, v: number, fade?: number): Loose;
@@ -183,7 +257,8 @@ export interface DevicePart {
   tilt(): XY | null;
   calibrateTilt(): void;
   onMotion(cb: (m: Loose) => void): () => void;
-  onShake(cb: () => void): () => void;
+  /** cb(strength) on each shake: about 28 (a light shake) to 70 and more (a hard one). */
+  onShake(cb: (strength: number) => void): () => void;
   orientation(): Loose;
   /** Compass heading in degrees, or null. */
   heading(): number | null;
@@ -1133,7 +1208,8 @@ export interface PartyPart {
   Split: new (w: number, h: number, o?: { players?: number; facing?: boolean; across?: boolean }) => Split;
 }
 
-export interface Beat { bpm: number; offset: number; steps: number; time: number; running: boolean; onBeat: boolean; onStep: boolean; readonly spb: number; readonly beat: number; readonly phase: number; start(): Beat; stop(): Beat; update(dt: number): Beat }
+/** A beat clock in step with the music as the player hears it (it allows for the phone's sound delay by itself). */
+export interface Beat { bpm: number; offset: number; steps: number; time: number; running: boolean; onBeat: boolean; onStep: boolean; readonly spb: number; readonly beat: number; readonly phase: number; /** The sound delay being allowed for, in seconds. */ readonly delay: number; start(): Beat; stop(): Beat; update(dt: number): Beat }
 export interface ChartNote { time: number; beat: number; lane: number; hold: number; hit: boolean; result: 'perfect' | 'good' | 'miss' | null }
 export interface Chart {
   notes: ChartNote[]; lanes: number; length: number; counts: { perfect: number; good: number; miss: number }; combo: number; best: number;
@@ -1143,7 +1219,7 @@ export interface Chart {
 }
 export interface RhythmPart {
   lag(): number;
-  Beat: new (o?: { bpm?: number; offset?: number; steps?: number }) => Beat;
+  Beat: new (o?: { bpm?: number; offset?: number; steps?: number; /** false: count from when sounds are played, with no allowance for the phone's sound delay. */ heard?: boolean }) => Beat;
   Chart: new (text: string, o?: { bpm?: number; per?: number; lead?: number; windows?: { perfect?: number; good?: number; miss?: number } }) => Chart;
   Calibrate: new (o?: { bpm?: number; beats?: number; skip?: number }) => { beat: Beat; taps: number[]; done: boolean; lag: number; update(dt: number): Loose; tap(): Loose };
 }
@@ -1203,7 +1279,7 @@ export interface SkyPart {
     time: number; speed: number; night: number; clouds: number; gap: number; /** 0..1 lights up the sky and clouds (lightning): set it while a flash shows. */ flash: number;
     readonly dayPart: number; update(dt: number): Loose; apply(): Loose; dispose(): void;
   };
-  Weather: new (view: Loose, o?: { kind?: 'rain' | 'snow' | 'storm' | 'clear'; amount?: number; area?: number; wind?: [number, number]; max?: number; color?: string }) => {
+  Weather: new (view: Loose, o?: { kind?: 'rain' | 'snow' | 'storm' | 'clear'; amount?: number; area?: number; /** [x, z] push, or a gs.outdoors.Wind to follow. */ wind?: number[] | { x?: number; z?: number; [k: string]: Loose }; max?: number; color?: string }) => {
     kind: string; amount: number; wind: [number, number]; onFlash: ((far: number) => void) | null; readonly flashing: boolean;
     set(kind: 'rain' | 'snow' | 'storm' | 'clear', amount?: number): Loose; flash(): Loose; update(dt: number): Loose; dispose(): void;
   };
@@ -1367,7 +1443,7 @@ export interface LandPart {
   object: Loose; mesh: Loose; /** A gs.outdoors Wind: the grass sways with it. */ wind?: WindPart | null; size: number; segments: number; low: number; high: number;
   height(x: number, z: number): number; normal(x: number, z: number): P3; slope(x: number, z: number): number; inside(x: number, z: number): boolean;
   flatten(x: number, z: number, r: number, h?: number, soft?: number): LandPart; paint(stops: [number, string][]): LandPart; masks(fn: (x: number, z: number, y: number, slope: number) => number[]): LandPart; solid(world: Loose, o?: Loose): Loose;
-  grass(o?: { count?: number; colour?: string; tint?: string; width?: number; height?: number; blades?: number; above?: number; below?: number; steep?: number; far?: number; seed?: number; wind?: number }): Loose;
+  grass(o?: { count?: number; colour?: string; /** [from, to]: tufts get a colour between the two. */ tint?: string[]; width?: number; height?: number; blades?: number; above?: number; below?: number; steep?: number; far?: number; seed?: number; wind?: number }): Loose;
   scatter(props: Loose, name: string, count: number, o?: { above?: number; below?: number; steep?: number; keepOut?: (x: number, z: number) => boolean; inset?: number; [k: string]: Loose }): number[];
   update(dt: number, camera?: Loose): LandPart; dispose(): void;
 }

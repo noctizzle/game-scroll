@@ -15,7 +15,8 @@ The human-facing guide is [CONTRIBUTING.md](CONTRIBUTING.md); the kit reference 
 3. Write the game (rules below). Use `gs` for everything shared.
 4. Check it, and fix whatever fails:
    ```bash
-   node scripts/game-lint.mjs <id>          # forbidden code (network, storage, eval...)
+   node scripts/game-lint.mjs <id>          # forbidden code (network, storage, eval...); also kit hints (advice, not failures)
+   node scripts/game-types.mjs <id>         # gs used the way its types describe (no kit, method, option or field that doesn't exist)
    npm run games                             # builds streamed files; fails on bad imports or a missing gs part
    npm run build:bundled && node scripts/smoke.cjs <id>   # plays it with random input; fails on any error
    node scripts/stream-smoke.mjs <id>        # plays it streamed, the way the store apps run it
@@ -93,8 +94,12 @@ export default {
 ```
 
 `api`: `score(n)`, `over()`, `win()`, `has(itemId)`, `away()` (seconds since it last ran), `scoreArea()` (where the app's score badge sits: keep HUDs out of it), `save(data)` / `load(fallback)` / `clearSave()`
-(2 KB JSON; changing its shape? add `save: { version, migrate(data, from) }` to the definition), `location()` / `watchLocation(cb)` (needs `location: 'coarse'` or `'precise'` in the
-definition). Optional game methods: `snapshot()` / `restore(data)` (keep a round across hot reload), `fx(dt)` (effects behind the game-over screen), `resize(w, h)`
+(8 KB JSON, follows the player to a new phone; changing its shape? add `save: { version, migrate(data, from) }` to the definition), `saveLocal(data)` / `loadLocal(fallback)` / `clearLocal()` (512 KB JSON that stays on this phone,
+for a built world or recorded runs; call `loadLocal` in `make()` or `reset()`), `ahead(id)` (where a finger is heading by the next frame, or null), `location()` / `watchLocation(cb)` (needs `location: 'coarse'` or `'precise'` in the
+definition).
+Optional definition fields: `tick: 60` (fixed tick), `music: 'chase'` (a soundtrack in one line: the app plays an original tune under each round that follows the action; moods `happy`, `calm`, `tense`, `spooky`, `heroic`, `sad`, `silly`, `chase`, `puzzle`),
+`touch: 'fine'` (`move()` gets every reading of the finger, several a frame: drawing and tracing games), `lcd: true` (pixel styles: an old handheld screen's grid and ghosting), `maxW` / `maxH` (fluid size), `reward`, `shop`.
+Optional game methods: `snapshot()` / `restore(data)` (keep a round across hot reload), `fx(dt)` (effects behind the game-over screen), `resize(w, h)`
 (fluid games with `maxW`, `maxH`), `debug(c)`, `pause()`, `resume()`.
 Next Gen and AR: frame generation makes the in-between frames on fast screens by itself; `frameGen: 'ahead'`
 (no added delay) or `frameGen: false` in the definition, `view.cut()` after a camera jump, and
@@ -123,8 +128,8 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.effects.Feel`: `coin`, `hit`, `boom`, `hurt`, `jump`, `land`, `shoot`, `powerup`, `combo`,
   `score`, `win`, `lose`, `click`: particles + shake + sound + haptics in one call.
 - `gs.juice`: `Juice` (particles, shake, pop-ups, flash, hit-stop, tweens), `Timeline` + `stagger` (anime.js; lazy), `ease`, `lerp`, `approach`, `pulse`.
-- `gs.sound`: `sfx(f, d, type, vol, slide)`, `sounds.coin()` etc., `noise()`, `notes('C5 E5 G5')`,
-  `music({ tempo, lead, bass, drums })`, `compose({ mood, seed })` (an original tune for music()), `zzfx(...numbers)`, `zsound()`, `Tone()` (Tone.js; lazy),
+- `gs.sound`: `sfx(f, d, type, vol, slide)`, `sounds.coin()` etc. (98 ready-made: `step`, `slash`, `gem`, `door`, `fanfare`, `boing`...; the full list is in `docs/maker-kit.md` and the types), `noise()`, `tone()`, `notes('C5 E5 G5')`,
+  `music({ tempo, lead, bass, drums, set: 'chip'|'synth'|'band'|'orchestra' })`, `instrument('kalimba')` (one voice to play; lazy), `compose({ mood, seed })` (an original tune for music()), `zzfx(...numbers)`, `zsound()`, `Tone()` (Tone.js; lazy),
   `mixer` (`volume`, `duck`, `room('cave')`, `muffle`), `say(text, { pitch, rate, lang })` (text to speech).
 - `gs.device`: `haptic('light'|'medium'|'heavy'|'tick'|'success'|'warning'|'error')`, `buzz()`,
   `steps()`, `pressure()` (height change), `light()`, `near()`, `hasSensor(kind)` (null until running; keep a touch way),
@@ -206,7 +211,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   `Voice({ words, also })` (`start()`, `said(word)`, `available`). `gs.doodle` (lazy): `Doodle` (`guess(strokes, { among })` of 46 things).
   `gs.phoneai`: `PhoneAI({ persona, words })` `ask(prompt, { fallback })` for flavour lines only; play must never depend on it.
 
-**Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `story.Story`, `look2d.Screen`, `look2d.Batch`, `words.Words`, `trivia.Quiz`, `ui.UI`, `juice.Timeline`, `hear.Sounds`, `doodle.Doodle`): create them in `make()` or `reset()`, never
+**Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `sound.instrument`, `api.loadLocal`, `story.Story`, `look2d.Screen`, `look2d.Batch`, `words.Words`, `trivia.Quiz`, `ui.UI`, `juice.Timeline`, `hear.Sounds`, `doodle.Doodle`): create them in `make()` or `reset()`, never
 later. The app shows "Loading…" and remakes the game once the library is in.
 The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `city`, `models`, `voxels`, `THREE`)
 and `ai`, plus the action kits (`combat`, `tactics`, `climb`, `missions`, `cutscene`, `prompts`, `stealth`, `gadgets`, `campaign`, `arena`) and play kits (`craft`, `soft`, `cards`, `dice`, `words`, `trivia`, `ui`) and smarts (`hear`, `doodle`, `phoneai`), also load on first use, so the app opens fast. The app loads the ones a game uses before it
@@ -226,7 +231,9 @@ Add `/** @type {import('../gamescroll.js').GameDef} */` above `export default` t
 - A round that starts moving (or scoring) before the player touches it: wait with `gs.rounds.Ready`.
 - A HUD drawn under the app's score badge (top centre): keep it out of `api.scoreArea()`.
 - Using `Date.now()` or `setTimeout` for game timing: use `dt` and `gs.math.Timers` (they pause with the game).
-- Starting music in `reset()` (it also runs while the card waits in the feed): start it in `update()`.
+- Starting music in `reset()` (it also runs while the card waits in the feed): start it in `update()`, or put `music: '<mood>'` in the definition and the app plays and stops it.
+- Timing with `performance.now()` in `update()`, or a hand-made fixed step: use `dt`, and `tick: 60` in the definition for the same game on every phone.
+- Particles, screen shake, a thumbstick or "wait for the first tap" written by hand: `Feel`, `gs.controls.Stick` and `gs.rounds.Ready` do them (`game-lint` hints at these).
 - Drawing in screen pixels: always draw in `w` × `h` game units; input is already converted.
 - Forgetting a touch fallback for tilt, mic, voice, camera, face or motion.
 - Pocket games with more than 4 shades, or smooth (non-integer) positions in pixel styles.

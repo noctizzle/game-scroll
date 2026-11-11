@@ -164,8 +164,12 @@ export default {
 - `api.win()` wins right now, for games with a natural end (cleared the board).
 - `api.has('itemId')` is true when a shop item is active for this run. Safe to call in `reset()`.
 - `api.save(data)`, `api.load(fallback)`, `api.clearSave()`: this game's own save slot (unlocked
-  levels, settings...), up to 2 KB of JSON, synced with the player's cloud save. See
+  levels, settings...), up to 8 KB of JSON, synced with the player's cloud save. See
   [Save slots](docs/maker-kit.md#save-slots).
+- `api.saveLocal(data)`, `api.loadLocal(fallback)`, `api.clearLocal()`: a bigger slot (512 KB) that
+  stays on the phone, for a built world, drawings or recorded runs. Call `loadLocal` in `make()` or `reset()`.
+- `api.ahead(id)`: where a finger is heading by the next frame (drawing games; see
+  [Finer touch](docs/maker-kit.md#finer-touch)).
 - `api.location()`, `api.watchLocation(cb)`: where the player is, rounded, only during a round. The
   game must declare `location: 'coarse'` (or `'precise'`). See [Location](docs/maker-kit.md#location).
 
@@ -417,7 +421,8 @@ node scripts/smoke.cjs my-game            # plays your game with random input; f
 node scripts/fold.cjs my-game             # folds and unfolds the screen mid-game
 node scripts/sweep.cjs my-game            # long random play at odd sizes (required for Console and Next Gen games)
 npm run games                             # builds the streamed files; fails if the file name and id differ
-node scripts/game-lint.mjs my-game        # flags code that touches the network, storage or native features
+node scripts/game-lint.mjs my-game        # flags code that touches the network, storage or native features; also gives kit hints (advice only)
+node scripts/game-types.mjs my-game       # gs used the way its types describe: no kit, method, option or definition field that doesn't exist
 ```
 
 `npm run qa` runs bot play tests over every game and is useful for checking that your game doesn't
@@ -430,8 +435,10 @@ the controls feel good with a thumb, the hint makes sense, and the goal is reach
 
 1. Commit your game file on a branch in your fork and open a pull request against `main`.
 2. Fill in the template: what the game is, the mechanic, the style, and a screenshot or short clip.
-3. GitHub Actions builds the app, smoke-tests the games you changed and flags risky code
-   (`scripts/game-lint.mjs`). Fix anything it reports.
+3. GitHub Actions builds the app, smoke-tests the games you changed, checks how they use `gs`
+   (`scripts/game-types.mjs`) and flags risky code (`scripts/game-lint.mjs`). Fix anything it reports.
+   Kit hints ("particles by hand: Feel does this") show as notes on your files: they're advice, and
+   how your game looks and plays stays your choice.
 4. A maintainer plays it and may ask for changes. Games that don't fit the rules above, or play too
    much like a game already in the feed, may be declined.
 

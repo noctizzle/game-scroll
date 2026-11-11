@@ -435,6 +435,46 @@ console.log('physics ok');
   assert.equal(none.load('fb'), 'fb', 'no migrate gives the fallback');
   _resetSaves();
   console.log('saves: versions + migrate ok');
+
+  // bigger saves: 8 KB of JSON, kept packed; the cloud save takes packed and plain saves alike
+  const { SAVE_MAX, LOCAL_MAX, localSavesFor } = await import('../src/saves.js'), { progress } = await import('../src/kit/progress.js');
+  assert.equal(SAVE_MAX, 8192); assert.equal(LOCAL_MAX, 512 * 1024);
+  const big = savesFor({ id: 'sv-big' });
+  const levels = Array.from({ length: 150 }, (_, i) => ({ id: i, stars: i % 4, best: 1000 + i * 7, done: i % 3 === 0 }));   // about 6 KB: three times the old limit
+  const size = JSON.stringify({ levels }).length;
+  assert.ok(size > 5000 && size < SAVE_MAX, 'test save is ' + size + ' bytes');
+  assert.ok(big.save({ levels }), 'a 6 KB save is taken');
+  assert.deepEqual(big.load(null), { levels }, 'and comes back the same');
+  assert.equal(big.save({ junk: 'x'.repeat(SAVE_MAX) }), false, 'over 8 KB is refused');
+  assert.deepEqual(big.load(null), { levels }, 'and the save before it is kept');
+  const kept = JSON.parse(globalThis.localStorage.getItem('gs_saves'))['sv-big'];
+  assert.ok(typeof kept.z === 'string' && kept.d === undefined && kept.z.length < size / 3, `kept packed: ${size} bytes as ${kept.z.length}`);
+  const small = savesFor({ id: 'sv-small' }); small.save({ a: 1 });
+  assert.deepEqual(JSON.parse(globalThis.localStorage.getItem('gs_saves'))['sv-small'].d, { a: 1 }, 'a tiny save is kept as it is (packing would not shrink it)');
+  // the cloud save: what goes up is packed; what comes down may be packed or plain (an older save), newest wins
+  const snap = JSON.parse(JSON.stringify(progress.snapshot ? progress.snapshot() : {}));
+  const up = snap.saves || JSON.parse(globalThis.localStorage.getItem('gs_saves'));
+  assert.ok(typeof up['sv-big'].z === 'string', 'the cloud save carries the packed form');
+  _resetSaves();
+  assert.equal(big.load('none'), 'none', 'wiped');
+  const { default: _ } = { default: 0 };
+  const later = Date.now() + 5000;
+  progress.merge?.({ saves: { 'sv-big': { ...up['sv-big'], t: later }, 'sv-plain': { t: later, d: { old: true } }, 'sv-bad': { t: later, z: '!!not base64!!' }, 'sv-huge': { t: later, d: { junk: 'x'.repeat(SAVE_MAX + 10) } } } });
+  if (progress.merge) {
+    assert.deepEqual(big.load(null), { levels }, 'a packed save from the cloud is read');
+    assert.deepEqual(savesFor('sv-plain').load(null), { old: true }, 'a plain save from the cloud is read');
+    assert.equal(savesFor('sv-bad').load('fb'), 'fb', 'one that cannot be unpacked is left out');
+    assert.equal(savesFor('sv-huge').load('fb'), 'fb', 'and one over the limit');
+  }
+  // the phone-only slot, with no database here (node): it still works for the session
+  const loc = localSavesFor({ id: 'sv-local' });
+  assert.equal(loc.loadLocal('none'), 'none', 'nothing saved yet');
+  const world = { cells: 'ab'.repeat(100000) };
+  assert.ok(loc.saveLocal(world), 'a 200 KB phone save is taken'); assert.deepEqual(loc.loadLocal(null), world);
+  assert.equal(loc.saveLocal({ junk: 'x'.repeat(LOCAL_MAX) }), false, 'over 512 KB is refused');
+  loc.clearLocal(); assert.equal(loc.loadLocal('none'), 'none', 'cleared');
+  _resetSaves();
+  console.log(`saves: 8 KB cloud slot kept packed (${size} bytes as ${kept.z.length}), cloud merge, phone slot ok`);
 }
 
 // Tiny Brains: copies its teacher, guard rails hold, waves and plans learn

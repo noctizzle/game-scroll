@@ -1,6 +1,6 @@
 // A campaign: chapters of missions that unlock in order (or by stars), up to three stars a mission
 // (score targets or named challenges), collectibles hidden in each mission, extras that unlock at a
-// star count, and a save that fits in api.save's 2 KB. The kit keeps the bookkeeping; your game draws
+// star count, and a save that fits in api.save's limit (8 KB). The kit keeps the bookkeeping; your game draws
 // the mission select and plays the missions (gs.missions for the script inside one).
 //
 //   const { Campaign } = gs.campaign;
