@@ -1,101 +1,339 @@
-// gs.models.human(options): a close-up person, the same skeleton, Rig and Face as gs.poses.person (so
-// the same poses, blends, foot planting, face shapes and lip sync drive it), made finer:
-//   - the body smoothed with Loop subdivision (three-subdivide), so shoulders, elbows and knees are round
-//   - a sculpted head (gs.models.sculpt): skull, jaw, cheekbones, nose, brow, chin and ears, with eye sockets
-//   - eyes with a white, a coloured iris and a pupil under a glossy clear coat
-//   - hair as a shell with strands that catch the light along their length (anisotropic), in a few styles
-//   - skin that lets light through at thin edges (subsurface scattering on WebGPU), clothes in the fabric
-//     and leather recipes
+// gs.models.human(options): a person to see up close, sculpted in code. The body, the clothes and the
+// kit are soft shapes melted together (field.js, human-shapes.js): a torso, legs and sleeves drawn as
+// slices the way a tailor cuts them, a head with a brow, cheekbones, a nose, lips, ears and eyelids,
+// hands with fingers, then what they wear: a tunic with its collar, pockets, buttons and belt, trousers
+// bloused into boots, a helmet or a cap, straps, pouches, a pack. Creases, collars and hat brims sit in
+// soft shadow worked out from the shapes themselves, so nothing needs a texture file.
+// One skinned mesh per person on the skeleton gs.poses uses (the same Rig poses, blends and foot
+// planting), with three levels of detail (see(), lod) so a squad costs little far off and the one in
+// the scope is whole.
+// Sculpting takes a second or two for a new cut of clothes, so it happens in background workers while
+// the app shows "Loading…" (the same way a big library loads: make people in make() or reset()), and
+// each piece is saved on the phone, so the next launch has them at once. People in the same cut of
+// clothes share their pieces whatever their colours; twin() makes another of the very same person for free.
 // Kit use only: games reach it as gs.models.human.
-import { Color, SphereGeometry, Vector3, CanvasTexture, RepeatWrapping, SRGBColorSpace } from 'three';
-import { LoopSubdivision } from 'three-subdivide';
-import { personParts, assemble, smoothNormals } from '../skin.js';
-import { sculpt } from './sculpt.js';
+import { Bone, BufferAttribute, BufferGeometry, Color, Group, Matrix4, Mesh, Object3D, Skeleton, SkinnedMesh, Sphere, Vector3 } from 'three';
+import { lumps } from './field.js';
+import { BONES, PARENT, AT, HC, ARM, ss, bump, jobsFor, sculpt, mirrored, turned, VERSION, hashOf } from './human-shapes.js';
 import { material } from './materials.js';
-import { pbr } from '../hd3d.js';
+import { Rig } from '../poses.js';
+import { reach } from '../characters.js';
+import { Face } from '../skin.js';
+import { pbr, HD } from '../hd3d.js';
+import { StillLoading } from '../lazy.js';
 
-// the body's parts smoothed once per build (girth, sleeves, steps) and copied for each person after
-const smoothed = new Map();
-const subdivider = key => { let i = 0; return (g, n) => {
-  const k = key + '|' + n + '|' + i++;
-  if (!smoothed.has(k)) {
-    let s; try { s = LoopSubdivision.modify(g, n, { split: false, uvSmooth: false, preserveEdges: false, flatOnly: false, maxTriangles: 60000 }); } catch (e) { s = g.index ? g.toNonIndexed() : g.clone(); }
-    smoothNormals(s); s.userData.smoothNormals = true;
-    if (smoothed.size >= 64) smoothed.delete(smoothed.keys().next().value);
-    smoothed.set(k, s);
+const PI = Math.PI, abs = Math.abs;
+
+// ---- which material each kind of surface is drawn with (a maker's own slots say theirs: { colour, as })
+const AS = { skin: 'skin', lips: 'skin', lid: 'skin', lash: 'skin', mouth: 'skin', eyes: 'eyes', hair: 'hair', brow: 'skin', top: 'cloth', legs: 'cloth', kit: 'cloth', trim: 'cloth', tab: 'cloth', band: 'cloth', hatband: 'cloth', scarf: 'cloth', hat: 'cloth', glove: 'cloth', roll: 'cloth',
+  belt: 'leather', boots: 'leather', strap: 'leather', pouch: 'leather', sole: 'leather', holster: 'leather', helm: 'hard', visor: 'hard', wood: 'hard', flask: 'hard', case: 'hard', buckle: 'steel', button: 'steel', steel: 'steel', badge: 'steel' };
+const CLASSES = ['skin', 'eyes', 'cloth', 'leather', 'hard', 'steel', 'hair'];
+
+
+// ================================================================= pieces: in memory, saved, or sculpted in a worker
+const made = new Map(), loading = new Map();   // key -> { p, t } (t: when it was last used); key -> a promise for it
+const DB = 'gs-people', KEEP = 40, HELD = 64, clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+let dbp = null;
+const open = () => dbp ||= new Promise(res => {
+  try {
+    const rq = indexedDB.open(DB, 1);
+    rq.onupgradeneeded = () => { rq.result.createObjectStore('pieces'); rq.result.createObjectStore('when'); };
+    rq.onsuccess = () => res(rq.result); rq.onerror = rq.onblocked = () => res(null);
+  } catch (e) { res(null); }
+});
+const tx = (db, mode, fn) => new Promise(res => { try { const t = db.transaction(['pieces', 'when'], mode), r = fn(t.objectStore('pieces'), t.objectStore('when')); t.oncomplete = () => res(r?.result); t.onerror = t.onabort = () => res(null); } catch (e) { res(null); } });
+const idOf = key => VERSION + ':' + hashOf(key);
+const good = p => p && p.n > 0 && p.P?.length === p.n * 3 && p.I?.length === 3 && Array.isArray(p.slots);
+async function saved(key) {
+  const db = await open(); if (!db) return null;
+  const id = idOf(key), p = await tx(db, 'readonly', s => s.get(id)); if (!good(p)) return null;
+  tx(db, 'readwrite', (s, w) => w.put(Date.now(), id));   // used just now: the last to be thrown away
+  return p;
+}
+async function save(key, p) {
+  const db = await open(); if (!db) return;
+  const id = idOf(key); await tx(db, 'readwrite', (s, w) => { s.put(p, id); w.put(Date.now(), id); });
+  // the newest KEEP stay
+  const keys = await tx(db, 'readonly', (s, w) => w.getAllKeys()), times = await tx(db, 'readonly', (s, w) => w.getAll());
+  if (keys && times && keys.length > KEEP) { const old = keys.map((k, i) => [k, times[i]]).sort((a, b) => a[1] - b[1]).slice(0, keys.length - KEEP); tx(db, 'readwrite', (s, w) => { for (const [k] of old) { s.delete(k); w.delete(k); } }); }
+}
+// the workers: up to four, started when there is sculpting to do and let go a few seconds after
+const idle = [], waiting = new Map(), queue = [];
+let workers = 0, off = typeof Worker !== 'function', jobId = 0, rest = 0;
+const MOST = () => Math.max(1, Math.min(4, (typeof navigator !== 'undefined' && navigator.hardwareConcurrency || 4) - 2));
+const heavy = { trunk: 10, head: 4, arm: 3, hat: 2, pack: 2, gear: 2, hand: 1 };
+function pump() {
+  clearTimeout(rest);
+  while (queue.length && !off) {
+    let w = idle.pop();
+    if (!w && workers < MOST()) {
+      try {
+        w = new Worker(new URL('./human-worker.js', import.meta.url), { type: 'module' }); workers++;
+        w.onmessage = e => { const q = waiting.get(e.data.id); waiting.delete(e.data.id); idle.push(w); if (q) e.data.p ? q.res(e.data.p) : q.rej(new Error(e.data.error)); pump(); };
+        // a worker that won't start (or dies): its job, and everything after, is sculpted here instead
+        w.onerror = () => { off = true; workers--; for (const [id, q] of waiting) if (q.w === w) { waiting.delete(id); q.rej(new Error('worker')); } pump(); };
+      } catch (e) { off = true; break; }
+    }
+    if (!w) break;
+    const q = queue.shift(), id = ++jobId; q.w = w; waiting.set(id, q); w.postMessage({ id, job: { kind: q.job.kind, a: q.job.a } });
   }
-  g.dispose(); return smoothed.get(k).clone();
-}; };
+  if (off) for (const q of queue.splice(0)) q.rej(new Error('worker'));
+  if (!queue.length && !waiting.size) rest = setTimeout(() => { for (const w of idle.splice(0)) { w.terminate(); workers--; } }, 4000);
+}
+const inWorker = job => new Promise((res, rej) => { queue.push({ job, res, rej }); queue.sort((a, b) => heavy[b.job.kind] - heavy[a.job.kind]); pump(); });
+const here = job => new Promise((res, rej) => setTimeout(() => { try { res(sculpt(job)); } catch (e) { rej(e); } }, 0));
+const hold = (key, p) => { made.set(key, { p, t: clock() }); return p; };
+/** A promise for a piece: from memory, the saved copy, or sculpted now (in a worker where it can be). */
+function load(job) {
+  const have = made.get(job.key); if (have) return Promise.resolve(have.p);
+  let pr = loading.get(job.key);
+  if (!pr) {
+    pr = (async () => {
+      let p = await saved(job.key);
+      if (!p) { p = job.local || off ? await here(job) : await inWorker(job).catch(() => here(job)); save(job.key, p); }
+      return hold(job.key, p);
+    })().finally(() => loading.delete(job.key));
+    loading.set(job.key, pr);
+  }
+  return pr;
+}
+// the HELD pieces used last stay in memory (the rest have their saved copies)
+function tidy() { if (made.size <= HELD) return; for (const [k] of [...made].sort((a, b) => a[1].t - b[1].t).slice(0, made.size - HELD)) made.delete(k); }
+const missing = list => { const out = new Map(); for (const o of list) for (const j of jobsFor(specOf(o))) if (!made.has(j.key)) out.set(j.key, j); return [...out.values()]; };
 
-// the head, sculpted (metres, centred where person()'s head is): every person shares one shape per face
-const HEAD = [0, 1.57, 0];
-const headShapes = (jaw, nose) => [
-  { ball: .118, at: [0, .015, -.008], scale: [1, 1.12, 1.08] },                          // skull
-  { ball: .085, at: [0, -.055, .02], scale: [1.05 * jaw, 1, 1.05], blend: .05 },          // jaw
-  { ball: .028, at: [0, -.1, .062], scale: [1.25, 1, 1], blend: .03 },                    // chin
-  ...[1, -1].map(s => ({ ball: .03, at: [s * .055, -.02, .075], blend: .04 })),           // cheekbones
-  { capsule: [[0, .02, .105], [0, -.03, .123 + .006 * nose]], r: .014, blend: .025 },     // nose bridge and tip
-  ...[1, -1].map(s => ({ ball: .011, at: [s * .013, -.03, .112], blend: .015 })),          // nostrils
-  { capsule: [[-.06, .045, .093], [.06, .045, .093]], r: .016, blend: .03 },              // brow ridge
-  ...[1, -1].map(s => ({ ball: .024, at: [s * .045, .03, .112], cut: true, blend: .02 })), // eye sockets
-  ...[1, -1].map(s => ({ torus: [.02, .007], at: [s * .118, .005, -.01], rot: [0, 0, Math.PI / 2], scale: [1, 1.5, 1], blend: .015 })),   // ears
-];
-// the shape's local positions moved to where the head sits
-const placed = (shapes) => shapes.map(s => s.capsule ? { ...s, capsule: s.capsule.map(p => p.map((v, i) => v + HEAD[i])) } : { ...s, at: (s.at || [0, 0, 0]).map((v, i) => v + HEAD[i]) });
+// ================================================================= materials (shared by everyone)
+let MATS = null;
+function mats() {
+  if (MATS) return MATS;
+  const cloth = material('fabric', { colour: '#ffffff', repeat: [1, 1], closeUp: false, vertexColors: true }), leather = material('leather', { colour: '#ffffff', repeat: [1, 1], closeUp: false, vertexColors: true });
+  cloth.normalScale.set(.55, .55); leather.normalScale.set(.3, .3);
+  MATS = {
+    skin: pbr('#ffffff', { rough: .56, vertexColors: true, sss: { colour: '#e0603c', scale: .5 } }), eyes: pbr('#ffffff', { rough: .1, clear: 1, vertexColors: true }),
+    cloth, leather, hard: pbr('#ffffff', { rough: .52, vertexColors: true }), steel: pbr('#ffffff', { rough: .38, metal: .85, vertexColors: true }), hair: pbr('#ffffff', { rough: .62, vertexColors: true }),
+    far: pbr('#ffffff', { rough: .8, vertexColors: true }),
+  };
+  for (const [k, m] of Object.entries(MATS)) m.name = 'human:' + k;
+  return MATS;
+}
 
-// hair strands: a streaky grey picture the hair colour tints, laid along the strands
-let strands = null;
-function strandTex() {
-  if (strands) return strands;
-  const c = document.createElement('canvas'); c.width = 128; c.height = 64; const x = c.getContext('2d');
-  x.fillStyle = '#b0b0b0'; x.fillRect(0, 0, 128, 64);
-  for (let i = 0; i < 400; i++) { const px = (i * 37.17) % 128, l = 128 + (i % 7) * 10; x.strokeStyle = `rgba(${i % 3 ? 255 : 40},${i % 3 ? 255 : 40},${i % 3 ? 255 : 40},${.08 + (i % 5) * .03})`; x.lineWidth = .6 + (i % 3) * .4; x.beginPath(); x.moveTo(px, 0); x.lineTo(px + (i % 9 - 4), l); x.stroke(); }
-  strands = new CanvasTexture(c); strands.wrapS = strands.wrapT = RepeatWrapping; strands.repeat.set(6, 1); strands.colorSpace = SRGBColorSpace; strands.anisotropy = 4;
-  return strands;
+// ================================================================= putting a person together
+const DETAIL = [.5, .75, 1, 1];   // see(): how tall a person counts as, by quality tier
+const DEF = { skin: '#d9ab86', hair: '#3b2a1a', eyes: '#141416', iris: '#5a7a9a', lips: '#a8665c' };
+function specOf(o) {
+  const fem = o.sex === 'f' || o.sex === 'female', g = o.girth ?? 1;
+  const build = { shoulders: fem ? .9 : 1, chest: (fem ? .92 : 1) * g, waist: (fem ? .87 : 1) * g, hips: (fem ? 1 : 1) * g ** .5, limbs: fem ? .88 : 1, bust: fem ? 1 : 0, neck: fem ? .84 : 1, ...(o.build || {}) };
+  const of = o.outfit || {}, top = { kind: 'shirt', colour: o.body ?? '#3a6ea5', sleeves: o.sleeves ?? 'long', pockets: 0, buttons: null, collar: undefined, ...(of.top || {}) };
+  if (top.kind === 'tunic') { top.pockets ??= 4; } if (top.collar === undefined) top.collar = top.kind === 'shirt' ? false : null;
+  const legs = { kind: 'trousers', colour: o.legs ?? '#2b2b38', ...(of.legs || {}) }, feet = { kind: 'shoes', colour: o.shoes ?? '#1a1a1a', ...(of.feet || {}) };
+  const face = { jaw: o.jaw ?? (fem ? .86 : 1), chin: fem ? .82 : 1, brow: fem ? .72 : 1, nose: o.nose ?? (fem ? .84 : 1), lips: fem ? 1.12 : 1, cheeks: 1, eyes: fem ? 1.08 : 1, soft: fem ? 1 : 0, ...(o.face || {}) };
+  const hat = of.hat ? { kind: 'helmet', ...of.hat } : null;
+  return { build, top, legs, feet, face, hat, belt: of.belt || null, web: of.webbing || null, extras: of.extras || {}, pack: of.pack || null, gear: o.gear || [], hands: o.hands || 'open', gloves: of.gloves || null,
+    hair: o.hair === null ? null : o.hair ?? DEF.hair, hairStyle: o.hairStyle || 'short', moustache: !!o.moustache, fem, o };
+}
+// the colour of each slot for this person
+function palette(sp) {
+  const { top, legs, feet, hat, belt, web, o } = sp, c = v => v, ex = sp.extras;
+  return {
+    skin: o.skin ?? DEF.skin, lid: o.skin ?? DEF.skin, lash: '#' + new Color(o.skin ?? DEF.skin).lerp(new Color('#1c120c'), sp.fem ? .82 : .6).getHexString(), lips: sp.fem ? o.lips ?? DEF.lips : '#' + new Color(o.skin ?? DEF.skin).lerp(new Color(o.lips ?? DEF.lips), .5).getHexString(), mouth: '#2e1512', hair: sp.hair || '#3b2a1a', brow: sp.hair || o.eyes || '#2a1c12', glove: sp.gloves?.colour ?? '#4a3d2c',
+    top: top.colour, trim: top.collar || top.cuffs || top.strapColour || top.colour, tab: top.tabs || top.colour, band: top.band || '#d9c25a', hatband: hat?.band ?? hat?.colour ?? '#4b5249', button: top.buttons || '#8a8270',
+    legs: legs.colour, boots: feet.colour, sole: '#16120e', kit: feet.gaiter || ex.bag || ex.kit || '#6e6a4c', strap: web?.colour ?? belt?.colour ?? '#2b2723', pouch: web?.pouchColour ?? web?.colour ?? belt?.colour ?? '#2b2723',
+    belt: belt?.colour ?? '#2b2723', buckle: belt?.buckle ?? '#8a8270', holster: ex.holsterColour ?? belt?.colour ?? '#2b2723', flask: ex.canteen === true ? '#4a4034' : ex.canteen || '#4a4034', scarf: ex.scarf === true ? top.colour : ex.scarf || top.colour,
+    hat: hat?.colour ?? '#4b5249', helm: hat?.colour ?? '#4b5249', visor: hat?.visor ?? '#111111', badge: hat?.badge ?? '#b8a050', roll: sp.pack?.roll ?? '#5a5a54', case: sp.pack?.colour ?? '#454a40', steel: '#2a2c2e', wood: '#5a3e26',
+    ...Object.fromEntries(Object.entries(o.slots || {}).map(([k, v]) => [k, c(typeof v === 'string' ? v : v.colour)])),
+  };
 }
 
 /**
- * A close-up person: the options of gs.poses.person (body, skin, legs, shoes, hair, eyes, lips, sleeves,
- * girth, scale, shadows) plus hairStyle ('short' | 'long' | 'bun' | 'bald'), iris (eye colour; eyes is the
- * pupil), jaw and nose (1 = average: wider jaw, longer nose), smooth (subdivision steps, 1; 2 for a hero up
- * close), cloth (false: plain clothes, no fabric texture). Returns what person() does: a Group with rig, face,
- * mesh and bones. Make people in make() or reset(): about 0.1 to 0.3 s each on a phone.
+ * A person sculpted in code, on gs.poses' skeleton (rig, bones), in three levels of detail.
+ * Looks: sex ('m' | 'f'), build ({ shoulders, chest, waist, hips, limbs }: 1 = average), girth, scale, skin,
+ * hair (null: none), hairStyle ('short' | 'bun' | 'long' | 'bald'), iris, lips, moustache, face ({ jaw, chin,
+ * brow, nose, lips, cheeks, eyes }), hands ('open' | 'grip').
+ * outfit: top { kind: 'shirt' | 'tunic' | 'blouse' | 'smock', colour, camo ([colour, colour]: blotches over it; legs and hat take it too), sleeves, collar (a colour, or false), pockets (0, 2, 4),
+ * buttons (a colour), straps (shoulder straps), tabs (collar patches' colour), cuffs, band (an armband's colour, left arm) },
+ * legs { kind: 'trousers' | 'breeches', colour }, feet { kind: 'shoes' | 'boots' | 'tall' | 'gaiters', colour, gaiter },
+ * hat { kind: 'helmet' | 'cap' | 'beret' | 'wool' | 'hood', colour, band, badge, strap, hide }, belt { colour, buckle },
+ * webbing { colour, y (straps up over the shoulders), cross, pouches (each side), kind: 'big' }, gloves { colour },
+ * pack { kind: 'pack' | 'radio' | 'roll', colour, roll, hide }, extras { bag, canteen, holster, scarf } (true or a colour).
+ * gear: [{ name, bone, shapes, cell, hide }]: your own kit as shapes (gs.models.sculpt's, with slot names) in the
+ * person's space, riding a bone; hide: true gives it a bone of its own (person.gear[name].visible = false).
+ * slots: { name: colour | { colour, as: 'cloth' | 'leather' | 'hard' | 'steel' | 'skin' } } for your own slot names.
+ * The old options (body, legs, shoes: colours) still dress a plain person.
+ * Returns a Group: rig, bones, mesh (the closest level), lods, lod (0 close .. 2 far; set it, or call
+ * see(camera, screenHeightInPixels) each frame to pick by size on screen), gear, face, twin() (another of the
+ * same person, sharing everything but the skeleton: a squad from two or three faces costs little memory),
+ * hold(thing, rightPoint, leftPoint) (both hands onto a thing he carries: after rig.update()).
+ * Make people in make() or reset(): a cut of clothes this phone hasn't sculpted yet takes a second or two in
+ * the background (the app shows "Loading…" and makes the game again), then it is saved. Several kinds of
+ * people? Make them together with human.all([...]), first thing, so they are sculpted side by side.
+ * now: true sculpts on the spot instead (tools and tests; the page stops while it does).
  */
 export function human(o = {}) {
-  const { hairStyle = 'short', iris = '#5a7a9a', jaw = 1, nose = 1, smooth = 1, cloth = true } = o;
-  const P = personParts({ ...o, head: false }), { add, one, cols } = P, hairOn = o.hair !== null && hairStyle !== 'bald';
-  const cSclera = new Color('#f4f0ea'), cIris = new Color(iris), cPupil = cols.eyes;
-  // the sculpted head and neck join (skin), its face shapes as person()'s
-  const head = sculpt(placed(headShapes(jaw, nose)), { blend: .04, res: 56 }).clone();
-  add(head, one('head'), () => cols.skin, 'head', new Vector3(...HEAD));
-  // eyes: white, iris and pupil by the angle from straight ahead
-  for (const s of [1, -1]) {
-    const c = new Vector3(s * .045, 1.6, .101), eye = new SphereGeometry(.02, 16, 12); eye.translate(c.x, c.y, c.z);
-    add(eye, one('head'), p => { const d = p.clone().sub(c).normalize().z; return d > .97 ? cPupil : d > .88 ? cIris : cSclera; }, 'eye', c, { slot: 'eyes' });
-    // a lid over the top of the eye (skin), which closes with blink
-    const lid = new SphereGeometry(.0212, 14, 6, 0, Math.PI * 2, 0, Math.PI * .3); lid.rotateX(-.15); lid.translate(c.x, c.y, c.z);
-    add(lid, one('head'), () => cols.skin, 'lid', c);
-    const brow = sculpt([{ capsule: [[-.022, 0, 0], [.022, .004 * s, 0]], r: .005 }], { res: 16 }).clone(); brow.translate(s * .047, 1.643, .112);
-    add(brow, one('head'), () => hairOn ? cols.hair : cols.eyes, 'brow', new Vector3(s * .047, 1.643, .112));
+  const sp = specOf(o), jobs = jobsFor(sp), miss = jobs.filter(j => !made.has(j.key));
+  if (miss.length) {
+    if (o.now) for (const j of miss) hold(j.key, sculpt(j));
+    else throw new StillLoading('gs.models.human', Promise.all(miss.map(load)));
   }
-  // lips: an upper and a lower, which open, widen and round as person()'s mouth does
-  const mouth = new SphereGeometry(.03, 18, 10); mouth.scale(1, .32, .42); mouth.translate(0, 1.52, .112);
-  add(mouth, one('head'), () => cols.lips, 'mouth', new Vector3(0, 1.52, .112));
-  // hair
-  if (hairOn) {
-    const cap = new SphereGeometry(.128, 28, 16, 0, Math.PI * 2, 0, Math.PI * .56); cap.scale(1.04, 1.1, 1.1); cap.rotateX(-.85); cap.translate(0, 1.595, -.012);
-    add(cap, one('head'), () => cols.hair, null, null, { slot: 'hair' });
-    if (hairStyle === 'long') { const back = sculpt([{ capsule: [[0, .02, -.06], [0, -.2, -.09]], r: .1, scale: [1.1, 1, .55] }], { res: 32 }).clone(); back.translate(0, 1.57, 0); add(back, p => [['head', 1 - Math.max(0, Math.min(1, (1.47 - p.y) / .1)) * .5], ['spine', Math.max(0, Math.min(1, (1.47 - p.y) / .1)) * .5]], () => cols.hair, null, null, { slot: 'hair' }); }
-    if (hairStyle === 'bun') { const bun = new SphereGeometry(.05, 16, 10); bun.translate(0, 1.69, -.07); add(bun, one('head'), () => cols.hair, null, null, { slot: 'hair' }); }
+  const M = mats(), pal = palette(sp), pieces = [];
+  // gear bones: a hat that can come off, a pack or a maker's own kit that can be hidden
+  const bones = BONES.slice(), parent = { ...PARENT }, gearBones = {}, gearPiece = {};
+  const ownBone = (name, par) => { bones.push(name); parent[name] = par; gearBones[name] = par; gearPiece[name] = pieces.length; return name; };
+  const onBone = (p, b) => ({ ...p, names: p.names.map(() => b) });
+  // narrow or broad shoulders: the arms (their bones, and all that rides them) sit that much in or out
+  const inset = .176 * (1 - sp.build.shoulders), ARMB = /^(arm|fore|hand)[LR]$/;
+  const moved = (p, dx) => { if (!dx) return p; const Q = p.P.slice(); for (let i = 0; i < p.n; i++) Q[i * 3] += dx; return { ...p, P: Q }; };
+  const atOf = b => { const k = AT[b] ? b : gearBones[b], a = AT[k]; return inset && ARMB.test(k) ? [a[0] - Math.sign(a[0]) * inset, a[1], a[2]] : a; };
+  let headP = null;
+  for (const j of jobs) {
+    const e = made.get(j.key), p = e.p; e.t = clock();
+    if (j.kind === 'hand') pieces.push(moved(turned(p, 1), -inset), moved(turned(mirrored(p), -1), inset));   // sculpted hanging straight down, then turned out with the arms
+    else if (j.kind === 'arm') { if (j.side !== 'R') pieces.push(moved(p, -inset)); if (j.side !== 'L') pieces.push(moved(mirrored(p), inset)); }   // sculpted as a left arm
+    else if (j.kind === 'head') pieces.push(headP = p);
+    else if (j.kind === 'hat') pieces.push(onBone(p, sp.hat.hide === false ? 'head' : ownBone('hat', 'head')));
+    else if (j.kind === 'pack') pieces.push(onBone(p, sp.pack.hide ? ownBone('pack', 'spine') : 'spine'));
+    else if (j.kind === 'gear') { const b = j.g.bone || 'spine'; pieces.push(onBone(ARMB.test(b) ? moved(p, b.endsWith('L') ? -inset : inset) : p, j.g.hide ? ownBone(j.g.name, b) : b)); }
+    else pieces.push(p);
   }
-  // materials: skin lets light through, eyes glossy, hair shines along its strands, clothes in recipes
-  const skin = pbr('#ffffff', { rough: .55, sss: { colour: '#e0603c', scale: .6 } });
-  const top = cloth ? material('fabric', { colour: '#e8e8e8', repeat: [8, 8] }) : pbr('#ffffff', { rough: .85 });
-  const legs = cloth ? material('fabric', { colour: '#d8d8e0', repeat: [10, 14], seed: 2 }) : pbr('#ffffff', { rough: .85 });
-  const shoes = cloth ? material('leather', { colour: '#c8c8c8', repeat: [3, 3] }) : pbr('#ffffff', { rough: .5 });
-  const hair = pbr('#ffffff', { rough: .45, aniso: .8, anisoDir: Math.PI / 2, map: strandTex() });
-  const eyes = pbr('#ffffff', { rough: .2, clear: 1 });
-  const out = assemble(P, { ...o, smooth, subdivide: subdivider(JSON.stringify([o.girth ?? 1, o.sleeves ?? 'long'])), mats: { body: top, skin, lips: skin, legs, shoes, hair, eyes } });
-  out.name = 'human';
-  return out;
+  tidy();
+
+  // ---- one set of points for all three levels, coloured for this person
+  const n = pieces.reduce((a, p) => a + p.n, 0), P = new Float32Array(n * 3), N = new Float32Array(n * 3), C = new Float32Array(n * 3), U = new Float32Array(n * 2), SI = new Uint16Array(n * 4), SW = new Float32Array(n * 4), cls = new Uint8Array(n);
+  const col = new Color(), dirt = new Color('#6a5c48'), browC = new Color(pal.brow), skinC = new Color(pal.skin), lipC = new Color(pal.lips), mouthC = new Color(pal.mouth), eyeC = [new Color(o.eyes ?? DEF.eyes), new Color(o.iris ?? DEF.iris), new Color('#2a221c'), new Color('#d9d3ca')];
+  const asOf = name => (typeof o.slots?.[name] === 'object' && o.slots[name].as) || AS[name] || (name.startsWith('eye') ? 'eyes' : 'hard');
+  const stub = sp.fem ? 0 : o.stubble ?? .35;
+  const camoOf = {}; for (const [slot, part] of [['top', sp.top], ['legs', sp.legs], ['hat', sp.hat]]) if (part?.camo) camoOf[slot] = [].concat(part.camo).map(c => new Color(c));
+  let at = 0; const offs = [];
+  for (const p of pieces) {
+    offs.push(at); P.set(p.P, at * 3);
+    const cs = p.slots.map(s => { const a = asOf(s); return { a, camo: camoOf[s], k: CLASSES.indexOf(a), c: s.startsWith('eye') ? eyeC[+s[3]] : new Color(pal[s] ?? '#888888') }; }), bi = p.names.map(b => Math.max(0, bones.indexOf(b)));
+    for (let i = 0; i < p.n; i++) {
+      const j = at + i, x = p.P[i * 3], y = p.P[i * 3 + 1], z = p.P[i * 3 + 2], s = cs[p.slot[i]], ao = p.ao[i] / 255;
+      const nx = p.N[i * 3] / 32767, ny = p.N[i * 3 + 1] / 32767, nz = p.N[i * 3 + 2] / 32767; N[j * 3] = nx; N[j * 3 + 1] = ny; N[j * 3 + 2] = nz;
+      col.copy(s.c); cls[j] = s.k;
+      if (s.camo) {   // camouflage: a second and a third colour brushed on in blotches
+        const n1 = lumps(x * 13 + 3.1, y * 9 + 1.7, z * 13 + 5.3) + .35 * lumps(x * 37, y * 31, z * 37); col.lerp(s.camo[0], ss(.1, .26, n1));
+        if (s.camo[1]) { const n2 = lumps(x * 17 - 4.2, y * 12 + 8.1, z * 17 + 2.6) + .35 * lumps(x * 41 + 9, y * 35, z * 41); col.lerp(s.camo[1], ss(.2, .36, n2)); }
+      }
+      if (s.a === 'cloth') { col.multiplyScalar(.94 + .09 * lumps(x * 9, y * 9, z * 9)); const mud = (1 - ss(0, .55, y)) * (.35 + .3 * lumps(x * 6, y * 4, z * 6)); if (mud > 0) col.lerp(dirt, Math.min(.5, mud)); }
+      else if (s.a === 'leather') { col.multiplyScalar(.95 + .1 * lumps(x * 14, y * 14, z * 14)); const mud = (1 - ss(0, .12, y)) * .25; if (mud > 0) col.lerp(dirt, mud); }
+      else if (s.a === 'skin' && p === headP) {
+        const hy = y - HC[1], hz = z - HC[2], name = p.slots[p.slot[i]], face = name === 'lips' || name === 'brow' && hy > 0;
+        if (face) col.copy(skinC);   // lips and brows are painted on below, softly, whatever the points were sculpted as
+        const red = bump(hy, -.024, .024) * bump(abs(x), .044, .024) * ss(.0, .05, hz) * .07 + bump(hy, -.034, .012) * bump(x, 0, .012) * .07 + ss(.07, .078, abs(x)) * .1;   // cheeks, nose, ears
+        col.r *= 1 + red * .35; col.g *= 1 - red * .5; col.b *= 1 - red * .55;
+        if (stub && name !== 'brow') { const sh = ss(-.04, -.062, hy) * ss(-.03, .01, hz) * ss(-.165, -.12, hy) * stub; col.r *= 1 - sh * .2; col.g *= 1 - sh * .15; col.b *= 1 - sh * .08; }
+        col.multiplyScalar(.975 + .035 * lumps(x * 55, y * 55, z * 55) + .02 * lumps(x * 190, y * 190, z * 190));   // skin is never one flat colour
+        const so = bump(hy, .004, .014) * bump(abs(x), .032, .017) * (hz > .05 ? .16 : 0); col.multiplyScalar(1 - so);   // the eye sockets a little darker
+        if (hz > .05 && hy > .012 && hy < .04) {   // brows: a soft stroke along the ridge (the painted core is the 'brow' slot)
+          const ax = abs(x), q = ax < .031 ? [.0125, .0245, .031, .0285] : [.031, .0285, .051, .0245], t = Math.max(0, Math.min(1, (ax - q[0]) / (q[2] - q[0]))), dy = hy - (q[1] + (q[3] - q[1]) * t), dx = ax < .0125 ? .0125 - ax : ax > .051 ? ax - .051 : 0;
+          const k = Math.max(name === 'brow' ? .5 : 0, ss((sp.fem ? .005 : .0062) - .002 * ss(.03, .051, ax), sp.fem ? .002 : .0028, Math.hypot(dx, dy))) * (sp.fem ? .92 : .85); if (k > 0) col.lerp(browC, k);
+        }
+        if (hz > .06 && hy < -.05 && hy > -.086) {   // lips, and the line between them
+          const fl = sp.face.lips, so = sp.face.soft, e = Math.min(Math.hypot(x / (.0245 - .0035 * so), (hy + .0622) / (.0048 * fl)), Math.hypot(x / (.021 - .002 * so), (hy + .073) / (.0062 * fl))), k = ss(1.12, .78, e) * (sp.fem ? .8 : .6); if (k > 0) col.lerp(lipC, k);   // (a man's lips are nearer his skin's colour)
+          const line = bump(hy, -.0671, .0015) * ss(.0245 - .0035 * so, .018 - .003 * so, abs(x)); if (line > .02) col.lerp(mouthC, line * (sp.fem ? .75 : .6));
+        }
+      }
+      // creases in soft shadow (warmer on skin: light soaks through it)
+      const k = s.a === 'eyes' ? ao : .28 + .72 * ao;
+      if (s.a === 'skin') { C[j * 3] = col.r * Math.pow(k, .75); C[j * 3 + 1] = col.g * k; C[j * 3 + 2] = col.b * Math.pow(k, 1.15); } else { C[j * 3] = col.r * k; C[j * 3 + 1] = col.g * k; C[j * 3 + 2] = col.b * k; }
+      // cloth and leather grain laid on by the way each point faces (metres)
+      const ax = abs(nx), ay = abs(ny), az = abs(nz), sc = s.a === 'leather' ? 60 : 64;
+      if (ay >= ax && ay >= az) { U[j * 2] = x * sc; U[j * 2 + 1] = z * sc; } else if (ax >= az) { U[j * 2] = z * sc; U[j * 2 + 1] = y * sc; } else { U[j * 2] = x * sc; U[j * 2 + 1] = y * sc; }
+      const ws = p.SW[i * 4] + p.SW[i * 4 + 1] + p.SW[i * 4 + 2] + p.SW[i * 4 + 3] || 1;
+      for (let q = 0; q < 4; q++) { SI[j * 4 + q] = bi[p.SI[i * 4 + q]]; SW[j * 4 + q] = p.SW[i * 4 + q] / ws; }
+    }
+    at += p.n;
+  }
+  const attrs = { position: new BufferAttribute(P, 3), normal: new BufferAttribute(N, 3), color: new BufferAttribute(C, 3), uv: new BufferAttribute(U, 2), skinIndex: new BufferAttribute(SI, 4), skinWeight: new BufferAttribute(SW, 4) };
+  // each level: its triangles in groups by material (close: all six; middle: skin and the rest; far: one)
+  const matsFor = [[M.skin, M.eyes, M.cloth, M.leather, M.hard, M.steel, M.hair], [M.skin, M.far], [M.far]], groupOf = [k => k, k => k <= 1 ? 0 : 1, () => 0];
+  const geos = [0, 1, 2].map(L => {
+    const by = matsFor[L].map(() => []);
+    pieces.forEach((p, pi) => { const I = p.I[L], off = offs[pi]; for (let t = 0; t < I.length; t += 3) { const a = I[t] + off, b = I[t + 1] + off, c = I[t + 2] + off, k = cls[b] === cls[c] ? cls[b] : cls[a]; by[groupOf[L](k)].push(a, b, c); } });
+    const g = new BufferGeometry(); for (const k in attrs) g.setAttribute(k, attrs[k]);
+    const all = new Uint32Array(by.reduce((a, l) => a + l.length, 0)); let s = 0; by.forEach((l, i) => { all.set(l, s); if (l.length) g.addGroup(s, l.length, i); s += l.length; });
+    g.setIndex(new BufferAttribute(n > 65535 ? all : new Uint16Array(all), 1));
+    g.boundingSphere = new Sphere(new Vector3(0, .95, 0), 1.3); return g;
+  });
+
+  // a loose copy of a hat or a pack (the helmet that flies off, the pack left behind): the middle level's
+  // triangles in a plain mesh, its middle at the mesh's origin; userData.at is where that sits on its bone
+  const looseGeo = {};
+  const loose = name => {
+    const pi = gearPiece[name]; if (pi == null) return null;
+    let g = looseGeo[name];
+    if (!g) {
+      const p = pieces[pi], off = offs[pi], a = atOf(gearBones[name]), lp = P.slice(off * 3, (off + p.n) * 3), count = new Array(CLASSES.length).fill(0);
+      for (let i = 0; i < p.n; i++) { lp[i * 3] -= a[0]; lp[i * 3 + 1] -= a[1]; lp[i * 3 + 2] -= a[2]; count[cls[off + i]]++; }
+      g = looseGeo[name] = new BufferGeometry();
+      g.setAttribute('position', new BufferAttribute(lp, 3)); g.setAttribute('normal', new BufferAttribute(N.slice(off * 3, (off + p.n) * 3), 3));
+      g.setAttribute('color', new BufferAttribute(C.slice(off * 3, (off + p.n) * 3), 3)); g.setAttribute('uv', new BufferAttribute(U.slice(off * 2, (off + p.n) * 2), 2));
+      g.setIndex(new BufferAttribute(p.I[1], 1)); g.computeBoundingBox();
+      const c = g.boundingBox.getCenter(new Vector3()); g.translate(-c.x, -c.y, -c.z); g.computeBoundingSphere();
+      g.userData = { at: [c.x, c.y, c.z], mat: M[CLASSES[count.indexOf(Math.max(...count))]] || M.far };
+    }
+    const m = new Mesh(g, g.userData.mat); m.castShadow = sh; m.userData.at = g.userData.at; m.name = 'human:' + name;
+    return m;
+  };
+
+  const sh = o.shadows !== false, scale = (o.scale ?? 1) * (sp.fem ? .945 : 1), tris = geos.map(g => g.index.count / 3);
+  const stand = () => {
+    const B = {};
+    for (const b of bones) { const bone = new Bone(); bone.name = b; B[b] = bone; }
+    for (const b of bones) { const par = parent[b], a = atOf(b); if (par) { const pa = atOf(par); B[b].position.set(a[0] - pa[0], a[1] - pa[1], a[2] - pa[2]); B[par].add(B[b]); } else B[b].position.set(...a); }
+    B.shinL.userData.ikLength = B.shinR.userData.ikLength = .435; B.foreL.userData.ikLength = B.foreR.userData.ikLength = .27;
+    const root = new Group();
+    root.add(B.hips); B.armL.rotation.z = ARM; B.armR.rotation.z = -ARM; root.updateMatrixWorld(true);   // bound with the arms out, as sculpted
+    const skel = new Skeleton(bones.map(b => B[b]));
+    B.armL.rotation.z = B.armR.rotation.z = 0; root.updateMatrixWorld(true);
+    const lods = geos.map((g, L) => { const m = new SkinnedMesh(g, matsFor[L]); m.castShadow = m.receiveShadow = sh; m.name = 'human' + L; m.frustumCulled = true; m.boundingSphere = new Sphere(new Vector3(0, .95, 0), 1.7); root.add(m); m.bind(skel, new Matrix4()); m.visible = L === 0; return m; });
+    root.scale.setScalar(scale);
+    root.name = 'human'; root.mesh = lods[0]; root.lods = lods; root.bones = B;
+    root.rig = new Rig(B, { height: 1.8 }); root.rig.feet = [B.footL, B.footR];
+    root.face = new Face(lods[0]);
+    let cur = 0;
+    Object.defineProperty(root, 'lod', { get: () => cur, set(v) { v = Math.max(0, Math.min(2, v | 0)); if (v !== cur) { lods[cur].visible = false; lods[v].visible = true; cur = v; } } });
+    /** Picks the level of detail by how tall the person stands on screen (pixels): call each frame, or now and then. A phone on a lower quality tier moves to the coarser levels sooner. */
+    const wp = new Vector3();
+    root.see = (cam, screenH = 800) => {
+      const d = cam.position.distanceTo(root.getWorldPosition(wp)), px = 1.8 * root.scale.y / (2 * Math.max(.1, d) * Math.tan((cam.fov || 50) * PI / 360)) * screenH * (DETAIL[HD.tier] ?? 1);
+      root.lod = px > (cur === 0 ? 190 : 230) ? 0 : px > (cur <= 1 ? 48 : 60) ? 1 : 2; return root.lod;
+    };
+    const gear = {};
+    for (const name of Object.keys(gearBones)) { const bone = B[name]; gear[name] = { get visible() { return bone.scale.x > 0; }, set visible(on) { bone.scale.setScalar(on ? 1 : 0); }, bone, loose: () => loose(name) }; }
+    // hands that take hold of things: a point in each palm, and both arms bent to bring them where they are wanted
+    const palm = {}; for (const sd of ['L', 'R']) { const q = new Object3D(); q.position.set(sd === 'L' ? -.014 : .014, -.082, .012); B['hand' + sd].add(q); palm[sd] = q; }
+    const tgt = new Vector3(), pole = new Vector3();
+    /**
+     * Both hands onto a thing he holds (a rifle, a wheel, a rope): right and left are points in the thing's own
+     * space (null leaves that arm to its pose). Call after rig.update(), each frame he is seen close. elbows:
+     * { right, left } where each elbow points, in the chest's space (default: the right out and down, the left down).
+     */
+    root.hold = (thing, right, left, elbows = {}) => {
+      root.updateMatrixWorld(true); thing.updateWorldMatrix(true, false);
+      for (const [sd, pt, el] of [['R', right, elbows.right || [-.55, 0, -.02]], ['L', left, elbows.left || [.3, -.25, .22]]]) {
+        if (!pt) continue;
+        tgt.set(pt[0], pt[1], pt[2]).applyMatrix4(thing.matrixWorld); pole.set(el[0], el[1], el[2]).applyMatrix4(B.spine.matrixWorld);
+        reach(B['arm' + sd], B['fore' + sd], tgt, { pole, end: palm[sd] });
+      }
+      return root;
+    };
+    root.gear = gear; root.tris = tris; root.twin = stand;
+    return root;
+  };
+  return stand();
 }
+/**
+ * Several people at once: human.all([options, options...]) => the people, in the same order. Everything
+ * that still needs sculpting is started together (side by side on the phone's cores), so the app waits once.
+ */
+human.all = list => {
+  const miss = missing(list.filter(o => !o.now));
+  if (miss.length) throw new StillLoading('gs.models.human', Promise.all(miss.map(load)));
+  return list.map(o => human(o));
+};
+/** Starts sculpting whatever these people still need and throws the app's "still loading" if anything does (so it can come first in make(), before anything costly is built); nothing otherwise. */
+human.need = list => { const miss = missing(list.filter(o => !o.now)); if (miss.length) throw new StillLoading('gs.models.human', Promise.all(miss.map(load))); };
+/** For tools and tests: a promise that settles once human(options) for each of these would come straight back. */
+human.ready = list => Promise.all(missing([].concat(list)).map(load)).then(() => true);
+/** Forgets every saved sculpt (Settings › clear cache, tests). */
+human.clear = async () => { made.clear(); const db = await open(); if (db) await tx(db, 'readwrite', (s, w) => { s.clear(); w.clear(); }); };

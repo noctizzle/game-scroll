@@ -1601,6 +1601,33 @@ console.log('physics ok');
     assert.ok(g.morphAttributes.position.length === 7 && fine.rig && fine.face, 'face shapes, rig and face');
   }
   console.log('gs.models: finer person ok');
+  // people sculpted from soft shapes (gs.models.human): the field meshes a ball true to size and knows whose surface is whose;
+  // a hand and a helmet come out as packed pieces with three levels of detail, whole weights and their bones
+  {
+    const F = await import('../src/kit/models/field.js'), HS = await import('../src/kit/models/human-shapes.js'); await F.thinReady;
+    const m = F.mesh([{ ball: .1, at: [0, .2, 0], slot: 'a' }, { box: [.3, .02, .3], at: [0, .08, 0], slot: 'b', blend: .01 }], { cell: .01, keep: 1 });
+    let worst = 0; for (let i = 0; i < m.n; i++) { const y = m.P[i * 3 + 1]; if (y > .2) worst = Math.max(worst, Math.abs(Math.hypot(m.P[i * 3], y - .2, m.P[i * 3 + 2]) - .1)); }
+    assert.ok(m.n > 300 && worst < .003, 'a ball meshes true to size: off by ' + worst);
+    assert.ok(new Set(m.own).size === 2 && m.ao.every(v => v >= 0 && v <= 1), 'each point knows its shape and how open it is');
+    const thin = F.mesh([{ ball: .1, at: [0, .2, 0] }], { cell: .008, keep: .2 }); assert.ok(thin.I.length < F.mesh([{ ball: .1, at: [0, .2, 0] }], { cell: .008 }).I.length * .35, 'thinned before the fine work');
+    const hand = HS.sculpt({ kind: 'hand', a: { limbs: 1, grip: 0, gloves: 0 } });
+    assert.ok(hand.n > 400 && hand.P.length === hand.n * 3 && hand.N instanceof Int16Array && hand.ao instanceof Uint8Array, 'a hand: packed arrays');
+    assert.ok(hand.I[0].length > hand.I[1].length && hand.I[1].length > hand.I[2].length && hand.I[2].length >= 3, 'three levels of detail: ' + hand.I.map(i => i.length / 3));
+    assert.deepEqual(hand.names, ['handL']); assert.ok(hand.slots.includes('skin'));
+    for (let i = 0; i < hand.n; i += 7) assert.equal(hand.SW[i * 4] + hand.SW[i * 4 + 1] + hand.SW[i * 4 + 2] + hand.SW[i * 4 + 3], 255, 'weights are whole');
+    const right = HS.mirrored(hand); assert.deepEqual(right.names, ['handR']); assert.ok(right.P[0] === -hand.P[0] && right.I[0][1] === hand.I[0][2], 'the other hand: turned over');
+    const sp = { build: { shoulders: 1, chest: 1, waist: 1, hips: 1, limbs: 1, bust: 0, neck: 1 }, top: { kind: 'tunic', sleeves: 'long', pockets: 4, buttons: '#888', collar: '#333' }, legs: { kind: 'trousers' }, feet: { kind: 'tall' }, face: { jaw: 1 }, hat: { kind: 'helmet', colour: '#444' }, belt: { colour: '#222' }, web: null, extras: {}, pack: null, gear: [], hands: 'open', gloves: null, hair: '#333', hairStyle: 'short', moustache: false };
+    const jobs = HS.jobsFor(sp), again = HS.jobsFor({ ...sp, top: { ...sp.top, buttons: '#abc', collar: '#def' }, hat: { kind: 'helmet', colour: '#f00' } });
+    assert.deepEqual(jobs.map(j => j.kind), ['trunk', 'arm', 'hand', 'head', 'hat']); assert.deepEqual(jobs.map(j => j.key), again.map(j => j.key), 'colours do not change what is sculpted');
+    const hat = HS.sculpt(jobs[4]); assert.ok(hat.n > 300 && hat.slots.includes('helm') && hat.names[0] === '$', 'a helmet on a bone of its own');
+    // each arm is a piece of its own (it turns in the shoulder; nothing is stretched across the armpit): one sculpt serves both, unless the left wears an armband
+    assert.equal(jobs[1].side, 'LR'); const banded = HS.jobsFor({ ...sp, top: { ...sp.top, band: '#dd0' } }).filter(j => j.kind === 'arm'); assert.deepEqual(banded.map(j => j.side), ['L', 'R']); assert.equal(banded[1].key, jobs[1].key, 'the bare arm is shared');
+    const arm = HS.sculpt(jobs[1]); assert.deepEqual([...arm.names].sort(), ['armL', 'foreL']); assert.ok(arm.n > 500 && arm.slots.includes('top'));
+    let minX = 9; for (let i = 0; i < arm.n; i++) minX = Math.min(minX, arm.P[i * 3]); assert.ok(minX > .1, 'a left arm, on its own side: ' + minX);
+    assert.deepEqual([...HS.mirrored(arm).names].sort(), ['armR', 'foreR']);
+    assert.ok(typeof HS.VERSION === 'string' && HS.VERSION.length > 4, 'the sculptor has a stamp for saved copies');
+  }
+  console.log('gs.models: sculpted people ok');
 }
 
 // fixed game tick: the same updates at 30, 60, 90 and 120 fps; alpha between ticks; physics draws smoothly

@@ -179,7 +179,12 @@ async function pomScene() {
     for (let r = 0; r < 8; r++) for (let k = -1; k < 4; k++) { const bx = k * 64 + (r % 2) * 32 + 3, by = r * 32 + 3; g.col.fillStyle = ['#a0503a', '#94482f', '#ad5c42'][(r + k + 3) % 3]; g.col.fillRect(bx, by, 58, 26); g.h.fillStyle = '#fff'; g.h.fillRect(bx, by, 58, 26); }
   });
   const wall = new T.Mesh(new T.PlaneGeometry(4, 2), gs.hd.pbr('#ffffff', { rough: .85, tex: bricks.repeat(2, 1), depth: .06 })); wall.position.set(-1.2, 1, -1); wall.rotation.y = .9; v.scene.add(wall);
-  const floor = new T.Mesh(new T.PlaneGeometry(6, 6).rotateX(-Math.PI / 2), gs.hd.pbr('#ffffff', { rough: .85, tex: bricks.repeat(3, 3), depth: .05 })); v.scene.add(floor);
+  // (a second surface of its own for the floor: two of these materials with different textures once drew in each other's colours on WebGPU)
+  const cobbles = gs.hd.surface(256, g => {
+    g.col.fillStyle = '#2f352c'; g.col.fillRect(0, 0, 256, 256); g.h.fillStyle = '#000'; g.h.fillRect(0, 0, 256, 256); g.r.fillStyle = '#ccc'; g.r.fillRect(0, 0, 256, 256);
+    for (let r = 0; r < 6; r++) for (let k = 0; k < 6; k++) { const bx = k * 43 + (r % 2) * 21, by = r * 43; g.col.fillStyle = ['#7f8a78', '#6c7a6a', '#8a9484'][(r * 2 + k) % 3]; g.h.fillStyle = '#fff'; for (const q of [g.col, g.h]) { q.beginPath(); q.arc((bx + 21) % 256, by + 21, 18, 0, 7); q.fill(); } }
+  });
+  const floor = new T.Mesh(new T.PlaneGeometry(6, 6).rotateX(-Math.PI / 2), gs.hd.pbr('#ffffff', { rough: .85, tex: cobbles.repeat(3, 3), depth: .05 })); v.scene.add(floor);
   const t0 = performance.now(); while (performance.now() - t0 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend];
@@ -338,10 +343,12 @@ async function humansScene() {
   const sun = gs.hd.sun('#fff2d8', 3, 4, [-.4, .7, .8]); v.scene.add(sun, sun.target); v.sun = sun; sun.follow(0, 0, 0);
   const floor = new T.Mesh(new T.PlaneGeometry(12, 12).rotateX(-Math.PI / 2), gs.hd.pbr('#a8a090', { rough: .9 })); floor.receiveShadow = true; v.scene.add(floor);
   const old = gs.poses.person({ body: '#b04a3a', skin: '#e0ac69', mat: col => gs.hd.pbr(col) }); old.position.set(-.55, 0, 0); v.scene.add(old);
-  const ms = [], t0 = performance.now();
-  const a = gs.models.human({ body: '#b04a3a', skin: '#e0ac69', hairStyle: 'short' }); a.position.set(.25, 0, 0); v.scene.add(a); ms.push(Math.round(performance.now() - t0));
-  const t2 = performance.now(), b = gs.models.human({ body: '#3a6a5a', legs: '#2a3a5a', skin: '#8d5524', hair: '#1a1008', hairStyle: 'long', iris: '#4a2a1a', sleeves: 'short', jaw: .9, nose: 1.2 }); b.position.set(.9, 0, -.3); v.scene.add(b); ms.push(Math.round(performance.now() - t2));
-  for (const h of [old, a, b]) { h.rig.play('idle', { fade: 0 }); h.rig.update(.5); h.face.set('smile', .6); h.face.update(1); }
+  // (the people are sculpted in the background first: the times are the sculpting, then putting each together)
+  const A = { body: '#b04a3a', skin: '#e0ac69', hairStyle: 'short' }, B = { body: '#3a6a5a', legs: '#2a3a5a', skin: '#8d5524', hair: '#1a1008', hairStyle: 'long', iris: '#4a2a1a', sleeves: 'short', jaw: .9, nose: 1.2 };
+  const ms = [], ts = performance.now(); await gs.models.human.ready([A, B]); ms.push(Math.round(performance.now() - ts));
+  const t0 = performance.now(), a = gs.models.human(A); a.position.set(.25, 0, 0); v.scene.add(a); ms.push(Math.round(performance.now() - t0));
+  const t2 = performance.now(), b = gs.models.human(B); b.position.set(.9, 0, -.3); v.scene.add(b); ms.push(Math.round(performance.now() - t2));
+  for (const h of [old, a, b]) { h.rig.play('idle', { fade: 0 }); h.rig.update(.5); h.face?.set?.('smile', .6); h.face?.update?.(1); h.see?.(v.cam, 320); }
   const t1 = performance.now(); while (performance.now() - t1 < 1500) { v.t = 0; v.render(x, 240, 320); await frame(); }
   v.t = 0; v.render(x, 240, 320);
   return [c.toDataURL(), window.__hd.info.backend + ', human ' + ms.join(', ') + ' ms'];
