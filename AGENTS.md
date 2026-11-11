@@ -204,7 +204,11 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   camera kicks already follow it; scale your own big effects by `gs.prefs.motion`.
 - `gs.math`: `rng(seed)`, `daily(salt)`, `noise2`, `noise3`, `fbm`, `vec`, `overlap`, `Grid`, `Timers`, `angleDiff`, `wrap`.
 - `gs.util`: `clamp`, `rnd`, `pix`, `disc`, `hash`, `fmt`, `letter(i)` ('A' + i), `flickTracker`. `gs.palettes`: `PAL`, `SHELL`, `C16`.
-- `gs.gfx` (shaded 2D shapes, glow, backdrops), `gs.bricks` (toy bricks), `gs.geo` (location maths).
+- `gs.gfx` (shaded 2D shapes, glow, backdrops; materials made in code: `material('paper'|'wood'|'stone'|'metal'|'cloth'|'water', { color, seed, scale, planks, blocks })` then `c.fillStyle = m.at(x, y)`,
+  `slab(c, x, y, w, h, m, { r, bevel, shadow })`, `water(c, x, y, w, h, t)`, `sticker(w, h, draw, { outline, glow, shadow })` then `.draw(c, x, y, { scale, angle })`), `gs.bricks` (toy bricks), `gs.geo` (location maths).
+- `gs.sketch` (hand-drawn looks): `Sketch({ stroke, roughness, boil })` `rect`/`circle`/`ellipse`/`line`/`poly`/`lines`/`curve`/`arc`/`path` with `{ fill, fillStyle: 'hachure'|'solid'|'cross-hatch'|'zigzag'|'dots' }`;
+  `Ink({ size, taper, color })` `add(x, y)`/`end()`/`draw(c)`/`hit(x, y)` for lines the player draws, `ink(c, points)`.
+- `gs.icons`: `icon(c, 'sword', x, y, size, { color, outline, angle, pixel })`: 528 icons that look the same on every phone (use these, not emoji); plain words (`heart`, `coin`, `key`, `star`, `skull`...) or `names`, `find('potion')`.
 - `gs.real` (real-world signals, no permission): `sun(place?)` (`up`, `height`, `compass`, `light` 0..1, `part`, `rise`/`set`, `hour` for gs.sky), `moon(place?)` (`phase`, `lit`, `name`), `battery()` (`level`, `charging`, `saver`), `headphones()`; null where the phone won't say, and never the only way to win.
 - `gs.toon` (Console 3D: `View`, `G`, `part`, `grp`, `blob`, `toon`), `gs.hd` (Next Gen: `HDView` with `decal`, `bounce` (bounce light), `room` (room reflections), `occluders` (occlusion culling), `beams` (volumetric light), `motionBlur`, `bakeLight`, `shafts`,
   `pbr`, `rbox`, `surface`, `speckle`, `Particles`, `sun`, `spot`), `gs.ar` (`ARView`, `FLOOR`, `arNote`), `gs.THREE`.
@@ -219,7 +223,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 **Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `sound.instrument`, `api.loadLocal`, `story.Story`, `look2d.Screen`, `look2d.Batch`, `words.Words`, `trivia.Quiz`, `ui.UI`, `juice.Timeline`, `hear.Sounds`, `doodle.Doodle`, `fonts.use`): create them in `make()` or `reset()`, never
 later. The app shows "Loading…" and remakes the game once the library is in.
 The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `city`, `models`, `voxels`, `THREE`)
-and `ai`, plus the action kits (`combat`, `tactics`, `climb`, `missions`, `cutscene`, `prompts`, `stealth`, `gadgets`, `campaign`, `arena`) and play kits (`craft`, `soft`, `cards`, `dice`, `words`, `trivia`, `ui`) and smarts (`hear`, `doodle`, `phoneai`), also load on first use, so the app opens fast. The app loads the ones a game uses before it
+and `ai`, plus the action kits (`combat`, `tactics`, `climb`, `missions`, `cutscene`, `prompts`, `stealth`, `gadgets`, `campaign`, `arena`) and play kits (`craft`, `soft`, `cards`, `dice`, `words`, `trivia`, `ui`) and smarts (`hear`, `doodle`, `phoneai`) and looks (`sketch`, `icons`), also load on first use, so the app opens fast. The app loads the ones a game uses before it
 runs, so read them as usual (`const { HDView } = gs.hd` at the top of the file is fine).
 
 **Sensors are worked out for you.** The build reads which camera, mic and motion parts a game uses and

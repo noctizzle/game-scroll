@@ -447,6 +447,126 @@ export interface GfxPart {
   glow(c: Ctx, x: number, y: number, r: number, col: string, a?: number): void;
   backdrop(c: Ctx, x: number, y: number, w: number, h: number, top: string, bottom: string): void;
   post(c: Ctx, w: number, h: number): void;
+  /** The materials, and the colour each starts as. */
+  readonly MATERIALS: Readonly<Record<MaterialName, string>>;
+  /**
+   * A material made in code, to fill shapes with (no image files; worked out once and remembered). The same options give
+   * the same material back. `c.fillStyle = m.at(x, y)` fills with the texture's corner at (x, y), so a thing that moves
+   * carries its texture with it; m.pattern is the same at 0, 0; m.tile is the picture itself. For the smooth styles.
+   */
+  material(name: MaterialName | Material2D, o?: MaterialOptions): Material2D;
+  /** A material's tile as numbers: a size x size RGBA picture that repeats without a seam (px: its size, 256). */
+  texture(name: MaterialName, o?: MaterialOptions & { px?: number }): { size: number; data: Uint8ClampedArray };
+  /**
+   * A block of a material: rounded corners, lit from the top left, a soft shadow under it. r: corner radius (6). bevel:
+   * the lit edge's width (2; 0 is flat). shadow: true, false, or how far it drops. tint: a colour washed over it
+   * ('#ff000040'). anchor: [x, y] the texture is fixed to (by default the block's own corner, so it moves with it).
+   */
+  slab(c: Ctx, x: number, y: number, w: number, h: number, mat?: MaterialName | Material2D, o?: { r?: number; bevel?: number; shadow?: boolean | number; tint?: string | null; anchor?: [number, number] | null }): void;
+  /**
+   * Water in a rectangle with light moving on it. t: the game's time in seconds. color: the water at the top; deep: at
+   * the bottom; light: the moving net of light; strength 0..1 (.5); scale (1); flow: [x, y] game units a second it drifts.
+   * For a pond of another shape, clip to the shape first.
+   */
+  water(c: Ctx, x: number, y: number, w: number, h: number, t?: number, o?: { color?: string; deep?: string | null; light?: string; strength?: number; scale?: number; flow?: [number, number] }): void;
+  /**
+   * Keeps a drawing as a picture (one drawImage however much went into it) and adds the looks that are slow to draw
+   * every frame: an outline, a glow, a soft shadow. draw(g, w, h) draws it once into a w by h box. Make it in make() or reset().
+   */
+  sticker(w: number, h: number, draw: (g: Ctx, w: number, h: number) => void, o?: { outline?: string; width?: number; glow?: string; glowSize?: number; shadow?: boolean | string; shadowBlur?: number; shadowX?: number; shadowY?: number; res?: number }): Sticker2D;
+}
+export type MaterialName = 'paper' | 'wood' | 'stone' | 'metal' | 'cloth' | 'water';
+/** color: its main colour. seed: a different piece of it. scale: 1 is 128 game units a tile. contrast: 1 (0 flat, 2 strong). planks: boards down a wood tile. blocks: rows of stone blocks (even numbers). threads: across a cloth tile (32). */
+export interface MaterialOptions { color?: string; seed?: number; scale?: number; contrast?: number; planks?: number; blocks?: number; threads?: number }
+export interface Material2D {
+  readonly name: string;
+  /** The tile itself (a canvas), for drawImage. */
+  readonly tile: CanvasImageSource;
+  /** Game units one tile covers. */
+  readonly span: number;
+  /** The fill for c.fillStyle with the texture's corner at 0, 0. */
+  readonly pattern: CanvasPattern;
+  /** The fill for c.fillStyle with the texture's corner at (x, y). */
+  at(x?: number, y?: number): CanvasPattern;
+}
+export interface Sticker2D {
+  readonly w: number; readonly h: number;
+  /** Draws it centred on (x, y). anchor: which point of the drawing sits on x, y ([.5, .5]; [0, 0] is its top left). */
+  draw(c: Ctx, x: number, y: number, o?: { scale?: number; angle?: number; alpha?: number; flip?: boolean; anchor?: [number, number] | null }): void;
+  /** Draw it afresh next time (something the drawing depends on changed). */
+  redraw(): Sticker2D;
+}
+
+/** Options for a sketchy shape: stroke ('#222' or 'none'), strokeWidth (2), fill, fillStyle, roughness (1; 0 a ruler, 3 a shaky hand), bowing (1), dash ([on, off]). */
+export interface SketchOptions {
+  stroke?: string; strokeWidth?: number; fill?: string; fillStyle?: 'hachure' | 'solid' | 'zigzag' | 'cross-hatch' | 'dots' | 'dashed' | 'zigzag-line';
+  fillWeight?: number; hachureGap?: number; hachureAngle?: number; roughness?: number; bowing?: number; dash?: [number, number] | number[];
+}
+type SketchPoint = [number, number] | { x: number; y: number };
+/** Options for an ink stroke: size (8, the widest it gets), thinning (.5; 0 an even line), smoothing (.5), streamline (.5), taper (0, a length, true, or { start, end }), color, pressure (use the points' own pressure), spacing (for a line through a few far-apart points: adds points so none are further apart than this). */
+export interface InkOptions { size?: number; thinning?: number; smoothing?: number; streamline?: number; taper?: number | boolean | { start?: number | boolean; end?: number | boolean }; color?: string; pressure?: boolean; spacing?: number }
+type InkPoint = [number, number] | [number, number, number] | { x: number; y: number; pressure?: number };
+/** gs.sketch: hand-drawn looks (Rough.js and perfect-freehand; loads on first use). */
+export interface SketchPart {
+  /**
+   * A pen that draws sketchy shapes. A shape is worked out once and remembered wherever it is drawn. seed: a different
+   * hand. boil: wobbles a second (0 keeps it still; call update(dt)).
+   */
+  Sketch: new (o?: SketchOptions & { seed?: number; boil?: number }) => {
+    boil: number; seed: number; readonly remembered: number;
+    update(dt: number): void; clear(): void;
+    rect(c: Ctx, x: number, y: number, w: number, h: number, o?: SketchOptions): void;
+    circle(c: Ctx, x: number, y: number, r: number, o?: SketchOptions): void;
+    ellipse(c: Ctx, x: number, y: number, rx: number, ry: number, o?: SketchOptions): void;
+    line(c: Ctx, x1: number, y1: number, x2: number, y2: number, o?: SketchOptions): void;
+    /** A closed shape through the points. */
+    poly(c: Ctx, points: SketchPoint[], o?: SketchOptions): void;
+    /** Straight lines from point to point, left open. */
+    lines(c: Ctx, points: SketchPoint[], o?: SketchOptions): void;
+    /** A smooth curve through the points. */
+    curve(c: Ctx, points: SketchPoint[], o?: SketchOptions): void;
+    /** Part of a circle, from angle `from` to `to` (radians). closed: a pie slice. */
+    arc(c: Ctx, x: number, y: number, r: number, from: number, to: number, o?: SketchOptions & { closed?: boolean }): void;
+    /** An SVG path, with its own 0, 0 at (x, y). */
+    path(c: Ctx, x: number, y: number, d: string, o?: SketchOptions): void;
+  };
+  /** One ink stroke that grows as points are added and remembers its shape: add(x, y) while the finger moves, end() when it lifts, draw(c) each frame. */
+  Ink: new (o?: InkOptions) => {
+    readonly points: number[][]; readonly length: number; done: boolean;
+    add(x: number, y: number, pressure?: number): Loose; end(): Loose; clear(): Loose;
+    outline(): number[][];
+    /** Is (x, y) on the ink (within r of it)? */
+    hit(x: number, y: number, r?: number): boolean;
+    draw(c: Ctx, o?: { color?: string }): boolean;
+  };
+  /** Draws one ink stroke through the points in one call (a gs.strokes Stroke works too). */
+  ink(c: Ctx, points: InkPoint[] | { points: InkPoint[] }, o?: InkOptions): boolean;
+  /** The outline of an ink stroke: [[x, y], ...], a closed shape to fill or to test. */
+  inkOutline(points: InkPoint[] | { points: InkPoint[] }, o?: InkOptions, done?: boolean): number[][];
+}
+
+/** gs.icons: 528 drawn icons that look the same on every phone (game-icons.net, CC BY 3.0; loads on first use). */
+export interface IconsPart {
+  /**
+   * Draws an icon centred on (x, y), `size` game units across. Names are the set's own ('broadsword', 'health-potion')
+   * or one of about 100 plain words ('sword', 'heart', 'coin', 'star', 'key'...). color ('#fff'), outline (a colour),
+   * width (the outline's, 1/16 of the size), angle, alpha, flip, pixel (hard pixels for the pixel styles). False if
+   * there is no icon by that name.
+   */
+  icon(c: Ctx, name: string, x: number, y: number, size?: number, o?: { color?: string; outline?: string | null; width?: number; angle?: number; alpha?: number; flip?: boolean; pixel?: boolean }): boolean;
+  /** Every icon's name, a to z. */
+  readonly names: readonly string[];
+  /** The plain words that also work, and the icon each is: { sword: 'broadsword', ... }. */
+  readonly words: Readonly<Record<string, string>>;
+  has(name: string): boolean;
+  /** Icons whose name has this text in it. */
+  find(text: string): string[];
+  /** The icon as a Path2D on a 512 by 512 grid (to fill, stroke or clip with yourself), or null. */
+  path(name: string): Path2D | null;
+  /** The icon's SVG path data on a 512 by 512 grid, or null. */
+  data(name: string): string | null;
+  /** How many drawn icons are remembered right now. */
+  remembered(): number;
 }
 
 /** Rapier 2D (lazy: make it in make() or reset()). */
@@ -1848,6 +1968,7 @@ export interface GS {
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
   outdoors: OutdoorsPart; city: CityPart; models: ModelsPart; voxels: VoxelsPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; trivia: TriviaPart; ui: UIPart;
   hear: HearPart; doodle: DoodlePart; phoneai: PhoneaiPart;
+  sketch: SketchPart; icons: IconsPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;
   /** three.js itself. */

@@ -27,6 +27,9 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Swing, punch, throw, flip, twist the phone | `gs.moves` | [Motion moves](#motion-moves) |
 | Crisp pixel text, sprites drawn from text | `gs.pixel` | [Pixel text and sprites](#pixel-text-and-sprites) |
 | A title in a comic, spooky, sci-fi, western or handwritten font | `gs.fonts` (13 display fonts, 4 more pixel fonts) | [Fonts](#fonts) |
+| Wood, stone, metal, paper, cloth and water without image files; things with outlines, glows and soft shadows | `gs.gfx` `material`, `slab`, `water`, `sticker` | [2D materials, slabs, water and stickers](#2d-materials-slabs-water-and-stickers) |
+| A hand-drawn look; inked lines the player draws | `gs.sketch` (Rough.js, perfect-freehand) | [Sketchy shapes and ink](#sketchy-shapes-and-ink) |
+| A sword, heart, key or coin picture that looks the same on every phone | `gs.icons` (528 icons, game-icons.net) | [Icons](#icons) |
 | Things that spin, tumble, hinge, swing on ropes | `gs.physics` (Rapier) | [Physics](#physics) |
 | 3D bodies, level collisions, a walking character | `gs.physics3d` (Rapier) | [3D physics](#3d-physics) |
 | Enemies that chase, flee, flock, find a path | `gs.ai` (Yuka) | [AI](#ai) |
@@ -109,7 +112,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 `strokes`, `vehicles`, `paths`, `bones`, `level3d`, `sky`, `camera`, `nav3d`, `characters`, the action kits (`combat`,
 `tactics`, `climb`, `poses`, `missions`, `cutscene`, `prompts`, `destruction`, `stealth`, `gadgets`,
 `campaign`, `arena`, `props`), `outdoors`, `craft`, `soft`, `cards`, `dice`, `words`, `ui`, `solve`, `tick`, `voxels`, `toon` (Classic
-Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo`, `real`, `fonts` and `THREE`.
+Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo`, `real`, `fonts`, `sketch`, `icons` and `THREE`.
 It is the only thing a game may import (`src/game-modules.js`); `npm run games` refuses anything
 else and the PR check flags it.
 
@@ -758,6 +761,137 @@ draw(c) {
 - Fonts that come with the phone (`Arial`, `Courier New`, `Impact`, `Georgia`...) look different on
   every phone and some are missing on Android: name one of these instead. Plain `sans-serif` and
   `monospace` are fine as they are. Emoji are the phone's own too, so they differ between phones.
+
+## 2D materials, slabs, water and stickers
+
+`const { material, slab, water, sticker } = gs.gfx;`
+
+Looks for the smooth 2D styles, made in code (no image files): six materials that tile without a seam,
+blocks of them with lit edges and soft shadows, water with light moving on it, and stickers, which keep
+any drawing as a picture with an outline, a glow and a shadow already on it.
+
+```js
+reset() {
+  wood = material('wood', { color: '#a9703f', planks: 4 });     // made once (some tens of ms), then remembered
+  coin = sticker(40, 40, g => { g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(20, 20, 16, 0, 7); g.fill(); },
+    { outline: '#5a3d00', glow: '#fff3a0', shadow: true });
+}
+draw(c) {
+  slab(c, 20, 500, 320, 60, wood, { r: 8 });                    // a lit, rounded plank with a soft shadow
+  c.fillStyle = material('stone').at(x, y); c.beginPath(); c.arc(x, y, 30, 0, 7); c.fill();   // any shape
+  water(c, 0, 560, W, 80, t);                                   // t: the game's own clock, in seconds
+  coin.draw(c, x, y, { scale: 1 + .1 * Math.sin(t * 6), angle: t });
+}
+```
+
+| Material | Starts as | Its own options |
+| --- | --- | --- |
+| `paper` | cream, with fibres | |
+| `wood` | brown, grain running across | `planks: 4` (boards down the tile, each with its own grain) |
+| `stone` | grey rock with cracks | `blocks: 4` (rows of blocks with mortar; even numbers) |
+| `metal` | brushed steel | |
+| `cloth` | blue weave | `threads: 32` (across the tile) |
+| `water` | blue, with a still net of light | (`water()` below moves it) |
+
+- `material(name, { color, seed, scale, contrast })` gives the material; the same options give the same
+  one back, so asking again in `draw()` is cheap, but make them in `make()` or `reset()` so the first
+  frame doesn't wait. `color` is its main colour, `seed` a different piece of it, `scale: 2` makes the
+  grain twice as big (one tile covers 128 game units at 1), `contrast: 0` to `2` flattens or deepens it.
+- `c.fillStyle = m.at(x, y)` fills any shape with the texture's corner at (x, y), so a crate that moves
+  carries its grain with it. `m.pattern` is the same fixed at 0, 0 (a floor that things move over).
+  `m.tile` is the picture itself, for `drawImage`.
+- `slab(c, x, y, w, h, material, { r, bevel, shadow, tint, anchor })` draws a block of it: rounded
+  corners (`r`, 6), a lit top left edge and dark bottom right (`bevel`, 2; 0 for flat), a soft shadow
+  (`shadow: false` to leave it out, or a number for how far it drops) and `tint: '#ff000040'` to wash a
+  colour over it. `anchor: [0, 0]` cuts every slab from one big sheet instead of each carrying its own.
+- `water(c, x, y, w, h, t, { color, deep, light, strength, scale, flow })` fills a rectangle with water
+  and a net of light that drifts. For a pond or river of another shape, `c.clip()` to the shape first.
+  This is a look; for water that pushes things, see `gs.flow`.
+- `sticker(w, h, draw, { outline, width, glow, glowSize, shadow, shadowBlur, shadowY })` runs
+  `draw(g, w, h)` once into a picture as sharp as the screen, adds the outline, glow and shadow, and
+  `sticker.draw(c, x, y, { scale, angle, alpha, flip, anchor })` is then one `drawImage` however much
+  went into it. Use it for anything drawn many times or with looks that are slow every frame
+  (`shadowBlur`, gradients, text with an outline). `sticker.redraw()` after what it shows changes.
+- These are for the Phone style and for 2D drawn over 3D. Pocket, Color and Advance games keep to their
+  palettes and whole pixels.
+
+## Sketchy shapes and ink
+
+`const { Sketch, Ink, ink } = gs.sketch;` (Rough.js and perfect-freehand; loads on first use)
+
+A hand-drawn look: shapes that look sketched with a pen, and ink lines that swell and taper.
+
+```js
+reset() { pen = new Sketch({ stroke: '#2b2b2b', strokeWidth: 2, roughness: 1.2 }); }
+draw(c) {
+  pen.rect(c, 40, 80, 120, 60, { fill: '#ffd23f' });                      // wobbly outline, hatched fill
+  pen.circle(c, 200, 110, 28, { fill: '#4fc3ff', fillStyle: 'solid' });
+  pen.line(c, 20, 200, 340, 204);
+}
+```
+
+- Shapes: `rect(c, x, y, w, h)`, `circle(c, x, y, r)`, `ellipse(c, x, y, rx, ry)`, `line(c, x1, y1, x2, y2)`,
+  `poly(c, points)` (closed), `lines(c, points)` (open), `curve(c, points)`, `arc(c, x, y, r, from, to, { closed })`,
+  `path(c, x, y, 'M0 0 L40 0 ...')`. Points are `[x, y]` or `{ x, y }`.
+- Options, for the pen and again for one shape: `stroke` (or `'none'`), `strokeWidth`, `fill`,
+  `fillStyle` (`'hachure'`, `'solid'`, `'zigzag'`, `'cross-hatch'`, `'dots'`, `'dashed'`, `'zigzag-line'`),
+  `hachureGap`, `hachureAngle`, `fillWeight`, `roughness` (0 is a ruler, 1 a steady hand, 3 a shaky
+  one), `bowing`, `dash: [on, off]`, `seed` (a different hand).
+- A shape is worked out once and remembered, wherever it is drawn, so moving it is free and its wobble
+  stays put instead of crawling. A shape that changes size is worked out again at each new size (sizes
+  are kept to half a unit), so grow things in steps or keep them in a `gs.gfx.sticker`.
+- `new Sketch({ boil: 8 })` with `pen.update(dt)` each frame redraws the wobble 8 times a second: the
+  "line boil" of hand-drawn cartoons.
+
+Ink is for lines the player draws (and any line of many points):
+
+```js
+down(x, y) { line = new Ink({ size: 10, color: '#1b1b3a' }); line.add(x, y); }
+move(x, y, pressed) { if (pressed) line.add(x, y); }
+up() { line.end(); }
+draw(c) { line.draw(c); }                 // touch: 'fine' in the definition gives it every reading of the finger
+```
+
+- `Ink` options: `size` (the widest the line gets), `thinning` (.5: a fast line is thinner; 0 for an
+  even line), `smoothing`, `streamline` (.5: how much the line lags to iron out a shaky hand), `taper`
+  (a length, or `{ start, end }`: the ends thin to a point), `color`.
+- `line.outline()` is the stroke's shape as points, `line.hit(x, y, r)` says whether a point is on it,
+  `line.clear()` starts again. `ink(c, points, options)` draws a stroke in one call; for a line through
+  a few far-apart points add `spacing: 6`, which adds points in between so it follows them.
+- With `gs.strokes` (`Stroke`, `Shapes`, `toPhysics`) the same points can be recognised as a shape or
+  turned into ground; this kit only makes the line look inked.
+
+## Icons
+
+`const { icon } = gs.icons;` (loads on first use)
+
+528 drawn icons that look the same on every phone, where an emoji is a different picture on each one:
+weapons, hearts, keys, chests, potions, animals, food, tools, weather, vehicles, buildings, plants,
+sports, music, cards, dice, chess pieces and buttons. They are from the Game Icons set
+([game-icons.net](https://game-icons.net)) by Lorc, Delapouite and contributors, CC BY 3.0, credited in
+the app's licence list, so a game needs to show nothing.
+
+```js
+icon(c, 'sword', x, y, 32);                                         // centred on x, y, 32 units across, white
+icon(c, 'hearts', x, y, 24, { color: '#ff5470', outline: '#000' });
+icon(c, 'key', x, y, 16, { pixel: true, color: PAL[3] });           // hard pixels for the pixel styles
+```
+
+- Names are the set's own (`'broadsword'`, `'health-potion'`, `'pine-tree'`), and about 100 plain words
+  work too: `sword`, `shield`, `bow`, `bomb`, `heart`, `coin`, `gem`, `star`, `key`, `lock`, `chest`,
+  `potion`, `skull`, `ghost`, `fire`, `ice`, `water`, `bolt`, `sun`, `moon`, `cloud`, `tree`, `flower`,
+  `apple`, `fish`, `cat`, `dog`, `dragon`, `rocket`, `castle`, `crown`, `trophy`, `flag`, `map`, `dice`,
+  `card`, `play`, `pause`, `settings`, `sound`, `mute`, `home`, `trash`... `gs.icons.names` lists every
+  name, `gs.icons.words` the plain words, `gs.icons.find('potion')` searches, `has(name)` checks.
+- Options: `color` (white), `outline` and `width`, `angle`, `alpha`, `flip`, and `pixel: true` for the
+  pixel styles (every pixel fully on or off, in exactly the colours given; `size` is then whole game
+  pixels, and simple icons read best: 16 and up).
+- An icon is drawn once at the size and colour asked for and remembered, so drawing it is one
+  `drawImage`; a pulsing icon is scaled, not redrawn. `icon()` returns false for a name it doesn't have.
+- `path(name)` gives the icon as a `Path2D` on a 512 by 512 grid, to fill with a gradient or a
+  `gs.gfx` material, or to clip with.
+- To add an icon to the app: put its game-icons.net name in `scripts/icons/names.json` and run
+  `node scripts/icons/build.mjs` (shared code, so in its own PR).
 
 ## Game controllers
 

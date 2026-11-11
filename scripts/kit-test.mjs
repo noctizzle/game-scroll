@@ -1922,6 +1922,96 @@ console.log('physics ok');
   console.log(`gs.fonts: ${list.length} fonts, ${keys.length} files, names, weights and pixel font names ok`);
 }
 
+// gs.gfx materials: textures made in code that repeat without a seam (drawing them is checked in a browser by scripts/app-test.cjs)
+{
+  const { texture, MATERIALS } = await import('../src/kit/materials2d.js');
+  const names = Object.keys(MATERIALS); assert.deepEqual(names, ['paper', 'wood', 'stone', 'metal', 'cloth', 'water']);
+  const lum = (t, x, y) => { const i = (((y % t.size) + t.size) % t.size * t.size + ((x % t.size) + t.size) % t.size) * 4; return t.data[i] * .3 + t.data[i + 1] * .59 + t.data[i + 2] * .11; };
+  // how much the picture changes from one column (or row) to the next, on average
+  const step = (t, a, b, down) => { let s = 0; for (let k = 0; k < t.size; k++) s += Math.abs(down ? lum(t, k, a) - lum(t, k, b) : lum(t, a, k) - lum(t, b, k)); return s / t.size; };
+  for (const [name, o] of [...names.map(n => [n, {}]), ['wood', { planks: 4 }], ['stone', { blocks: 4 }], ['cloth', { threads: 20 }], ['wood', { seed: 9, color: '#553311' }]]) {
+    const t = texture(name, { px: 128, ...o }), again = texture(name, { px: 128, ...o });
+    assert.equal(t.size, 128); assert.equal(t.data.length, 128 * 128 * 4);
+    assert.deepEqual(t.data, again.data, name + ': the same options give the same picture');
+    let inside = 0; for (let k = 0; k < 127; k++) inside = Math.max(inside, step(t, k, k + 1, false), step(t, k, k + 1, true));   // the biggest step anywhere inside (a gap between planks, say)
+    const seamX = step(t, 127, 128, false), seamY = step(t, 127, 128, true);
+    assert.ok(seamX <= inside * 1.15 + .5 && seamY <= inside * 1.15 + .5, `${name} ${JSON.stringify(o)} repeats without a seam (across ${seamX.toFixed(1)}, down ${seamY.toFixed(1)}, inside ${inside.toFixed(1)})`);
+    let lo = 255, hi = 0, opaque = true; for (let k = 0; k < t.data.length; k += 4) { const l = t.data[k] * .3 + t.data[k + 1] * .59 + t.data[k + 2] * .11; lo = Math.min(lo, l); hi = Math.max(hi, l); opaque &&= t.data[k + 3] === 255; }
+    assert.ok(opaque && hi - lo > 12, name + ' has texture in it (' + (hi - lo).toFixed(0) + ' shades) and no holes');
+  }
+  const mean = t => { const m = [0, 0, 0]; for (let k = 0; k < t.data.length; k += 4) for (let j = 0; j < 3; j++) m[j] += t.data[k + j]; return m.map(v => v / (t.data.length / 4)); };
+  const red = mean(texture('cloth', { px: 64, color: '#c03020' })); assert.ok(red[0] > red[1] * 2 && red[0] > red[2] * 2, 'color sets the material\'s colour: ' + red.map(v => v | 0));
+  assert.notDeepEqual(texture('stone', { px: 64 }).data, texture('stone', { px: 64, seed: 2 }).data, 'another seed is another piece of it');
+  const flat = texture('stone', { px: 64, contrast: 0 }); assert.ok(flat.data.every((v, k) => v === flat.data[k % 4]), 'contrast 0 is the flat colour');
+  assert.throws(() => texture('lava'), /no material called "lava".*paper, wood, stone, metal, cloth, water/);
+  console.log('gs.gfx materials: six materials, planks, blocks, threads, seeds and colours; every tile repeats without a seam');
+}
+
+// gs.sketch: sketchy shapes that stay put, ink strokes
+{
+  const { Sketch, Ink, ink, inkOutline } = await import('../src/kit/sketch.js');
+  const fake = () => { const calls = []; const c = { calls, save() {}, restore() {}, setLineDash(d) { calls.push('dash ' + d.join(',')); }, beginPath() { calls.push('begin'); }, translate(x, y) { calls.push(`at ${x},${y}`); },
+    moveTo(x, y) { calls.push(`M${x.toFixed(2)},${y.toFixed(2)}`); }, lineTo(x, y) { calls.push(`L${x.toFixed(2)},${y.toFixed(2)}`); }, bezierCurveTo(...a) { calls.push('C' + a.map(v => v.toFixed(2))); }, quadraticCurveTo(...a) { calls.push('Q' + a.map(v => v.toFixed(2))); },
+    closePath() { calls.push('Z'); }, stroke() { calls.push('stroke ' + c.strokeStyle + ' ' + c.lineWidth); }, fill(r) { calls.push('fill ' + c.fillStyle + (r ? ' ' + r : '')); } }; return c; };
+  const shape = calls => calls.filter(s => !s.startsWith('at ')).join('|');
+  const pen = new Sketch({ stroke: '#123456', strokeWidth: 3 });
+  const a = fake(), b = fake(); pen.rect(a, 10, 20, 80, 40, { fill: '#ff0000' }); pen.rect(b, 200, 300, 80, 40, { fill: '#ff0000' });
+  assert.ok(a.calls.includes('at 10,20') && b.calls.includes('at 200,300'), 'a shape is drawn where it is asked for');
+  assert.equal(shape(a.calls), shape(b.calls), 'and it is the same drawing wherever it is: its wobble stays put');
+  assert.equal(pen.remembered, 1, 'worked out once, however often and wherever it is drawn');
+  assert.ok(a.calls.some(s => s === 'stroke #123456 3') && a.calls.some(s => s.startsWith('stroke #ff0000')), 'outline in the stroke colour, hatching in the fill colour');
+  const solid = fake(); pen.circle(solid, 0, 0, 20, { fill: '#00ff00', fillStyle: 'solid' }); assert.ok(solid.calls.some(s => s.startsWith('fill #00ff00')), 'fillStyle solid fills');
+  const none = fake(); pen.rect(none, 0, 0, 30, 30, { stroke: 'none', fill: '#00f', fillStyle: 'solid' }); assert.ok(!none.calls.some(s => s.startsWith('stroke')), 'stroke none draws no outline');
+  const other = fake(); new Sketch({ stroke: '#123456', strokeWidth: 3, seed: 2 }).rect(other, 10, 20, 80, 40, { fill: '#ff0000' });
+  assert.notEqual(shape(other.calls), shape(a.calls), 'another seed is another hand');
+  const again = fake(); new Sketch({ stroke: '#123456', strokeWidth: 3 }).rect(again, 10, 20, 80, 40, { fill: '#ff0000' });
+  assert.equal(shape(again.calls), shape(a.calls), 'the same seed draws the same lines every time (a replay looks the same)');
+  const ruler = fake(); new Sketch({ roughness: 0, bowing: 0 }).line(ruler, 0, 0, 100, 0); assert.ok(ruler.calls.filter(s => s[0] === 'C').every(s => s.slice(1).split(',').every((v, k) => k % 2 === 0 || Math.abs(+v) < 1e-6)), 'roughness 0 is a ruler');
+  const boil = new Sketch({ boil: 8 }), f0 = fake(), f1 = fake(), f2 = fake();
+  boil.circle(f0, 0, 0, 20); boil.update(.05); boil.circle(f1, 0, 0, 20); boil.update(.1); boil.circle(f2, 0, 0, 20);
+  assert.equal(shape(f0.calls), shape(f1.calls), 'boil: the wobble holds between changes'); assert.notEqual(shape(f0.calls), shape(f2.calls), 'and changes 8 times a second');
+  for (let k = 0; k < 40; k++) { boil.update(.13); boil.circle(fake(), 0, 0, 20); } assert.equal(boil.remembered, 3, 'boil goes round three drawings, not a new one every time');
+  const all = fake(); pen.ellipse(all, 0, 0, 30, 20); pen.line(all, 0, 0, 50, 10); pen.poly(all, [[0, 0], [40, 0], [20, 30]], { fill: '#abc' }); pen.lines(all, [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 0 }], { dash: [4, 4] });
+  pen.curve(all, [[0, 0], [10, 20], [20, 0], [30, 20]]); pen.arc(all, 0, 0, 20, 0, Math.PI, { closed: true, fill: '#abc' }); pen.path(all, 5, 5, 'M0 0 L30 0 L30 30 Z', { fill: '#def' });
+  assert.ok(all.calls.includes('dash 4,4') && all.calls.filter(s => s.startsWith('stroke')).length >= 7, 'ellipse, line, poly, lines, curve, arc and path all draw');
+  const grow = new Sketch(); for (let k = 0; k < 500; k++) grow.rect(fake(), 0, 0, 10 + k, 10); assert.ok(grow.remembered <= 300, 'shapes remembered are capped');
+  // ink
+  const pts = Array.from({ length: 30 }, (_, k) => ({ x: k * 10, y: 100 }));
+  const out = inkOutline(pts, { size: 12, thinning: 0 }); const ys = out.map(p => p[1]), xs = out.map(p => p[0]);
+  assert.ok(Math.abs(Math.max(...ys) - 106) < 1.5 && Math.abs(Math.min(...ys) - 94) < 1.5, 'an even stroke of size 12 is 12 wide: ' + Math.min(...ys).toFixed(1) + '..' + Math.max(...ys).toFixed(1));
+  assert.ok(Math.min(...xs) < 0 && Math.max(...xs) > 290, 'with round ends past its first and last points');
+  const mids = o => { const q = inkOutline(pts, o), w = x => { const near = q.filter(p => Math.abs(p[0] - x) < 6).map(p => p[1]); return Math.max(...near) - Math.min(...near); }; return [w(15), w(150)]; };
+  const [end, mid] = mids({ size: 12, thinning: 0, taper: 60 }); assert.ok(end < mid * .6, 'taper thins the ends: ' + end.toFixed(1) + ' against ' + mid.toFixed(1));
+  const line = new Ink({ size: 10 }); assert.equal(line.draw(fake()), false, 'no points, nothing drawn');
+  for (const p of pts) line.add(p.x, p.y); line.add(290, 100); assert.equal(line.length, 30, 'the same point twice is added once');
+  const o1 = line.outline(); assert.equal(line.outline(), o1, 'the outline is remembered between frames'); line.add(300, 100); assert.notEqual(line.outline(), o1, 'and worked out again when a point is added');
+  const drawn = fake(); assert.equal(line.end().draw(drawn), true); assert.ok(drawn.calls.filter(s => s[0] === 'Q').length > 20 && drawn.calls.at(-1).startsWith('fill #111111'), 'drawn as one smooth filled shape');
+  assert.ok(line.hit(150, 103) && line.hit(150, 110, 6) && !line.hit(150, 120) && !line.hit(400, 100), 'hit(x, y, r) says whether a point is on the ink');
+  const once = fake(); assert.equal(ink(once, [[0, 0], [20, 10], [40, 0]], { color: '#00f', size: 6 }), true); assert.ok(once.calls.at(-1) === 'fill #00f');
+  const far = inkOutline([[0, 0], [100, 0]], { size: 10, thinning: 0, spacing: 5 }), sparse = inkOutline([[0, 0], [100, 0]], { size: 10, thinning: 0 });
+  assert.ok(far.length > sparse.length && far.filter(p => p[0] > 20 && p[0] < 80).length >= 10, 'spacing adds points along a line through far-apart points');
+  assert.equal(inkOutline({ points: [{ x: 0, y: 0, pressure: .2 }, { x: 30, y: 0, pressure: 1 }, { x: 60, y: 0, pressure: .2 }] }, { pressure: true, size: 20 }).length > 8, true, 'a gs.strokes Stroke and its own pressure work');
+  console.log('gs.sketch: shapes that stay put, seeds, boil, every shape; ink width, taper, hit and memory ok');
+}
+
+// gs.icons: the names, the plain words, and the data matching scripts/icons/names.json
+{
+  const { names, words, has, find, data, path, icon, remembered } = await import('../src/kit/icons.js');
+  const { readFileSync } = await import('node:fs');
+  const list = JSON.parse(readFileSync(new URL('./icons/names.json', import.meta.url), 'utf8'));
+  assert.equal(names.length, 528); assert.deepEqual([...names], [...new Set(list.icons)].sort(), 'src/kit/icon-data.js matches scripts/icons/names.json (run node scripts/icons/build.mjs)');
+  assert.ok(Object.isFrozen(names) && Object.isFrozen(words));
+  for (const n of names) assert.ok(/^[Mm][-\d. ]/.test(data(n)) && data(n).length > 10, n + ' is a path');
+  for (const [w, n] of Object.entries(words)) assert.ok(names.includes(n) && !names.includes(w), `the plain word ${w} is the icon ${n}`);
+  for (const w of ['sword', 'heart', 'coin', 'star', 'key', 'bomb', 'skull', 'tree', 'fish', 'shield', 'chest', 'potion', 'play', 'pause', 'settings']) assert.ok(has(w), 'has ' + w);
+  assert.equal(data('sword'), data('broadsword')); assert.equal(data('Health Potion'), data('health-potion'), 'any case, spaces for dashes');
+  assert.ok(!has('nope') && data('nope') === null && path('nope') === null);
+  assert.deepEqual(find('potion'), ['health-potion', 'round-potion', 'standing-potion']);
+  assert.equal(icon({}, 'nope', 0, 0, 20), false, 'an unknown name draws nothing and says so'); assert.equal(remembered(), 0);
+  assert.ok(readFileSync(new URL('../src/licences.js', import.meta.url), 'utf8').includes('game-icons.net'), 'the icons are in the licence list');
+  console.log(`gs.icons: ${names.length} icons, ${Object.keys(words).length} plain words, all paths, names and credit ok`);
+}
+
 // gs.real: the sun and moon for the player, the battery, headphones
 {
   const { sun, moon, battery, headphones, guessPlace, readOutputs } = await import('../src/kit/real.js');

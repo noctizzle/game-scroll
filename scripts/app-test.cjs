@@ -1,7 +1,7 @@
 // Checks what the app itself does around a game (not what a game does): keeping the screen on during a
 // round, finer touch, even pixels and the LCD look for pocket games, the one-line soundtrack, the bigger
-// save that stays on the phone, the font library.
-// Usage: npm run build:bundled && node scripts/app-test.cjs [awake|touch|pixels|music|saves|fonts]   (SHOTS=<dir> saves a picture of every font)
+// save that stays on the phone, the font library, and the 2D looks (materials, slabs, water, stickers, sketch pen, ink, icons).
+// Usage: npm run build:bundled && node scripts/app-test.cjs [awake|touch|pixels|music|saves|fonts|looks]   (SHOTS=<dir> saves a picture of every font and look)
 const { chromium } = require('playwright');
 
 let failed = 0;
@@ -355,10 +355,167 @@ async function fonts(b) {
   await r.done();
 }
 
+/* ---------- 2D looks: materials, slabs, water, stickers, the sketch pen, ink, icons ---------- */
+async function looks(b) {
+  console.log('\n2D looks');
+  const p = await open(b);
+  await p.game(CASUAL);
+  await p.evaluate(async () => {
+    const m = await __gs.gs(); await m.loadParts(['sketch', 'icons']); window.gs = m.default;
+    // a canvas like a game's: `scale` screen pixels to a game unit; px(x, y) reads the pixel at a game position
+    window.board = (w = 200, h = 120, scale = 2) => {
+      const cv = document.createElement('canvas'); cv.width = w * scale; cv.height = h * scale; const c = cv.getContext('2d', { willReadFrequently: true }); c.scale(scale, scale);
+      c.px = (x, y) => [...c.getImageData(Math.round(x * scale), Math.round(y * scale), 1, 1).data];
+      c.box = (x, y, bw, bh) => c.getImageData(Math.round(x * scale), Math.round(y * scale), Math.round(bw * scale), Math.round(bh * scale)).data;
+      return c;
+    };
+    window.same = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 2);
+    window.spread = d => { let lo = 255, hi = 0; for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 255) continue; const l = d[i] * .3 + d[i + 1] * .59 + d[i + 2] * .11; lo = Math.min(lo, l); hi = Math.max(hi, l); } return hi - lo; };
+  });
+
+  // materials
+  let s = await p.evaluate(() => {
+    const { material } = gs.gfx, wood = material('wood'), a = board(), b2 = board();
+    a.fillStyle = wood.at(10, 10); a.fillRect(10, 10, 60, 40); b2.fillStyle = wood.at(90, 50); b2.fillRect(90, 50, 60, 40);
+    const d = a.box(10, 10, 60, 40); let r = 0, g = 0, bl = 0; for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; bl += d[i + 2]; } const n = d.length / 4;
+    const t = performance.now(); for (let i = 0; i < 1000; i++) material('wood'); const again = performance.now() - t;
+    return { same: material('wood') === wood, other: material('wood', { seed: 2 }) !== wood, by: material(wood) === wood, mean: [r / n | 0, g / n | 0, bl / n | 0], spread: spread(d), moved: same(d, b2.box(90, 50, 60, 40)),
+      empty: a.px(5, 5)[3], span: wood.span, big: material('wood', { scale: 2 }).span, again, tile: wood.tile.width };
+  });
+  check(s.same && s.other && s.by && s.again < 30, 'a material is made once: the same options give the same one back (1000 asks in ' + s.again.toFixed(1) + ' ms)', JSON.stringify(s));
+  check(s.spread > 25 && Math.abs(s.mean[0] - 169) < 30 && Math.abs(s.mean[1] - 112) < 30 && Math.abs(s.mean[2] - 63) < 30 && s.empty === 0, 'it fills a shape with texture in its own colour', JSON.stringify(s));
+  check(s.moved, 'at(x, y) fixes the texture to the thing: moved, it looks the same');
+  check(s.span === 128 && s.big === 256 && s.tile === 256, 'one tile covers 128 game units (scale: 2 doubles it), drawn from a 256 pixel picture', JSON.stringify(s));
+  s = await p.evaluate(() => { const out = {}; for (const n of Object.keys(gs.gfx.MATERIALS)) { const c = board(); c.fillStyle = gs.gfx.material(n).pattern; c.fillRect(0, 0, 200, 120); out[n] = Math.round(spread(c.box(0, 0, 200, 120))); } let threw = ''; try { gs.gfx.material('lava'); } catch (e) { threw = e.message; } return { out, threw }; });
+  check(Object.keys(s.out).length === 6 && Object.values(s.out).every(v => v > 12), 'paper, wood, stone, metal, cloth and water all draw', JSON.stringify(s.out));
+  check(/no material called "lava"/.test(s.threw), 'an unknown material says which there are', s.threw);
+
+  // slabs
+  s = await p.evaluate(() => {
+    const { slab } = gs.gfx, c = board(), strip = (q, y) => { const d = q.box(60, y, 80, 1.5); let l = 0; for (let i = 0; i < d.length; i += 4) l += d[i] * .3 + d[i + 1] * .59 + d[i + 2] * .11; return l / (d.length / 4); };
+    slab(c, 40, 20, 120, 60, 'stone', { r: 12 });
+    const flat = board(); slab(flat, 40, 20, 120, 60, 'stone', { r: 12, shadow: false, bevel: 0 });
+    const tint = board(); slab(tint, 40, 20, 120, 60, 'stone', { tint: '#ff0000a0', shadow: false });
+    const a1 = board(), a2 = board(); slab(a1, 10, 10, 50, 30, 'wood', { shadow: false, bevel: 0, r: 0 }); slab(a2, 80, 60, 50, 30, 'wood', { shadow: false, bevel: 0, r: 0 });
+    const s1 = board(), s2 = board(); slab(s1, 10, 10, 50, 30, 'wood', { shadow: false, bevel: 0, r: 0, anchor: [0, 0] }); slab(s2, 80, 60, 50, 30, 'wood', { shadow: false, bevel: 0, r: 0, anchor: [0, 0] });
+    return { corner: c.px(41, 21)[3], middle: c.px(100, 50)[3], under: c.px(100, 84), underFlat: flat.px(100, 84)[3], top: strip(c, 20.5), bottom: strip(c, 78), topFlat: strip(flat, 20.5), bottomFlat: strip(flat, 78),
+      red: tint.px(100, 50), carried: same(a1.box(10, 10, 50, 30), a2.box(80, 60, 50, 30)), sheet: same(s1.box(10, 10, 50, 30), s2.box(80, 60, 50, 30)), none: (() => { const e = board(); slab(e, 0, 0, 0, 20); slab(e, 0, 0, 20, -5); return e.px(5, 5)[3]; })() };
+  });
+  check(s.middle === 255 && s.corner < 60, 'a slab has rounded corners', JSON.stringify(s));
+  check(s.under[3] > 20 && s.under[0] < 30 && s.underFlat === 0, 'a soft shadow under it (shadow: false leaves it out)', JSON.stringify({ under: s.under, flat: s.underFlat }));
+  check((s.top - s.bottom) - (s.topFlat - s.bottomFlat) > 35, 'lit from the top left: a bright top edge and a dark bottom edge (bevel: 0 is flat)', JSON.stringify({ top: s.top | 0, bottom: s.bottom | 0, flatTop: s.topFlat | 0, flatBottom: s.bottomFlat | 0 }));
+  check(s.red[0] > s.red[1] + 40 && s.red[0] > s.red[2] + 40, 'tint washes a colour over it', String(s.red));
+  check(s.carried && !s.sheet && s.none === 0, 'a slab carries its texture with it; anchor: [0, 0] cuts every slab from one sheet; no size draws nothing', JSON.stringify(s));
+
+  // water
+  s = await p.evaluate(() => {
+    const { water } = gs.gfx, a = board(), b2 = board(), c2 = board(), still = board(), tint = board(), lum = d => { let m = 0; for (let i = 0; i < d.length; i += 4) m = Math.max(m, d[i] * .3 + d[i + 1] * .59 + d[i + 2] * .11); return m; };
+    water(a, 0, 0, 200, 120, 1.5); water(b2, 0, 0, 200, 120, 1.5); water(c2, 0, 0, 200, 120, 1.6); water(still, 0, 0, 200, 120, 1.5, { strength: 0 }); water(tint, 0, 0, 200, 120, 1.5, { color: '#104060', light: '#ff4040', strength: 1 });
+    const A = a.box(0, 0, 200, 120), C = c2.box(0, 0, 200, 120); let diff = 0; for (let i = 0; i < A.length; i += 4) if (Math.abs(A[i] - C[i]) > 6) diff++;
+    const T = tint.box(0, 0, 200, 120); let red = 0; for (let i = 0; i < T.length; i += 4) if (T[i] > T[i + 2] + 30) red++;
+    const part = board(); water(part, 50, 30, 60, 40, 1); 
+    return { again: same(A, b2.box(0, 0, 200, 120)), moved: diff / (A.length / 4), bright: lum(A), flat: lum(still.box(0, 0, 200, 120)), red: red / (T.length / 4), outside: part.px(40, 20)[3] + part.px(115, 75)[3], inside: part.px(80, 50)[3] };
+  });
+  check(s.again && s.moved > .05, 'water: the same time draws the same picture, a tenth of a second later the light has moved', JSON.stringify(s));
+  check(s.bright > s.flat + 25 && s.red > .03 && s.outside === 0 && s.inside === 255, 'the net of light is brighter than the water, takes the light colour, and stays inside its rectangle', JSON.stringify(s));
+
+  // stickers
+  s = await p.evaluate(() => {
+    const { sticker } = gs.gfx; let made = 0;
+    const art = g => { made++; g.fillStyle = '#ffd23f'; g.fillRect(10, 10, 20, 20); };
+    const plain = sticker(40, 40, art), c = board(200, 120, 2); for (let i = 0; i < 50; i++) plain.draw(c, 30 + i, 60);
+    const once = made; const c3 = board(200, 120, 3); plain.draw(c3, 100, 60); const again = made; plain.redraw().draw(c3, 100, 60); const asked = made;
+    const o = board(); sticker(40, 40, art, { outline: '#0000ff', width: 3 }).draw(o, 100, 60);
+    const g = board(); sticker(40, 40, art, { glow: '#00ff00', glowSize: 10 }).draw(g, 100, 60);
+    const sh = board(); sticker(40, 40, art, { shadow: true, shadowY: 6 }).draw(sh, 100, 60);
+    const p0 = board(); sticker(40, 40, art).draw(p0, 100, 60);
+    const turned = board(); sticker(40, 40, art).draw(turned, 100, 60, { angle: Math.PI / 4, scale: 2 });
+    const corner = board(); sticker(40, 40, art).draw(corner, 100, 60, { anchor: [0, 0] });
+    const faint = board(); sticker(40, 40, art).draw(faint, 100, 60, { alpha: .5 });
+    return { once, again, asked, centre: p0.px(100, 60), outside: p0.px(100, 60 - 14)[3], ring: o.px(100, 60 - 12), ringFar: o.px(100, 60 - 16)[3], glow: g.px(100, 60 - 15), glowFar: g.px(100, 60 - 38)[3], shadow: sh.px(100, 60 + 14), shadowUp: sh.px(100, 60 - 14)[3],
+      turnedTip: turned.px(100, 60 - 25)[3], turnedCorner: turned.px(100 + 17, 60 - 17)[3], cornerAt: corner.px(120, 80)[3], cornerNot: corner.px(92, 52)[3], faint: faint.px(100, 60)[3], sharp: c3.px(100 - 10 + .2, 60)[3] };
+  });
+  check(s.once === 1 && s.again === 2 && s.asked === 3, 'a sticker is drawn once however often it is shown, again for a sharper screen, and again when asked (redraw)', JSON.stringify({ once: s.once, sharper: s.again, asked: s.asked }));
+  check(s.centre[0] === 255 && s.centre[3] === 255 && s.outside === 0, 'it shows the drawing, centred', JSON.stringify(s.centre));
+  check(s.ring[2] > 200 && s.ring[0] < 60 && s.ring[3] > 200 && s.ringFar === 0, 'outline: a band of the outline colour all round, as wide as asked', JSON.stringify({ ring: s.ring, far: s.ringFar }));
+  check(s.glow[3] > 20 && s.glow[1] > s.glow[0] && s.glowFar === 0, 'glow: a soft light round it that fades out', JSON.stringify({ glow: s.glow, far: s.glowFar }));
+  check(s.shadow[3] > 30 && s.shadow[0] < 40 && s.shadowUp === 0, 'shadow: soft and dark, below it', JSON.stringify({ shadow: s.shadow, up: s.shadowUp }));
+  check(s.turnedTip === 255 && s.turnedCorner === 0 && s.cornerAt === 255 && s.cornerNot === 0 && Math.abs(s.faint - 128) < 6, 'scale, angle, anchor and alpha place it', JSON.stringify(s));
+
+  // the sketch pen and ink
+  s = await p.evaluate(() => {
+    const { Sketch, Ink, ink } = gs.sketch, pen = new Sketch({ stroke: '#ff0000', strokeWidth: 2 }), a = board(), b2 = board();
+    pen.rect(a, 20, 20, 80, 50); pen.rect(b2, 90, 60, 80, 50);
+    const near = (c, x, y, r) => { const d = c.box(x - r, y - r, r * 2, r * 2); let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 100 && d[i] > 150 && d[i + 1] < 90) n++; return n; };
+    const f = board(); pen.rect(f, 20, 20, 80, 50, { fill: '#0000ff', fillStyle: 'solid', stroke: 'none' });
+    const h = board(); pen.circle(h, 100, 60, 40, { fill: '#00aa00' }); const hd = h.box(70, 30, 60, 60); let green = 0; for (let i = 0; i < hd.length; i += 4) if (hd[i + 1] > 120 && hd[i] < 80 && hd[i + 3] > 100) green++;
+    const line = new Ink({ size: 10, color: '#00ffff' }), k = board(); for (let i = 0; i <= 20; i++) line.add(20 + i * 8, 60 + Math.sin(i / 3) * 10); line.end().draw(k);
+    const k2 = board(); ink(k2, [[20, 60], [100, 40], [180, 60]], { size: 8, color: '#ff00ff', spacing: 4 });
+    const k3 = board(); ink(k3, [[20, 60], [100, 40], [180, 60]], { size: 8, color: '#ff00ff' });
+    return { edges: [near(a, 60, 20, 4), near(a, 60, 70, 4), near(a, 20, 45, 4), near(a, 100, 45, 4)], inside: near(a, 60, 45, 10), moved: same(a.box(10, 10, 100, 70), b2.box(80, 50, 100, 70)), remembered: pen.remembered,
+      fill: f.px(60, 45), hatch: green / (hd.length / 4), ink: k.px(100, 60 + Math.sin(10 / 3) * 10), inkOff: k.px(100, 20)[3], ink2: k2.px(100, 42), ink3: k3.px(100, 42)[3] };
+  });
+  check(s.edges.every(n => n > 6) && s.inside === 0, 'the sketch pen draws a wobbly outline where the shape is, and nothing inside without a fill', JSON.stringify(s.edges));
+  check(s.moved && s.remembered >= 1, 'a sketched shape looks the same wherever it is drawn (its wobble does not crawl)');
+  check(s.fill[2] > 200 && s.fill[3] === 255 && s.hatch > .08 && s.hatch < .8, 'solid fills fill, hatching draws lines with gaps between', JSON.stringify({ fill: s.fill, hatch: +s.hatch.toFixed(2) }));
+  check(s.ink[1] > 200 && s.ink[3] === 255 && s.inkOff === 0, 'an ink stroke fills along the line the finger drew', JSON.stringify({ ink: s.ink, off: s.inkOff }));
+  check(s.ink2[0] > 200 && s.ink2[3] > 200 && s.ink3 === 0, 'ink() in one call: a line through a few far-apart points cuts its corners, and spacing makes it follow them', JSON.stringify({ spaced: s.ink2, sparse: s.ink3 }));
+
+  // icons
+  s = await p.evaluate(() => {
+    const { icon, names, remembered, path } = gs.icons, a = board();
+    const drew = icon(a, 'plain-square', 100, 60, 40, { color: '#ff8800' }), miss = icon(a, 'no-such-icon', 100, 60, 40);
+    const o = board(); icon(o, 'plain-circle', 100, 60, 40, { color: '#ffffff', outline: '#0000ff', width: 4 });
+    const before = remembered(); for (let i = 0; i < 100; i++) icon(a, 'sword', 20 + i, 20, 24); const one = remembered() - before;
+    for (let i = 0; i < 60; i++) icon(a, 'heart', 150, 90, 24 + Math.sin(i / 5) * 3); const pulse = remembered() - before - one;
+    for (const n of names.slice(0, 400)) icon(a, n, 100, 60, 32);
+    const px = board(64, 32, 1); px.imageSmoothingEnabled = false; icon(px, 'key', 16, 16, 16, { pixel: true, color: '#9bbc0f', outline: '#0f380f' }); icon(px, 'skull', 48, 16, 16, { pixel: true, color: '#9bbc0f' });
+    const d = px.box(0, 0, 64, 32), cols = new Set(); let soft = 0; for (let i = 0; i < d.length; i += 4) { if (d[i + 3] !== 0 && d[i + 3] !== 255) soft++; if (d[i + 3]) cols.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); }
+    const t = board(); icon(t, 'plain-arrow', 100, 60, 40, { color: '#fff' }); const t2 = board(); icon(t2, 'plain-arrow', 100, 60, 40, { color: '#fff', angle: Math.PI }); 
+    const sharp = board(200, 120, 3); icon(sharp, 'plain-square', 100, 60, 40, { color: '#ff8800' });
+    return { drew, miss, centre: a.px(100, 60).slice(0, 3), edgeIn: 0, ring: o.px(100, 60 - 20 - 2), ringOut: o.px(100, 60 - 20 - 7)[3], mid: o.px(100, 60), one, pulse, kept: remembered(), soft, cols: [...cols],
+      turned: !same(t.box(80, 40, 40, 40), t2.box(80, 40, 40, 40)), path: path('sword') instanceof Path2D, names: names.length, sharp: sharp.px(100, 60) };
+  });
+  check(s.drew === true && s.miss === false && s.names === 528, 'an icon draws by name; a name it does not have draws nothing and says so');
+  check(s.mid[0] === 255 && s.ring[2] > 180 && s.ring[0] < 80 && s.ringOut === 0, 'colour and outline: the icon in its colour, a band of the outline colour round it', JSON.stringify({ mid: s.mid, ring: s.ring, out: s.ringOut }));
+  check(s.one === 1 && s.pulse <= 2 && s.kept <= 160, 'an icon is drawn once and remembered (100 draws: 1 picture; a pulsing one: ' + s.pulse + '; never more than 160 kept)', JSON.stringify({ one: s.one, pulse: s.pulse, kept: s.kept }));
+  check(s.soft === 0 && s.cols.length === 2, 'pixel: true gives hard pixels in exactly the colours asked for', JSON.stringify({ soft: s.soft, colours: s.cols }));
+  check(s.turned && s.path, 'angle turns it; path(name) gives the shape itself');
+
+  if (process.env.SHOTS) {
+    await p.evaluate(() => {
+      const { material, slab, water, sticker } = gs.gfx, { Sketch, Ink, ink } = gs.sketch, { icon, names } = gs.icons, W = 390, H = 844, D = 3;
+      document.body.innerHTML = `<canvas id="spec" width="${W * D}" height="${H * D}" style="position:fixed;inset:0;width:${W}px;height:${H}px;z-index:99999"></canvas>`;
+      const c = document.getElementById('spec').getContext('2d'); c.scale(D, D); c.fillStyle = '#20242e'; c.fillRect(0, 0, W, H);
+      const label = (t, x, y) => { c.fillStyle = '#cfd6e6'; c.font = '500 10px Rubik, sans-serif'; c.textAlign = 'left'; c.fillText(t, x, y); };
+      [['paper', {}], ['wood', {}], ['wood', { planks: 4 }], ['stone', {}], ['stone', { blocks: 4 }], ['metal', {}], ['cloth', {}], ['cloth', { color: '#b5443f', threads: 20 }], ['water', {}]].forEach(([n, o], i) => {
+        const x = 10 + (i % 3) * 126, y = 22 + Math.floor(i / 3) * 96; slab(c, x, y, 118, 74, material(n, o), { r: 8 }); label(n + (Object.keys(o).length ? ' ' + JSON.stringify({ ...o, color: undefined }).replace(/"/g, '') : ''), x, y - 5); });
+      let y = 318; label('water(c, x, y, w, h, t), and clipped to a pond', 10, y - 5); water(c, 10, y, 230, 60, 1.3); c.save(); c.beginPath(); c.ellipse(315, y + 30, 64, 30, 0, 0, 7); c.clip(); water(c, 250, y, 130, 60, 2, { color: '#1fb7a6', light: '#fff7c0', strength: .8, scale: .7 }); c.restore();
+      y = 404; label('sticker(): plain, outline, glow, shadow, all three, scaled and turned', 10, y - 5);
+      const art = g => { g.fillStyle = '#ffd23f'; g.beginPath(); for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 - Math.PI / 2, r = i % 2 ? 8 : 18; g.lineTo(20 + Math.cos(a) * r, 20 + Math.sin(a) * r); } g.closePath(); g.fill(); };
+      [{}, { outline: '#3a2500' }, { glow: '#ffe98a', glowSize: 9 }, { shadow: true }, { outline: '#3a2500', width: 3, glow: '#7df', shadow: true }].forEach((o, i) => sticker(40, 40, art, o).draw(c, 34 + i * 56, y + 30));
+      sticker(40, 40, art, { outline: '#fff', shadow: true }).draw(c, 340, y + 30, { scale: 1.5, angle: .4 });
+      y = 484; label('gs.sketch: the Sketch pen and Ink, on paper', 10, y - 5); c.fillStyle = material('paper').at(10, y); c.fillRect(10, y, 370, 150);
+      const pen = new Sketch({ stroke: '#2b2b2b', strokeWidth: 2, roughness: 1.2 });
+      pen.rect(c, 22, y + 12, 86, 50, { fill: '#ffd23f' }); pen.circle(c, 150, y + 37, 25, { fill: '#4fc3ff', fillStyle: 'solid' }); pen.ellipse(c, 222, y + 37, 32, 22, { fill: '#ff6b81', fillStyle: 'cross-hatch' });
+      pen.poly(c, [[270, y + 62], [305, y + 10], [340, y + 62]], { fill: '#7bd88f', fillStyle: 'zigzag' }); pen.line(c, 22, y + 76, 368, y + 79);
+      pen.curve(c, [[24, y + 120], [60, y + 95], [96, y + 125], [132, y + 98], [168, y + 122]], { stroke: '#b03a2e' }); pen.lines(c, [[24, y + 138], [60, y + 130], [96, y + 140], [132, y + 131], [168, y + 139]], { dash: [6, 5] });
+      ink(c, Array.from({ length: 34 }, (_, i) => ({ x: 190 + i * 5.4, y: y + 100 + Math.sin(i * .45) * 14 * (1 - i / 50) })), { size: 11, color: '#1b1b3a' });
+      const line = new Ink({ size: 8, color: '#b03a2e', taper: 26 }); for (let i = 0; i < 40; i++) line.add(190 + i * 4.5, y + 132 + Math.cos(i * .3) * 8); line.end().draw(c);
+      y = 656; label('gs.icons: ' + names.length + ' icons; colour, outline, pixel', 10, y - 5);
+      ['sword', 'shield', 'heart', 'coin', 'gem', 'key', 'chest', 'skull', 'bomb', 'potion', 'star', 'trophy', 'crown', 'fire', 'water', 'bolt', 'tree', 'fish', 'cat', 'dragon', 'rocket', 'castle', 'dice', 'play', 'pause', 'settings', 'map', 'bell', 'flag', 'gift', 'robot', 'ghost', 'moon']
+        .forEach((n, i) => icon(c, n, 28 + (i % 11) * 33.5, y + 20 + Math.floor(i / 11) * 36, 28, { color: ['#fff', '#ffd23f', '#ff6b81', '#4fc3ff', '#7bd88f'][i % 5], outline: i % 2 ? '#000' : null }));
+      ['sword', 'heart', 'key', 'skull', 'star', 'bomb', 'crown', 'fish'].forEach((n, i) => { c.save(); c.translate(14 + i * 46, y + 124); c.scale(2.5, 2.5); icon(c, n, 8, 8, 16, { pixel: true, color: '#9bbc0f', outline: i % 2 ? '#0f380f' : null }); c.restore(); });
+    });
+    await p.screenshot({ path: process.env.SHOTS + '/looks.png' });
+  }
+  await p.done();
+}
+
 (async () => {
   const server = await (await import('vite')).preview({ preview: { port: 4184 } });
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] }), only = process.argv.slice(2);
-  const parts = { awake, touch, pixels, music, saves, fonts };
+  const parts = { awake, touch, pixels, music, saves, fonts, looks };
   for (const [name, fn] of Object.entries(parts)) if (!only.length || only.includes(name)) await fn(b);
   await b.close(); server.httpServer.close();
   console.log(failed ? `\n${failed} check(s) failed` : '\nall app checks passed'); process.exit(failed ? 1 : 0);

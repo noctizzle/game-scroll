@@ -365,6 +365,7 @@ any other app code. The full guide is [docs/maker-kit.md](docs/maker-kit.md). Th
 - `gs.physics` / `gs.physics3d`: real physics (Rapier): spinning shapes, joints, ropes, 3D bodies, a character mover.
 - `gs.ai`: steering, flocking and path finding (Yuka). `gs.math`: seeded random, daily seed, noise, timers.
 - `gs.pixel`: pixel text (six pixel fonts) and sprites from text. `gs.fonts`: 13 display fonts for titles. `gs.moves`: swing, punch, throw, flip, twist.
+- `gs.gfx`: wood, stone, metal, paper, cloth and water made in code, stickers with outlines and glows. `gs.sketch`: a hand-drawn look and inked lines. `gs.icons`: 528 icons (instead of emoji, which differ on every phone).
 - `gs.things`, `gs.rounds`, `gs.pacing`: game objects and collisions, scenes and levels, spawners and waves.
 - `gs.aim`, `gs.senses`: touch aim assist; enemy sight, hearing and moods.
 - `gs.camera2d`, `gs.tiles`, `gs.movers`: 2D cameras with parallax, levels written as text, platformer and top-down movement.
