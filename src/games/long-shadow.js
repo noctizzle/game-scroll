@@ -480,7 +480,9 @@ function world() {
     plant: pbr('#ffffff', { vertexColors: true, rough: .9 }), rock: rockMat(tex),
   };
   M.glass.emissive = new Color('#ffb860'); M.glass.emissiveIntensity = 0; M.lit.emissive = new Color('#ffb060'); M.lit.emissiveIntensity = 0;
-  WD = { v, sl, land, river, lake, M, ripples, lodK: 1, ground: (x, z) => land.height(x, z), chims: [], deckY: bridgeDeck(land) };
+  WD = { v, sl, land, river, lake, M, ripples, lodK: 1, ground: (x, z) => land.height(x, z), chims: [], winSpots: [], deckY: bridgeDeck(land) };
+  // real light from lit windows at dusk (mood() turns the pool on; draw() moves it to the windows nearest where you look)
+  v.lampLights(6.5); for (const l of v.lamps) l.visible = false;
   const solids = WD.solids = [];   // boxes that stop bullets: { x0, y0, z0, x1, y1, z1, kind }
   const box = (x, y, z, w, h, d, kind = 'wall') => solids.push({ x0: x - w / 2, x1: x + w / 2, y0: y, y1: y + h, z0: z - d / 2, z1: z + d / 2, kind });
   // stone keeps its size on a tower and on a kerb: each face of a block is mapped in metres along its own plane
@@ -545,6 +547,7 @@ function world() {
       (lit ? K.lit : K.glass).face(sz > 0 ? [q(-.4, 0), q(.4, 0), q(.4, 1.1), q(-.4, 1.1)] : [q(.4, 0), q(-.4, 0), q(-.4, 1.1), q(.4, 1.1)], WHITE, 1);
       const sl = at(lx, 0, wz + sz * .08); K.stone.box(sl.x, y0 + fy - .16, sl.z, 1.12, .08, .22, ry, SILL, .5);
       const shut = HR() < .18;
+      if (lit && !shut) { const o = at(lx, fy + .5, wz + sz * .35); WD.winSpots.push({ x: o.x, y: o.y, z: o.z, col: '#ffb468', i: WIN_LIGHT }); }   // (its light, just outside the glass)
       for (const sx of [-1, 1]) { const sp = at(lx + sx * (shut ? .2 : .64), 0, wz + sz * .07); K.wood.box(sp.x, y0 + fy - .03, sp.z, .42, 1.16, .05, ry, paint, .6); }
     }
     box(x, y0 + .1, z, turned ? d : w, h + .4, turned ? w : d, 'house');
@@ -1103,6 +1106,8 @@ const MOODS = {
 };
 // trees swap to fewer leaves past these distances (further when you look through the scope)
 const TREE_LOD = [85, 240];
+// lit windows at dusk: the strength of the light each throws, and the height the village stands at (to find where you look)
+const WIN_LIGHT = 6, VILLAGE_Y = 6;
 
 // ------------------------------------------------------------------ the game
 function make(api) {
@@ -2404,6 +2409,7 @@ function make(api) {
     v.air(md.air); v.grade = md.grade; v.glare = md.glare; v.shafts = md.shafts; v.exposure = md.exposure; v.bloom = md.bloom; v.envI = md.env;
     v.lut = md.lut; v.lutAmount = md.lutAmount; v.flare = md.flare; v.eye = null;   // the mission's film stock, lens flare and dirt; the eye adapts afresh
     GU.uWet.value = md.air.wet; WD.wins.material.emissiveIntensity = md.windows;
+    winLit = md.windows > 0; if (!winLit) for (const l of v.lamps) l.visible = false;   // (no lights at all by day: none to pay for)
     // the sky's reflections are redone once, just after the next frame is drawn (heavy GPU work, so it
     // stays out of update(); until then the last ones carry on)
     // (only when the light changed: playing the same mission again keeps them, no stall as the round starts)
@@ -2474,7 +2480,7 @@ function make(api) {
     if (Math.abs(pitchR) > .7) look.pitch += pitchR * dt * k;
     clampLook();
   });
-  let briefRows = [], briefGo = null, failMsg = '', pathBudget = 0, thinkBudget = 0;
+  let briefRows = [], briefGo = null, failMsg = '', pathBudget = 0, thinkBudget = 0, winLit = false;
   // true only inside reset(), while the mission's big functions are called once so the browser compiles them
   // during loading (each returns at once): otherwise that is paid in the first frame of the intro, the nest or a shot
   let warming = false;
@@ -2723,6 +2729,12 @@ function make(api) {
       GU.uTime.value = v.t; v.sunDir(GU.uSun.value);
       for (const r of WD.ripples) r.offset.set(v.t * .011, v.t * .004);
       if (WD.train.visible) { WD.train.position.set(train.x, RAILH, RAILZ); }
+      // lit windows shine on their walls, the wet road and whoever walks past: the engine's pool of real lights
+      // (a few on WebGL, many on WebGPU) sits at the windows nearest the place the camera looks at
+      if (winLit && frame % 5 === 0) {
+        cam.getWorldDirection(tmpA); const d = clamp(tmpA.y < -.01 ? (cam.position.y - VILLAGE_Y) / -tmpA.y : 160, 6, 420) - 5;   // (a little short of it: the walls facing you first)
+        v.placeLamps(WD.winSpots, cam.position.x + tmpA.x * d, VILLAGE_Y + 2, cam.position.z + tmpA.z * d);
+      }
       camCut(v);
       fx.begin(c); v.render(c, W, H); fx.end(c, W, H);
       if (envDirty && sky.makesEnv) { envDirty = false; try { sky.makeEnv(); envBaked = sky.envAt; } catch (e) { /* keeps the last reflections */ } }
