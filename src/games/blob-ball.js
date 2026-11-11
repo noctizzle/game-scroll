@@ -38,7 +38,7 @@ function make(api) {
   function jump(s) { if (s.y >= floor() - .5) { s.vy = -250; if (s === me) sfx(500, .05, 'triangle', .04, 300); } }
   function scored(side) {
     sc[side]++; phase = 'goal'; pt = 0;
-    feel.juice.burst(ball.x, ball.y, { n: 18, speed: 120, spread: Math.PI, angle: -Math.PI / 2, life: .8, size: 2, gravity: 300, color: [side ? '#f85858' : '#58c8f8', '#f8f8f0'] });
+    feel.juice.burst(ball.x, ball.y, { n: 18, speed: 120, arc: Math.PI, angle: -Math.PI / 2, life: .8, size: 2, gravity: 300, color: [side ? '#f85858' : '#58c8f8', '#f8f8f0'] });
     if (side === 0) { goals++; api.score(goals); haptic('success'); sfx(880, .3, 'square', .05, 400); msg = { txt: 'GOAL!', l: 1.2 }; }
     else { haptic('error'); sfx(160, .3, 'sawtooth', .05, -50); msg = { txt: 'CONCEDED', l: 1.2 }; feel.juice.shake(3); }
   }
