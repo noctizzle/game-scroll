@@ -16,7 +16,7 @@ const fs = require('fs'), path = require('path');
   const p = await ctx.newPage(); let errs = [];
   p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if ((m.type() === 'error' && !/^Failed to load resource/.test(m.text())) || /WebGPU did not start|WebGPU:/.test(m.text())) errs.push(m.text()); });
   await p.goto('http://localhost:4185/'); await p.waitForFunction(() => window.__gs, null, { timeout: 20000 }); await p.waitForTimeout(400);
-  const ids = argv.length ? argv : await p.evaluate(() => __gs.GAMES.filter(g => g.era === 'nextgen' || g.era === 'ar').map(g => g.id));
+  const ids = argv.length ? argv : await p.evaluate(() => __gs.GAMES.filter(g => g.era === 'nextgen' || g.era === 'ar' || g.era === 'board').map(g => g.id));
   const pick = async v => p.evaluate(async v => { while (!window.__gpu) await new Promise(r => setTimeout(r, 50)); window.__gpu.pick(v); return v === 'webgpu' ? !!(await window.__gpu.ready()) : true; }, v);
   const card = async () => { const r = await p.evaluate(() => { const c = __gs.active.canvas.getBoundingClientRect(); return { x: c.x, y: c.y, width: c.width, height: c.height }; }); return p.screenshot({ clip: r }); };
   const diff = (a, c) => p.evaluate(async ([a, c]) => {

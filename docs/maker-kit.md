@@ -94,6 +94,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Save something big (a built world, drawings, recorded runs) | `api.saveLocal()` / `loadLocal()` | [Save slots](#a-bigger-save-that-stays-on-the-phone) |
 | The look of an old handheld's screen | `lcd: true` in the definition | [Pixel text and sprites](#even-pixels-and-the-lcd-look) |
 | Puzzles with exactly one answer, graded, with fair hints; computer opponents for board games | `gs.solve` | [Puzzles and opponents](#puzzles-and-opponents) |
+| A board game on a table in 3D that also plays on your floor in AR: camera, picking, turns, real dice, pieces, chess | `gs.tabletop` | [board-games.md](board-games.md) |
 | Play with your whole body; put the player inside the game; thumbs up and other hand signs | `gs.vision.Body`, `CutOut`, `Signs` | [Body, cut-outs and hand signs](#body-cut-outs-and-hand-signs) |
 | Walk to play, lift the phone, a dark room, a hand over the phone | `gs.device.steps()`, `pressure()`, `light()`, `near()` | [Steps, air pressure, light, proximity](#steps-air-pressure-light-proximity) |
 | Block worlds to dig, build and craft in | `gs.voxels` | [Voxel worlds](#voxel-worlds) |
@@ -136,7 +137,7 @@ skips the game until it updates.
 
 ```bash
 npm run new my-game                     # Phone (Casual)
-npm run new my-game --style pocket      # phone | pocket | color | advance | console | nextgen | ar
+npm run new my-game --style pocket      # phone | pocket | color | advance | console | nextgen | ar | board
 npm run new my-game --style ar --title "Balloon Pop" --creator "Sam"
 ```
 
@@ -1879,6 +1880,16 @@ test of the cells' values). Then:
 `best(state, { time: 60, skill })` looks ahead within the time (minimax with alpha-beta and iterative
 deepening; `mode: 'mcts'` for games with dice, more than two players or huge choice). `skill` below 1
 picks good-but-not-best moves more often, so mistakes look human. `rank(state)` lists every move's value.
+`think(state, { time, depth, skill })` is `best()` spread over frames, for 3D games: it returns a job;
+call `job.step(5)` (milliseconds to spend now) each update until it returns true, then play `job.move`.
+Board games get this in one line: `await table.think(search, state, { time, skill, wait })`.
+
+## Board games
+
+`gs.tabletop` is the kit for Board games (`era: 'board'`): a board on a table in a 3D room that the
+AR chip also sets down on the player's floor, with the camera, picking, turns written as `async`
+functions, real dice, pieces made in code and chess. The guide, with the options and a starter, is
+[board-games.md](board-games.md); `npm run new my-game --style board` makes a working one.
 
 ## Body, cut-outs and hand signs
 

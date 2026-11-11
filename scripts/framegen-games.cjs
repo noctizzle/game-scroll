@@ -45,7 +45,7 @@ const fs = require('fs'), path = require('path'), os = require('os');
     return w;
   };
   const first = await open();
-  const ids = argv.length ? argv : await first.p.evaluate(() => __gs.GAMES.filter(g => (g.era === 'nextgen' || g.era === 'ar') && g.frameGen !== false).map(g => g.id));
+  const ids = argv.length ? argv : await first.p.evaluate(() => __gs.GAMES.filter(g => (g.era === 'nextgen' || g.era === 'ar' || g.era === 'board') && g.frameGen !== false).map(g => g.id));
   const queue = ids.flatMap(id => modes.map(mode => ({ id, mode }))), stays = new Set();
   let failed = 0;
   const run = async (w, { id, mode }) => {

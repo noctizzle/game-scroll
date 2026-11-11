@@ -79,7 +79,7 @@ export function tick(now) {
 export const screenHz = () => hz;
 
 /* ---------- frame rate per game ---------- */
-const is3D = def => def && (def.era === 'nextgen' || def.era === 'ar');
+const is3D = def => def && (def.era === 'nextgen' || def.era === 'ar' || def.era === 'board');
 let settled = store.get(SETTLE_KEY, {}) || {};
 // 'auto' or a pinned rate; anything else saved (a bad write) counts as Auto
 const okPick = v => [120, 60, 30].includes(+v) ? +v : 'auto';

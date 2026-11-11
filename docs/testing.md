@@ -19,7 +19,7 @@ How to check a change without waiting longer than you need to. Written for peopl
 | --- | --- | --- |
 | One game file | `node scripts/game-lint.mjs <id>` (it also gives kit hints: advice, never a failure), `node scripts/game-types.mjs <id>`, `npm run games`, then `node scripts/smoke.cjs <id>` and `node scripts/stream-smoke.mjs <id>` | under 20 s |
 | How games use `gs` (a kit, method, option or definition field that doesn't exist) | `npm run game-types` (every game against `src/gamescroll.d.ts`; `-- --self-test` checks the check, `-- --all` also lists what it leaves alone) | about a second |
-| A 3D game (Console, Next Gen, AR) | add `node scripts/sweep.cjs <id>` | 20 s to 2 min |
+| A 3D game (Console, Next Gen, AR, Board) | add `node scripts/sweep.cjs <id>` | 20 s to 2 min |
 | A game's speed | `node scripts/budget.cjs <id>` | about 25 s |
 | Can the goal be reached? | `node scripts/playtest.cjs <id> [--budget 20] [--strict]`: a bot plays faster than real time and tries to win (see below) | about 20 s a game |
 | Layout, cards, folding | `node scripts/fold.cjs [id ...]` | about 12 s |

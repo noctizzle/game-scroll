@@ -15,8 +15,9 @@ const KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '];
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const clampTo = (v, max) => Math.max(max * .03, Math.min(max * .97, v));
 // Games the bot can't judge: winning them takes thinking (a puzzle, words, memory, a plan), not
-// reactions, so "goal not reached" from it says nothing. Read from the game's tag.
-export const THINKING = /\b(puzzle|word|logic|brain|memory|trivia|quiz|riddle|sudoku|maze|merge|sort|match|cards?|chess|board game|strategy|tactics?|deduction|spelling|maths?|codes?)/i;
+// reactions, so "goal not reached" from it says nothing. Read from the game's tag (every Board game counts:
+// they are played in turns against an opponent, over more minutes than the bot plays).
+export const THINKING = /\b(puzzle|word|logic|brain|memory|trivia|quiz|riddle|sudoku|maze|merge|sort|match|cards?|chess|board|strategy|tactics?|deduction|spelling|maths?|codes?)/i;
 
 /**
  * playtest(def, baseApi, { budget, maxSec, seed }) -> report.

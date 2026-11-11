@@ -137,6 +137,9 @@ so its next round starts there instead of stuttering down again.
   to drawing itself that frame, so the game never has to know, and raycasts still hit the pieces.
   `mesh.userData.noBatch = true` keeps a mesh out; `__hd.batch = false` turns it off. WebGPU draws are
   cheap enough that merging measured slower there, so it stays off on WebGPU.
+  Kit code that moves objects from one view's scene into another's (gs.tabletop does, between the 3D
+  room and AR) calls `view.release()` on the view they leave first: it returns merged pieces, and
+  ones waiting for a shader, to drawing themselves.
 - On WebGPU, lights use three.js's clustered (Forward+) lighting: each pixel only adds up the point
   and spot lights that reach it, so `v.lampLights()` / `v.placeLamps()` light 8 times as many of the
   nearest lamps (up to 32) for about the same cost, and lamps coming and going build no shaders.

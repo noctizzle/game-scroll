@@ -40,7 +40,7 @@ const p95 = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - 
     await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(300);
     // (up to a minute: a game with sculpted people makes them on its first load, before anything can be timed)
     for (let i = 0; i < 240 && await p.evaluate(() => !__gs.active || __gs.active.loading); i++) await p.waitForTimeout(250);
-    const is3d = await p.evaluate(() => ['console', 'nextgen', 'ar'].includes(__gs.active?.def.era));
+    const is3d = await p.evaluate(() => ['console', 'nextgen', 'ar', 'board'].includes(__gs.active?.def.era));
     await p.evaluate(() => __gs.start()); await p.waitForTimeout(200);
     // time the game's own update() and draw(); the game object is remade if a kit loads, so wrap again then
     await p.evaluate(() => {
