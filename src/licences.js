@@ -43,6 +43,10 @@ export const OPEN_SOURCE = [
   { name: 'Capacitor Text to Speech', for: 'characters that speak, by the Capacitor Community', licence: 'MIT', spdx: 'MIT', packages: ['@capacitor-community/text-to-speech'] },
   { name: 'Capacitor Keep Awake', for: 'keeping the screen on while a round is played, by the Capacitor Community', licence: 'MIT', spdx: 'MIT', packages: ['@capacitor-community/keep-awake'] },
   { name: 'fflate', for: 'packing game saves small, by Arjun Barrett', licence: 'MIT', spdx: 'MIT', packages: ['fflate'] },
+  { name: 'Rough.js', for: 'sketchy, hand-drawn shapes in games (gs.sketch), by Preet Shihn', licence: 'MIT', spdx: 'MIT', packages: ['roughjs'] },
+  { name: 'perfect-freehand', for: 'ink strokes that swell and taper (gs.sketch), by Steve Ruiz', licence: 'MIT', spdx: 'MIT', packages: ['perfect-freehand'] },
+  { name: 'Game Icons', for: 'the icons games can draw (gs.icons), by Lorc, Delapouite and contributors', licence: 'CC BY 3.0', spdx: 'CC-BY-3.0', vendored: 'src/kit/icon-data.js', notice: 'Icons by Lorc, Delapouite and contributors, game-icons.net, CC BY 3.0' },
+  { name: 'SunCalc', for: 'where the sun and moon are for the player (gs.real), by Volodymyr Agafonkin', licence: 'BSD 2-Clause', spdx: 'BSD-2-Clause', packages: ['suncalc'], notice: '© 2026 Volodymyr Agafonkin' },
   { name: 'Slop New York', for: 'the city kit\'s facade looks and lit windows, and its idea of building the city round the player, by Mr.doob', licence: 'MIT', spdx: 'MIT', vendored: 'src/kit/city.js', notice: '© 2026 Mr.doob' },
   { name: 'ZzFX', for: 'sound effects, by Frank Force', licence: 'MIT', spdx: 'MIT', vendored: 'src/kit/zzfx.js' },
   { name: 'simplex-noise', for: 'noise for terrain and motion', licence: 'MIT', spdx: 'MIT', packages: ['simplex-noise'] },
@@ -59,6 +63,9 @@ export const OPEN_SOURCE = [
   { name: '@2toad/profanity', for: 'keeping rude words out of word games', licence: 'MIT', spdx: 'MIT', packages: ['@2toad/profanity'] },
   { name: 'Press Start 2P font', for: 'pixel text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/press-start-2p'] },
   { name: 'Rubik font', for: 'app text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/rubik'] },
+  { name: 'Game fonts', for: 'the font library for games (gs.fonts): Bangers, Fredoka, Titan One, Bungee, Orbitron, Creepster, Pirata One, Rye, Monoton, Black Ops One, Cinzel, Patrick Hand, Courier Prime, Silkscreen, Tiny5, Jersey 10 and VT323, by their designers', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1',
+    packages: ['@fontsource/bangers', '@fontsource/fredoka', '@fontsource/titan-one', '@fontsource/bungee', '@fontsource/orbitron', '@fontsource/creepster', '@fontsource/pirata-one', '@fontsource/rye', '@fontsource/monoton',
+      '@fontsource/black-ops-one', '@fontsource/cinzel', '@fontsource/patrick-hand', '@fontsource/courier-prime', '@fontsource/silkscreen', '@fontsource/tiny5', '@fontsource/jersey-10', '@fontsource/vt323'] },
 ];
 
 // Parts that ship inside the app but aren't open source, shown under the list above.

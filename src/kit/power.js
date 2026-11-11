@@ -7,9 +7,10 @@
 //   power.why      which, in words for Settings ('the phone is warm', 'battery saver is on', 'the battery is low')
 //   power.heat     0 cool, 1 warm, 2 hot
 //   power.thermal, power.headroom   the raw readings (null where unknown), for the frame lab
+//   power.known    the battery has been read at least once (games see it through gs.real.battery())
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
-export const power = { heat: 0, saver: false, level: 1, charging: true, saving: false, why: '', thermal: null, headroom: null };
+export const power = { heat: 0, saver: false, level: 1, charging: true, known: false, saving: false, why: '', thermal: null, headroom: null };
 
 const native = Capacitor.isNativePlatform();
 const plugin = native && Capacitor.isPluginAvailable('PowerState') ? registerPlugin('PowerState') : null;
@@ -40,9 +41,9 @@ async function ask() {
   try {
     if (native) {
       const { Device } = await import('@capacitor/device'); const b = await Device.getBatteryInfo();
-      if (typeof b.batteryLevel === 'number') power.level = b.batteryLevel; power.charging = b.isCharging !== false;
+      if (typeof b.batteryLevel === 'number') { power.level = b.batteryLevel; power.known = true; } power.charging = b.isCharging !== false;
     } else if (typeof navigator !== 'undefined' && navigator.getBattery) {
-      const b = await navigator.getBattery(); power.level = b.level; power.charging = b.charging;
+      const b = await navigator.getBattery(); power.level = b.level; power.charging = b.charging; power.known = true;
     }
   } catch (_) { /* no battery reading here */ }
   judge(power, Date.now());

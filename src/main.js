@@ -34,6 +34,8 @@ import { boards, rankHTML, openBoard } from './boards.js';
 import { perf } from './perf.js';
 import { speed, fpsFor, tick as tickHz, screenHz, frameLate, screenWish } from './kit/speed.js';
 import { keepAwake, awake } from './kit/awake.js';
+import * as fontlib from './kit/fontlib.js';
+import * as pixelKit from './kit/pixel.js';
 import { history } from './history.js';
 import { savesFor, localSavesFor } from './saves.js';
 import { soundtrack } from './soundtrack.js';
@@ -62,6 +64,11 @@ if (STREAM) remote.init(meta => { const g = { likes: 300 + hash(meta.id) % 6000,
 /* ---------- feed engine ---------- */
 const feed=document.getElementById('feed');
 let slides=[],active=null,filter='all',lastId=null,io;
+// Guest: while the phone test tour's bot plays (src/tour.js; the driver is further down), nothing it does
+// is kept. Cards made meanwhile get saves and brains that go nowhere (guest is the function that makes
+// them), and a round pays no credits, sets no best, sends no score or play stats and teaches no brain.
+// Frame timings and errors still count: those are real ones from this phone.
+let guest=null;
 
 // Makes the game. A game whose kit is still loading (the physics engine is a few MB, so it loads the
 // first time it's needed) throws an error carrying e.kitLoading: show a "loading" screen until it's in,
@@ -122,6 +129,7 @@ function makeSlide(def){
     scoreArea:()=>scoreArea(s),                         // where the app's score badge sits, in game units, so HUDs can keep clear of it
     ahead:id=>aheadOf(s,id),                            // where a finger that's down is heading by the next refresh ([x, y] in game units), or null
   };
+  if(guest)Object.assign(s.api,guest(s.api));
   bootGame(s);
   // like
   const likeBtn=el.querySelector('.like'),liked=rating(def.id)>0||(rating(def.id)===0&&store.get('gs_like_'+def.id,false));
@@ -268,6 +276,7 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden&&active)pau
 // says how fun it was. Played again within 30 s +1, hearted +1 (during or within a minute of the
 // round), Meh -1, left the game-over screen within 4 s -0.5. One "again or left" signal per round.
 function funNote(s,what){
+  if(guest)return;
   const id=s.api.brains,since=s.funAt?Date.now()-s.funAt:Infinity;
   if(what==='heart'){if((s.state==='playing'||since<60000)&&!s.funHeart){s.funHeart=true;sendFun(id,1)}return}
   if(what==='meh'){sendFun(id,-1);return}
@@ -283,13 +292,13 @@ function startGame(s){
   clearPause(s);
   // Boosts the player owns for this game are used up on this run; unlocks stay on.
   // (taken only once the round has started cleanly, so a game that fails to reset costs nothing)
-  const ready=(Array.isArray(s.def.shop)?s.def.shop:[]).filter(it=>it&&progress.owned(s.def.id,it)>0);
+  const ready=guest?[]:(Array.isArray(s.def.shop)?s.def.shop:[]).filter(it=>it&&progress.owned(s.def.id,it)>0);
   s.run={items:new Set(ready.map(it=>it.id))};
   s.won=false;s.paid=0;s.trophies=[];
-  roundStarted(s.def.id);   // before reset(): a location game may ask where the player is there
+  if(!guest)roundStarted(s.def.id);   // before reset(): a location game may ask where the player is there (a guest gets the stand-in place)
   s.stale=false;if(!resetGame(s)){roundEnded(s.def.id);return}
   for(const it of ready)if(it.kind!=='unlock')progress.use(s.def.id,it);
-  progress.played(s.def.id);playstats.started(s.def.id);perf.started(s.def.id);s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
+  if(!guest){progress.played(s.def.id);playstats.started(s.def.id)}perf.started(s.def.id);s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
   s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');s.startPerf=performance.now();renderOverlay(s);
   sfx(660,.08,'square',.04,300);
   soundtrack.start(s.def);   // music: '<mood>' in the definition (src/soundtrack.js)
@@ -298,6 +307,7 @@ function startGame(s){
 // api.win()). It pays credits once per run and the game carries on.
 function win(s){
   if(s.won||s.state!=='playing')return;
+  if(guest){s.won='yes';s.paid=0;return}
   const r=progress.win(s.def.id,s.def.reward);
   s.won=r.first?'first':'yes';s.paid=r.paid;
   toast(s.el,`WIN +${r.paid} CREDITS`,'win');haptic('success');sfx(880,.12,'triangle',.06,440);
@@ -308,16 +318,16 @@ function awardTrophies(s){
 }
 function gameOver(s){
   if(s.state!=='playing')return;clearPause(s);if(isFull(s))leaveFull();
-  s.state='over';s.overAt=Date.now();s.funAt=s.overAt;s.funSent=false;soundtrack.stop();stopKits();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
-  if(progress.score(s.def.id,s.score))s.newBest=true;
-  awardTrophies(s);services.reportRun(s.def);
-  s.rank=null;const round=s.overAt;boards.submit(s.def.id,s.score,(s.overAt-s.startAt)/1000).then(r=>{if(r&&s.state==='over'&&s.overAt===round){s.rank=r;if(!s.overlay.hidden)renderOverlay(s)}});
+  s.state='over';s.overAt=Date.now();s.funAt=s.overAt;s.funSent=false;soundtrack.stop();stopKits();roundEnded(s.def.id);if(!guest){logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt)}perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
+  if(!guest&&progress.score(s.def.id,s.score))s.newBest=true;
+  if(!guest){awardTrophies(s);services.reportRun(s.def)}
+  s.rank=null;const round=s.overAt;if(!guest)boards.submit(s.def.id,s.score,(s.overAt-s.startAt)/1000).then(r=>{if(r&&s.state==='over'&&s.overAt===round){s.rank=r;if(!s.overlay.hidden)renderOverlay(s)}});
   updateBest(s);if(!s.won)haptic('error');sfx(220,.35,'square',.05,-150);
   s.overlay.hidden=true;setTimeout(()=>{if(s.state==='over')renderOverlay(s)},450);
 }
 // later: the card is being swiped away, so its game resets (which can rebuild a whole 3D level) once
 // the swipe has settled, not in the frame the swipe starts (Play resets it anyway if it comes first)
-function resetSlide(s,later=false){if(isFull(s))leaveFull();if(s===active)soundtrack.stop();stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.score=0;s.scoreEl.textContent='0';
+function resetSlide(s,later=false){if(isFull(s))leaveFull();if(s===active)soundtrack.stop();stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){if(!guest){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt)}perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.score=0;s.scoreEl.textContent='0';
   if(later){s.stale=true;renderOverlay(s);whenCalm(()=>{if(s.stale&&s.state==='ready'&&!s.dropped){s.stale=false;if(resetGame(s))renderOverlay(s);s.dirty=true}});return}
   s.stale=false;if(resetGame(s))renderOverlay(s);s.dirty=true}
 function goPrev(s){
@@ -501,7 +511,8 @@ function catalogueChanged(added,updated){
   for(const s of slides.slice(i+1))if(ids.has(s.def.id)){const g=GAMES.find(x=>x.id===s.def.id);dropSlide(s);slides.splice(slides.indexOf(s),1);if(g&&inPool(g))queue.unshift(g)}
   topUp();
 }
-function topUp(){const ahead=slides.length-1-(active?slides.indexOf(active):0);if(ahead<AHEAD)addBatch(AHEAD-ahead+1)}
+function topUp(){if(guest&&slides.length)return;   // the tour shows one card at a time
+  const ahead=slides.length-1-(active?slides.indexOf(active):0);if(ahead<AHEAD)addBatch(AHEAD-ahead+1)}
 // Adding a card means making its game and drawing it the first time, which can take a while (a 3D
 // level, its textures). Done in the middle of a swipe, that froze the scroll. So after a swipe the
 // feed tops up once it has come to rest and the finger is off, one card at a time, and never while a
@@ -528,7 +539,7 @@ function calmTick(){
 }
 speed.busy=()=>!calm();speed.playing=()=>!!active&&active.state==='playing';
 function topUpLater(wait=QUIET){
-  clearTimeout(topT);
+  clearTimeout(topT);if(guest)return;
   const ahead=()=>slides.length-1-(active?slides.indexOf(active):0);
   // with only one card left below (a very quick scroller), don't wait for a calm moment: build as
   // soon as the swipe has come to rest
@@ -644,7 +655,7 @@ function setActive(s){
   if(prev&&prev.state==='over')funNote(prev,'left');
   if(prev&&prev.state==='playing')resetSlide(prev,true);
   else if(prev&&prev.state!=='ready')whenCalm(()=>{if(prev!==active&&prev.state!=='ready'&&!prev.dropped)resetSlide(prev)});
-  finishCard(s);feed.classList.remove('locked');active=s;speed.game=s.def;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);showTweaks(s);
+  finishCard(s);feed.classList.remove('locked');active=s;speed.game=s.def;s.dirty=true;if(STREAM)remote.touch(s.def.id);if(!guest)playstats.shown(s.def.id);perf.shown(s.def.id);showTweaks(s);
   whenCalm(()=>{if(s===active)soundtrack.ready(s.def)});   // a soundtrack with instruments: have them in before Play
   // the last card (playNow, a short feed): top up now, else when the swipe has settled
   // (only a feed with nothing below at all builds now, in the middle of the swipe)
@@ -731,6 +742,16 @@ function frameLab(on){
   return LAB?Promise.resolve(LAB):labLoad||=import('./framelab.js').then(m=>{LAB=m.openLab({onClose:()=>{LAB=null;labLoad=null}});return LAB}).catch(e=>{labLoad=null;console.warn('frame lab',e);return null});
 }
 addEventListener('gs-framelab',()=>frameLab());
+// The phone test tour (src/tour.js; a button in the QA panel): a bot plays each 3D game on this phone
+// through this feed, one card at a time, as a guest (above). This is what it drives the feed with.
+const tourDriver={games:()=>GAMES,active:()=>active,was:null,
+  begin(api){if(guest)return;this.was=filter;playstats.left();guest=api},   // (the card on screen is left now, not when the tour ends)
+  show(id){filter='id:'+id;rebuild()},
+  play(){if(active)startGame(active)},
+  resume(){if(active)resumeGame(active)},
+  full(on){const s=active;if(!s||!canFull(s.def))return false;if(on)enterFull(s);else if(isFull(s))leaveFull();return isFull(s)},   // Next Gen: the way it's played
+  end(){if(!guest)return;guest=null;filter=this.was;rebuild()}};
+addEventListener('gs-tour',()=>import('./tour.js').then(m=>m.openTour(tourDriver)));
 addEventListener('keydown',e=>{if(e.key==='F3'){frameLab();e.preventDefault()}});
 let lastT=performance.now(),nextAt=0,realAt=0;
 // A 2D game on a big screen (a foldable opened up) draws twice a phone's pixels each frame. If it can't keep
@@ -778,7 +799,7 @@ function frame(now){
     try{
       let run=true;if(DBG&&DBG.on)({dt,run}=DBG.time(dt));if(LAB&&LAB.frozen)run=false;
       const timed=s.state==='playing'&&!s.paused,t0=timed?performance.now():0;
-      if(timed){if(run)runTicks(s,tickRate(s.def),dt,h=>{if(s.state==='playing'&&!s.paused)s.game.update(h)},DBG&&DBG.on?0:1/fps);gameRan(s.def.id);if(run)soundtrack.update(dt,s.score,s.def.goal)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
+      if(timed){if(run)runTicks(s,tickRate(s.def),dt,h=>{if(s.state==='playing'&&!s.paused)s.game.update(h)},DBG&&DBG.on?0:1/fps);if(!guest)gameRan(s.def.id);if(run)soundtrack.update(dt,s.score,s.def.goal)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
       const t1=performance.now();
       // a Next Gen / AR card scrolling into place already shows its picture: its first live frame (which
       // moves the shared 3D canvas onto it) waits until the swipe has settled
@@ -863,7 +884,9 @@ feedMenu.addEventListener('keydown',e=>{const i=feedOpts.indexOf(document.active
 document.addEventListener('pointerdown',e=>{if(!feedMenu.hidden&&!e.target.closest('.feedpick'))feedOpen(false)},true);
 
 function boot(){initWallet(GAMES);services.init(GAMES);booted=true;if(store.get('gs_lab',false)||/[?&]lab\b/.test(location.search))frameLab(true);playstats.load(true).then(()=>rerank(3));perf.load(true);
-  hearts.reconcile(GAMES.map(g=>g.id),id=>rating(id)>0||(rating(id)===0&&store.get('gs_like_'+id,false)));hearts.load(true);rebuild();onSharedGame(openShared);requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true))}
+  hearts.reconcile(GAMES.map(g=>g.id),id=>rating(id)>0||(rating(id)===0&&store.get('gs_like_'+id,false)));hearts.load(true);rebuild();onSharedGame(openShared);requestAnimationFrame(frame);if(document.fonts)document.fonts.ready.then(()=>slides.forEach(s=>s.dirty=true));
+  // a font from the library (gs.fonts) that arrives after a waiting card was drawn: draw the cards again with it
+  fontlib.whenFontArrives(()=>slides.forEach(s=>s.dirty=true))}
 // Streaming: with a saved catalogue, start at once and check for updates in the background.
 // First launch has to fetch the catalogue before there is anything to show.
 function start(){
@@ -878,10 +901,10 @@ function start(){
 nativeARProbe();   // ask early whether walk-around AR games can go in the feed
 start();
 // Coming back to the app: look for game updates (cheap: one small catalogue file).
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(remote.enabled)remote.refresh();if(active)playstats.shown(active.def.id)}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(remote.enabled)remote.refresh();if(active&&!guest)playstats.shown(active.def.id)}});
 // And every 5 minutes while the app is open, so newly published games join the feed without a restart.
 if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refresh()},5*60*1000);
 
 // Test hook used by scripts/smoke.cjs and the other browser tests: dev and test builds, and any build
 // driven by a test browser. Never in the store apps, where a game could use it to reach the wallet.
-if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,awake,soundtrack,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),feed:()=>feedBrain.stats(),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',lab:v=>frameLab(v),only(id){filter='id:'+id;rebuild()},shared:id=>openShared(id),playtest:(id,o)=>import('./playtest.js').then(m=>m.playtest(GAMES.find(g=>g.id===id),active.api,o))};
+if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,awake,soundtrack,kits:{fonts:fontlib,pixel:pixelKit},gs:()=>import('./gamescroll.js'),why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),feed:()=>feedBrain.stats(),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',lab:v=>frameLab(v),tour:o=>import('./tour.js').then(m=>m.runTour(tourDriver,o)),tourKit:()=>import('./tour.js'),only(id){filter='id:'+id;rebuild()},shared:id=>openShared(id),playtest:(id,o)=>import('./playtest.js').then(m=>m.playtest(GAMES.find(g=>g.id===id),active.api,o))};

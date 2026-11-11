@@ -28,6 +28,7 @@ what fails. Ask them to.
    ```bash
    node scripts/game-lint.mjs <id>
    node scripts/game-types.mjs <id>
+   node scripts/unique.mjs <id>
    npm run games
    npm run build:bundled && node scripts/smoke.cjs <id>
    ```

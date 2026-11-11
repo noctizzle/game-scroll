@@ -216,7 +216,8 @@ How each style looks in the app, start screen and in play:
 
 Modern phone games: one-thumb arcade, puzzles, physics toys. You draw at full resolution, so use
 smooth shapes, gradients and any colours. Fonts available: `Rubik` for text, `"Press Start 2P"` for
-pixel-style numbers. Start screen says "Tap to start" with a yellow Play button. These appear under the
+pixel-style numbers, and 13 display fonts with `gs.fonts` (`c.font = gs.fonts.font('Bangers', 34)`:
+comic, spooky, sci-fi, western, handwritten and more, the same on every phone). Start screen says "Tap to start" with a yellow Play button. These appear under the
 Casual tab.
 
 ### Dot matrix (Pocket)
@@ -377,7 +378,8 @@ any other app code. The full guide is [docs/maker-kit.md](docs/maker-kit.md). Th
 - `gs.controls`: thumbsticks, buttons, the two-thumb layout, tap / double-tap / hold / swipe. `gs.pad`: game controllers.
 - `gs.physics` / `gs.physics3d`: real physics (Rapier): spinning shapes, joints, ropes, 3D bodies, a character mover.
 - `gs.ai`: steering, flocking and path finding (Yuka). `gs.math`: seeded random, daily seed, noise, timers.
-- `gs.pixel`: pixel text and sprites from text. `gs.moves`: swing, punch, throw, flip, twist.
+- `gs.pixel`: pixel text (six pixel fonts) and sprites from text. `gs.fonts`: 13 display fonts for titles. `gs.moves`: swing, punch, throw, flip, twist.
+- `gs.gfx`: wood, stone, metal, paper, cloth and water made in code, stickers with outlines and glows. `gs.sketch`: a hand-drawn look and inked lines. `gs.icons`: 528 icons (instead of emoji, which differ on every phone).
 - `gs.things`, `gs.rounds`, `gs.pacing`: game objects and collisions, scenes and levels, spawners and waves.
 - `gs.aim`, `gs.senses`: touch aim assist; enemy sight, hearing and moods.
 - `gs.camera2d`, `gs.tiles`, `gs.movers`: 2D cameras with parallax, levels written as text, platformer and top-down movement.
@@ -437,6 +439,7 @@ node scripts/sweep.cjs my-game            # long random play at odd sizes (requi
 npm run games                             # builds the streamed files; fails if the file name and id differ
 node scripts/game-lint.mjs my-game        # flags code that touches the network, storage or native features; also gives kit hints (advice only)
 node scripts/game-types.mjs my-game       # gs used the way its types describe: no kit, method, option or definition field that doesn't exist
+node scripts/unique.mjs my-game           # the three games nearest to yours, and what they share with it
 ```
 
 `npm run qa` runs bot play tests over every game and is useful for checking that your game doesn't
@@ -450,7 +453,10 @@ the controls feel good with a thumb, the hint makes sense, and the goal is reach
 1. Commit your game file on a branch in your fork and open a pull request against `main`.
 2. Fill in the template: what the game is, the mechanic, the style, and a screenshot or short clip.
 3. GitHub Actions builds the app, smoke-tests the games you changed, checks how they use `gs`
-   (`scripts/game-types.mjs`) and flags risky code (`scripts/game-lint.mjs`). Fix anything it reports.
+   (`scripts/game-types.mjs`), flags risky code (`scripts/game-lint.mjs`) and compares your game with
+   every game already here (`scripts/unique.mjs`). Fix anything it reports. A "near-copy" (new names on
+   another game's code) fails. A "plays like" warning names the nearest game: say in the pull request
+   what makes yours play differently, or change it until it does.
    Kit hints ("particles by hand: Feel does this") show as notes on your files: they're advice, and
    how your game looks and plays stays your choice.
 4. A maintainer plays it and may ask for changes. Games that don't fit the rules above, or play too

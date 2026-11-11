@@ -80,6 +80,7 @@ export const perf = {
   frame(id, now, work, budget = 16.7) {
     const dt = lastFrame ? now - lastFrame : 0; lastFrame = now;
     if (dt <= 0 || dt > GAP_MS) return;   // first frame, or the app was away
+    if (perf.tap) try { perf.tap.frame(id, dt, work, budget); } catch (_) { /* the listener's own trouble */ }
     for (const c of [pending.games[id + '|' + form()] ||= blank(), local[id] ||= blank()]) {
       c.f++; c.ms += dt; c.w += Math.min(work, dt);
       if (dt >= Math.max(SLOW_MS, budget * 1.5)) c.sl++;
@@ -92,7 +93,12 @@ export const perf = {
   gap() { lastFrame = 0; },
 
   /** A script error, optionally inside a game. */
-  error(e, game = current) { addError('error', game, message(e), place(e)); },
+  error(e, game = current) {
+    const msg = message(e), where = place(e); addError('error', game, msg, where);
+    if (perf.tap) try { perf.tap.error(msg, game, where); } catch (_) { /* the listener's own trouble */ }
+  },
+  /** The phone test tour (src/tour.js) listens in while it runs: { frame(id, dt, work, budget), error(msg, game, place) }, or null. */
+  tap: null,
 
   /** This phone's numbers for a game: { r, f, ms, w, sl, h, x } or null. */
   local(id) { return local[id]?.f ? local[id] : null; },

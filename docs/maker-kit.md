@@ -26,6 +26,10 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Game controllers, analog sticks, rumble | `gs.pad` | [Game controllers](#game-controllers) |
 | Swing, punch, throw, flip, twist the phone | `gs.moves` | [Motion moves](#motion-moves) |
 | Crisp pixel text, sprites drawn from text | `gs.pixel` | [Pixel text and sprites](#pixel-text-and-sprites) |
+| A title in a comic, spooky, sci-fi, western or handwritten font | `gs.fonts` (13 display fonts, 4 more pixel fonts) | [Fonts](#fonts) |
+| Wood, stone, metal, paper, cloth and water without image files; things with outlines, glows and soft shadows | `gs.gfx` `material`, `slab`, `water`, `sticker` | [2D materials, slabs, water and stickers](#2d-materials-slabs-water-and-stickers) |
+| A hand-drawn look; inked lines the player draws | `gs.sketch` (Rough.js, perfect-freehand) | [Sketchy shapes and ink](#sketchy-shapes-and-ink) |
+| A sword, heart, key or coin picture that looks the same on every phone | `gs.icons` (528 icons, game-icons.net) | [Icons](#icons) |
 | Things that spin, tumble, hinge, swing on ropes | `gs.physics` (Rapier) | [Physics](#physics) |
 | 3D bodies, level collisions, a walking character | `gs.physics3d` (Rapier) | [3D physics](#3d-physics) |
 | Enemies that chase, flee, flock, find a path | `gs.ai` (Yuka) | [AI](#ai) |
@@ -98,6 +102,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Play with your whole body; put the player inside the game; thumbs up and other hand signs | `gs.vision.Body`, `CutOut`, `Signs` | [Body, cut-outs and hand signs](#body-cut-outs-and-hand-signs) |
 | Walk to play, lift the phone, a dark room, a hand over the phone | `gs.device.steps()`, `pressure()`, `light()`, `near()` | [Steps, air pressure, light, proximity](#steps-air-pressure-light-proximity) |
 | Block worlds to dig, build and craft in | `gs.voxels` | [Voxel worlds](#voxel-worlds) |
+| Night in the game when it is night outside; the real moon; plug in to charge; headphones in | `gs.real` (SunCalc) | [The real world: sun, moon, battery, headphones](#the-real-world-sun-moon-battery-headphones) |
 
 ## What `gs` has, and what it doesn't
 
@@ -108,7 +113,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 `strokes`, `vehicles`, `paths`, `bones`, `level3d`, `sky`, `camera`, `nav3d`, `characters`, the action kits (`combat`,
 `tactics`, `climb`, `poses`, `missions`, `cutscene`, `prompts`, `destruction`, `stealth`, `gadgets`,
 `campaign`, `arena`, `props`), `outdoors`, `craft`, `soft`, `cards`, `dice`, `words`, `ui`, `solve`, `tick`, `voxels`, `toon` (Classic
-Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo` and `THREE`.
+Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo`, `real`, `fonts`, `sketch`, `icons` and `THREE`.
 It is the only thing a game may import (`src/game-modules.js`); `npm run games` refuses anything
 else and the PR check flags it.
 
@@ -665,6 +670,7 @@ draw(c) {
 ```js
 text(c, 'SCORE 120', 4, 4, { size: 2, color: '#fff' });                       // 3×5 font, always crisp
 text(c, 'GAME OVER', W / 2, 80, { font: 'big', align: 'center', outline: '#000' });   // 8×8 font
+text(c, 'Find the key', 4, 20, { font: 'tiny' });                             // four more pixel fonts, below
 const hero = sprite(`
   ..kk..
   .kyyk.
@@ -677,6 +683,24 @@ const walk = anim([frameA, frameB], palette, 8);  walk.draw(c, x, y, time, { sca
 Sprites and text are drawn once and cached. `sprite.solid(px, py)` is for pixel-perfect hits;
 `tiles(art, palette, 8, 8)` cuts a tile sheet.
 
+The pixel fonts for `text(c, str, x, y, { font })`. Each is drawn at the one size its pixels sit on
+the grid, so it is always crisp; `size: 2` doubles it. `text()` returns the width it drew and
+`measure(str, font)` gives `{ w, h }` at size 1 without drawing.
+
+| `font` | Capitals | Looks like | Small letters |
+| --- | --- | --- | --- |
+| `'small'` (the default) | 5 high, 3 wide | the tiniest: scores and labels | no (capitals only) |
+| `'tiny'` | 5 high | tiny and narrow, fits a sentence on a 160 wide screen | yes |
+| `'silkscreen'`, `'silkscreen bold'` | 5 high | wide, clean capitals | no (small capitals) |
+| `'big'` | 7 high | arcade letters | yes |
+| `'jersey'` | 10 high | tall scoreboard numbers and titles | yes |
+| `'terminal'` | 14 high | an old computer terminal | yes |
+
+`'small'` and `'big'` are always there. The other four are fetched the first time a game names them
+(a few kilobytes each) and the text draws in the 8×8 font for the moment before one arrives; call
+`gs.fonts.use('Tiny5')` in `make()` or `reset()` if the first frame must already have it (see
+[Fonts](#fonts) for the names).
+
 ### Even pixels and the LCD look
 
 Pocket, Color and Advance games are drawn at exactly `w` × `h` and scaled up by the app with every
@@ -688,6 +712,187 @@ pixels and a little ghosting (fast things leave a short trail). `lcd: { grid: .3
 how strong each is (grid 0 to .6, ghost 0 to .85; `false` turns one off). It's a look, so it's the
 game's choice: left out, the picture is clean. Ghosting can hide a blinking sprite's off frames, so
 check anything that flickers on purpose.
+
+## Fonts
+
+`const { font, use } = gs.fonts;`
+
+The app ships 13 display fonts next to Rubik (its own text), so a title can look like the game it
+belongs to and still look the same on every phone. All are open-licence (SIL OFL 1.1) and each one's
+file is fetched only the first time a game names it.
+
+```js
+reset() { use('Bangers', ['Fredoka', 700]); ... }      // optional: "Loading…" until they are in
+draw(c) {
+  c.font = font('Bangers', 34); c.fillText('KA-POW!', x, y);
+  c.font = font('Fredoka', 16, 700); c.fillText('Tap to bounce', x, y + 30);
+}
+```
+
+| Name | Looks like | Weights |
+| --- | --- | --- |
+| `Rubik` | the app's own text: plain and friendly | 400, 500, 700, 800 |
+| `Bangers` | comic book shout | 400 |
+| `Fredoka` | round and friendly | 400, 700 |
+| `Titan One` | chunky cartoon title | 400 |
+| `Bungee` | arcade sign, block capitals | 400 |
+| `Orbitron` | science fiction | 500, 800 |
+| `Creepster` | spooky | 400 |
+| `Pirata One` | pirates and castles | 400 |
+| `Rye` | wild west | 400 |
+| `Monoton` | neon tubes | 400 |
+| `Black Ops One` | army stencil | 400 |
+| `Cinzel` | epic fantasy capitals | 400, 700 |
+| `Patrick Hand` | handwritten note | 400 |
+| `Courier Prime` | typewriter | 400, 700 |
+
+- `font(name, size, weight)` gives the string for `c.font` (`'400 34px "Bangers", Rubik, sans-serif'`)
+  and starts the font loading if it isn't in yet. Until it is, the text draws in Rubik, so nothing
+  breaks; a card waiting in the feed is drawn again when the font arrives. The nearest weight the
+  font has is used, names can be in any case, and an unknown name gives Rubik.
+- `use(...names)` in `make()` or `reset()` waits for the fonts before the first frame, the way the
+  other lazy parts do (the app shows "Loading…" once). Use it when text is measured to lay things
+  out, or when a title in the wrong font for a moment would show. A misspelt name is an error that
+  lists the fonts.
+- `ready(name, weight)` says whether a font is in. `gs.fonts.list` is every font:
+  `{ name, look, weights, pixel }`.
+- The pixel fonts (`Press Start 2P`, `Silkscreen`, `Tiny5`, `Jersey 10`, `VT323`) are in the list too.
+  In the pixel styles draw them with `gs.pixel.text` ([above](#pixel-text-and-sprites)), which keeps
+  every pixel hard; `font('VT323', 25)` on a smooth Phone game is fine for a retro label.
+- Fonts that come with the phone (`Arial`, `Courier New`, `Impact`, `Georgia`...) look different on
+  every phone and some are missing on Android: name one of these instead. Plain `sans-serif` and
+  `monospace` are fine as they are. Emoji are the phone's own too, so they differ between phones.
+
+## 2D materials, slabs, water and stickers
+
+`const { material, slab, water, sticker } = gs.gfx;`
+
+Looks for the smooth 2D styles, made in code (no image files): six materials that tile without a seam,
+blocks of them with lit edges and soft shadows, water with light moving on it, and stickers, which keep
+any drawing as a picture with an outline, a glow and a shadow already on it.
+
+```js
+reset() {
+  wood = material('wood', { color: '#a9703f', planks: 4 });     // made once (some tens of ms), then remembered
+  coin = sticker(40, 40, g => { g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(20, 20, 16, 0, 7); g.fill(); },
+    { outline: '#5a3d00', glow: '#fff3a0', shadow: true });
+}
+draw(c) {
+  slab(c, 20, 500, 320, 60, wood, { r: 8 });                    // a lit, rounded plank with a soft shadow
+  c.fillStyle = material('stone').at(x, y); c.beginPath(); c.arc(x, y, 30, 0, 7); c.fill();   // any shape
+  water(c, 0, 560, W, 80, t);                                   // t: the game's own clock, in seconds
+  coin.draw(c, x, y, { scale: 1 + .1 * Math.sin(t * 6), angle: t });
+}
+```
+
+| Material | Starts as | Its own options |
+| --- | --- | --- |
+| `paper` | cream, with fibres | |
+| `wood` | brown, grain running across | `planks: 4` (boards down the tile, each with its own grain) |
+| `stone` | grey rock with cracks | `blocks: 4` (rows of blocks with mortar; even numbers) |
+| `metal` | brushed steel | |
+| `cloth` | blue weave | `threads: 32` (across the tile) |
+| `water` | blue, with a still net of light | (`water()` below moves it) |
+
+- `material(name, { color, seed, scale, contrast })` gives the material; the same options give the same
+  one back, so asking again in `draw()` is cheap, but make them in `make()` or `reset()` so the first
+  frame doesn't wait. `color` is its main colour, `seed` a different piece of it, `scale: 2` makes the
+  grain twice as big (one tile covers 128 game units at 1), `contrast: 0` to `2` flattens or deepens it.
+- `c.fillStyle = m.at(x, y)` fills any shape with the texture's corner at (x, y), so a crate that moves
+  carries its grain with it. `m.pattern` is the same fixed at 0, 0 (a floor that things move over).
+  `m.tile` is the picture itself, for `drawImage`.
+- `slab(c, x, y, w, h, material, { r, bevel, shadow, tint, anchor })` draws a block of it: rounded
+  corners (`r`, 6), a lit top left edge and dark bottom right (`bevel`, 2; 0 for flat), a soft shadow
+  (`shadow: false` to leave it out, or a number for how far it drops) and `tint: '#ff000040'` to wash a
+  colour over it. `anchor: [0, 0]` cuts every slab from one big sheet instead of each carrying its own.
+- `water(c, x, y, w, h, t, { color, deep, light, strength, scale, flow })` fills a rectangle with water
+  and a net of light that drifts. For a pond or river of another shape, `c.clip()` to the shape first.
+  This is a look; for water that pushes things, see `gs.flow`.
+- `sticker(w, h, draw, { outline, width, glow, glowSize, shadow, shadowBlur, shadowY })` runs
+  `draw(g, w, h)` once into a picture as sharp as the screen, adds the outline, glow and shadow, and
+  `sticker.draw(c, x, y, { scale, angle, alpha, flip, anchor })` is then one `drawImage` however much
+  went into it. Use it for anything drawn many times or with looks that are slow every frame
+  (`shadowBlur`, gradients, text with an outline). `sticker.redraw()` after what it shows changes.
+- These are for the Phone style and for 2D drawn over 3D. Pocket, Color and Advance games keep to their
+  palettes and whole pixels.
+
+## Sketchy shapes and ink
+
+`const { Sketch, Ink, ink } = gs.sketch;` (Rough.js and perfect-freehand; loads on first use)
+
+A hand-drawn look: shapes that look sketched with a pen, and ink lines that swell and taper.
+
+```js
+reset() { pen = new Sketch({ stroke: '#2b2b2b', strokeWidth: 2, roughness: 1.2 }); }
+draw(c) {
+  pen.rect(c, 40, 80, 120, 60, { fill: '#ffd23f' });                      // wobbly outline, hatched fill
+  pen.circle(c, 200, 110, 28, { fill: '#4fc3ff', fillStyle: 'solid' });
+  pen.line(c, 20, 200, 340, 204);
+}
+```
+
+- Shapes: `rect(c, x, y, w, h)`, `circle(c, x, y, r)`, `ellipse(c, x, y, rx, ry)`, `line(c, x1, y1, x2, y2)`,
+  `poly(c, points)` (closed), `lines(c, points)` (open), `curve(c, points)`, `arc(c, x, y, r, from, to, { closed })`,
+  `path(c, x, y, 'M0 0 L40 0 ...')`. Points are `[x, y]` or `{ x, y }`.
+- Options, for the pen and again for one shape: `stroke` (or `'none'`), `strokeWidth`, `fill`,
+  `fillStyle` (`'hachure'`, `'solid'`, `'zigzag'`, `'cross-hatch'`, `'dots'`, `'dashed'`, `'zigzag-line'`),
+  `hachureGap`, `hachureAngle`, `fillWeight`, `roughness` (0 is a ruler, 1 a steady hand, 3 a shaky
+  one), `bowing`, `dash: [on, off]`, `seed` (a different hand).
+- A shape is worked out once and remembered, wherever it is drawn, so moving it is free and its wobble
+  stays put instead of crawling. A shape that changes size is worked out again at each new size (sizes
+  are kept to half a unit), so grow things in steps or keep them in a `gs.gfx.sticker`.
+- `new Sketch({ boil: 8 })` with `pen.update(dt)` each frame redraws the wobble 8 times a second: the
+  "line boil" of hand-drawn cartoons.
+
+Ink is for lines the player draws (and any line of many points):
+
+```js
+down(x, y) { line = new Ink({ size: 10, color: '#1b1b3a' }); line.add(x, y); }
+move(x, y, pressed) { if (pressed) line.add(x, y); }
+up() { line.end(); }
+draw(c) { line.draw(c); }                 // touch: 'fine' in the definition gives it every reading of the finger
+```
+
+- `Ink` options: `size` (the widest the line gets), `thinning` (.5: a fast line is thinner; 0 for an
+  even line), `smoothing`, `streamline` (.5: how much the line lags to iron out a shaky hand), `taper`
+  (a length, or `{ start, end }`: the ends thin to a point), `color`.
+- `line.outline()` is the stroke's shape as points, `line.hit(x, y, r)` says whether a point is on it,
+  `line.clear()` starts again. `ink(c, points, options)` draws a stroke in one call; for a line through
+  a few far-apart points add `spacing: 6`, which adds points in between so it follows them.
+- With `gs.strokes` (`Stroke`, `Shapes`, `toPhysics`) the same points can be recognised as a shape or
+  turned into ground; this kit only makes the line look inked.
+
+## Icons
+
+`const { icon } = gs.icons;` (loads on first use)
+
+528 drawn icons that look the same on every phone, where an emoji is a different picture on each one:
+weapons, hearts, keys, chests, potions, animals, food, tools, weather, vehicles, buildings, plants,
+sports, music, cards, dice, chess pieces and buttons. They are from the Game Icons set
+([game-icons.net](https://game-icons.net)) by Lorc, Delapouite and contributors, CC BY 3.0, credited in
+the app's licence list, so a game needs to show nothing.
+
+```js
+icon(c, 'sword', x, y, 32);                                         // centred on x, y, 32 units across, white
+icon(c, 'hearts', x, y, 24, { color: '#ff5470', outline: '#000' });
+icon(c, 'key', x, y, 16, { pixel: true, color: PAL[3] });           // hard pixels for the pixel styles
+```
+
+- Names are the set's own (`'broadsword'`, `'health-potion'`, `'pine-tree'`), and about 100 plain words
+  work too: `sword`, `shield`, `bow`, `bomb`, `heart`, `coin`, `gem`, `star`, `key`, `lock`, `chest`,
+  `potion`, `skull`, `ghost`, `fire`, `ice`, `water`, `bolt`, `sun`, `moon`, `cloud`, `tree`, `flower`,
+  `apple`, `fish`, `cat`, `dog`, `dragon`, `rocket`, `castle`, `crown`, `trophy`, `flag`, `map`, `dice`,
+  `card`, `play`, `pause`, `settings`, `sound`, `mute`, `home`, `trash`... `gs.icons.names` lists every
+  name, `gs.icons.words` the plain words, `gs.icons.find('potion')` searches, `has(name)` checks.
+- Options: `color` (white), `outline` and `width`, `angle`, `alpha`, `flip`, and `pixel: true` for the
+  pixel styles (every pixel fully on or off, in exactly the colours given; `size` is then whole game
+  pixels, and simple icons read best: 16 and up).
+- An icon is drawn once at the size and colour asked for and remembered, so drawing it is one
+  `drawImage`; a pulsing icon is scaled, not redrawn. `icon()` returns false for a name it doesn't have.
+- `path(name)` gives the icon as a `Path2D` on a 512 by 512 grid, to fill with a gradient or a
+  `gs.gfx` material, or to clip with.
+- To add an icon to the app: put its game-icons.net name in `scripts/icons/names.json` and run
+  `node scripts/icons/build.mjs` (shared code, so in its own PR).
 
 ## Game controllers
 
@@ -1723,12 +1928,32 @@ move(x, y, pressed) { if (pressed) strokes.at(-1).push({ x, y }); }
 up() { const best = doodle.guess(strokes, { among: ['sword', 'umbrella', 'bridge'] })[0]; if (best.sure > .5) use(best.name); }
 ```
 
-It knows 46 things (`Doodle.things`): sword, star, circle, triangle, square, house, tree, cat, fish,
-bird, sun, moon, cloud, lightning, umbrella, key, ladder, bridge, car, sailboat, airplane, flower,
-apple, snowman, mountain, hat, crown, envelope, eye, smiley face, fork, hammer, axe, door, candle,
-clock, cup, diamond, banana, bicycle, spider, snake, rainbow, octopus, light bulb, hot air balloon.
-About 9 in 10 drawings are named right among all of them, and nearly all when `among` lists a few,
-so ask for the few your game cares about. For plain shapes, `gs.strokes` `Shapes` needs no model.
+It knows 200 things (`Doodle.things`): sword, star, circle, triangle, square, house, tree, cat,
+fish, bird, sun, moon, cloud, lightning, umbrella, key, ladder, bridge, car, sailboat, airplane,
+flower, apple, snowman, mountain, hat, crown, envelope, eye, smiley face, fork, hammer, axe, door,
+candle, clock, cup, diamond, banana, bicycle, spider, snake, rainbow, octopus, light bulb, hot air
+balloon, ant, bat, bear, bee, butterfly, camel, cow, crab, crocodile, dog, dolphin, dragon, duck,
+elephant, flamingo, frog, giraffe, hedgehog, horse, kangaroo, lion, lobster, monkey, mosquito,
+mouse, owl, panda, parrot, penguin, pig, rabbit, raccoon, rhinoceros, scorpion, sea turtle, shark,
+sheep, snail, squirrel, swan, tiger, whale, zebra, bread, broccoli, cake, carrot, donut, grapes,
+hamburger, hot dog, ice cream, lollipop, mushroom, onion, pear, pineapple, pizza, popsicle,
+strawberry, watermelon, peanut, anvil, backpack, basket, book, boomerang, bucket, broom, camera,
+cannon, compass, drums, dumbbell, eyeglasses, feather, flashlight, guitar, headphones, helmet,
+hourglass, knife, lantern, leaf, map, microphone, necklace, paintbrush, parachute, pencil, piano,
+rake, saw, scissors, screwdriver, shovel, skull, snowflake, spoon, teapot, telephone, tent, tooth,
+trumpet, violin, wheel, wine glass, shoe, sock, t-shirt, pants, bowtie, mailbox, megaphone,
+suitcase, vase, barn, bus, canoe, castle, church, fence, flying saucer, helicopter, lighthouse,
+motorbike, palm tree, cactus, rain, skateboard, skyscraper, stairs, stop sign, submarine, tornado,
+tractor, traffic light, train, truck, windmill, campfire, bed, chair, table, bench, television,
+laptop, hand, moustache, mermaid, angel, soccer ball, tennis racquet, basketball.
+
+Measured on drawings it never saw: 76 in 100 are named right among all 200, 89 in 100 are in its
+first three guesses, and 96 in 100 are right when the game asks it to choose among five. So pass
+`among` with the few things your game cares about, and take the top guess only when its `sure` is
+high. Animals that look alike as doodles are the hard ones (dog, bear, bird, frog, raccoon and tiger
+are right a third to a half of the time among all 200): don't put two of those in one `among`. The
+model is about 440 KB and is only fetched by a game that uses it. For plain shapes, `gs.strokes`
+`Shapes` needs no model.
 
 **The phone's own AI** (`gs.phoneai.PhoneAI`): newer phones have a language model built in (Apple
 Intelligence on iPhone, Gemini Nano on Android, the browser's own on the web). Use it for flavour:
@@ -1924,6 +2149,42 @@ null until it's running (and allowed), so a game always has a touch way to play.
 
 iPhones don't share the light sensor, and their proximity sensor turns the screen off, so those two are
 Android only. The card says which sensors a game uses, as it does for the camera and mic.
+
+## The real world: sun, moon, battery, headphones
+
+`gs.real` turns things about the player's real surroundings into game inputs. All of it is worked out
+on the phone (the sun and moon with SunCalc's maths), nothing is sent anywhere, and none of it asks for
+a permission.
+
+```js
+const { sun, moon, battery, headphones } = gs.real;
+
+reset() { const s = sun(); night = !s.up; stars = 1 - s.light; }      // dark outside? the level starts at night
+update(dt) { if (battery().charging) hero.energy += dt; }             // plug the phone in to charge the hero
+draw(c) { if (moon().name === 'full') drawWerewolf(c); }
+```
+
+- `sun(place)`: `up`, `height` (degrees above the horizon), `compass` (degrees clockwise from north,
+  like `gs.device.heading()`), `light` (0 at night to 1 in full day, smooth through dawn and dusk),
+  `part` (`'night'`, `'dawn'`, `'day'`, `'dusk'`), `rise`, `set` and `noon` (hours on the phone's clock;
+  null where the sun doesn't rise or set today) and `hour`, the hour to give `gs.sky`'s `Sky` so its sky
+  matches the real one (6 at sunrise, 12 at the sun's highest, 18 at sunset).
+- `moon(place)`: `phase` (0 new, .25 first quarter, .5 full, .75 last quarter), `lit` (0 to 1), `waxing`,
+  `name` (`'new'`, `'waxing crescent'`, `'first quarter'`, `'waxing gibbous'`, `'full'`, `'waning gibbous'`,
+  `'last quarter'`, `'waning crescent'`), and `up`, `height`, `compass`.
+- `battery()`: `level` (0 to 1) and `charging`, both null where the phone won't say (iPhones in a
+  browser), and `saver` (the phone's power saving mode is on). Read about every 15 seconds.
+- `headphones()`: true, false, or null when the phone won't say (most browsers, and the first moment
+  after a game first asks). Wired, USB and Bluetooth all count; a Bluetooth speaker can't be told from
+  Bluetooth headphones.
+
+`place` is a `{ lat, lon }` from `api.location()` ([Location](#location)). Without one, `sun()` and
+`moon()` guess where the player is from the phone's clock and time zone: right about day and night,
+rough about the exact angle, and the result says `guess: true`. The moon's phase is the same everywhere.
+Pass a second argument (a `Date` or a time in ms) to ask about another moment: tonight, or next full moon.
+
+Keep these for flavour and for play that is as fair at night as by day. A game that can only be won at
+noon, on a full battery or with headphones in isn't quick or fair, so never make one the only way to win.
 
 ## Voxel worlds
 

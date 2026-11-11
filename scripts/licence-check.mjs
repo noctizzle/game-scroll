@@ -14,13 +14,25 @@ const deps = Object.entries(pkg.dependencies || {}).filter(([, v]) => !String(v)
 const listed = new Map(OPEN_SOURCE.flatMap(e => (e.packages || []).map(p => [p, e])));
 const bad = [];
 
+// A package whose package.json names no licence (SunCalc): read its LICENSE file and recognise the text.
+function fromFile(dir) {
+  const f = ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'license'].map(n => join(dir, n)).find(existsSync);
+  if (!f) return '';
+  const t = readFileSync(f, 'utf8').replace(/\s+/g, ' ');
+  if (/Permission is hereby granted, free of charge/.test(t)) return 'MIT';
+  if (/Apache License,? Version 2\.0/.test(t)) return 'Apache-2.0';
+  if (/Permission to use, copy, modify, and\/or distribute this software/.test(t)) return 'ISC';
+  if (/Redistribution and use in source and binary forms/.test(t)) return /Neither the name/.test(t) ? 'BSD-3-Clause' : 'BSD-2-Clause';
+  return '';
+}
+
 for (const d of deps) {
   const e = listed.get(d);
   if (!e) { bad.push(`${d} is a dependency but isn't in src/licences.js: add it so it shows under Settings › Licence`); continue; }
   const f = join(ROOT, 'node_modules', d, 'package.json');
   if (!existsSync(f)) { bad.push(`${d} isn't installed: run npm install first`); continue; }
   const j = JSON.parse(readFileSync(f, 'utf8'));
-  const lic = typeof j.license === 'string' ? j.license : j.license?.type || (j.licenses || []).map(l => l.type || l).join(' OR ');
+  const lic = (typeof j.license === 'string' ? j.license : j.license?.type || (j.licenses || []).map(l => l.type || l).join(' OR ')) || fromFile(join(ROOT, 'node_modules', d));
   if (lic !== e.spdx) bad.push(`${d}: its package says "${lic || 'no licence'}" but src/licences.js says "${e.spdx}" (${e.name})`);
 }
 for (const p of listed.keys())

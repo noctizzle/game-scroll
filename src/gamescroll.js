@@ -17,7 +17,11 @@
 //   gs.pad       game controllers: analog sticks, triggers, rumble
 //   gs.moves     motion moves: swing, punch, throw, flip, twist, knock, shake
 //   gs.pixel     pixel text and sprites drawn from text
-//   gs.gfx       2D drawing helpers (shaded boxes, balls, glow, backdrops)
+//   gs.gfx       2D drawing helpers (shaded boxes, balls, glow, backdrops); materials made in code (paper, wood, stone, metal, cloth, water), slabs, stickers
+//   gs.fonts     the font library: 13 display fonts and 5 pixel fonts, each loaded when a game first names it
+//   gs.sketch    hand-drawn looks: sketchy shapes (Rough.js) and ink strokes (perfect-freehand); lazy
+//   gs.icons     528 game icons that look the same on every phone (game-icons.net); lazy
+//   gs.real      the real world: where the sun and moon are for the player, the battery, headphones
 //   gs.bricks    toy-brick drawing, 2D and 3D
 //   gs.physics   2D physics (Rapier): spinning shapes, hinges, ropes, springs. Also the simple World/Body.
 //   gs.physics3d 3D physics (Rapier): bodies, level collisions, ray casts, a character mover
@@ -103,6 +107,7 @@ import * as util from './util.js';
 import * as palettes from './palettes.js';
 import * as device from './kit/device.js';
 import * as gfx from './kit/gfx.js';
+import * as materials2d from './kit/materials2d.js';
 import * as juice from './kit/juice.js';
 import * as sound from './kit/sound.js';
 import * as controls from './kit/controls.js';
@@ -156,6 +161,8 @@ import { tick } from './kit/tick.js';
 import * as composer from './kit/compose.js';
 import * as solve from './kit/solve.js';
 import * as phoneSensors from './kit/sensors.js';
+import * as real from './kit/real.js';
+import * as fontlib from './kit/fontlib.js';
 import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
@@ -164,6 +171,8 @@ export const HIDDEN = {
   sound: ['sound', 'setSound', 'audio', 'setSfxOut', 'stopMusic', 'pauseMusic', 'resumeMusic', 'warm'],
   util: ['store', 'deviceId'],
   device: ['location', 'hapticSettings', 'setHaptics', 'stopSensors'],
+  real: ['guessPlace', 'readOutputs'],
+  fonts: ['whenFontArrives', 'pixelFont', 'want'],
   moves: ['stopMoves'],
   pad: ['pollPads'],
   vision: ['stopVision'],
@@ -226,6 +235,8 @@ const GROUPS = {
     load: () => import('./gs-action.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
   play: { parts: ['craft', 'soft', 'cards', 'dice', 'words', 'trivia', 'ui'],
     load: () => import('./gs-play.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
+  sketch: { parts: ['sketch'], load: () => import('./kit/sketch.js').then(m => ({ sketch: pick('sketch', m) })) },
+  icons: { parts: ['icons'], load: () => import('./kit/icons.js').then(m => ({ icons: pick('icons', m) })) },
   smart: { parts: ['hear', 'doodle', 'phoneai'],
     load: () => import('./gs-smart.js').then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, pick(k, v)]))) },
 };
@@ -266,10 +277,12 @@ const core = {
   pad: pick('pad', pad),
   moves: pick('moves', moves),
   pixel: pick('pixel', pixel),
-  gfx: pick('gfx', gfx),
+  gfx: pick('gfx', gfx, materials2d),
   physics: pick('physics', physics, physics2d),
   vision: pick('vision', vision),
   geo: pick('geo', geo),
+  real: pick('real', real),
+  fonts: pick('fonts', fontlib),
   things: pick('things', things),
   rounds: pick('rounds', rounds),
   pacing: pick('pacing', pacing),

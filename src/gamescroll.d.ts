@@ -406,9 +406,34 @@ export interface PadPart { pad(i?: number): PadState | null; pads(): PadState[];
 export type MoveType = 'swing' | 'punch' | 'throw' | 'flip' | 'twist' | 'knock' | 'shake' | 'any';
 export interface MovesPart { Moves: new (o?: { sensitivity?: number }) => { on(type: MoveType, fn: (m: { type: string; dir?: string; power?: number }) => void): Loose; update(): void; stop(): void } }
 
+/** The fonts gs.pixel.text draws. */
+export type PixelFontName = 'small' | 'big' | 'silkscreen' | 'silkscreen bold' | 'tiny' | 'jersey' | 'terminal';
+/** The fonts in the font library (names work in any case). */
+export type FontName = 'Rubik' | 'Bangers' | 'Fredoka' | 'Titan One' | 'Bungee' | 'Orbitron' | 'Creepster' | 'Pirata One' | 'Rye' | 'Monoton' | 'Black Ops One' | 'Cinzel' | 'Patrick Hand' | 'Courier Prime' | 'Press Start 2P' | 'Silkscreen' | 'Tiny5' | 'Jersey 10' | 'VT323';
+/** gs.fonts: open-licence fonts that ship inside the app; a font's file loads the first time a game names it. */
+export interface FontsPart {
+  /**
+   * The string for c.font: font('Bangers', 34) is '400 34px "Bangers", Rubik, sans-serif'. Starts the font loading on
+   * first use; the text draws in Rubik until it is in. weight: 400 by default; the nearest weight the font has is used.
+   */
+  font(name: FontName | (string & {}), size?: number, weight?: number): string;
+  /** In make() or reset(): have these fonts in before the first frame ("Loading…" the first time). A name, or [name, weight]. */
+  use(...names: (FontName | [FontName, number])[]): boolean;
+  /** Is this font in and ready to draw? */
+  ready(name: FontName | (string & {}), weight?: number): boolean;
+  /** Every font: its name, what it looks like, the weights that ship, and for pixel fonts the size in px its pixels are crisp at (else 0). */
+  readonly list: readonly { readonly name: FontName; readonly look: string; readonly weights: readonly number[]; readonly pixel: number }[];
+}
+
 export interface PixelPart {
-  text(c: Ctx, str: string, x: number, y: number, o?: { size?: number; font?: 'small' | 'big'; align?: 'left' | 'center' | 'right'; color?: string; outline?: string | null; shadow?: string | null }): void;
-  measure(str: string, font?: 'small' | 'big'): number;
+  /**
+   * Crisp pixel text with its top-left at x, y; returns the width drawn. font: 'small' (3×5 capitals), 'big' (8×8), or one
+   * from the font library: 'silkscreen', 'silkscreen bold' (capitals 5 high), 'tiny' (5 high, with small letters),
+   * 'jersey' (10 high), 'terminal' (14 high). A library font loads on first use; until then the text is in 'big'.
+   */
+  text(c: Ctx, str: string, x: number, y: number, o?: { size?: number; font?: PixelFontName; align?: 'left' | 'center' | 'right'; color?: string; outline?: string | null; shadow?: string | null }): number;
+  /** Width and height in pixels at size 1. */
+  measure(str: string, font?: PixelFontName): { w: number; h: number };
   sprite(art: string | string[], palette: Record<string, string> | string[]): Loose;
   anim(frames: (string | string[])[], palette: Record<string, string> | string[], fps?: number): Loose;
   tiles(art: Loose, palette: Loose, tw: number, th: number): Loose;
@@ -422,6 +447,126 @@ export interface GfxPart {
   glow(c: Ctx, x: number, y: number, r: number, col: string, a?: number): void;
   backdrop(c: Ctx, x: number, y: number, w: number, h: number, top: string, bottom: string): void;
   post(c: Ctx, w: number, h: number): void;
+  /** The materials, and the colour each starts as. */
+  readonly MATERIALS: Readonly<Record<MaterialName, string>>;
+  /**
+   * A material made in code, to fill shapes with (no image files; worked out once and remembered). The same options give
+   * the same material back. `c.fillStyle = m.at(x, y)` fills with the texture's corner at (x, y), so a thing that moves
+   * carries its texture with it; m.pattern is the same at 0, 0; m.tile is the picture itself. For the smooth styles.
+   */
+  material(name: MaterialName | Material2D, o?: MaterialOptions): Material2D;
+  /** A material's tile as numbers: a size x size RGBA picture that repeats without a seam (px: its size, 256). */
+  texture(name: MaterialName, o?: MaterialOptions & { px?: number }): { size: number; data: Uint8ClampedArray };
+  /**
+   * A block of a material: rounded corners, lit from the top left, a soft shadow under it. r: corner radius (6). bevel:
+   * the lit edge's width (2; 0 is flat). shadow: true, false, or how far it drops. tint: a colour washed over it
+   * ('#ff000040'). anchor: [x, y] the texture is fixed to (by default the block's own corner, so it moves with it).
+   */
+  slab(c: Ctx, x: number, y: number, w: number, h: number, mat?: MaterialName | Material2D, o?: { r?: number; bevel?: number; shadow?: boolean | number; tint?: string | null; anchor?: [number, number] | null }): void;
+  /**
+   * Water in a rectangle with light moving on it. t: the game's time in seconds. color: the water at the top; deep: at
+   * the bottom; light: the moving net of light; strength 0..1 (.5); scale (1); flow: [x, y] game units a second it drifts.
+   * For a pond of another shape, clip to the shape first.
+   */
+  water(c: Ctx, x: number, y: number, w: number, h: number, t?: number, o?: { color?: string; deep?: string | null; light?: string; strength?: number; scale?: number; flow?: [number, number] }): void;
+  /**
+   * Keeps a drawing as a picture (one drawImage however much went into it) and adds the looks that are slow to draw
+   * every frame: an outline, a glow, a soft shadow. draw(g, w, h) draws it once into a w by h box. Make it in make() or reset().
+   */
+  sticker(w: number, h: number, draw: (g: Ctx, w: number, h: number) => void, o?: { outline?: string; width?: number; glow?: string; glowSize?: number; shadow?: boolean | string; shadowBlur?: number; shadowX?: number; shadowY?: number; res?: number }): Sticker2D;
+}
+export type MaterialName = 'paper' | 'wood' | 'stone' | 'metal' | 'cloth' | 'water';
+/** color: its main colour. seed: a different piece of it. scale: 1 is 128 game units a tile. contrast: 1 (0 flat, 2 strong). planks: boards down a wood tile. blocks: rows of stone blocks (even numbers). threads: across a cloth tile (32). */
+export interface MaterialOptions { color?: string; seed?: number; scale?: number; contrast?: number; planks?: number; blocks?: number; threads?: number }
+export interface Material2D {
+  readonly name: string;
+  /** The tile itself (a canvas), for drawImage. */
+  readonly tile: CanvasImageSource;
+  /** Game units one tile covers. */
+  readonly span: number;
+  /** The fill for c.fillStyle with the texture's corner at 0, 0. */
+  readonly pattern: CanvasPattern;
+  /** The fill for c.fillStyle with the texture's corner at (x, y). */
+  at(x?: number, y?: number): CanvasPattern;
+}
+export interface Sticker2D {
+  readonly w: number; readonly h: number;
+  /** Draws it centred on (x, y). anchor: which point of the drawing sits on x, y ([.5, .5]; [0, 0] is its top left). */
+  draw(c: Ctx, x: number, y: number, o?: { scale?: number; angle?: number; alpha?: number; flip?: boolean; anchor?: [number, number] | null }): void;
+  /** Draw it afresh next time (something the drawing depends on changed). */
+  redraw(): Sticker2D;
+}
+
+/** Options for a sketchy shape: stroke ('#222' or 'none'), strokeWidth (2), fill, fillStyle, roughness (1; 0 a ruler, 3 a shaky hand), bowing (1), dash ([on, off]). */
+export interface SketchOptions {
+  stroke?: string; strokeWidth?: number; fill?: string; fillStyle?: 'hachure' | 'solid' | 'zigzag' | 'cross-hatch' | 'dots' | 'dashed' | 'zigzag-line';
+  fillWeight?: number; hachureGap?: number; hachureAngle?: number; roughness?: number; bowing?: number; dash?: [number, number] | number[];
+}
+type SketchPoint = [number, number] | { x: number; y: number };
+/** Options for an ink stroke: size (8, the widest it gets), thinning (.5; 0 an even line), smoothing (.5), streamline (.5), taper (0, a length, true, or { start, end }), color, pressure (use the points' own pressure), spacing (for a line through a few far-apart points: adds points so none are further apart than this). */
+export interface InkOptions { size?: number; thinning?: number; smoothing?: number; streamline?: number; taper?: number | boolean | { start?: number | boolean; end?: number | boolean }; color?: string; pressure?: boolean; spacing?: number }
+type InkPoint = [number, number] | [number, number, number] | { x: number; y: number; pressure?: number };
+/** gs.sketch: hand-drawn looks (Rough.js and perfect-freehand; loads on first use). */
+export interface SketchPart {
+  /**
+   * A pen that draws sketchy shapes. A shape is worked out once and remembered wherever it is drawn. seed: a different
+   * hand. boil: wobbles a second (0 keeps it still; call update(dt)).
+   */
+  Sketch: new (o?: SketchOptions & { seed?: number; boil?: number }) => {
+    boil: number; seed: number; readonly remembered: number;
+    update(dt: number): void; clear(): void;
+    rect(c: Ctx, x: number, y: number, w: number, h: number, o?: SketchOptions): void;
+    circle(c: Ctx, x: number, y: number, r: number, o?: SketchOptions): void;
+    ellipse(c: Ctx, x: number, y: number, rx: number, ry: number, o?: SketchOptions): void;
+    line(c: Ctx, x1: number, y1: number, x2: number, y2: number, o?: SketchOptions): void;
+    /** A closed shape through the points. */
+    poly(c: Ctx, points: SketchPoint[], o?: SketchOptions): void;
+    /** Straight lines from point to point, left open. */
+    lines(c: Ctx, points: SketchPoint[], o?: SketchOptions): void;
+    /** A smooth curve through the points. */
+    curve(c: Ctx, points: SketchPoint[], o?: SketchOptions): void;
+    /** Part of a circle, from angle `from` to `to` (radians). closed: a pie slice. */
+    arc(c: Ctx, x: number, y: number, r: number, from: number, to: number, o?: SketchOptions & { closed?: boolean }): void;
+    /** An SVG path, with its own 0, 0 at (x, y). */
+    path(c: Ctx, x: number, y: number, d: string, o?: SketchOptions): void;
+  };
+  /** One ink stroke that grows as points are added and remembers its shape: add(x, y) while the finger moves, end() when it lifts, draw(c) each frame. */
+  Ink: new (o?: InkOptions) => {
+    readonly points: number[][]; readonly length: number; done: boolean;
+    add(x: number, y: number, pressure?: number): Loose; end(): Loose; clear(): Loose;
+    outline(): number[][];
+    /** Is (x, y) on the ink (within r of it)? */
+    hit(x: number, y: number, r?: number): boolean;
+    draw(c: Ctx, o?: { color?: string }): boolean;
+  };
+  /** Draws one ink stroke through the points in one call (a gs.strokes Stroke works too). */
+  ink(c: Ctx, points: InkPoint[] | { points: InkPoint[] }, o?: InkOptions): boolean;
+  /** The outline of an ink stroke: [[x, y], ...], a closed shape to fill or to test. */
+  inkOutline(points: InkPoint[] | { points: InkPoint[] }, o?: InkOptions, done?: boolean): number[][];
+}
+
+/** gs.icons: 528 drawn icons that look the same on every phone (game-icons.net, CC BY 3.0; loads on first use). */
+export interface IconsPart {
+  /**
+   * Draws an icon centred on (x, y), `size` game units across. Names are the set's own ('broadsword', 'health-potion')
+   * or one of about 100 plain words ('sword', 'heart', 'coin', 'star', 'key'...). color ('#fff'), outline (a colour),
+   * width (the outline's, 1/16 of the size), angle, alpha, flip, pixel (hard pixels for the pixel styles). False if
+   * there is no icon by that name.
+   */
+  icon(c: Ctx, name: string, x: number, y: number, size?: number, o?: { color?: string; outline?: string | null; width?: number; angle?: number; alpha?: number; flip?: boolean; pixel?: boolean }): boolean;
+  /** Every icon's name, a to z. */
+  readonly names: readonly string[];
+  /** The plain words that also work, and the icon each is: { sword: 'broadsword', ... }. */
+  readonly words: Readonly<Record<string, string>>;
+  has(name: string): boolean;
+  /** Icons whose name has this text in it. */
+  find(text: string): string[];
+  /** The icon as a Path2D on a 512 by 512 grid (to fill, stroke or clip with yourself), or null. */
+  path(name: string): Path2D | null;
+  /** The icon's SVG path data on a 512 by 512 grid, or null. */
+  data(name: string): string | null;
+  /** How many drawn icons are remembered right now. */
+  remembered(): number;
 }
 
 /** Rapier 2D (lazy: make it in make() or reset()). */
@@ -445,6 +590,36 @@ export interface VisionPart {
 
 type LatLon = { lat: number; lon: number };
 export interface GeoPart { distance(a: LatLon, b: LatLon): number; bearing(a: LatLon, b: LatLon): number; offset(p: LatLon, east: number, north: number): LatLon; toLocal(origin: LatLon, p: LatLon): XY; cellId(p: LatLon, metres?: number): string }
+
+/** gs.real: real-world signals as game inputs. Worked out on the phone; no permission needed. */
+export interface RealPart {
+  /**
+   * The sun where the player is. place: a { lat, lon } from api.location(); without one it is a guess from the
+   * phone's clock and time zone (guess: true). when: a Date or a time in ms (default: now).
+   */
+  sun(place?: { lat: number; lon: number } | null, when?: Date | number): {
+    /** Above the horizon. */ up: boolean;
+    /** Degrees above the horizon (negative below it). */ height: number;
+    /** Degrees clockwise from north, like gs.device.heading(). */ compass: number;
+    /** 0 at night to 1 in full day, smooth through dawn and dusk. */ light: number;
+    part: 'night' | 'dawn' | 'day' | 'dusk';
+    /** Hours on the phone's clock (6.5 = half past six); null where the sun doesn't rise or set today. */ rise: number | null; set: number | null; noon: number | null;
+    /** The hour for gs.sky's Sky so its sky matches the real one: 6 at sunrise, 12 at the sun's highest, 18 at sunset. */ hour: number;
+    guess: boolean;
+  };
+  /** The moon where the player is (the phase is the same everywhere). */
+  moon(place?: { lat: number; lon: number } | null, when?: Date | number): {
+    /** 0 new, .25 first quarter, .5 full, .75 last quarter. */ phase: number;
+    /** How much of its face is lit, 0 to 1. */ lit: number;
+    waxing: boolean;
+    name: 'new' | 'waxing crescent' | 'first quarter' | 'waxing gibbous' | 'full' | 'waning gibbous' | 'last quarter' | 'waning crescent';
+    up: boolean; height: number; compass: number; guess: boolean;
+  };
+  /** The phone's battery: level 0 to 1 and charging (both null where the phone won't say), and whether power saving is on. */
+  battery(): { level: number | null; charging: boolean | null; saver: boolean };
+  /** Is the sound going to headphones (wired, USB or Bluetooth)? null when the phone won't say. */
+  headphones(): boolean | null;
+}
 
 export interface Thing { dead?: boolean; tags?: Set<string>; x?: number; y?: number; r?: number; w?: number; h?: number; update?(dt: number, things: Loose): void; [k: string]: Loose }
 /** A place that moves with its parent: x, y, angle, scale are relative; wx, wy, wangle, wscale are in game units after update(). */
@@ -1928,7 +2103,7 @@ export interface HearPart {
   };
 }
 
-/** gs.doodle: what the player drew, from 46 things (a tiny model on the phone). */
+/** gs.doodle: what the player drew, from 200 things (a small model on the phone; most accurate when `among` lists the few a game cares about). */
 export interface DoodlePart {
   /** Make it in make() or reset() (the model loads first). */
   Doodle: {
@@ -1961,7 +2136,7 @@ export interface PhoneaiPart {
 export interface GS {
   sound: SoundPart; device: DevicePart; util: UtilPart; math: MathPart; palettes: PalettesPart;
   juice: JuicePart; effects: { Feel: typeof Feel }; controls: ControlsPart; pad: PadPart; moves: MovesPart;
-  pixel: PixelPart; gfx: GfxPart; physics: PhysicsPart; vision: VisionPart; geo: GeoPart;
+  pixel: PixelPart; gfx: GfxPart; physics: PhysicsPart; vision: VisionPart; geo: GeoPart; real: RealPart; fonts: FontsPart;
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart; tick: TickPart; solve: SolvePart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;
@@ -1971,6 +2146,7 @@ export interface GS {
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
   outdoors: OutdoorsPart; city: CityPart; models: ModelsPart; voxels: VoxelsPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; trivia: TriviaPart; ui: UIPart;
   hear: HearPart; doodle: DoodlePart; phoneai: PhoneaiPart;
+  sketch: SketchPart; icons: IconsPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
   /** Board games: a table in a 3D room or in your real room (AR). */
   tabletop: TabletopPart;

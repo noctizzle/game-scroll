@@ -1315,18 +1315,22 @@ console.log('physics ok');
   assert.ok(threw?.kitLoading, 'Doodle before load throws StillLoading');
   await loadDoodle();
   const d = new Doodle();
-  assert.equal(Doodle.things.length, 46); assert.deepEqual(d.things, Doodle.things);
+  assert.equal(Doodle.things.length, 200); assert.deepEqual(d.things, Doodle.things); assert.equal(new Set(d.things).size, 200, 'no thing twice');
+  // the names in the kit, the list the model is trained from, and the model file itself all agree, in order
+  assert.deepEqual(d.things, JSON.parse((await import('node:fs')).readFileSync(new URL('./doodle-model/classes.json', import.meta.url), 'utf8')), 'THINGS in doodle.js is scripts/doodle-model/classes.json');
+  assert.deepEqual((await import('../src/kit/doodle-model.js')).MODEL.classes, d.things, 'the model was trained on the same things');
   assert.equal(picture([]).reduce((a, b) => a + b, 0), 0, 'nothing drawn, empty picture');
   const ring = [Array.from({ length: 33 }, (_, i) => ({ x: 100 + 80 * Math.cos(i / 32 * Math.PI * 2), y: 100 + 80 * Math.sin(i / 32 * Math.PI * 2) }))];
   const g = d.guess(ring);
-  assert.equal(g.length, 46); assert.ok(Math.abs(g.reduce((a, b) => a + b.sure, 0) - 1) < 1e-5, 'sures add up to 1');
-  assert.ok(['circle', 'clock', 'smiley face', 'sun', 'moon'].includes(g[0].name), 'a ring looks round: ' + g[0].name);
+  assert.equal(g.length, 200); assert.ok(Math.abs(g.reduce((a, b) => a + b.sure, 0) - 1) < 1e-5, 'sures add up to 1');
+  assert.ok(['circle', 'clock', 'smiley face', 'sun', 'moon', 'wheel', 'necklace'].includes(g[0].name), 'a ring looks round: ' + g[0].name);
+  assert.equal(d.guess(ring, { among: ['circle', 'square', 'triangle', 'star', 'lightning'] })[0].name, 'circle', 'a ring among five');
   const tri = [[{ x: 0, y: 100 }, { x: 50, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }]];
   assert.equal(d.guess(tri, { among: ['triangle', 'circle', 'square'] })[0].name, 'triangle', 'a triangle among three');
   const ladder = [[{ x: 0, y: 0 }, { x: 0, y: 200 }], [{ x: 60, y: 0 }, { x: 60, y: 200 }], ...[30, 80, 130, 180].map(y => [{ x: 0, y }, { x: 60, y }])];
   assert.equal(d.guess(ladder, { among: ['ladder', 'sword', 'door'] })[0].name, 'ladder', 'a ladder among three');
-  assert.deepEqual(d.guess(ring, { among: ['dragon'] }), [], 'unknown names are left out');
-  console.log('doodle: picture, guesses, among ok (top for a ring: ' + g[0].name + ')');
+  assert.deepEqual(d.guess(ring, { among: ['spaceship'] }), [], 'unknown names are left out');
+  console.log('doodle: 200 things, picture, guesses, among ok (top for a ring: ' + g[0].name + ')');
 
   const { Voice } = await import('../src/kit/hear.js');
   const v = new Voice({ words: ['jump', 'fire', 'turn left'], also: { fire: ['shoot'] } });
@@ -1938,6 +1942,172 @@ console.log('physics ok');
   f = play(new FloorFinder(), .5, {}); f.giveUp(); assert.ok(f.src === 'guess' && f.take() === 'guess', 'Skip gives the estimate');
   assert.ok(f.progress === 1 && new FloorFinder().progress === 0);
   console.log('gs.ar floor finder ok');
+}
+
+// gs.fonts: the font library's names and strings (the files themselves are checked in a browser by scripts/app-test.cjs)
+{
+  const { list, font, use, ready, pixelFont } = await import('../src/kit/fontlib.js');
+  const { readFileSync, existsSync } = await import('node:fs');
+  assert.equal(list.length, 19, 'gs.fonts lists ' + list.length + ' fonts'); assert.ok(Object.isFrozen(list) && Object.isFrozen(list[0]));
+  assert.equal(list.filter(f => f.pixel).length, 5, 'five pixel fonts');
+  assert.equal(font('Bangers', 34), '400 34px "Bangers", Rubik, sans-serif');
+  assert.equal(font('bangers'), '400 16px "Bangers", Rubik, sans-serif', 'any case, 16px by default');
+  assert.equal(font('Fredoka', 20, 600), '700 20px "Fredoka", Rubik, sans-serif', 'the nearest weight a font has');
+  assert.equal(font('Orbitron', 12), '500 12px "Orbitron", Rubik, sans-serif');
+  assert.equal(font('Rubik', 14, 800), '800 14px "Rubik", sans-serif');
+  assert.equal(font('Courier Prime', 14, 700), '700 14px "Courier Prime", monospace');
+  assert.equal(font('VT323', 25), '400 25px "VT323", monospace');
+  assert.equal(font('No Such Font', 18), '400 18px "Rubik", sans-serif', 'an unknown name is Rubik');
+  assert.equal(use('Bangers', ['Fredoka', 700]), true, 'no page here: use() does nothing'); assert.equal(ready('Bangers'), false);
+  assert.equal(pixelFont('tiny').font.name, 'Tiny5'); assert.equal(pixelFont('terminal').font.name, 'VT323'); assert.equal(pixelFont('jersey').font.pixel, 56 / 3);
+  assert.equal(pixelFont('silkscreen bold').weight, 700); assert.equal(pixelFont('Silkscreen').weight, 400);
+  assert.equal(pixelFont('big'), null); assert.equal(pixelFont('small'), null); assert.equal(pixelFont('Bangers'), null, 'a display font is not a pixel font');
+  // every font and weight in the list has its file, and no file is left over
+  const files = readFileSync(new URL('../src/kit/font-files.js', import.meta.url), 'utf8');
+  const keys = [...files.matchAll(/'([a-z0-9 ]+ \d{3})':/g)].map(m => m[1]).sort();
+  const want = list.filter(f => !['Rubik', 'Press Start 2P'].includes(f.name)).flatMap(f => f.weights.map(w => f.name.toLowerCase() + ' ' + w)).sort();
+  assert.deepEqual(keys, want, 'font-files.js has one file for every font and weight');
+  for (const m of files.matchAll(/from '(@fontsource\/[^'?]+)\?url'/g)) assert.ok(existsSync(new URL('../node_modules/' + m[1], import.meta.url)), m[1] + ' is installed');
+  // the licence list names every font package
+  const lic = readFileSync(new URL('../src/licences.js', import.meta.url), 'utf8');
+  for (const m of files.matchAll(/from '(@fontsource\/[a-z0-9-]+)\//g)) assert.ok(lic.includes(m[1]), m[1] + ' is in the licence list');
+  console.log(`gs.fonts: ${list.length} fonts, ${keys.length} files, names, weights and pixel font names ok`);
+}
+
+// gs.gfx materials: textures made in code that repeat without a seam (drawing them is checked in a browser by scripts/app-test.cjs)
+{
+  const { texture, MATERIALS } = await import('../src/kit/materials2d.js');
+  const names = Object.keys(MATERIALS); assert.deepEqual(names, ['paper', 'wood', 'stone', 'metal', 'cloth', 'water']);
+  const lum = (t, x, y) => { const i = (((y % t.size) + t.size) % t.size * t.size + ((x % t.size) + t.size) % t.size) * 4; return t.data[i] * .3 + t.data[i + 1] * .59 + t.data[i + 2] * .11; };
+  // how much the picture changes from one column (or row) to the next, on average
+  const step = (t, a, b, down) => { let s = 0; for (let k = 0; k < t.size; k++) s += Math.abs(down ? lum(t, k, a) - lum(t, k, b) : lum(t, a, k) - lum(t, b, k)); return s / t.size; };
+  for (const [name, o] of [...names.map(n => [n, {}]), ['wood', { planks: 4 }], ['stone', { blocks: 4 }], ['cloth', { threads: 20 }], ['wood', { seed: 9, color: '#553311' }]]) {
+    const t = texture(name, { px: 128, ...o }), again = texture(name, { px: 128, ...o });
+    assert.equal(t.size, 128); assert.equal(t.data.length, 128 * 128 * 4);
+    assert.deepEqual(t.data, again.data, name + ': the same options give the same picture');
+    let inside = 0; for (let k = 0; k < 127; k++) inside = Math.max(inside, step(t, k, k + 1, false), step(t, k, k + 1, true));   // the biggest step anywhere inside (a gap between planks, say)
+    const seamX = step(t, 127, 128, false), seamY = step(t, 127, 128, true);
+    assert.ok(seamX <= inside * 1.15 + .5 && seamY <= inside * 1.15 + .5, `${name} ${JSON.stringify(o)} repeats without a seam (across ${seamX.toFixed(1)}, down ${seamY.toFixed(1)}, inside ${inside.toFixed(1)})`);
+    let lo = 255, hi = 0, opaque = true; for (let k = 0; k < t.data.length; k += 4) { const l = t.data[k] * .3 + t.data[k + 1] * .59 + t.data[k + 2] * .11; lo = Math.min(lo, l); hi = Math.max(hi, l); opaque &&= t.data[k + 3] === 255; }
+    assert.ok(opaque && hi - lo > 12, name + ' has texture in it (' + (hi - lo).toFixed(0) + ' shades) and no holes');
+  }
+  const mean = t => { const m = [0, 0, 0]; for (let k = 0; k < t.data.length; k += 4) for (let j = 0; j < 3; j++) m[j] += t.data[k + j]; return m.map(v => v / (t.data.length / 4)); };
+  const red = mean(texture('cloth', { px: 64, color: '#c03020' })); assert.ok(red[0] > red[1] * 2 && red[0] > red[2] * 2, 'color sets the material\'s colour: ' + red.map(v => v | 0));
+  assert.notDeepEqual(texture('stone', { px: 64 }).data, texture('stone', { px: 64, seed: 2 }).data, 'another seed is another piece of it');
+  const flat = texture('stone', { px: 64, contrast: 0 }); assert.ok(flat.data.every((v, k) => v === flat.data[k % 4]), 'contrast 0 is the flat colour');
+  assert.throws(() => texture('lava'), /no material called "lava".*paper, wood, stone, metal, cloth, water/);
+  console.log('gs.gfx materials: six materials, planks, blocks, threads, seeds and colours; every tile repeats without a seam');
+}
+
+// gs.sketch: sketchy shapes that stay put, ink strokes
+{
+  const { Sketch, Ink, ink, inkOutline } = await import('../src/kit/sketch.js');
+  const fake = () => { const calls = []; const c = { calls, save() {}, restore() {}, setLineDash(d) { calls.push('dash ' + d.join(',')); }, beginPath() { calls.push('begin'); }, translate(x, y) { calls.push(`at ${x},${y}`); },
+    moveTo(x, y) { calls.push(`M${x.toFixed(2)},${y.toFixed(2)}`); }, lineTo(x, y) { calls.push(`L${x.toFixed(2)},${y.toFixed(2)}`); }, bezierCurveTo(...a) { calls.push('C' + a.map(v => v.toFixed(2))); }, quadraticCurveTo(...a) { calls.push('Q' + a.map(v => v.toFixed(2))); },
+    closePath() { calls.push('Z'); }, stroke() { calls.push('stroke ' + c.strokeStyle + ' ' + c.lineWidth); }, fill(r) { calls.push('fill ' + c.fillStyle + (r ? ' ' + r : '')); } }; return c; };
+  const shape = calls => calls.filter(s => !s.startsWith('at ')).join('|');
+  const pen = new Sketch({ stroke: '#123456', strokeWidth: 3 });
+  const a = fake(), b = fake(); pen.rect(a, 10, 20, 80, 40, { fill: '#ff0000' }); pen.rect(b, 200, 300, 80, 40, { fill: '#ff0000' });
+  assert.ok(a.calls.includes('at 10,20') && b.calls.includes('at 200,300'), 'a shape is drawn where it is asked for');
+  assert.equal(shape(a.calls), shape(b.calls), 'and it is the same drawing wherever it is: its wobble stays put');
+  assert.equal(pen.remembered, 1, 'worked out once, however often and wherever it is drawn');
+  assert.ok(a.calls.some(s => s === 'stroke #123456 3') && a.calls.some(s => s.startsWith('stroke #ff0000')), 'outline in the stroke colour, hatching in the fill colour');
+  const solid = fake(); pen.circle(solid, 0, 0, 20, { fill: '#00ff00', fillStyle: 'solid' }); assert.ok(solid.calls.some(s => s.startsWith('fill #00ff00')), 'fillStyle solid fills');
+  const none = fake(); pen.rect(none, 0, 0, 30, 30, { stroke: 'none', fill: '#00f', fillStyle: 'solid' }); assert.ok(!none.calls.some(s => s.startsWith('stroke')), 'stroke none draws no outline');
+  const other = fake(); new Sketch({ stroke: '#123456', strokeWidth: 3, seed: 2 }).rect(other, 10, 20, 80, 40, { fill: '#ff0000' });
+  assert.notEqual(shape(other.calls), shape(a.calls), 'another seed is another hand');
+  const again = fake(); new Sketch({ stroke: '#123456', strokeWidth: 3 }).rect(again, 10, 20, 80, 40, { fill: '#ff0000' });
+  assert.equal(shape(again.calls), shape(a.calls), 'the same seed draws the same lines every time (a replay looks the same)');
+  const ruler = fake(); new Sketch({ roughness: 0, bowing: 0 }).line(ruler, 0, 0, 100, 0); assert.ok(ruler.calls.filter(s => s[0] === 'C').every(s => s.slice(1).split(',').every((v, k) => k % 2 === 0 || Math.abs(+v) < 1e-6)), 'roughness 0 is a ruler');
+  const boil = new Sketch({ boil: 8 }), f0 = fake(), f1 = fake(), f2 = fake();
+  boil.circle(f0, 0, 0, 20); boil.update(.05); boil.circle(f1, 0, 0, 20); boil.update(.1); boil.circle(f2, 0, 0, 20);
+  assert.equal(shape(f0.calls), shape(f1.calls), 'boil: the wobble holds between changes'); assert.notEqual(shape(f0.calls), shape(f2.calls), 'and changes 8 times a second');
+  for (let k = 0; k < 40; k++) { boil.update(.13); boil.circle(fake(), 0, 0, 20); } assert.equal(boil.remembered, 3, 'boil goes round three drawings, not a new one every time');
+  const all = fake(); pen.ellipse(all, 0, 0, 30, 20); pen.line(all, 0, 0, 50, 10); pen.poly(all, [[0, 0], [40, 0], [20, 30]], { fill: '#abc' }); pen.lines(all, [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 0 }], { dash: [4, 4] });
+  pen.curve(all, [[0, 0], [10, 20], [20, 0], [30, 20]]); pen.arc(all, 0, 0, 20, 0, Math.PI, { closed: true, fill: '#abc' }); pen.path(all, 5, 5, 'M0 0 L30 0 L30 30 Z', { fill: '#def' });
+  assert.ok(all.calls.includes('dash 4,4') && all.calls.filter(s => s.startsWith('stroke')).length >= 7, 'ellipse, line, poly, lines, curve, arc and path all draw');
+  const grow = new Sketch(); for (let k = 0; k < 500; k++) grow.rect(fake(), 0, 0, 10 + k, 10); assert.ok(grow.remembered <= 300, 'shapes remembered are capped');
+  // ink
+  const pts = Array.from({ length: 30 }, (_, k) => ({ x: k * 10, y: 100 }));
+  const out = inkOutline(pts, { size: 12, thinning: 0 }); const ys = out.map(p => p[1]), xs = out.map(p => p[0]);
+  assert.ok(Math.abs(Math.max(...ys) - 106) < 1.5 && Math.abs(Math.min(...ys) - 94) < 1.5, 'an even stroke of size 12 is 12 wide: ' + Math.min(...ys).toFixed(1) + '..' + Math.max(...ys).toFixed(1));
+  assert.ok(Math.min(...xs) < 0 && Math.max(...xs) > 290, 'with round ends past its first and last points');
+  const mids = o => { const q = inkOutline(pts, o), w = x => { const near = q.filter(p => Math.abs(p[0] - x) < 6).map(p => p[1]); return Math.max(...near) - Math.min(...near); }; return [w(15), w(150)]; };
+  const [end, mid] = mids({ size: 12, thinning: 0, taper: 60 }); assert.ok(end < mid * .6, 'taper thins the ends: ' + end.toFixed(1) + ' against ' + mid.toFixed(1));
+  const line = new Ink({ size: 10 }); assert.equal(line.draw(fake()), false, 'no points, nothing drawn');
+  for (const p of pts) line.add(p.x, p.y); line.add(290, 100); assert.equal(line.length, 30, 'the same point twice is added once');
+  const o1 = line.outline(); assert.equal(line.outline(), o1, 'the outline is remembered between frames'); line.add(300, 100); assert.notEqual(line.outline(), o1, 'and worked out again when a point is added');
+  const drawn = fake(); assert.equal(line.end().draw(drawn), true); assert.ok(drawn.calls.filter(s => s[0] === 'Q').length > 20 && drawn.calls.at(-1).startsWith('fill #111111'), 'drawn as one smooth filled shape');
+  assert.ok(line.hit(150, 103) && line.hit(150, 110, 6) && !line.hit(150, 120) && !line.hit(400, 100), 'hit(x, y, r) says whether a point is on the ink');
+  const once = fake(); assert.equal(ink(once, [[0, 0], [20, 10], [40, 0]], { color: '#00f', size: 6 }), true); assert.ok(once.calls.at(-1) === 'fill #00f');
+  const far = inkOutline([[0, 0], [100, 0]], { size: 10, thinning: 0, spacing: 5 }), sparse = inkOutline([[0, 0], [100, 0]], { size: 10, thinning: 0 });
+  assert.ok(far.length > sparse.length && far.filter(p => p[0] > 20 && p[0] < 80).length >= 10, 'spacing adds points along a line through far-apart points');
+  assert.equal(inkOutline({ points: [{ x: 0, y: 0, pressure: .2 }, { x: 30, y: 0, pressure: 1 }, { x: 60, y: 0, pressure: .2 }] }, { pressure: true, size: 20 }).length > 8, true, 'a gs.strokes Stroke and its own pressure work');
+  console.log('gs.sketch: shapes that stay put, seeds, boil, every shape; ink width, taper, hit and memory ok');
+}
+
+// gs.icons: the names, the plain words, and the data matching scripts/icons/names.json
+{
+  const { names, words, has, find, data, path, icon, remembered } = await import('../src/kit/icons.js');
+  const { readFileSync } = await import('node:fs');
+  const list = JSON.parse(readFileSync(new URL('./icons/names.json', import.meta.url), 'utf8'));
+  assert.equal(names.length, 528); assert.deepEqual([...names], [...new Set(list.icons)].sort(), 'src/kit/icon-data.js matches scripts/icons/names.json (run node scripts/icons/build.mjs)');
+  assert.ok(Object.isFrozen(names) && Object.isFrozen(words));
+  for (const n of names) assert.ok(/^[Mm][-\d. ]/.test(data(n)) && data(n).length > 10, n + ' is a path');
+  for (const [w, n] of Object.entries(words)) assert.ok(names.includes(n) && !names.includes(w), `the plain word ${w} is the icon ${n}`);
+  for (const w of ['sword', 'heart', 'coin', 'star', 'key', 'bomb', 'skull', 'tree', 'fish', 'shield', 'chest', 'potion', 'play', 'pause', 'settings']) assert.ok(has(w), 'has ' + w);
+  assert.equal(data('sword'), data('broadsword')); assert.equal(data('Health Potion'), data('health-potion'), 'any case, spaces for dashes');
+  assert.ok(!has('nope') && data('nope') === null && path('nope') === null);
+  assert.deepEqual(find('potion'), ['health-potion', 'round-potion', 'standing-potion']);
+  assert.equal(icon({}, 'nope', 0, 0, 20), false, 'an unknown name draws nothing and says so'); assert.equal(remembered(), 0);
+  const { OPEN_SOURCE } = await import('../src/licences.js');
+  assert.ok(OPEN_SOURCE.some(p => p.name === 'Game Icons' && p.spdx === 'CC-BY-3.0' && p.vendored === 'src/kit/icon-data.js' && /Lorc, Delapouite/.test(p.notice)), 'the icons are in the licence list, with their makers named');
+  console.log(`gs.icons: ${names.length} icons, ${Object.keys(words).length} plain words, all paths, names and credit ok`);
+}
+
+// gs.real: the sun and moon for the player, the battery, headphones
+{
+  const { sun, moon, battery, headphones, guessPlace, readOutputs } = await import('../src/kit/real.js');
+  const london = { lat: 51.5, lon: -.12 }, at = iso => new Date(iso);
+  let s = sun(london, at('2026-06-21T12:00:00Z'));
+  assert.ok(s.up && s.part === 'day' && s.light === 1 && !s.guess, 'midsummer noon in London is day');
+  assert.ok(Math.abs(s.height - 61.9) < 1 && Math.abs(s.compass - 180) < 6, `the sun is high in the south: ${s.height.toFixed(1)} up, ${s.compass.toFixed(0)} round`);
+  assert.ok(Math.abs(s.hour - 12) < .2, 'the sky hour is 12 at the sun\'s highest: ' + s.hour.toFixed(2));
+  s = sun(london, at('2026-06-21T00:00:00Z'));
+  assert.ok(!s.up && s.part === 'night' && s.light === 0 && s.height < -10, 'and midnight is night');
+  assert.ok(s.hour > 22 || s.hour < 2, 'the sky hour at midnight is around 24: ' + s.hour.toFixed(2));
+  const dawn = sun(london, at('2026-06-21T03:43:00Z'));   // sunrise in London on the longest day is 04:43 BST
+  assert.ok(Math.abs(dawn.height) < 1.5 && dawn.part === 'dawn' && dawn.light > .2 && dawn.light < .8 && Math.abs(dawn.hour - 6) < .3, `sunrise: ${dawn.height.toFixed(2)} up, light ${dawn.light.toFixed(2)}, sky hour ${dawn.hour.toFixed(2)}`);
+  const dusk = sun(london, at('2026-06-21T20:21:00Z'));   // and sunset is 21:21 BST
+  assert.ok(Math.abs(dusk.height) < 1.5 && dusk.part === 'dusk' && Math.abs(dusk.hour - 18) < .3, `sunset: ${dusk.height.toFixed(2)} up, sky hour ${dusk.hour.toFixed(2)}`);
+  let last = -1, wraps = 0; for (let h = 0; h < 24; h += .25) { const x = sun(london, +at('2026-03-20T00:00:00Z') + h * 36e5).hour; if (x < last - 12) wraps++; else assert.ok(x >= last - 1e-6 || last < 0, 'the sky hour only runs forwards'); last = x; }
+  assert.ok(wraps <= 1, 'and passes midnight once a day');
+  const sydney = sun({ lat: -33.87, lon: 151.21 }, at('2026-06-21T12:00:00Z'));
+  assert.ok(!sydney.up, 'the same moment is night in Sydney');
+  const polar = sun({ lat: 69.65, lon: 18.96 }, at('2026-12-21T11:00:00Z'));   // Tromso in midwinter
+  assert.ok(!polar.up && polar.rise === null && polar.set === null && Number.isFinite(polar.hour), 'the polar night has no sunrise, and still gives a sky hour');
+  const never = sun({ lat: 69.65, lon: 18.96 }, at('2026-06-21T23:00:00Z'));
+  assert.ok(never.up && never.rise === null && never.hour >= 9 && never.hour <= 15, 'the midnight sun stays up: sky hour ' + never.hour.toFixed(1));
+  const g = sun(null, at('2026-06-21T12:00:00Z'));
+  assert.ok(g.guess && Number.isFinite(g.height) && Number.isFinite(g.hour), 'no place: a guess from the time zone');
+  const gp = guessPlace(at('2026-06-21T12:00:00Z'));
+  assert.ok(gp.guess && Math.abs(gp.lon) <= 180 && Math.abs(gp.lat) <= 90 && Math.abs(gp.lon + Math.max(new Date(2026, 0, 1).getTimezoneOffset(), new Date(2026, 6, 1).getTimezoneOffset()) / 4) < 1e-9, 'the guess sits on the time zone\'s own meridian (winter time)');
+  // the moon: two eclipses give a new and a full moon to the minute
+  let m = moon(london, at('2024-04-08T18:21:00Z'));    // total solar eclipse
+  assert.ok((m.phase < .01 || m.phase > .99) && m.lit < .01 && m.name === 'new', `new moon at a solar eclipse: phase ${m.phase.toFixed(3)}, lit ${m.lit.toFixed(3)}`);
+  m = moon(london, at('2025-03-14T06:59:00Z'));        // total lunar eclipse
+  assert.ok(Math.abs(m.phase - .5) < .01 && m.lit > .99 && m.name === 'full', `full moon at a lunar eclipse: phase ${m.phase.toFixed(3)}, lit ${m.lit.toFixed(3)}`);
+  m = moon(london, at('2025-03-21T12:00:00Z'));
+  assert.ok(!m.waxing && m.lit < .8 && m.lit > .3 && /waning|last/.test(m.name), 'a week later it is waning: ' + m.name);
+  assert.equal(moon(null, at('2025-03-14T06:59:00Z')).phase, moon(london, at('2025-03-14T06:59:00Z')).phase, 'the phase needs no place');
+  // battery and headphones: unknown is null, never a made-up answer
+  const b = battery(); assert.ok(b.level === null && b.charging === null && b.saver === false, 'the battery is unknown until the phone says');
+  assert.equal(headphones(), null, 'headphones are unknown where nothing can say');
+  assert.equal(readOutputs([{ kind: 'audiooutput', label: '' }, { kind: 'audioinput', label: 'Mic' }]), null, 'a browser that hides the names: unknown');
+  assert.equal(readOutputs([{ kind: 'audiooutput', label: 'Speakers' }]), false, 'only speakers: no');
+  assert.equal(readOutputs([{ kind: 'audiooutput', label: 'Speakers' }, { kind: 'audiooutput', label: 'WH-1000XM5 (Bluetooth)' }]), true, 'a Bluetooth output: yes');
+  assert.equal(readOutputs([{ kind: 'audiooutput', label: 'Pixel Buds' }]), true, 'ear buds: yes');
+  console.log(`gs.real: sun (day, night, dawn, dusk, polar, guess), moon phases, battery and headphones ok`);
 }
 
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits

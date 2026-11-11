@@ -1,6 +1,7 @@
 import Foundation
 import Capacitor
 import CoreMotion
+import AVFoundation
 
 /// Extra phone sensors for games (src/kit/sensors.js): steps (CMPedometer) and air pressure
 /// (CMAltimeter). iPhones don't let apps read the room light, and proximity turns the screen off, so
@@ -9,6 +10,8 @@ import CoreMotion
 /// available() -> { steps, pressure, light: false, near: false }
 /// start({ kind }) -> 'reading' events { kind, value, max }: steps since start; pressure in hPa
 /// stop({ kind }) / stopAll()
+/// output() -> { headphones, kind }: where the sound goes (src/kit/real.js). kind: 'wired', 'usb',
+///   'bluetooth' (headphones or a speaker: iOS doesn't say which), 'airplay' or 'speaker'.
 @objc(PhoneSensorsPlugin)
 public class PhoneSensorsPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "PhoneSensorsPlugin"
@@ -17,7 +20,8 @@ public class PhoneSensorsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "available", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "stopAll", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "stopAll", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "output", returnType: CAPPluginReturnPromise)
     ]
     private let pedometer = CMPedometer()
     private let altimeter = CMAltimeter()
@@ -53,6 +57,20 @@ public class PhoneSensorsPlugin: CAPPlugin, CAPBridgedPlugin {
         default:
             call.reject("no \(kind) sensor")
         }
+    }
+
+    @objc func output(_ call: CAPPluginCall) {
+        var kind = "speaker"
+        for o in AVAudioSession.sharedInstance().currentRoute.outputs {
+            switch o.portType {
+            case .headphones: kind = "wired"
+            case .usbAudio: kind = "usb"
+            case .bluetoothA2DP, .bluetoothLE, .bluetoothHFP: kind = "bluetooth"
+            case .airPlay: kind = "airplay"
+            default: break
+            }
+        }
+        call.resolve(["headphones": kind == "wired" || kind == "usb" || kind == "bluetooth", "kind": kind])
     }
 
     @objc func stop(_ call: CAPPluginCall) { end(call.getString("kind") ?? ""); call.resolve() }

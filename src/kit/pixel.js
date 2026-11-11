@@ -4,6 +4,7 @@
 //   const { text, sprite, anim } = gs.pixel;
 //   text(c, 'SCORE 120', 4, 4, { color: '#fff', size: 2 });          // tiny built-in 3×5 font, scale 2
 //   text(c, 'GAME OVER', W / 2, 80, { font: 'big', align: 'center', color: '#ff0', outline: '#000' });   // 8×8 font
+//   text(c, 'Find the key', 4, 20, { font: 'tiny' });               // more pixel fonts: 'silkscreen', 'silkscreen bold', 'tiny', 'jersey', 'terminal'
 //
 //   const hero = sprite(`
 //     ..kk..
@@ -15,6 +16,8 @@
 //   const red = hero.recolor({ y: '#f33' });                         // palette swap
 //   const walk = anim([frameA, frameB], { k: '#000' }, 8);           // 8 frames per second
 //   walk.draw(c, x, y, time, { scale: 3 });
+
+import { pixelFont, want, ready, whenFontArrives } from './fontlib.js';
 
 /* ---------- the tiny 3×5 font (always ready) ---------- */
 const G = {
@@ -88,15 +91,53 @@ function bigText(str, color) {
   return c;
 }
 
+/* ---------- more pixel fonts from the font library (gs.fonts): Silkscreen, Tiny5, Jersey 10, VT323 ---------- */
+// Each is drawn at the one size where a pixel of the font is a pixel of the game, then snapped to hard
+// pixels. Its file loads the first time a game names it; until then the text uses the 8×8 font.
+let arrived = 0;                       // goes up when a font finishes loading, so remembered text is drawn again
+whenFontArrives(() => { arrived++; shapes.clear(); });
+const shapes = new Map();              // 'name weight' -> { cap, desc, step }: whole pixels, measured once
+function shapeOf(f, weight) {
+  const key = f.name + ' ' + weight; let m = shapes.get(key);
+  if (!m) {
+    const g = canvas(1, 1).getContext('2d'); g.font = `${weight} ${f.pixel}px "${f.name}"`;
+    const cap = Math.round(g.measureText('H').actualBoundingBoxAscent), desc = Math.max(1, Math.round(g.measureText('gjpqy,').actualBoundingBoxDescent));
+    shapes.set(key, m = { cap, desc, step: cap + desc + Math.max(1, Math.round(cap / 5)) });
+  }
+  return m;
+}
+function libText(f, weight, str, color) {
+  const lines = String(str).split('\n'), probe = canvas(1, 1).getContext('2d'), css = `${weight} ${f.pixel}px "${f.name}"`, m = shapeOf(f, weight);
+  probe.font = css;
+  const w = Math.max(1, Math.ceil(Math.max(...lines.map(l => probe.measureText(l).width)))), h = (lines.length - 1) * m.step + m.cap + m.desc;
+  const c = canvas(w, h), g = c.getContext('2d');
+  g.font = css; g.textBaseline = 'alphabetic'; g.fillStyle = color;
+  lines.forEach((l, i) => g.fillText(l, 0, i * m.step + m.cap));
+  const d = g.getImageData(0, 0, c.width, c.height), a = d.data;
+  for (let i = 3; i < a.length; i += 4) a[i] = a[i] > 110 ? 255 : 0;
+  g.putImageData(d, 0, 0);
+  return c;
+}
+/** The library font for a font option, once it is in; null for 'small' and 'big' and while it loads. */
+function libFont(font) {
+  if (font === 'small' || font === 'big') return null;
+  const p = pixelFont(font);
+  if (!p) return null;
+  want(p.font, p.weight);
+  return ready(p.font.name, p.weight) ? p : null;
+}
+
 /**
  * Draws pixel text with its top-left at (x, y). Options: color, size (whole-number scale), font:
- * 'small' (3×5, default) | 'big' (8×8), align: 'left' | 'center' | 'right', outline (a colour),
- * shadow (a colour, drawn one pixel down-right). Returns the width drawn. '\n' starts a new line.
+ * 'small' (3×5 capitals, default) | 'big' (8×8) | 'silkscreen' | 'silkscreen bold' | 'tiny' (5 high, with
+ * small letters) | 'jersey' (10 high) | 'terminal' (14 high), align: 'left' | 'center' | 'right', outline
+ * (a colour), shadow (a colour, drawn one pixel down-right). Returns the width drawn. '\n' starts a new line.
  */
 export function text(c, str, x, y, { color = '#ffffff', size = 1, font = 'small', align = 'left', outline = null, shadow = null } = {}) {
-  if (font === 'big') loadBig();
-  const key = font + '|' + color + '|' + (outline || '') + '|' + (bigFont) + '|' + str;
-  const img = remember(key, () => { const t = font === 'big' ? bigText(str, color) : smallText(str, color); return outline ? outlined(t, outline) : t; });
+  const lib = libFont(font), kind = lib ? font : font === 'small' ? 'small' : 'big';
+  if (kind === 'big') loadBig();
+  const key = kind + '|' + color + '|' + (outline || '') + '|' + (lib ? arrived : bigFont) + '|' + str;
+  const img = remember(key, () => { const t = lib ? libText(lib.font, lib.weight, str, color) : kind === 'big' ? bigText(str, color) : smallText(str, color); return outline ? outlined(t, outline) : t; });
   const s = Math.max(1, Math.round(size)), w = img.width * s, h = img.height * s;
   const px = Math.round(align === 'center' ? x - w / 2 : align === 'right' ? x - w : x) - (outline ? s : 0), py = Math.round(y) - (outline ? s : 0);
   const smooth = c.imageSmoothingEnabled; c.imageSmoothingEnabled = false;
@@ -108,7 +149,7 @@ export function text(c, str, x, y, { color = '#ffffff', size = 1, font = 'small'
 /** Width and height (in pixels at size 1) of a piece of pixel text. */
 export function measure(str, font = 'small') {
   if (font === 'small') { const lines = String(str).split('\n'); return { w: Math.max(...lines.map(l => l.length)) * 4 - 1, h: lines.length * 6 - 1 }; }
-  const t = bigText(str, '#fff'); return { w: t.width, h: t.height };
+  const lib = libFont(font), t = lib ? libText(lib.font, lib.weight, str, '#fff') : bigText(str, '#fff'); return { w: t.width, h: t.height };
 }
 
 /* ---------- sprites from text ---------- */
