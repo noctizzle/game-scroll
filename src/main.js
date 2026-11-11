@@ -552,6 +552,8 @@ function addStaged(ok,done){
 function finishCard(s){if(!s.unready)return;s.unready=false;fit(s);paint(s)}
 let waiting=false;
 function addBatch(n=AHEAD+1){
+  // a shared game goes first (openShared): the empty feed waits for it, while the games after it download
+  if(lead&&!slides.length){if(!feed.querySelector('.feed-msg'))feedMsg('loading');return}
   const defs=pickDefs(n);
   for(const d of defs){const s=makeSlide(d);feed.appendChild(s.el);slides.push(s);fit(s);paint(s);io.observe(s.el)}
   if(defs.length)feedMsg(null);
@@ -575,22 +577,54 @@ function feedMsg(kind){
   feed.appendChild(el);
 }
 
-// Play a chosen game now: slot it in right after the current game and scroll to it.
-function playNow(id){
+// Play a chosen game now: slot it in right after the current game and go to it. The card is made the
+// current one here, not left to the scroll to report: the feed ignores scroll news for half a second
+// after a resize (and a page that has just loaded has just been resized), which left the chosen game
+// on screen with a Play button that did nothing. go=false only slots it in as the next card.
+function playNow(id,go=true){
   const g=GAMES.find(x=>x.id===id);if(!g)return;
-  const def=playable(g);if(!def){remote.load(id).then(d=>{if(d)playNow(id)});return}
-  const i=active?slides.indexOf(active):-1;if(active&&active.state==='playing')resetSlide(active);feed.classList.remove('locked');
-  const s=makeSlide(def),next=slides[i+1];feed.insertBefore(s.el,next?next.el:null);slides.splice(i+1,0,s);fit(s);paint(s);io.observe(s.el);
-  requestAnimationFrame(()=>s.el.scrollIntoView({behavior:'auto'}));
+  const def=playable(g);if(!def){remote.load(id).then(d=>{if(d)playNow(id,go)});return}
+  const i=active?slides.indexOf(active):-1;
+  if(go){if(active&&active.state==='playing')resetSlide(active);feed.classList.remove('locked')}
+  const s=makeSlide(def),next=slides[i+1];feedMsg(null);feed.insertBefore(s.el,next?next.el:null);slides.splice(i+1,0,s);fit(s);paint(s);io.observe(s.el);
+  if(go)requestAnimationFrame(()=>{if(s.dropped)return;s.el.scrollIntoView({behavior:'auto'});setActive(s)});
 }
-// A shared link: at launch the game goes first in the feed; while the app is open it plays next.
-function openShared(id){
-  const g=GAMES.find(x=>x.id===id);if(!g)return;
-  if(active&&slides.indexOf(active)===0&&active.state==='ready'&&feed.scrollTop<4){
-    const def=playable(g);if(!def){remote.load(id).then(d=>{if(d)openShared(id)});return}
-    if(active.def.id===id)return;
-    const s=makeSlide(def);feed.insertBefore(s.el,slides[0].el);slides.unshift(s);fit(s);paint(s);io.observe(s.el);feed.scrollTop=0;setActive(s);return}
-  playNow(id);
+// A shared link (src/share.js): at launch the shared game is the first card; once the feed is in use
+// it plays next. A feed that is still empty waits for the shared game (lead) rather than showing
+// another game and then jumping, for up to LEAD_WAIT (it still opens when it arrives later). A game
+// the saved catalogue doesn't list may be new, so the fresh catalogue is read before saying it has
+// gone: games are taken down too, and their links must still land in the feed.
+let lead=null,leadT=0;
+const LEAD_WAIT=10000;
+const atStart=()=>!slides.length||!!active&&slides.indexOf(active)===0&&active.state==='ready'&&feed.scrollTop<4;
+const unlead=id=>{if(lead===id){clearTimeout(leadT);lead=null}};
+function holdFor(id){
+  if(slides.length)return;
+  lead=id;clearTimeout(leadT);leadT=setTimeout(()=>letGo(id),LEAD_WAIT);
+  if(!feed.querySelector('.feed-msg'))feedMsg('loading');
+}
+// stop waiting for the shared game: the feed starts with the usual games
+function letGo(id){if(lead!==id)return;unlead(id);if(!slides.length){addBatch();if(!active&&slides[0])setActive(slides[0])}}
+function openShared(id,checked=''){
+  const g=GAMES.find(x=>x.id===id);
+  if(!g){
+    if(STREAM&&!checked){holdFor(id);remote.refresh().then(ok=>openShared(id,ok?'fresh':'failed'));return}
+    letGo(id);
+    qaToast(checked==='failed'?'Couldn’t find that shared game just now. Here are some others.':'That shared game isn’t in Game Scroll any more. Here are some others.');return}
+  if(!atStart()){unlead(id);playNow(id);return}
+  const def=playable(g);
+  if(!def){
+    holdFor(id);
+    remote.load(id).then(d=>{
+      if(!d){letGo(id);qaToast(`Couldn’t load ${g.title} just now. Here are some others.`);return}
+      if(atStart()){openShared(id,checked);return}
+      // it took so long that they've moved on: don't pull them out of what they're doing
+      unlead(id);if(!slides.some(x=>x.def.id===id)){playNow(id,false);qaToast(`${g.title} is ready: it’s the next game.`)}
+    });return}
+  unlead(id);
+  if(slides[0]&&slides[0].def.id===id){feed.scrollTop=0;setActive(slides[0]);return}
+  queue=queue.filter(q=>q.id!==id);   // it's on screen now: not again later in this cycle
+  const s=makeSlide(def);feedMsg(null);feed.insertBefore(s.el,slides[0]?slides[0].el:null);slides.unshift(s);fit(s);paint(s);io.observe(s.el);feed.scrollTop=0;setActive(s);
 }
 function setActive(s){
   if(active===s)return;
@@ -827,4 +861,4 @@ if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refres
 
 // Test hook used by scripts/smoke.cjs and the other browser tests: dev and test builds, and any build
 // driven by a test browser. Never in the store apps, where a game could use it to reach the wallet.
-if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,awake,soundtrack,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),feed:()=>feedBrain.stats(),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',lab:v=>frameLab(v),only(id){filter='id:'+id;rebuild()},playtest:(id,o)=>import('./playtest.js').then(m=>m.playtest(GAMES.find(g=>g.id===id),active.api,o))};
+if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,awake,soundtrack,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),feed:()=>feedBrain.stats(),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',lab:v=>frameLab(v),only(id){filter='id:'+id;rebuild()},shared:id=>openShared(id),playtest:(id,o)=>import('./playtest.js').then(m=>m.playtest(GAMES.find(g=>g.id===id),active.api,o))};
