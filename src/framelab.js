@@ -297,7 +297,7 @@ const nextGrab = (maxSide) => new Promise(res => {
 const PAIRS = {
   sgsr: { title: 'Upscaler off vs on', a: 'SGSR off (stretched)', b: 'SGSR on', set: on => { HD.upscale = on; } },
   sgsr12: { title: 'SGSR 1 vs SGSR 2', a: 'SGSR 1', b: 'SGSR 2', set: on => { HD.upscaler = on ? 'sgsr2' : 'sgsr1'; } },
-  sgsrTune: { title: 'SGSR 2 as it was vs tuned', a: 'SGSR 2 as Qualcomm has it', b: 'SGSR 2 with our changes', set: on => { HD.sgsrTune = on; }, needs: () => HD.info.backend === 'webgpu', no: 'Only SGSR 2 on WebGPU has the changes, so there is nothing to compare.' },
+  sgsrTune: { title: 'SGSR 2 as it was vs tuned', a: 'SGSR 2 as Qualcomm has it', b: 'SGSR 2 with our changes', set: on => { HD.sgsrTune = on; } },
   backend: { title: 'WebGL vs WebGPU', a: 'WebGL', b: 'WebGPU', set: async on => { setGpuPick(on ? 'webgpu' : 'webgl'); if (on) await prepareGPU(); }, needs: () => !!webgpu() || gpuPick() === 'webgl' },
   res: { title: 'Half vs full resolution', a: '50% of the 3D size', b: 'the tier\'s own size', set: on => { HD.scale = on ? null : HD.info.rw && HD.info.ow ? .5 * HD.info.rw / HD.info.ow : .5; } },
   tier: { title: 'Low vs ultra tier', a: 'low', b: 'ultra', set: on => { HD.force = on ? 3 : 0; } },
@@ -349,10 +349,10 @@ async function runShimmer() {
     };
     await waitFrames(30, 600); UI.busy('Shimmer: 16 pictures…');
     const { w, h, v, first, n, share } = await measure(), still = HD?.info.still;
-    // SGSR 2 on WebGPU: the same frame again as Qualcomm's shader has it, to see what our changes to it do
+    // SGSR 2: the same frame again as Qualcomm's shader has it, to see what our changes to it do
     // here (not while the 3D shows a still frame again: nothing is being redrawn to compare)
     let plain = null;
-    if (HD && !still && HD.info.upscaled === 'sgsr2' && HD.info.backend === 'webgpu' && HD.sgsrTune !== false) {
+    if (HD && !still && HD.info.upscaled === 'sgsr2' && HD.sgsrTune !== false) {
       UI.busy('Shimmer: again with SGSR 2 as it was…');
       const keep = HD.still; HD.sgsrTune = false; HD.still = false;
       try { await waitFrames(45, 900); plain = (await measure()).share; } finally { HD.sgsrTune = true; HD.still = keep; }

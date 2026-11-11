@@ -197,9 +197,9 @@ export const HD = {
   upscale: true,
   /** Which upscaler: 'sgsr2' (Snapdragon GSR 2, temporal; Next Gen without reflections) or 'sgsr1' (one frame). AR and the rest use SGSR 1. */
   upscaler: 'sgsr2',
-  /** Tests: film grain strength on WebGPU (null: the usual; 0: none, so two pictures can be compared pixel by pixel). */
+  /** Tests: film grain strength (null: the usual; 0: none, so two pictures can be compared pixel by pixel). */
   grain: null,
-  /** Tests and the frame lab's A/B: false draws SGSR 2 on WebGPU as Qualcomm's shader has it, without our changes (hd3d-gpu.js sgsr2Gpu) and with the tier's MSAA under it. */
+  /** Tests and the frame lab's A/B: false draws SGSR 2 as Qualcomm's shader has it, without our changes (hd3d-gpu.js sgsr2Gpu, sgsr2.js), and on WebGPU with the tier's MSAA under it. */
   sgsrTune: true,
   /** Tests: draw the 3D at this fraction of the screen's size (null: the tier and frame rate decide). */
   scale: null,
@@ -301,7 +301,7 @@ const UP = `uniform sampler2D tDiffuse; uniform vec2 px; uniform float k; varyin
 // full-screen draw on phones, and each piece can be ported to a WebGPU node on its own). They run
 // in this order; FINAL is them joined. Uniforms: the pass's own (FinalPass below).
 export const FINAL_EFFECTS = [
-  { name: 'head', what: 'uniforms, the tone mapping three leaves out under SGSR, helpers', glsl: `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, bloom; uniform vec2 px; varying vec2 vUv;
+  { name: 'head', what: 'uniforms, the tone mapping three leaves out under SGSR, helpers', glsl: `uniform sampler2D tDiffuse, tBloom; uniform float t, hurt, vig, bloom, grain; uniform vec2 px; varying vec2 vUv;
   uniform float gradeOn, sat, con, glare, aspect; uniform vec3 lo, hi, sunCol; uniform vec2 sunUV;
   #ifdef LUT
   uniform highp sampler3D tLut; uniform float lutS, lutO, lutK;
@@ -376,7 +376,7 @@ ${ShaderChunk.tonemapping_pars_fragment}
 ` },
   { name: 'vignette', what: 'vignette', glsl: `    col *= 1. - vig * smoothstep(.12, .62, r2 * 1.6);
 ` },
-  { name: 'grain', what: 'film grain', glsl: `    col += (h(vUv / px + t) - .5) * .035;
+  { name: 'grain', what: 'film grain', glsl: `    col += (h(vUv / px + t) - .5) * grain;
 ` },
   { name: 'hurt', what: 'hurt tint (v.hurt)', glsl: `    col = mix(col, col * vec3(1.25, .45, .4) + vec3(.12, 0., 0.), hurt * smoothstep(.04, .4, r2));
 ` },
@@ -396,7 +396,7 @@ class FinalPass extends Pass {
     this.bright = qmat(BRIGHT, { tDiffuse: { value: null }, px: { value: new Vector2() }, thr: { value: .82 } });
     this.down = qmat(DOWN, { tDiffuse: { value: null }, px: { value: new Vector2() } });
     this.up = qmat(UP, { tDiffuse: { value: null }, px: { value: new Vector2() }, k: { value: 1 } }, { blending: ADD });
-    this.final = qmat(FINAL, { tDiffuse: { value: null }, tBloom: { value: null }, t: { value: 0 }, hurt: { value: 0 }, vig: { value: .32 }, bloom: { value: .7 }, px: { value: new Vector2(1, 1) }, toneMappingExposure: { value: 1 },
+    this.final = qmat(FINAL, { tDiffuse: { value: null }, tBloom: { value: null }, t: { value: 0 }, hurt: { value: 0 }, vig: { value: .32 }, grain: { value: .035 }, bloom: { value: .7 }, px: { value: new Vector2(1, 1) }, toneMappingExposure: { value: 1 },
       gradeOn: { value: 0 }, sat: { value: 1 }, con: { value: 1 }, lo: { value: new Vector3(1, 1, 1) }, hi: { value: new Vector3(1, 1, 1) }, glare: { value: 0 }, sunUV: { value: new Vector2() }, sunCol: { value: new Color() }, aspect: { value: 1 }, tLut: { value: null }, lutS: { value: 1 }, lutO: { value: 0 }, lutK: { value: 1 }, tDirt: { value: null }, flareTh: { value: .3 }, flareSp: { value: .25 }, flareFade: { value: 25 }, flareK: { value: 1 }, dirtK: { value: 0 }, flareTint: { value: new Vector3(1, 1, 1) } }, { defines: { SRGB_TRANSFER: '', TONE_FN: TONE_FN.aces } });
     this.quad = new FullScreenQuad(null); this.mips = []; this.scale = .5; this.w = 0; this.h = 0; this.fxaa = false; this.strength = .7;
   }
@@ -2145,7 +2145,7 @@ export class HDView {
     if (!this.clearBg) {
       const F = P.final; P.ao.enabled = T.ao > 0; if (T.ao > 0 && P.ao.scale !== T.ao) { P.ao.scale = T.ao; P.ao.setSize(P.ao.fw || pw, P.ao.fh || ph); }
       F.strength = this.bloom; F.scale = T.bloom; F.setTone(this.tone); F.setLut(this.lutTex(), this.lutAmount); F.setFlare(this.bloom > 0 && T.bloom ? this.flareSet() : null); F.eyeView = baking || off ? null : this; F.setFxaa(!s2 && (!T.msaa || ssr));   // SGSR 2 smooths edges itself
-      const u = F.final.uniforms; u.t.value = this.t % 10; u.hurt.value = this.hurt;
+      const u = F.final.uniforms; u.t.value = this.t % 10; u.hurt.value = this.hurt; u.grain.value = HD.grain ?? .035;
       const g = this.grade; u.gradeOn.value = g ? 1 : 0;
       if (g) { u.sat.value = g.saturation ?? 1; u.con.value = g.contrast ?? 1; toRGB(g.shadows, u.lo.value); toRGB(g.highlights, u.hi.value); }
       u.glare.value = 0;
@@ -2192,7 +2192,7 @@ export class HDView {
     lastView = this; if (TEST) window.__hdView = this;
     r.info.autoReset = false; r.info.reset();
     const mwa = this.scene.matrixWorldAutoUpdate; this.scene.matrixWorldAutoUpdate = false;   // already updated above
-    if (s2) s2.begin(this.cam, pw, ph, fw, fh, this, now, cut);   // the camera's move and this frame's jitter
+    if (s2) { s2.tuned = HD.sgsrTune !== false; s2.begin(this.cam, pw, ph, fw, fh, this, now, cut); }   // the camera's move and this frame's jitter
     try { cp.render(); } finally { this.scene.matrixWorldAutoUpdate = mwa; s2?.end(this.cam); }
     if (!baking && !off) { HD.info.calls = r.info.render.calls; HD.info.tris = r.info.render.triangles; HD.info.cpu = performance.now() - now; HD.info.shadows = shadows; HD.info.upscaled = s2 ? 'sgsr2' : up && 'sgsr1'; HD.info.backend = 'webgl'; HD.info.webgl = this._gpuWhy || ''; }
     }

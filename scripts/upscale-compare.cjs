@@ -5,11 +5,11 @@
 // lower is steadier, and in motion more than ref is crawl and less is blur. ms: time per frame in
 // this software-rendered browser, a rough guide to cost only. Also SGSR 2 at full size as
 // anti-aliasing (aa) against the plain full-size picture (native), with nothing moving, the camera
-// moving, and a box moving. On WebGPU each SGSR 2 run is drawn twice: with our changes to Qualcomm's
-// shader and without (-plain), and the run fails if ours come out worse.
-// WebGPU draws no film grain here (it is most of the error otherwise, and SGSR 2 averaging it away
-// looks like a better picture); WebGL has no switch for it, so read its numbers as rough.
-//   node scripts/upscale-compare.cjs [--scale 1.5] [--webgpu] [--tier 0..3] [--warm 80] [--modes plain,sgsr2] [--shots dir]
+// moving, and a box moving. Each SGSR 2 run is drawn twice: with our changes to Qualcomm's shader and
+// without (-plain), and the run fails if ours come out worse.
+// No film grain is drawn here (it is most of the error otherwise, and SGSR 2 averaging it away looks
+// like a better picture); --grain .035 puts the app's back.
+//   node scripts/upscale-compare.cjs [--scale 1.5] [--webgpu] [--tier 0..3] [--warm 80] [--modes plain,sgsr2] [--grain .035] [--shots dir]
 //   --tier: the quality tier (2 and 3 have MSAA); --warm: frames with nothing moving before each run
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path');
@@ -35,7 +35,7 @@ const fs = require('fs'), path = require('path');
   }
   if (shots) { fs.mkdirSync(shots, { recursive: true }); for (const [k, u] of Object.entries(res.shots)) fs.writeFileSync(path.join(shots, k + '.png'), Buffer.from(u.split(',')[1], 'base64')); console.log('shots in', shots); }
   // What must hold: the upscalers really ran; SGSR 2 is no further from the reference than a plain stretch;
-  // and on WebGPU our changes to SGSR 2 are no worse than the shader as it was: in error everywhere, and
+  // and our changes to SGSR 2 are no worse than the shader as it was: in error everywhere, and
   // in flicker where the camera is still (there it is shimmer; with the camera moving a sharper picture
   // changes more from frame to frame, as the reference does). A little slack: the two are a jitter step apart.
   // SGSR 2 at full size against the plain picture is printed, not checked.

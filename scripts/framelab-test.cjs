@@ -79,7 +79,7 @@ const SIZES = { cover: { width: 374, height: 591 }, inner: { width: 549, height:
   };
   await ab('sgsr');
   await ab('res');
-  if (gpu) await ab('sgsrTune');   // SGSR 2 as Qualcomm has it against ours (WebGPU)
+  await ab('sgsrTune');   // SGSR 2 as Qualcomm has it against ours
   if (gpu) await ab('backend');
   const restored = await p.evaluate(() => ({ up: __hd.upscale, sc: __hd.scale, f: __hd.force, tune: __hd.sgsrTune }));
   check(restored.up === true && restored.sc == null && restored.f == null && restored.tune === true, 'A/B puts the settings back');

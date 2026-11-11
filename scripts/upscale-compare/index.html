@@ -3,8 +3,8 @@
 // Upscaler comparison for scripts/upscale-compare.cjs: the same Next Gen scene drawn at twice the size
 // and scaled down (the reference) and drawn smaller then upscaled by plain stretch, SGSR 1 and SGSR 2,
 // with the camera still and moving, and a box moving across the scene. Each is scored against the
-// reference. On WebGPU also SGSR 2 as Qualcomm's shader has it (-plain), to hold our changes to it
-// (hd3d-gpu.js sgsr2Gpu) against what they changed.
+// reference. Also SGSR 2 as Qualcomm's shader has it (-plain), to hold our changes to it (hd3d-gpu.js
+// sgsr2Gpu, sgsr2.js) against what they changed.
 import gs, { loadParts } from '../../src/gamescroll.js';
 import { setGpuPick, prepareGPU } from '../../src/kit/gpu.js';
 // ?gpu: on WebGPU (upscale-compare.cjs --webgpu), with hd3d-gpu.js's TSL versions of SGSR 1 and 2
@@ -13,8 +13,8 @@ setGpuPick(GPU ? 'webgpu' : 'webgl');
 await loadParts();
 if (GPU && !await prepareGPU()) { window.result = { error: 'WebGPU did not start in this browser' }; throw new Error(window.result.error); }
 const T = gs.THREE, HD = window.__hd, W = 480, H = 640, Q = new URLSearchParams(location.search), K = +(Q.get('scale') || 1.5);
-// &tier=0..3 (the quality tier: 2 and 3 have MSAA), &grain=.035 (film grain as in the app; WebGPU draws
-// none here, since grain is otherwise most of the error and hides what the upscalers do), &modes=plain,sgsr2
+// &tier=0..3 (the quality tier: 2 and 3 have MSAA), &grain=.035 (film grain as in the app; none is
+// drawn here, since grain is otherwise most of the error and hides what the upscalers do), &modes=plain,sgsr2
 // (which upscalers), &warm=80 (that many frames with nothing moving first, so the history has settled)
 HD.force = +(Q.get('tier') || 0); HD.grain = Q.has('grain') ? +Q.get('grain') : 0;
 const v = new gs.hd.HDView({ bg: '#9ab4d0', fog: .002, amb: .3 }), c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
@@ -43,8 +43,8 @@ const err = (a, b) => { let s = 0; for (let i = 0; i < a.length; i += 4) s += (M
 // changes from frame to frame over them; the reference's own (ref) is what the motion itself changes, so
 // more than that is crawl or shimmer and less is blur
 const out = { scale: K, scenes: {} }, shots = {}, LAST = 8, tick = () => new Promise(r => requestAnimationFrame(r));
-const MODES = Q.get('modes')?.split(','), AA = ['native', 'aa', ...(GPU ? ['aa-plain'] : [])].filter(m => !MODES || MODES.includes(m));
-const run = async (name, frames, moveCam, moveBox, modes = MODES?.filter(m => !/^(native|aa)/.test(m)) || ['plain', 'sgsr1', 'sgsr2', ...(GPU ? ['sgsr2-plain'] : [])]) => {
+const MODES = Q.get('modes')?.split(','), AA = ['native', 'aa', 'aa-plain'].filter(m => !MODES || MODES.includes(m));
+const run = async (name, frames, moveCam, moveBox, modes = MODES?.filter(m => !/^(native|aa)/.test(m)) || ['plain', 'sgsr1', 'sgsr2', 'sgsr2-plain']) => {
   const at = f => { pose(moveCam ? f : 0); place(moveBox ? f : 0); };
   set('full'); at(frames - LAST); draw(); await tick(); await tick();   // (a resized WebGPU canvas shows the old picture until the next frame)
   const refs = [];

@@ -42,6 +42,7 @@ import { denoise } from 'three/examples/jsm/tsl/display/DenoiseNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { sdfLook, fxPlan, fxStages, fxFrame, fxDispose, reflMRT, reflStage, reflFrame, reflDispose, bakeProbe } from './hd3d-gpu-fx.js';
+import { S2_HOLD } from './sgsr2.js';
 import { FrameGen, StillCheck, frameGenMRT, fgPrevVP, newPose, copyPose, homography, warpUV, refreshesSince, sharpAt } from './framegen.js';
 
 const LUM = vec3(.2126, .7152, .0722);
@@ -892,7 +893,8 @@ function sgsr1Gpu(src) {
 // motion comes from the depth and the camera's move, so moving things smear), and see-through things
 // (sparks, smoke, glass) lean on the new frame instead of the history, so they leave no trails.
 // tuned (the usual; HD.sgsrTune = false is Qualcomm's shader as it was, for comparing): two changes of
-// ours to the upscale pass, each kept because it measured better (scripts/upscale-compare.cjs):
+// ours to the upscale pass, each kept because it measured better (scripts/upscale-compare.cjs), and the
+// same two as the WebGL version's (sgsr2.js):
 // - the history is read sharply (framegen.js sharpAt: Catmull-Rom in 5 reads) where the shader read it
 //   bilinearly. It is read again every frame the camera moves, and bilinear softens it a little each
 //   time: with the camera moving the picture came out no closer to the full-size one than a plain stretch
@@ -901,7 +903,6 @@ function sgsr1Gpu(src) {
 //   thin things and edges. Anything that moves, a cut or a see-through thing starts from the usual again
 // (Tried and left out, each measured worse or no better: sharpening after the upscale, a colour box
 // from 9 pixels in place of 5, and a looser colour box at full size.)
-const S2_HOLD = 4;
 function sgsr2Gpu(fin, depthT, mo = null, tuned = true) {
   const U = { rs: uniform(new Vector2(1, 1)), os: uniform(new Vector2(1, 1)), jit: uniform(new Vector2()), sr: uniform(new Vector2(1, 1)),
     fov: uniform(1), minLerp: uniform(0), reset: uniform(1), c2p: uniform(new Matrix4()), jd: uniform(new Vector2()) };
