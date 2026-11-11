@@ -76,7 +76,11 @@ export function noise(len = .25, { vol = .08, from = 3000, to = 300, filter = 'l
   try {
     const { ctx } = a, t = when == null ? ctx.currentTime + at : Math.max(when, ctx.currentTime), src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(), v = Math.max(.0002, vol * level);
     src.buffer = noiseBuffer(ctx); src.loop = true;
-    f.type = filter; f.Q.value = q; f.frequency.setValueAtTime(Math.max(40, from * tune), t); f.frequency.exponentialRampToValueAtTime(Math.max(40, to * tune), t + len);
+    // The filter and the volume start out at their own values, not the browser's (350 Hz, full volume): a burst
+    // timed ahead (at, when) can start one sample before the changes timed for the same moment, and that
+    // sample of raw noise at full volume is a loud click through a highpass (a hi-hat on the beat, a shatter).
+    f.type = filter; f.Q.value = q; f.frequency.value = Math.max(40, from * tune); f.frequency.setValueAtTime(Math.max(40, from * tune), t); f.frequency.exponentialRampToValueAtTime(Math.max(40, to * tune), t + len);
+    g.gain.value = attack > 0 ? 0.0001 : v;
     if (attack > 0) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + attack); } else g.gain.setValueAtTime(v, t);
     if (hold > 0) g.gain.setValueAtTime(v, t + Math.min(len - .005, Math.max(attack, hold)));
     g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(len, attack + .01));
