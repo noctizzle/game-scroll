@@ -1,7 +1,8 @@
 // Checks what the app itself does around a game (not what a game does): keeping the screen on during a
 // round, finer touch, even pixels and the LCD look for pocket games, the one-line soundtrack, the bigger
-// save that stays on the phone, the font library, and the 2D looks (materials, slabs, water, stickers, sketch pen, ink, icons).
-// Usage: npm run build:bundled && node scripts/app-test.cjs [awake|touch|pixels|music|saves|fonts|looks]   (SHOTS=<dir> saves a picture of every font and look)
+// save that stays on the phone, the font library, the 2D looks (materials, slabs, water, stickers, sketch pen, ink, icons),
+// and the phone test tour (a bot that plays as a guest, the frame report, the plugin check).
+// Usage: npm run build:bundled && node scripts/app-test.cjs [awake|touch|pixels|music|saves|fonts|looks|tour]   (SHOTS=<dir> saves a picture of every font and look)
 const { chromium } = require('playwright');
 
 let failed = 0;
@@ -512,10 +513,142 @@ async function looks(b) {
   await p.done();
 }
 
+/* ---------- the phone test tour: a bot plays as a guest, every frame is timed, one report ---------- */
+async function tour(b) {
+  console.log('\nPhone test tour');
+  const p = await open(b);
+  // the parts on their own
+  const k = await p.evaluate(async () => {
+    const k = await __gs.tourKit(), out = {};
+    out.sum = k.summarise([10, 10, 10, 100], [1, 1, 1, 5], 16.7); out.none = k.summarise([]);
+    const base = { loaded: true, errors: [], frames: 600, fps: 60, target: 60, freezes: 0, early: 0, slow: 0 };
+    out.verdicts = [k.verdict(base), k.verdict({ ...base, fps: 50 }), k.verdict({ ...base, freezes: 5, early: 1 }), k.verdict({ ...base, freezes: 5, early: 4 }), k.verdict({ ...base, slow: .06 }),
+      k.verdict({ ...base, errors: ['x'] }), k.verdict({ ...base, loaded: false }), k.verdict({ ...base, frames: 0, fps: 0 })];
+    out.long = [k.howLong(46, 20), k.howLong(244, 20), k.howLong(1, 10)];
+    out.sets = k.sets(__gs.GAMES).map(([key, name, list]) => [key, list.length]);
+    out.threeD = __gs.GAMES.filter(g => ['console', 'nextgen', 'ar'].includes(g.era)).length;
+    // a guest's saves and brains go nowhere, and read the player's own until the bot saves
+    const loud = what => () => { throw new Error(what + ' reached the real one'); };
+    const g = k.guestApi({ load: () => 'real', loadLocal: () => 'big', save: loud('save'), saveLocal: loud('saveLocal'), clearSave: loud('clearSave'), clearLocal: loud('clearLocal'),
+      brains: { load: () => 'brain', save: loud('brain'), share: loud('share'), onFun: loud('fun'), shared: () => 'avg', player: { read: () => ({ a: 1 }), write: loud('profile'), clear: loud('profile') } } });
+    const first = [g.load('x'), g.loadLocal('x'), g.brains.load('q')];
+    const saved = [g.save({ n: 1 }), g.saveLocal({ m: 2 }), g.brains.save('q', 'mine')]; const got = g.load(); got.n = 9;
+    out.guest = { first, saved, after: [g.load(), g.loadLocal(), g.brains.load('q')], cleared: (g.clearSave(), g.clearLocal(), [g.load('none'), g.loadLocal('none')]),
+      quiet: (g.brains.share('q', '2x2', 'w', 1), g.brains.onFun('q', () => {})(), g.brains.player.write('aim', 1, 1)), profile: g.brains.player.read(), shared: g.brains.shared() };
+    // the bot: two thumbs, the same touches for the same seed, always on the screen
+    const play = seed => { const ev = []; const bot = new k.Bot((type, x, y, id) => ev.push([type, Math.round(x * 10) / 10, Math.round(y * 10) / 10, id]), () => [360, 640], seed);
+      for (let i = 0; i < 60 * 60; i++) bot.step(i / 60); bot.release(60); return { ev, count: bot.count }; };
+    const a = play(7), a2 = play(7), c = play(8);
+    const down = new Set(); let off = 0, lone = 0, bad = 0;
+    for (const [type, x, y, id] of a.ev) {
+      if (x < 0 || y < 0 || x > 360 || y > 640) off++;
+      if (type === 'pointerdown') { if (down.has(id)) bad++; if (id !== 7001 && !down.has(7001)) lone++; down.add(id); }
+      else if (!down.has(id)) bad++; else if (type === 'pointerup') down.delete(id);
+    }
+    out.bot = { same: JSON.stringify(a.ev) === JSON.stringify(a2.ev), other: JSON.stringify(a.ev) !== JSON.stringify(c.ev), n: a.ev.length, off, lone, bad, left: down.size, count: a.count };
+    // the native plugins: a stand-in app where one answers, one never does, one throws and the rest aren't there
+    const cap = { isNativePlatform: () => true, isPluginAvailable: n => ['PowerState', 'ScreenRate', 'NPU', 'Motion'].includes(n),
+      Plugins: { PowerState: { get: async () => ({ thermal: 0, saver: false }) }, ScreenRate: { get: () => new Promise(() => {}) }, NPU: { available: async () => { throw new Error('boom'); } } } };
+    out.plugins = await k.checkPlugins(cap, 150); out.web = await k.checkPlugins();
+    return out;
+  });
+  check(k.sum.frames === 4 && k.sum.worst === 100 && k.sum.freezes === 1 && Math.abs(k.sum.fps - 4000 / 130) < .01 && Math.abs(k.sum.low - 10) < .01 && k.sum.slow === .25 && k.sum.work === 2 && k.none.frames === 0,
+    'frames are summed up right (rate, the worst 1%, the longest, slow ones, freezes, the game\'s own time)', JSON.stringify(k.sum));
+  check(k.verdicts.join() === 'ok,SLOW,STUTTER,ok,STUTTER,ERROR,NO LOAD,NO FRAMES', 'a game is ok, SLOW, STUTTER, ERROR, NO LOAD or NO FRAMES (freezes as a round starts are let off)', k.verdicts.join());
+  check(k.long.join('|') === 'about 20 min|about 1 h 46 min|about 1 min', 'the time a tour will take is told beforehand', k.long.join('|'));
+  check(k.sets[0][0] === '3d' && k.sets[0][1] === k.threeD && k.threeD > 20 && k.sets[2][1] > k.threeD, 'the tour offers the 3D games, Next Gen and AR, or every game', JSON.stringify(k.sets));
+  const gu = k.guest;
+  check(gu.first.join() === 'real,big,brain' && gu.saved.every(v => v === true) && JSON.stringify(gu.after) === '[{"n":1},{"m":2},"mine"]' && gu.cleared.join() === 'none,none' && gu.quiet === true && gu.profile.a === 1 && gu.shared === 'avg',
+    'a guest reads the player\'s saves and brains, and its own writes go nowhere', JSON.stringify(gu));
+  const bo = k.bot;
+  check(bo.same && bo.other && bo.n > 200 && !bo.off && !bo.bad && !bo.left, 'the bot\'s touches repeat for a seed, stay on the screen, and every finger that goes down comes up', JSON.stringify(bo));
+  check(!bo.lone && Object.values(bo.count).every(n => n > 2), 'it taps, holds, swipes, drags and works a thumb-stick, the second thumb only joining while the first holds a stick', JSON.stringify(bo));
+  const by = Object.fromEntries(k.plugins.map(x => [x.name, x]));
+  check(by['PowerState.get'].state === 'ok' && /thermal/.test(by['PowerState.get'].note) && by['ScreenRate.get'].state === 'FAIL' && /no answer/.test(by['ScreenRate.get'].note) && by['NPU.available'].state === 'FAIL' && /boom/.test(by['NPU.available'].note)
+    && by['Motion'].state === 'ok' && by['RichHaptics.supported'].state === 'MISSING' && k.plugins.length >= 18,
+    'each native plugin is asked once: an answer, no answer in time, an error and "not in this build" are told apart', JSON.stringify(k.plugins.filter(x => /Power|Screen|NPU|Motion|Rich/.test(x.name))));
+  check(k.web === null, 'the web version has no plugins to ask');
+
+  // a tour of two games, one of them changed to do everything a guest must not leave behind
+  await p.game(CASUAL);
+  const r = await p.evaluate(async id => {
+    const kit = await __gs.tourKit(), g = __gs.GAMES.find(x => x.id === id), make = g.make, seen = { down: 0, off: 0, wrote: 0 };
+    __gs.api(__gs.active).save({ mine: 1 });
+    const label = () => document.getElementById('feed-label').textContent, stats = () => { try { const c = JSON.parse(localStorage.gs_stats_pending || '{}')[id] || {}; return (c.p || 0) + ' plays, ' + (c.s || 0) + ' s'; } catch (_) { return 'unreadable'; } };
+    const before = { credits: __gs.progress.credits, best: __gs.progress.best(id), qa: localStorage.gs_qa || '', stats: stats(), label: label(), boards: localStorage.gs_boards_pending || '' };
+    g.make = api => {
+      const game = make(api), { reset, update, down } = game; let t = 0;
+      game.reset = () => { t = 0; return reset.call(game); };
+      game.update = dt => { t += dt; update.call(game, dt); if (t > .4 && t < .5) { seen.wrote++; api.save({ bot: 1 }); api.saveLocal({ bot: 1 }); api.brains.save('probe', 'bot'); api.score(99999); } if (t > 1.2) api.over(); };
+      game.down = (x, y, f) => { seen.down++; if (x < 0 || y < 0 || x > 360 || y > 640) seen.off++; return down && down.call(game, x, y, f); };
+      return game;
+    };
+    const res = await __gs.tour({ ids: [id, 'arrow-maze'], seconds: 3 });
+    g.make = make;
+    const text = kit.reportText(res);
+    __gs.only(id); await new Promise(r => setTimeout(r, 300));
+    const api = __gs.api(__gs.active);
+    const after = { credits: __gs.progress.credits, best: __gs.progress.best(id), qa: localStorage.gs_qa || '', stats: stats(), boards: localStorage.gs_boards_pending || '', save: api.load(null), brain: api.brains.load('probe'), away: api.away() };
+    // and a round played for real now counts again
+    __gs.start(); api.score(g.goal); api.over(); const real = { goal: g.goal, best: __gs.progress.best(id), credits: __gs.progress.credits, plays: JSON.parse(localStorage.gs_qa || '{}')[id]?.plays || 0 };
+    __gs.only(id);
+    return { res, text, seen, before, after, real, label: label() };
+  }, CASUAL);
+  const g0 = r.res.games[0], g1 = r.res.games[1];
+  check(r.res.games.length === 2 && g0.id === CASUAL && g0.loaded && g0.frames > 20 && g0.fps > 5 && g0.rounds >= 2 && g0.score === 99999 && g0.played >= 2.9 && g1.loaded && g1.frames > 20 && r.res.took >= 6,
+    'the tour plays each game for its seconds through the real feed, round after round, and times the frames', JSON.stringify(r.res.games.map(g => ({ id: g.id, loaded: g.loaded, frames: g.frames, fps: g.fps && Math.round(g.fps), rounds: g.rounds, score: g.score, played: g.played, verdict: g.verdict, errors: g.errors }))));
+  check(r.seen.down > 3 && !r.seen.off && r.seen.wrote >= 2, 'the bot\'s touches reach the game as touches, inside its screen', JSON.stringify(r.seen));
+  check(r.after.credits === r.before.credits && r.after.best === r.before.best && r.after.qa === r.before.qa && r.after.stats === r.before.stats && r.after.boards === r.before.boards,
+    'a guest\'s win pays no credits, sets no best, and adds no plays, play stats or leaderboard score', JSON.stringify({ before: r.before, after: r.after }));
+  check(JSON.stringify(r.after.save) === '{"mine":1}' && r.after.brain === null && r.after.away === 0, 'the player\'s save, brains and time-away clock are as they were', JSON.stringify(r.after));
+  check(r.real.best === r.real.goal && r.real.credits > r.before.credits && r.real.plays === 1 && r.label === r.before.label, 'afterwards the feed is back as it was, and a real round counts again (best, credits, plays)', JSON.stringify(r.real));
+  check(/^Game Scroll phone test tour · \d{4}-\d\d-\d\d \d\d:\d\d UTC · build /.test(r.text) && /\nPHONE: .* Hz · /.test(r.text) && /\nPOWER: /.test(r.text) && /\nSETTINGS: frame rate /.test(r.text)
+    && /\nPLUGINS: this is the web version/.test(r.text) && /\nGAMES \(2 played for 3 s each\): /.test(r.text) && r.text.includes(CASUAL + ' (') && /loaded in [\d.]+ s · \d+ of \d+ fps · worst 1% \d+ fps · longest \d+ ms · slow [\d.]+% · freezes \d+/.test(r.text),
+    'the report names the phone, the plugins and every game with its numbers', r.text);
+  if (process.env.SHOTS) require('fs').writeFileSync(process.env.SHOTS + '/tour-report.txt', r.text);
+
+  // stopping part way: what was played is still reported, and the feed comes back
+  const st = await p.evaluate(async () => {
+    const kit = await __gs.tourKit(), signal = {}; setTimeout(() => { signal.stop = true; }, 1200);
+    const res = await __gs.tour({ ids: ['stack', 'arrow-maze', 'bricks'], seconds: 5, signal });
+    return { stopped: res.stopped, n: res.games.length, asked: res.asked, text: kit.reportText(res), active: !!__gs.active };
+  });
+  check(st.stopped && st.n === 1 && st.asked === 3 && /STOPPED after 1 of 3 games/.test(st.text) && st.active, 'Stop ends the tour at once and still gives a report', JSON.stringify({ ...st, text: st.text.slice(0, 160) }));
+
+  // a Next Gen game is played in full screen (each round goes in again), unless told not to, and the feed is itself after
+  const fu = await p.evaluate(async () => {
+    const kit = await __gs.tourKit(); let seen = false, seenOff = false;
+    const res = await __gs.tour({ ids: ['bunker-breakout'], seconds: 2, onPlay() { seen = seen || document.body.classList.contains('fullscreen'); } });
+    const after = document.body.classList.contains('fullscreen');
+    const off = await __gs.tour({ ids: ['bunker-breakout'], seconds: 1, full: false, onPlay() { seenOff = seenOff || document.body.classList.contains('fullscreen'); } });
+    return { loaded: res.games[0].loaded, full: res.games[0].full, seen, after, off: !!off.games[0].full, seenOff, line: kit.reportText(res).split('\n').find(l => l.includes('bunker-breakout')), errors: res.games[0].errors };
+  });
+  check(fu.loaded && fu.full === true && fu.seen && !fu.after && !fu.off && !fu.seenOff && /, full screen · /.test(fu.line) && !fu.errors.length, 'a Next Gen game is played in full screen and says so, unless the box is unticked', JSON.stringify(fu));
+
+  // the sheet in the QA panel: choose, start, watch the bar, stop, read the report
+  await p.click('.logo'); await p.click('.qa-tour'); await p.waitForSelector('dialog.tour[open]');
+  const sheet = await p.evaluate(() => ({ opts: [...document.querySelectorAll('.tour-set option')].map(o => o.textContent), est: document.querySelector('.tour-est').textContent, qa: !!document.querySelector('dialog.qa-panel:not(.tour)'), full: document.querySelector('.tour-full').checked, loud: document.querySelector('.tour-loud').checked }));
+  check(sheet.opts.length === 3 && sheet.full && !sheet.loud && /^3D games \(\d+\)$/.test(sheet.opts[0]) && /games, about \d+ min/.test(sheet.est) && !sheet.qa, 'the QA panel\'s Phone test tour button opens the sheet, with what it will play and how long it takes', JSON.stringify(sheet));
+  if (process.env.SHOTS) await p.screenshot({ path: process.env.SHOTS + '/tour-sheet.png' });
+  await p.selectOption('.tour-set', 'all'); await p.selectOption('.tour-secs', '10');
+  const est = await p.evaluate(() => document.querySelector('.tour-est').textContent);
+  check(/about \d+ (min|h)/.test(est) && est !== sheet.est, 'the time changes with the choice', est);
+  await p.click('.tour-go'); await p.waitForSelector('.tour-bar'); await p.waitForFunction(() => /^1 of \d+ · .+ · \d+ s$/.test(document.querySelector('.tour-now')?.textContent || ''), null, { timeout: 30000 });
+  const bar = await p.evaluate(() => ({ now: document.querySelector('.tour-now').textContent, playing: __gs.active?.state, sheet: !!document.querySelector('dialog.tour[open]') }));
+  check(/^1 of \d+ · /.test(bar.now) && bar.playing === 'playing' && !bar.sheet, 'while it runs a small bar says which game is on and for how long', JSON.stringify(bar));
+  if (process.env.SHOTS) await p.screenshot({ path: process.env.SHOTS + '/tour-bar.png' });
+  await p.click('.tour-bar button'); await p.waitForSelector('dialog.tour[open] .tour-text', { timeout: 30000 });
+  const rep = await p.evaluate(() => ({ text: document.querySelector('.tour-text').value, bar: !!document.querySelector('.tour-bar'), last: (JSON.parse(localStorage.gs_tour_last || '""') || '').length }));
+  check(/STOPPED after 1 of \d+ games/.test(rep.text) && !rep.bar && rep.last === rep.text.length, 'Stop on the bar shows the report, which is kept for "Last report"', rep.text.slice(0, 200));
+  if (process.env.SHOTS) await p.screenshot({ path: process.env.SHOTS + '/tour-report.png' });
+  await p.click('dialog.tour[open] .qa-x');
+  await p.done();
+}
+
 (async () => {
   const server = await (await import('vite')).preview({ preview: { port: 4184 } });
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] }), only = process.argv.slice(2);
-  const parts = { awake, touch, pixels, music, saves, fonts, looks };
+  const parts = { awake, touch, pixels, music, saves, fonts, looks, tour };
   for (const [name, fn] of Object.entries(parts)) if (!only.length || only.includes(name)) await fn(b);
   await b.close(); server.httpServer.close();
   console.log(failed ? `\n${failed} check(s) failed` : '\nall app checks passed'); process.exit(failed ? 1 : 0);

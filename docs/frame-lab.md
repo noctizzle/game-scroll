@@ -10,7 +10,7 @@ The code is `src/framelab.js`. It loads only when it's on and costs nothing othe
 
 ## Turning it on
 
-- **On the phone**: tap the GAME SCROLL logo for the QA panel, then **Frame lab**. It stays on across
+- **On the phone**: tap the GAME SCROLL logo for the QA panel, then **Frame lab**. (For a first look at every 3D game at once, the panel's **Phone test tour** plays them all and lists the slow ones: [testing.md](testing.md).) It stays on across
   restarts (handy for catching start-up hitches) until you press its ✕.
 - **In `npm run dev`**: F3, or open the page with `?lab`, or `__gs.lab()` in the console.
 

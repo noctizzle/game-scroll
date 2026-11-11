@@ -27,7 +27,7 @@ How to check a change without waiting longer than you need to. Written for peopl
 | Feed swiping | `node scripts/feed-jank.cjs [swipes] [--filter nextgen]` (compare before and after, not with a phone) | about a minute |
 | Shared game links, or how the feed starts (`src/share.js`, `openShared` and `playNow` in `src/main.js`, the catalogue in `src/remote.js`) | `node scripts/share-link.mjs [id]`: opens the streamed web app from a shared link on quick, slow and stale connections (builds what it needs) | about 30 s |
 | A kit in `src/kit/` | `npm run kit-test`, then smoke the games that use it (`node scripts/pick-games.mjs` names the best few per style) | 3 s + games |
-| What the app does around a game (screen kept on, finer touch, even pixels and the LCD look, the one-line soundtrack, the phone-only save), the font library, and the 2D looks (materials, slabs, water, stickers, sketch pen, ink, icons) | `node scripts/app-test.cjs [awake\|touch\|pixels\|music\|saves\|fonts\|looks]` after a build (`npm run app-test` does both; `SHOTS=<folder>` saves a picture of every font and look) | about a minute |
+| What the app does around a game (screen kept on, finer touch, even pixels and the LCD look, the one-line soundtrack, the phone-only save), the font library, and the 2D looks (materials, slabs, water, stickers, sketch pen, ink, icons) | `node scripts/app-test.cjs [awake\|touch\|pixels\|music\|saves\|fonts\|looks\|tour]` after a build (`npm run app-test` does both; `SHOTS=<folder>` saves a picture of every font and look) | about a minute |
 | Sound (`src/sfx.js`, `src/kit/sound.js`, `instruments.js`) | `npm run sound-test [sounds\|band\|clock]`: renders the sound off screen and measures it (every ready-made sound is heard and none is too loud, the limiter holds, instrument sets are as loud as each other, the music clock keeps the beat through a frozen frame) | about 90 s |
 | A starter template (`scripts/templates/`) | `npm run new zz-try --style <style>`, then lint, types and smoke it like any game, and delete it | under 30 s |
 | The 3D look (hd3d, toon3d, post effects, a three.js update) | `node scripts/look-compare.cjs save base` **before** the change, `check base` after; add `--webgpu` to check the WebGPU path | about 16 s each |
@@ -39,6 +39,8 @@ How to check a change without waiting longer than you need to. Written for peopl
 | Engine speed (CPU per frame) | `node scripts/perf-bench.cjs [id ...] --json before.json` before, `--vs before.json` after (see below) | about 15 s a game per backend |
 | The frame lab (`src/framelab.js`) | `node scripts/framelab-test.cjs [2d-id] [3d-id] [--shots dir] [--report file.html]` | about 3 min |
 | How a game really runs (pacing, hitch causes, upscaler, frame gen) | the frame lab on a phone: QA panel › Frame lab, Rec, Report ([frame-lab.md](frame-lab.md)) | |
+| Every 3D game and every native plugin on a real phone | the phone test tour: QA panel › Phone test tour (see below) | about 20 min for the 46 3D games |
+| The tour itself (`src/tour.js`, the guest in `src/main.js`) | `node scripts/app-test.cjs tour` | about 40 s |
 | Everything (before a big engine PR) | `node scripts/smoke.cjs` (all 162 games) | about 3.5 min |
 
 The PR check (`.github/workflows/game-pr-check.yml`) runs the node checks (`npm run games`,
@@ -106,6 +108,68 @@ Gen frame takes a third to most of a second there, and copying it onto the card 
 - `gl.finish()` does not wait in Chrome, and `readPixels` on a multisampled target throws, so GPU
   time per pass can't be measured this way here. GPU cost needs a real phone.
 - Wait for a game's lazy parts before you time or draw it: loop until `!__gs.active.loading`.
+
+## The phone test tour: every 3D game and every plugin, on the phone in your hand
+
+The checks above run in a desktop browser on a build machine. They can't say how a 3D game runs on a
+phone's graphics chip, whether it stutters once the phone is warm, or whether a native plugin still
+answers after an update. The tour does, with one button:
+
+1. On the phone, tap the **GAME SCROLL** logo for the QA panel, then **Phone test tour**.
+2. Choose what to play (the 3D games, only Next Gen and AR, or every game) and for how long (10, 20 or
+   30 seconds each). Next Gen games are played in full screen, the way they are played and the most
+   work for the phone; untick the box to time them on their card. The sheet says how long the whole
+   tour will take. Press **Start** and leave the phone on a table with the screen on. AR games may ask
+   for the camera the first time.
+3. When it ends (or you press **Stop** on the bar at the top) it shows one report. **Copy report** and
+   paste it into chat. The last report is kept: open the tour again and press **Last report**.
+
+What it does (`src/tour.js`):
+
+- **Plugins.** Each native plugin is asked one harmless question with a 4 second limit: Device, App,
+  Haptics, KeepAwake, Geolocation (only its permission state), Filesystem, Share, TextToSpeech,
+  PowerState, ScreenRate, PhoneSensors (which sensors, and where sound is going), RichHaptics,
+  NativeAR, NPU, PhoneAI (the model, and speech) and GameServices (whether the player is signed in
+  already). None of them shows a prompt, turns a sensor on or changes a setting. The report lists
+  `ok` with the answer, `FAIL` (an error, or no answer in time) and `MISSING` (not in this build of
+  the app), problems first. The web version has no plugins and says so.
+- **Games.** Each game is shown through the real feed, loaded, started and played by a bot: two
+  thumbs that tap, hold, swipe, drag and work a thumb-stick, sent to the game's canvas as pointer
+  events, so they travel the way a finger's do. A round that ends is started again until the seconds
+  are up. The app's own frame loop times every frame (the same numbers the stutter reports use), so
+  frame pacing, frame generation and the screen's rate are the real thing. Sound and vibration are
+  off while it runs unless you tick the box.
+- **The report.** The phone (model, system, screen, refresh rate, graphics chip, WebGPU, class), the
+  battery and heat before and after, the settings that change speed, the plugins, then one line per
+  game, problems first:
+
+  ```
+  SLOW      canyon-ace (Canyon Ace) · Next Gen · loaded in 2.4 s · 47 of 60 fps (+60 made) · worst 1% 31 fps · longest 58 ms · slow 6% · freezes 0 · game code 4.1 ms · WebGPU, quality 2/1, full screen · 2 rounds, best 14 · phone warm
+  ```
+
+  `47 of 60 fps` is real frames drawn against the rate the game aims for on this phone, `+60 made`
+  the frames frame generation adds, `worst 1%` the frame rate of the slowest hundredth of frames,
+  `slow` the share of frames over one and a half times their budget, `freezes` frames of 70 ms or
+  longer (those as a round started are counted apart: that is the level being built, not play), and
+  `game code` the game's own `update` and `draw` per frame. The word at the start is `ok`, `SLOW`
+  (under 85% of the rate it aims for), `STUTTER` (3 or more freezes in play, or 1 frame in 20 slow),
+  `ERROR` (the game threw; the message and place follow), `NO LOAD` (not ready in 40 s, it failed to
+  start, or it is a streamed game not on the phone yet with no connection) or `NO FRAMES`.
+
+**The bot is a guest.** Nothing it does is kept: games get saves and Tiny Brains that go nowhere
+(reads still see the player's own), and a round pays no credits, sets no best, sends no leaderboard
+score or play stats, uses up no boosts and doesn't reset an idle game's time away. Location games
+get the stand-in place, so nothing asks where you are. Frame timings and errors do count, in the QA
+panel and the anonymous stutter reports: they are real ones from a real phone. The quality tier a
+3D game settles on is kept too, as it is after any play.
+
+The bot only pokes at a game; it doesn't try to win (that is `scripts/playtest.cjs`), so `best 0` is
+normal. Later games run on a warmer phone than earlier ones: the report says so on each line, and a
+second tour in the other order (or of only the slow games) tells heat from a slow game.
+
+In a test browser, `__gs.tour({ ids, seconds })` runs it and `(await __gs.tourKit()).reportText(result)`
+makes the report; `node scripts/app-test.cjs tour` checks the guest, the bot, the frame sums, the
+plugin check (against a stand-in app) and the sheet.
 
 ## Measuring engine speed: perf-bench
 
