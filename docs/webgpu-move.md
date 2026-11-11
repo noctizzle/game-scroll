@@ -127,6 +127,16 @@ Checked by `look-compare` (`fx-text`, `fx-parts`, `fx-outline`, `fx-pixelate`, `
 moves them in storage buffers that the sprites read, with the same rules run on the CPU for WebGL. The
 look-compare `sparks` scene checks the two match.
 
+## Real 3D liquids
+
+`gs.fluid` is WebGPU-first too: MLS-MPM as six TSL compute passes a step (`src/kit/fluid-gpu.js`: clear
+the grid, drops to grid with atomics in fixed point, the grid's weight with the walls' mirrors folded
+in, the push of squeezed liquid, the grid's speeds, grid to drops), the drops drawn from the same
+storage buffers, and the drops' places copied back every few frames for the game's questions and its
+drains. `src/kit/fluid.js` runs the same steps line for line in JavaScript for WebGL, with fewer drops.
+The look-compare `gpu-fluid` scene runs a dam break with a tap, a cup and a drain on whichever backend
+is drawing and fails if liquid is lost or comes to rest somewhere else.
+
 ## Done for Long Shadow and Deep Pressure
 
 - **Outdoor looks as TSL**: `gpuLooks` in `hd3d-gpu.js` has `ground` (fields, roads, wear), `hills`,

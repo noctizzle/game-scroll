@@ -222,6 +222,10 @@ drawing) are not in them: `perf-bench.cjs` and `shader-hold.cjs` measure those.
   renderer holds (and how many textures are packed) every 3 s and says when the graphics queue stops
   answering; `Q=nopack` draws code-made textures uncompressed on WebGPU; `Q=hdr` turns on HDR output (as on an HDR
   phone screen; the saved pictures clip it to white).
+- Real liquids (`gs.fluid`): `PICK=gpu-fluid node scripts/look-compare.cjs save <dir> --webgpu` runs a dam
+  break round a cup with a tap, a ball, a blast and a drain on the graphics chip, with the JavaScript
+  version beside it, and fails if the two part by more than a hundredth of a cell or liquid is lost;
+  without `--webgpu` it draws the JavaScript version. `npm run kit-test` has the liquid's rules.
 - GPU culling of `gs.props`: `PICK=gpu-cull-cpu,gpu-cull node scripts/look-compare.cjs save <dir> --webgpu`
   draws the same forest culled on the CPU and on the GPU (`Q=n=6000` sets the number of trees). The two
   pictures should match, and each line gives the CPU time per frame and the time spent building the lists.

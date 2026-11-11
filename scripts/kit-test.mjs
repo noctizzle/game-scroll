@@ -2329,5 +2329,90 @@ console.log('physics ok');
   console.log('Classic Console 2.0: who casts and takes shadows, discs out of the way, the fitted shadow, retro looks, the jointed figure ok');
 }
 
+// gs.fluid (Real 3D liquids): the version phones without WebGPU run, which is also what the graphics chip's
+// version is held to, drop for drop (scripts/look-compare.cjs gpu-fluid --webgpu)
+{
+  const F = await import('../src/kit/fluid.js'), { Fluid, FLUID, KINDS } = F, T3 = await import('three');
+  const view = () => ({ scene: new T3.Scene() });
+  const run = (f, n, each) => { for (let i = 0; i < n; i++) { each?.(i); f.update(1 / 60); } };
+  const each = (f, fn) => { const S = f.sim; for (let p = 0; p < S.N; p++) { const a = p * 4; if (S.P[a + 3] > 0) fn(S.ox + S.P[a] * S.h, S.oy + S.P[a + 1] * S.h, S.oz + S.P[a + 2] * S.h, Math.hypot(S.V[a], S.V[a + 1], S.V[a + 2]) * S.h / S.dt); } };
+  const outside = f => { const B = f.bounds; let n = 0; each(f, (x, y, z) => { if (!(x >= B[0] && x <= B[3] && y >= B[1] && y <= B[4] && z >= B[2] && z <= B[5])) n++; }); return n; };
+  const most = (f, k) => { let m = -1e9; each(f, (x, y, z, v) => { m = Math.max(m, [x, y, z, v][k]); }); return m; };
+  FLUID.klass = 'low'; assert.equal(Fluid.max(), 600, 'a slow phone runs 600 drops'); FLUID.klass = 'top'; assert.equal(Fluid.max(), 2000, 'a fast one 2,000 (without WebGPU)');
+  {
+    // a pool: the liquid asked for goes in, keeps its depth, comes to rest and stays in its box
+    const f = new Fluid(view(), { box: [-1, 0, -1, 1, 2, 1], volume: 2.2 }), put = f.fill({ y1: .5 }); run(f, 180);
+    assert.ok(put > 1.7 && put < 2.05 && f.amount() === put, 'fill() puts in the block asked for: ' + put);
+    for (const [x, z] of [[-.7, 0], [0, 0], [.7, .6]]) assert.ok(Math.abs(f.level(x, z) - .5) < .08, `a pool half a unit deep stays that deep: ${f.level(x, z)} at ${x}, ${z}`);
+    assert.ok(most(f, 3) < .2 && outside(f) === 0, 'and comes to rest inside its box (fastest drop ' + most(f, 3).toFixed(3) + ' units a second)');
+    assert.ok(f.mesh.count === f.count && f.mesh.visible && f.mesh.parent?.isScene && f.backend === 'cpu', 'a ball a drop, in the view\'s scene');
+    assert.ok(f.wet(0, .1, 0) > .7 && f.wet(0, 1.5, 0) === 0 && f.level(5, 0) === null && Math.abs(f.amount([-1, 0, -1, 0, 2, 1]) / f.amount() - .5) < .05, 'wet(), level() and amount(box) answer from the drops');
+    // full: no more goes in, and taps wait
+    f.fill({ y0: .6, y1: 2 }); assert.ok(f.full && f.room === 0 && f.count === f.max, 'the fluid fills up at its budget of drops');
+    const t0 = f.pour({ x: 0, y: 1.8, z: 0, rate: 1 }); run(f, 10); assert.equal(f.count, f.max, 'a tap adds nothing to a full fluid'); t0.remove();
+    f.clear(); assert.ok(f.count === 0 && f.level(0, 0) === null && f.amount() === 0, 'clear() empties it');
+    // a tap pours what it says; a drain swallows it and counts every drop
+    const tap = f.pour({ x: 0, y: 1.5, z: 0, rate: .5, speed: 2 }); run(f, 60); assert.ok(Math.abs(f.amount() - .5) < .05, 'a tap of half a unit a second: ' + f.amount() + ' after a second');
+    tap.on = false; const had = f.amount(), d = f.drain({ x: 0, y: .1, z: 0, r: .4 }); run(f, 240);
+    assert.ok(d.amount > .3 && Math.abs(d.amount + f.amount() - had) < f.drop / 2, `a drain takes liquid and counts it: ${d.amount} of ${had}`);
+    d.remove(); tap.remove(); assert.ok(f.drains.length === 0 && f.taps.length === 0, 'remove()');
+  }
+  {
+    // a dam break: across the tank in a second, never out of it, level in the end; honey is slower
+    const mk = kind => { const f = new Fluid(view(), { box: [-2, 0, -.5, 2, 2, .5], volume: 1.6, kind }); f.fill({ x1: -1, y1: 1.5 }); return f; };
+    const f = mk('water'), a0 = f.amount(); run(f, 60); assert.ok(f.level(1.5, 0) > .1 && outside(f) === 0, 'a dam break reaches the far side in a second');
+    run(f, 540); for (const x of [-1.5, 0, 1.5]) assert.ok(f.level(x, 0) > .2 && f.level(x, 0) < .6, 'and levels out: ' + f.level(x, 0) + ' at ' + x);
+    assert.ok(f.amount() === a0 && outside(f) === 0 && most(f, 3) < 3, 'with every drop still in the tank');
+    const w = mk('water'), h = mk('honey'); run(w, 40); run(h, 40); assert.ok(most(h, 0) < most(w, 0) - .3, `honey runs slower than water: ${most(h, 0).toFixed(2)} against ${most(w, 0).toFixed(2)}`);
+    assert.ok(KINDS.lava.glow > 0 && KINDS.water.thick === 0 && h.mu > w.mu, 'the ready-made kinds');
+  }
+  {
+    // a cup holds what is poured into it and gives it up when tipped
+    const f = new Fluid(view(), { box: [-1, 0, -1, 1, 2, 1], volume: 1 }), cup = f.tube({ x: 0, y: .5, z: 0, r: .4, h: .8, hollow: .06 }), c0 = cup.fill(.8); run(f, 90);
+    assert.ok(c0 > .1 && f.amount(cup.inside()) >= c0 * .97 && f.amount() - f.amount(cup.inside()) < f.drop / 2, `a hollow tube keeps its liquid in: ${f.amount(cup.inside())} of ${c0}`);
+    const q = new T3.Quaternion(), ax = new T3.Vector3(0, 0, 1); run(f, 120, i => { q.setFromAxisAngle(ax, Math.min(1, i / 60) * 2.6); cup.set(0, .6, 0, q); });
+    let low = 0; each(f, (x, y) => { if (y < .2) low++; }); assert.ok(low * f.drop > c0 * .7 && outside(f) === 0, 'tipped over, it pours out onto the floor: ' + (low * f.drop).toFixed(3));
+    cup.remove(); assert.equal(f.solids.length, 0);
+    // a tap over an open cup: the stream falls freely into it (nothing of the cup stands above its rim to hold it up)
+    const g = new Fluid(view(), { box: [-1.5, 0, -1, 1.5, 2, 1], volume: 2, drops: 1500 }), mug = g.tube({ x: .8, y: .45, z: 0, r: .5, h: .9, hollow: .06 });
+    g.pour({ x: .8, y: 1.6, z: 0, rate: .25, speed: 2 }); run(g, 90);
+    assert.ok(g.amount(mug.inside()) > .25 && g.amount() - g.amount([.3, 0, -.5, 1.3, 2, .5]) < g.drop / 2, 'a tap fills a cup: ' + g.amount(mug.inside()).toFixed(3) + ' of ' + g.amount().toFixed(3) + ' poured is in it after a second and a half');
+  }
+  {
+    // a ball swept through a pool pushes the liquid ahead of it; a blast throws it up
+    const mk = () => { const f = new Fluid(view(), { box: [-2, 0, -.5, 2, 2, .5], volume: 1.6 }); f.fill({ y1: .4 }); run(f, 90); return f; };
+    const f = mk(), a0 = f.amount(), ball = f.ball({ x: -1.6, y: .2, z: 0, r: .3 }); run(f, 60, i => ball.set(-1.6 + i * .04, .2, 0));
+    assert.ok(f.level(1.6, 0) > f.level(-1.5, 0) + .2 && f.amount() === a0 && outside(f) === 0, `a moving ball pushes liquid ahead: ${f.level(-1.5, 0)} behind it, ${f.level(1.6, 0)} ahead`);
+    const mesh = new T3.Object3D(), led = f.ball({ r: .2, follow: mesh }); mesh.position.set(1, .3, .1); run(f, 2); assert.ok(led.x === 1 && led.y === .3 && Math.abs(led.z - .1) < 1e-6, 'follow: a solid follows a three.js object');
+    const g = mk(), before = most(g, 1); g.push(0, .1, 0, { radius: .8, strength: 2, up: 3 }); let peak = 0; run(g, 30, () => { peak = Math.max(peak, most(g, 1)); });
+    assert.ok(peak > before + .15 && outside(g) === 0, `a blast throws liquid up: ${before.toFixed(2)} to ${peak.toFixed(2)}`);
+  }
+  {
+    // ground to run down, an open box to run off, and gravity that can point anywhere
+    const g = new Fluid(view(), { box: [-2, 0, -.5, 2, 2, .5], volume: 1 }); g.ground(x => Math.max(0, x * .4)); g.fill({ x0: .5, x1: 2, y0: .9, y1: 1.3 }); run(g, 300);
+    assert.ok(g.amount([-2, 0, -.5, 0, 2, .5]) / g.amount() > .6 && g.level(1.5, 0) === null && g.level(-1.5, 0) > .15, 'liquid runs downhill and leaves the slope dry');
+    const o = new Fluid(view(), { box: [-1, 0, -1, 1, 2, 1], volume: 1, open: true }); o.fill({ x0: -.4, x1: .4, z0: -.4, z1: .4, y1: .8 }); const o0 = o.count; run(o, 30);
+    assert.ok(o.count > o0 * .5 && most(o, 1) < 1 && outside(o) === 0, 'an open box keeps its floor'); run(o, 210); assert.ok(o.count < o0 * .2, 'and the liquid runs off its edges: ' + o0 + ' drops, then ' + o.count);
+    const s = new Fluid(view(), { box: [-1, 0, -1, 1, 2, 1], volume: 1 }); s.fill({ y1: .4 }); s.gravity = { x: 9.8, y: 0, z: 0 }; run(s, 240);
+    assert.ok(s.amount([.4, 0, -1, 1, 2, 1]) / s.amount() > .9, 'gravity turned sideways piles the liquid on that wall');
+  }
+  {
+    // the same liquid at another size (the graphics chip handing over to this version), copies back from the chip, and the fluid's own dice
+    const f = new Fluid(view(), { box: [-1, 0, -1, 1, 2, 1], volume: 2 }); f.fill({ y1: .5 }); run(f, 30); const a0 = f.amount();
+    FLUID.klass = 'low'; f.resize(false); FLUID.klass = 'top'; assert.ok(f.max === 600 && Math.abs(f.amount() / a0 - 1) < .02, 'resized to 600 drops it is the same liquid: ' + a0 + ' and ' + f.amount());
+    run(f, 60); assert.ok(Math.abs(f.level(0, 0) - .5) < .1 && outside(f) === 0, 'which settles where it was');
+    const r = new Fluid(view(), { box: [-1, 0, -1, 1, 2, 1], volume: 2 }); r.fill({ y1: .3 }); const d = r.drain({ x: 0, y: 0, z: 0, r: .01 }); run(r, 5);
+    r.mode = 'gpu'; r.cpuOwns = false; const P = r.sim.P.slice(); P[3] = -1; P[7] = 0; const c0 = r.count; r.read(P, r.sim.steps + 1);
+    assert.ok(r.count === c0 - 2 && Math.abs(d.amount - r.drop) < 1e-9, 'a copy back from the graphics chip: one drop down drain 1, one out of the box');
+    const mk = seed => { const g = new Fluid(view(), { box: [-1, 0, -1, 1, 2, 1], volume: 2, seed }); g.fill({ x1: 0, y1: .8 }); g.pour({ x: .5, y: 1.5, z: 0, rate: .3 }); run(g, 30); return g.sim.P.slice(0, 400); };
+    const A = mk(7), B = mk(7), C = mk(8); assert.ok(A.every((v, i) => v === B[i]) && A.some((v, i) => v !== C[i]), 'the same seed makes the same liquid, drop for drop');
+    const n0 = f.view.sims.length; f.dispose(); assert.ok(f.view.sims.length === n0 - 1 && !f.mesh.parent, 'dispose()');
+  }
+  FLUID.klass = null;
+  const { HIDDEN } = await import('../src/gamescroll.js');
+  assert.deepEqual(Object.keys(F).filter(k => !HIDDEN.fluid.includes(k)).sort(), ['Fluid', 'KINDS'], 'gs.fluid is Fluid and KINDS: the numbers and test switches stay off it');
+  console.log('gs.fluid: pools, taps, drains, a dam break, cups, a ball, blasts, ground, an open box, sideways gravity, resizing, copies back, seeds ok');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);

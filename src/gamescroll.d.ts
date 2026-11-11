@@ -905,6 +905,73 @@ export interface VoxelsPart {
   Voxels: new (o?: { size?: [number, number, number]; chunk?: number; scale?: number; shadows?: boolean; worker?: boolean; rough?: number }) => VoxelWorld;
   BLOCKS: Readonly<Record<'air' | 'grass' | 'dirt' | 'stone' | 'sand' | 'water' | 'wood' | 'leaves' | 'snow' | 'brick' | 'glass' | 'lava' | 'gold' | 'coal' | 'plank' | 'ice', number>>;
 }
+/** A solid thing in a liquid (fluid.ball, fluid.box, fluid.tube). */
+export interface FluidSolid {
+  x: number; y: number; z: number;
+  /** Puts it somewhere (and turns it: a three.js Quaternion). Call it each frame for a thing that moves: the liquid feels how fast it goes. */
+  set(x: number, y: number, z: number, turn?: Loose): this;
+  /** A box round the room inside a hollow solid, [x0, y0, z0, x1, y1, z1], for fluid.amount() (right while it stands upright). */
+  inside(): [number, number, number, number, number, number];
+  /** Fills a hollow solid's room with liquid at rest, up to this much of its height (0..1). Returns how much went in. */
+  fill(part?: number): number;
+  remove(): void;
+}
+export interface FluidSolidOpts { x?: number; y?: number; z?: number; turn?: Loose; hollow?: number; open?: boolean; follow?: Loose }
+/** A tap (fluid.pour): change any of these while it runs. */
+export interface FluidTap { x: number; y: number; z: number; dir: [number, number, number]; rate: number; speed: number; spread: number; r: number | null; on: boolean; remove(): void }
+export interface FluidDrain { x: number; y: number; z: number; r: number; readonly amount: number; remove(): void }
+export type FluidKind = 'water' | 'lava' | 'slime' | 'honey';
+export interface FluidT {
+  /** 'gpu' when the fluid runs on the graphics chip (WebGPU), else 'cpu' (fewer, bigger drops). */
+  readonly backend: 'gpu' | 'cpu';
+  /** Drops in the fluid now, and the most it can have. */
+  readonly count: number; readonly max: number;
+  /** How much liquid one drop is (units cubed), and how wide a drop is. */
+  readonly drop: number; readonly dropSize: number;
+  /** How much more liquid fits; full: none (taps stop until some drains away). */
+  readonly room: number; readonly full: boolean;
+  /** Units a second squared. Change it any time (tilt the world). */
+  gravity: { x: number; y: number; z: number };
+  /** A tap: a stream from x, y, z going dir (down if you don't say) at speed (units a second), rate units cubed a second. */
+  pour(o?: { x?: number; y?: number; z?: number; dir?: [number, number, number]; rate?: number; speed?: number; spread?: number; r?: number | null; on?: boolean }): FluidTap;
+  /** A burst of liquid at a place. Returns how much went in. */
+  splash(x: number, y: number, z: number, o?: { amount?: number; speed?: number; up?: number }): number;
+  /** Liquid at rest in a block (any side you leave out is the box's own). Returns how much went in. */
+  fill(block?: { x0?: number; y0?: number; z0?: number; x1?: number; y1?: number; z1?: number }): number;
+  /** Takes all the liquid away (taps, solids and drains stay). */
+  clear(): this;
+  /** A solid ball. hollow: a wall this thick with room inside (open: a bowl; open: false: a sealed globe). */
+  ball(o?: FluidSolidOpts & { r?: number }): FluidSolid;
+  /** A solid box. hollow: a tank with walls this thick, open at the top (open: false: sealed). */
+  box(o?: FluidSolidOpts & { w?: number; h?: number; d?: number }): FluidSolid;
+  /** A solid post standing on its end. hollow: a cup with walls this thick, open at the top. */
+  tube(o?: FluidSolidOpts & { r?: number; h?: number }): FluidSolid;
+  /** The ground under the liquid: (x, z) => y. Call it again when the ground changes; null takes it away. */
+  ground(fn: ((x: number, z: number) => number) | null): this;
+  /** A drain: drops that reach it go, and its amount counts them. */
+  drain(o?: { x?: number; y?: number; z?: number; r?: number }): FluidDrain;
+  /** A blast: liquid within radius is thrown outwards at up to strength (units a second), and upwards at up. */
+  push(x: number, y: number, z: number, o?: { radius?: number; strength?: number; up?: number }): this;
+  update(dt: number): this;
+  /** How much liquid there is (units cubed), in the whole fluid or in a box [x0, y0, z0, x1, y1, z1]. */
+  amount(box?: readonly number[] | null): number;
+  /** The height of the liquid's top at x, z, or null where it's dry. */
+  level(x: number, z: number): number | null;
+  /** How wet a place is: 0 dry .. 1 under the liquid. */
+  wet(x: number, y: number, z: number): number;
+  dispose(): void;
+}
+export interface FluidPart {
+  /** A liquid in a box of your world: make it once with the scene, and clear() it each round. */
+  Fluid: (new (view: Loose, o?: {
+    box?: [number, number, number, number, number, number]; volume?: number; open?: boolean; kind?: FluidKind; colour?: string; foam?: string | false;
+    thick?: number; rough?: number; glow?: number; gravity?: number | { x?: number; y?: number; z?: number }; drops?: number; size?: number; shadows?: boolean; gpu?: boolean; seed?: number;
+  }) => FluidT) & {
+    /** The most drops this phone runs well (on the graphics chip where it can). */
+    max(): number;
+  };
+  KINDS: Readonly<Record<FluidKind, { colour: string; foam: string; thick: number; rough: number; glow: number }>>;
+}
 export interface TickPart {
   /** Ticks per second for the game being played; 0 when it runs one update per frame. */
   readonly rate: number; readonly on: boolean; readonly dt: number;
@@ -2210,7 +2277,7 @@ export interface GS {
   level3d: Level3dPart; sky: SkyPart;
   combat: CombatPart; tactics: TacticsPart; climb: ClimbPart; missions: MissionsPart; cutscene: CutscenePart; prompts: PromptsPart;
   stealth: StealthPart; gadgets: GadgetsPart; campaign: CampaignPart; arena: ArenaPart; poses: PosesPart; destruction: DestructionPart; props: PropsPart;
-  outdoors: OutdoorsPart; city: CityPart; models: ModelsPart; voxels: VoxelsPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; trivia: TriviaPart; ui: UIPart;
+  outdoors: OutdoorsPart; city: CityPart; models: ModelsPart; voxels: VoxelsPart; fluid: FluidPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; trivia: TriviaPart; ui: UIPart;
   hear: HearPart; doodle: DoodlePart; phoneai: PhoneaiPart;
   sketch: SketchPart; icons: IconsPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;

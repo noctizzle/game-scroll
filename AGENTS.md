@@ -201,6 +201,8 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.solve`: `Puzzle` (`cell`, `allDiff`, `sum`, `rule`; `solve`, `unique`, `carve` to one-answer clues, `grade`, `hint`), `Search` (turn-based opponents: `best(state, { time, skill, mode: 'minimax'|'mcts' })`).
 - `gs.tick` (games with `tick: 60`): `alpha` (also `draw(c, alpha)`), `mix(before, now)`, `turn`, `rate`, `count`; Physics `sx`/`sy`/`sangle`, `World3D({ smooth: true })`.
 - `gs.voxels` (3D; lazy): `Voxels({ size })`: `generate({ seed, kind })`, `set`/`get`/`fill`/`sphere`, `update()` meshes changed chunks, `ray`, `move(box, ...)`, `pack`.
+- `gs.fluid` (3D): `Fluid(view, { box, volume, kind: 'water'|'lava'|'slime'|'honey' })` real liquid to pour, splash and fill things with (tens of thousands of drops on WebGPU, a smaller version elsewhere; make it once, `clear()` in `reset()`):
+  `pour({ x, y, z, rate, speed })` taps, `fill({ y1 })`, `splash`, solid `ball`/`box`/`tube` (`hollow` cups and tanks, `set()` or `follow` to move), `ground(fn)`, `drain`, `push` (blast), `update(dt)`; `amount(box)`, `level(x, z)`, `wet(x, y, z)`, `full`. Cups and gaps at least six drops wide (`fluid.dropSize`); try `{ gpu: false, drops: 600 }` once, which is what slow phones run.
 - `gs.tweak(name, { speed: 3, grip: [.8, 0, 1] })`: live sliders in `npm run dev` (starting values elsewhere); read fields where used.
 - `gs.prefs` (read only): the player's Reduce motion setting, `reduceMotion`, `motion`. Shake, flash and
   camera kicks already follow it; scale your own big effects by `gs.prefs.motion`.
@@ -232,7 +234,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 later. The app shows "Loading…" and remakes the game once the library is in.
 A big 3D game is also made a little each frame while its card loads (the kit's builders stop the pass, each pass on a fresh copy of the game's file, and heavy number work goes to background workers), so `make()` and `reset()` may run several times
 before the first round: build the world there, and keep once-only things (a save, a sound) out of them.
-The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `city`, `models`, `voxels`, `tabletop`, `THREE`)
+The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `city`, `models`, `voxels`, `fluid`, `tabletop`, `THREE`)
 and `ai`, plus the action kits (`combat`, `tactics`, `climb`, `missions`, `cutscene`, `prompts`, `stealth`, `gadgets`, `campaign`, `arena`) and play kits (`craft`, `soft`, `cards`, `dice`, `words`, `trivia`, `ui`) and smarts (`hear`, `doodle`, `phoneai`) and looks (`sketch`, `icons`), also load on first use, so the app opens fast. The app loads the ones a game uses before it
 runs, so read them as usual (`const { HDView } = gs.hd` at the top of the file is fine).
 

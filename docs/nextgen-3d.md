@@ -629,6 +629,33 @@ const leafLook = looks.leaves(leafMaterial, { wind: .6 });      // sway, sun glo
 - Every look is a named effect (`material.userData.gsLooks` lists them), so the WebGPU version can
   swap each one for a node later (see `docs/webgpu-move.md`). Road segments: up to 32.
 
+## Real 3D liquids: gs.fluid
+
+`new gs.fluid.Fluid(view, { box, volume, kind })` is liquid you can pour, splash and fill things with:
+a particle fluid (MLS-MPM) whose drops fall, pile up, slosh round solid things and settle level. With
+WebGPU it runs as compute passes on the graphics chip with tens of thousands of drops (40,000 on a top
+phone), drawn from the same buffers as lit round cards that read as one smooth body, with foam where
+the liquid is thin or fast; they cast and take shadows and carry motion for frame generation. On WebGL
+the same steps run in JavaScript with 600 to 2,000 bigger drops drawn as beads, so a game plays the
+same on both and only looks finer on WebGPU.
+
+```js
+const { Fluid } = gs.fluid;
+fluid = new Fluid(v, { box: [-2, 0, -1, 2, 3, 1], volume: 4, kind: 'water' });   // once, in setup()
+tap = fluid.pour({ x: -1.2, y: 2.4, z: 0, rate: 1, speed: 2.5 });
+cup = fluid.tube({ x: 1, y: .5, z: 0, r: .5, h: 1, hollow: .06 });
+// each frame
+fluid.update(dt); if (fluid.amount(cup.inside()) > .3) api.win();
+```
+
+Taps, bursts and blocks of liquid, solid balls, boxes and tubes (hollow ones are bowls, tanks and
+cups; they push the liquid as they move and pour when tipped), ground to flow over, drains, blasts,
+and the questions `amount(box)`, `level(x, z)` and `wet(x, y, z)`: the full list is in
+[maker-kit.md](maker-kit.md#real-3d-liquids). `fluid.backend` says which version is running. The
+liquid is opaque (coloured, glossy), so it sits in the solid pass with everything else and costs no
+extra screen passes. `scripts/look-compare.cjs` draws it (`gpu-fluid`) and checks that the version on
+the graphics chip keeps its liquid and comes to rest where the other does.
+
 ## Things made in code: gs.models
 
 A game stays one `.js` file with no image or model files, so `gs.models` makes the materials and

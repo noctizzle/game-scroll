@@ -1807,7 +1807,8 @@ export class HDView {
       let h = ((o.geometry?.id ?? 0) % 97 * .37 + e[0] * 1.3 + e[1] * 1.7 + e[2] * 2.3 + e[4] * 2.9 + e[5] * 3.1 + e[6] * 3.7 + e[8] * 4.1 + e[9] * 4.3 + e[10] * 4.7 + e[12] * 5.3 + e[13] * 5.9 + e[14] * 6.1 + (held ? .5 : 0)) * w;
       let wide = false, copies = 1;   // instanced and skinned things: counted for every light (their bounds move without the object)
       const tw = o.userData.gsTwin;
-      if (tw) { h += ((tw.instanceCount ?? 0) * 7 + (tw.matricesTexture?.version ?? 0) + tw.matrixWorld.elements[12] * 3 + tw.matrixWorld.elements[14] * 5) * w; wide = true; copies = o.count; }
+      if (tw?.matrixWorld) { h += ((tw.instanceCount ?? 0) * 7 + (tw.matricesTexture?.version ?? 0) + tw.matrixWorld.elements[12] * 3 + tw.matrixWorld.elements[14] * 5) * w; wide = true; copies = o.count; }
+      else if (o.userData.gsMoved !== undefined) { h += (o.userData.gsMoved + 1) * 7 * w; wide = true; copies = o.count ?? 1; }   // (moved on the graphics chip: a count that goes up when it does, gs.fluid's drops)
       else if (o.isInstancedMesh) { h += (o.instanceMatrix.version + o.count * 7) * w; wide = true; copies = o.count; }
       else if (o.isInstancedMesh2 || o.isBatchedMesh) { h += ((o.instanceCount ?? o.count ?? 0) * 7 + (o.matricesTexture?.version ?? 0)) * w; wide = true; copies = o.instanceCount ?? 1; }
       if (o.isSkinnedMesh && o.skeleton) { const b = o.skeleton.bones; for (let j = 0; j < b.length; j += 3) { const m = b[j].matrixWorld.elements; h += (m[12] * 1.1 + m[13] * 1.9 + m[14] * 2.7 + m[0] + m[5] * 1.3) * (j + 1); } wide = true; }

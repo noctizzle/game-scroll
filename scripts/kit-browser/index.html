@@ -408,6 +408,33 @@ try {
   ok(await new gs.phoneai.PhoneAI().ask('hi', { fallback: 'ok' }) === 'ok', 'phone AI falls back with no model');
 }
 {
+  // gs.fluid (Real 3D liquids): in a Next Gen view and in a Console view, poured, drawn and counted
+  // (kit-test.mjs has the liquid's rules; look-compare.cjs gpu-fluid --webgpu holds the graphics chip's version to this one)
+  const { Fluid, KINDS } = gs.fluid, T3 = gs.THREE, frame = () => new Promise(r => requestAnimationFrame(r));
+  ok(Object.keys(gs.fluid).sort().join() === 'Fluid,KINDS' && Object.isFrozen(gs.fluid.KINDS.water) && window.__fluid && Fluid.max() >= 600, 'gs.fluid: Fluid and KINDS, test switches under automation only (' + Fluid.max() + ' drops here)');
+  const blue = d => { let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 2] > d[i] * 1.5 && d[i + 2] > 90) n++; return n / (d.length / 4); };
+  const hv = new gs.hd.HDView({ bg: '#404040', amb: .5 }), hc = document.createElement('canvas'); hc.width = 160; hc.height = 160; const hx = hc.getContext('2d');
+  hv.cam.position.set(0, 2.2, 4.2); hv.cam.lookAt(0, .5, 0); hv.cam.updateMatrixWorld();
+  const sl = gs.hd.sun('#fff', 2.5, 12, [-.4, 1, .4]); hv.scene.add(sl, sl.target); hv.sun = sl;
+  window.__fluid.klass = 'top';   // (the same drops on every machine)
+  const f = new Fluid(hv, { box: [-1.5, 0, -1, 1.5, 2, 1], volume: 2, drops: 1500 }), cup = f.tube({ x: .8, y: .45, z: 0, r: .5, h: .9, hollow: .06 });
+  hv.render(hx, 160, 160); const dry = blue(hx.getImageData(0, 0, 160, 160).data);
+  const put = f.fill({ x1: -.5, y1: .7 }), tap = f.pour({ x: .8, y: 1.6, z: 0, rate: .25, speed: 2 });
+  for (let i = 0; i < 90; i++) { f.update(1 / 60); hv.render(hx, 160, 160); if (i % 6 === 0) await frame(); }
+  for (let i = 0; i < 6; i++) { f.update(0); hv.render(hx, 160, 160); await frame(); }
+  const wetPx = blue(hx.getImageData(0, 0, 160, 160).data), inCup = f.amount(cup.inside());
+  ok(dry < .005 && wetPx > .04, `fluid: drawn in a Next Gen view (${(wetPx * 100).toFixed(1)}% of the picture is water, ${(dry * 100).toFixed(1)}% before; runs on the ${f.backend === 'gpu' ? 'graphics chip' : 'CPU'}, ${f.count} drops)`);
+  ok(Math.abs(f.amount() - put - .25 * 1.5) < .08 && inCup > .25 && f.level(-1, 0) > .15 && f.level(1.3, .8) > .1, `fluid: a dam break spreads over the floor and the tap fills the cup (${inCup.toFixed(2)} in it; ${f.amount().toFixed(2)} in all, levels ${f.level(-1, 0)?.toFixed(2)} and ${f.level(1.3, .8)?.toFixed(2)})`);
+  tap.remove(); f.dispose(); ok(!hv.sims.includes(f) && !f.mesh.parent, 'fluid: dispose() takes it out of the view');
+  // a Console view runs the smaller version, drawn as beads in its scene
+  const cv = new gs.toon.View({ bg: '#404040' }), cc = document.createElement('canvas'); cc.width = 192; cc.height = 160; const cx2 = cc.getContext('2d'); cv.board(192, 160, .9);
+  const cf = new Fluid(cv, { box: [-40, 0, -40, 40, 60, 40], volume: 140000, gravity: 300, kind: 'slime' }); cf.fill({ y1: 20 });
+  for (let i = 0; i < 30; i++) { cf.update(1 / 60); cv.render(cx2, 192, 160); if (i % 6 === 0) await frame(); }
+  const cd = cx2.getImageData(0, 0, 192, 160).data; let green = 0; for (let i = 0; i < cd.length; i += 4) if (cd[i + 1] > cd[i] * 1.3 && cd[i + 1] > cd[i + 2] * 1.3 && cd[i + 1] > 80) green++;
+  ok(cf.backend === 'cpu' && cf.count > 300 && green / (cd.length / 4) > .03 && Math.abs(cf.level(0, 0) - 20) < 5, `fluid: slime in a Console view, in its own units (${cf.count} drops, level ${cf.level(0, 0).toFixed(1)})`);
+  cf.dispose(); window.__fluid.klass = null;
+}
+{
   // Swarm: the WebGPU compute version matches the CPU one (where this browser has WebGPU)
   const { Swarm } = gs.ai, mk = gpu => new Swarm({ count: 1200, w: 400, h: 400, speed: 60, seed: 9, gpu });
   const c = mk(false), g = mk(true);

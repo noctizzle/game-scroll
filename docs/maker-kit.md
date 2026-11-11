@@ -102,6 +102,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Play with your whole body; put the player inside the game; thumbs up and other hand signs | `gs.vision.Body`, `CutOut`, `Signs` | [Body, cut-outs and hand signs](#body-cut-outs-and-hand-signs) |
 | Walk to play, lift the phone, a dark room, a hand over the phone | `gs.device.steps()`, `pressure()`, `light()`, `near()` | [Steps, air pressure, light, proximity](#steps-air-pressure-light-proximity) |
 | Block worlds to dig, build and craft in | `gs.voxels` | [Voxel worlds](#voxel-worlds) |
+| Liquid you can pour, splash and fill things with, in 3D | `gs.fluid` | [Real 3D liquids](#real-3d-liquids) |
 | Night in the game when it is night outside; the real moon; plug in to charge; headphones in | `gs.real` (SunCalc) | [The real world: sun, moon, battery, headphones](#the-real-world-sun-moon-battery-headphones) |
 
 ## What `gs` has, and what it doesn't
@@ -112,7 +113,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 `replay`, `look2d`, `brains`, `tweak`, `board`, `battle`, `gen`, `drag`, `idle`, `party`, `rhythm`,
 `strokes`, `vehicles`, `paths`, `bones`, `level3d`, `sky`, `camera`, `nav3d`, `characters`, the action kits (`combat`,
 `tactics`, `climb`, `poses`, `missions`, `cutscene`, `prompts`, `destruction`, `stealth`, `gadgets`,
-`campaign`, `arena`, `props`), `outdoors`, `craft`, `soft`, `cards`, `dice`, `words`, `ui`, `solve`, `tick`, `voxels`, `toon` (Classic
+`campaign`, `arena`, `props`), `outdoors`, `craft`, `soft`, `cards`, `dice`, `words`, `ui`, `solve`, `tick`, `voxels`, `fluid`, `toon` (Classic
 Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo`, `real`, `fonts`, `sketch`, `icons` and `THREE`.
 It is the only thing a game may import (`src/game-modules.js`); `npm run games` refuses anything
 else and the PR check flags it.
@@ -2248,3 +2249,57 @@ update(dt) { world.update(); me.vy -= 25 * dt; if (world.move(me, vx * dt, me.vy
   them to place a block on it); `move(box, dx, dy, dz, { step })` walks a box through the blocks
   (`ground`, `inWater`, and which axes were stopped).
 - `pack()` / `unpack()`: the world as a short string (runs of the same block).
+
+## Real 3D liquids
+
+`gs.fluid.Fluid` (3D): a particle fluid in a box of your world. Drops fall, pile up, slosh, run round
+solid things and settle level. On phones with WebGPU the whole fluid runs on the graphics chip (tens
+of thousands of drops, drawn as one smooth body); everywhere else the same maths runs with fewer,
+bigger drops (600 to 2,000, drawn as beads). The game code is the same for both.
+
+```js
+const { Fluid } = gs.fluid;
+function setup() {                                                                     // once, with the scene
+  fluid = new Fluid(view, { box: [-2, 0, -2, 2, 3, 2], volume: 4, kind: 'water' });  // where it can go, and the most it holds
+  tap = fluid.pour({ x: 0, y: 2.5, z: 0, rate: .6, speed: 2 });                        // a stream straight down
+  cup = fluid.tube({ x: 1, y: .4, z: 0, r: .4, h: .8, hollow: .05 });                  // an open cup
+  ball = fluid.ball({ r: .3 });                                                        // something to push the liquid about
+}
+reset() { fluid.clear(); fluid.fill({ y1: .3 }); }                                     // each round: empty it, start with the floor wet
+update(dt) { tap.on = pressed; ball.set(px, py, pz); fluid.update(dt);
+             if (fluid.amount(cup.inside()) > .25) api.win(); }
+```
+
+- Everything is in your world's units: places, sizes, speeds (units a second), amounts (units cubed).
+- `new Fluid(view, { box, volume, kind, open, gravity, drops, size, shadows })`: `box` is
+  `[x0, y0, z0, x1, y1, z1]` with walls all round (`open: true`: a floor and no walls, and drops that leave it vanish). `volume` is
+  the most liquid it has to hold (a quarter of the box if you don't say): the kit picks how many drops
+  the phone can run (`Fluid.max()`) and sizes them so that much fits, so say what you need and no more
+  (less volume: finer drops). `kind`: `'water'`, `'lava'`, `'slime'`, `'honey'` (`gs.fluid.KINDS`), or
+  your own `colour`, `foam` (the colour of spray and fast liquid, or `false`), `thick` (0 water .. 1
+  honey), `rough`, `glow`. `gravity`: a number (9.8) or `{ x, y, z }`; set `fluid.gravity` any time to
+  tilt the world.
+- Putting liquid in: `fluid.pour({ x, y, z, dir, rate, speed, spread, r })` is a tap (change its fields
+  or `tap.on` any time; `tap.remove()`), `fluid.fill({ y1: 1 })` is liquid at rest in a block (sides you
+  leave out are the box's), `fluid.splash(x, y, z, { amount, speed, up })` a burst, `cup.fill(.8)` fills a
+  hollow thing. `fluid.full` / `fluid.room`: when the drops run out, taps stop until some drains away.
+- Solid things: `fluid.ball({ x, y, z, r })`, `fluid.box({ w, h, d, turn })`, `fluid.tube({ r, h, turn })`
+  (up to 8). `hollow: .05` makes a bowl, a tank or a cup with walls that thick, open at the top
+  (`open: false`: sealed). Move one with `thing.set(x, y, z, turn)` each frame, or pass
+  `follow: mesh` and it follows a three.js object: the liquid is pushed by how fast it moves, and
+  pours out of a cup you tip. You draw the things; the fluid only needs their shapes.
+- The world: `fluid.ground((x, z) => y)` lets it flow over land; `fluid.drain({ x, y, z, r })` swallows
+  drops that reach it (`drain.amount` counts how much); `fluid.push(x, y, z, { radius, strength, up })`
+  is a blast.
+- Questions: `fluid.amount()` or `fluid.amount(box)` (units cubed; `cup.inside()` is the box of a hollow
+  thing's room), `fluid.level(x, z)` (the height of its top there, or null where it's dry),
+  `fluid.wet(x, y, z)` (0 dry .. 1 under), `fluid.count`, `fluid.backend` (`'gpu'` or `'cpu'`). On WebGPU
+  the answers are a few frames old, and under a tap `level()` is the top of the stream.
+- Make the fluid once, with the scene, and `clear()` it in `reset()`. Keep the box no bigger than the
+  liquid needs: the drops get bigger with the box. View: an `HDView` (Next Gen, AR, Board) for the
+  WebGPU version; in a Console `View` it runs the smaller one.
+- Build for the smaller version. Without WebGPU the drops are about three times as wide, so a cup,
+  a pipe or a gap has to be wide enough for those: at least six drops across inside
+  (`fluid.dropSize` is a drop's width). `new Fluid(view, { gpu: false, drops: 600 })` runs what the
+  slowest phones run, on any machine: play your game with it once. It pours and fills the same way
+  every time (`seed` changes its dice), so a level that works once keeps working.
