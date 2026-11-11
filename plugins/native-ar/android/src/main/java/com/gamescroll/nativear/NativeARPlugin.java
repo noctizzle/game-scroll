@@ -26,10 +26,13 @@ import com.google.ar.core.HitResult;
 import com.google.ar.core.LightEstimate;
 import com.google.ar.core.Plane;
 import com.google.ar.core.Point;
+import com.google.ar.core.PointCloud;
 import com.google.ar.core.Session;
 import com.google.ar.core.Trackable;
 import com.google.ar.core.TrackingState;
+import java.nio.FloatBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
@@ -40,10 +43,13 @@ import javax.microedition.khronos.opengles.GL10;
  * The camera picture is drawn by a GLSurfaceView placed BEHIND the (transparent) WebView, and every
  * frame the phone's pose, the projection and the light estimate go to JavaScript as a "frame" event,
  * where three.js draws the game on top. Detected horizontal surfaces go out as a "planes" event a few
- * times a second, and hitTest() finds where a screen point meets a real surface.
+ * times a second (with the feature points ARCore is tracking, while the game asks for them with
+ * points({ on })), and hitTest() finds where a screen point meets a real surface.
  *
- * JS: start() -> { started, reason? }, stop(), hitTest({ x, y }) (CSS pixels) -> { hits: [{ pose, kind }] },
- * available() -> { supported, installed, status }. Matrices are 16 floats, column-major, in metres.
+ * JS: start() -> { started, reason? }, stop(), hitTest({ x, y }) (CSS pixels) -> { hits: [{ pose, kind }] }
+ * (nearest first), points({ on }), available() -> { supported, installed, status }. Matrices are 16
+ * floats, column-major, in metres. A frame's "why" says why tracking is poor (ARCore's
+ * TrackingFailureReason: NONE, INSUFFICIENT_LIGHT, EXCESSIVE_MOTION, INSUFFICIENT_FEATURES...).
  */
 @CapacitorPlugin(name = "NativeAR", permissions = { @Permission(strings = { Manifest.permission.CAMERA }, alias = "camera") })
 public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
@@ -55,6 +61,10 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
     private boolean installRequested = false;
     private boolean textureSet = false;
     private int frameNo = 0;
+    private long lastStamp = -1;
+    private volatile boolean wantPoints = false;
+    private static final int MAX_POINTS = 240;
+    private static final int MAX_HITS = 4;
     private final List<PluginCall> pendingHits = new ArrayList<>();
 
     @PluginMethod
@@ -133,6 +143,8 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
                 glView.onResume();
                 running = true;
                 frameNo = 0;
+                lastStamp = -1;
+                wantPoints = false;
                 JSObject r = new JSObject();
                 r.put("started", true);
                 call.resolve(r);
@@ -169,6 +181,7 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
 
     private void teardown() {
         running = false;
+        wantPoints = false;
         if (session != null) session.pause();
         if (glView != null) {
             glView.onPause();
@@ -183,6 +196,16 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
             for (PluginCall c : pendingHits) c.resolve(noHits());
             pendingHits.clear();
         }
+    }
+
+    /**
+     * Send the feature points ARCore is tracking with each "planes" event ({ on: true }), or stop.
+     * The game's floor search uses them, and turns them off once the floor is settled.
+     */
+    @PluginMethod
+    public void points(PluginCall call) {
+        wantPoints = Boolean.TRUE.equals(call.getBoolean("on", false));
+        call.resolve();
     }
 
     /** Where a point on the screen (CSS pixels) meets a real surface. Answered on the next frame. */
@@ -260,34 +283,41 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
             background.draw(frame);
             Camera cam = frame.getCamera();
 
-            JSObject d = new JSObject();
-            float[] pose = new float[16];
-            float[] proj = new float[16];
-            cam.getDisplayOrientedPose().toMatrix(pose, 0);
-            cam.getProjectionMatrix(proj, 0, 0.05f, 100f);
-            d.put("t", frame.getTimestamp() / 1e6);
-            d.put("tracking", cam.getTrackingState().name());
-            d.put("pose", JSArray.from(pose));
-            d.put("proj", JSArray.from(proj));
-            LightEstimate le = frame.getLightEstimate();
-            if (le.getState() == LightEstimate.State.VALID) {
-                float[] cc = new float[4];
-                le.getColorCorrection(cc, 0);
-                JSObject light = new JSObject();
-                light.put("intensity", le.getPixelIntensity());
-                light.put("color", JSArray.from(new float[] { cc[0], cc[1], cc[2] }));
-                d.put("light", light);
+            // The screen can refresh faster than the camera (120 Hz against 30 or 60), and then update()
+            // hands back the same camera frame again: the pose hasn't changed, so don't send it twice.
+            long stamp = frame.getTimestamp();
+            if (stamp != lastStamp) {
+                lastStamp = stamp;
+                JSObject d = new JSObject();
+                float[] pose = new float[16];
+                float[] proj = new float[16];
+                cam.getDisplayOrientedPose().toMatrix(pose, 0);
+                cam.getProjectionMatrix(proj, 0, 0.05f, 100f);
+                d.put("t", stamp / 1e6);
+                d.put("tracking", cam.getTrackingState().name());
+                d.put("why", cam.getTrackingFailureReason().name());
+                d.put("pose", JSArray.from(pose));
+                d.put("proj", JSArray.from(proj));
+                LightEstimate le = frame.getLightEstimate();
+                if (le.getState() == LightEstimate.State.VALID) {
+                    float[] cc = new float[4];
+                    le.getColorCorrection(cc, 0);
+                    JSObject light = new JSObject();
+                    light.put("intensity", le.getPixelIntensity());
+                    light.put("color", JSArray.from(new float[] { cc[0], cc[1], cc[2] }));
+                    d.put("light", light);
+                }
+                getActivity().runOnUiThread(() -> notifyListeners("frame", d));
             }
-            getActivity().runOnUiThread(() -> notifyListeners("frame", d));
 
-            if (frameNo++ % 15 == 0) sendPlanes();
+            if (frameNo++ % 15 == 0) sendPlanes(frame);
             answerHits(frame);
         } catch (Exception e) {
             Logger.error("NativeAR", "frame failed", e);
         }
     }
 
-    private void sendPlanes() {
+    private void sendPlanes(Frame frame) {
         JSArray list = new JSArray();
         for (Plane p : session.getAllTrackables(Plane.class)) {
             if (p.getTrackingState() != TrackingState.TRACKING || p.getSubsumedBy() != null) continue;
@@ -303,7 +333,32 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
         }
         JSObject d = new JSObject();
         d.put("planes", list);
+        if (wantPoints && frame.getCamera().getTrackingState() == TrackingState.TRACKING) {
+            JSArray pts = featurePoints(frame);
+            if (pts != null) d.put("points", pts);
+        }
         getActivity().runOnUiThread(() -> notifyListeners("planes", d));
+    }
+
+    /** Up to MAX_POINTS of the feature points ARCore is tracking, as x, y, z, x, y, z... in millimetres. */
+    private JSArray featurePoints(Frame frame) {
+        PointCloud cloud = frame.acquirePointCloud();
+        try {
+            FloatBuffer b = cloud.getPoints();
+            int at = b.position(), n = b.remaining() / 4, step = Math.max(1, (n + MAX_POINTS - 1) / MAX_POINTS), m = 0;
+            int[] out = new int[(n / step + 1) * 3];
+            for (int i = 0; i < n; i += step) {
+                int k = at + i * 4;
+                float x = b.get(k), y = b.get(k + 1), z = b.get(k + 2), sure = b.get(k + 3);
+                if (sure < 0.2f || Float.isNaN(x) || Float.isNaN(y) || Float.isNaN(z)) continue; // too unsure to count
+                out[m++] = Math.round(x * 1000f);
+                out[m++] = Math.round(y * 1000f);
+                out[m++] = Math.round(z * 1000f);
+            }
+            return JSArray.from(Arrays.copyOf(out, m));
+        } finally {
+            cloud.release();
+        }
     }
 
     private void answerHits(Frame frame) {
@@ -328,7 +383,8 @@ public class NativeARPlugin extends Plugin implements GLSurfaceView.Renderer {
                 o.put("pose", JSArray.from(m));
                 o.put("kind", plane ? "plane" : "point");
                 hits.put(o);
-                break;
+                // nearest first; a few, so the floor search can look past a table top or a stray point
+                if (hits.length() >= MAX_HITS) break;
             }
             JSObject r = new JSObject();
             r.put("hits", hits);

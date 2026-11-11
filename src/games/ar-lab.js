@@ -8,9 +8,12 @@ const { Group, Mesh, BoxGeometry, PlaneGeometry, EdgesGeometry, LineSegments, Li
 // AR Lab: a test scene for native AR (not in the feed; open it from Settings > AR test).
 // A 20 cm cube sits on your floor 1.5 m ahead. Walk around it: with native AR it should stay put on
 // the real floor and you should see its sides. Found surfaces show as teal outlines, and tapping
-// one drops a small cube where you tapped. The panel shows what the AR system is doing.
+// one drops a small cube where you tapped. The panel shows what the AR system is doing, and what the
+// floor height comes from (a mapped surface, a layer of feature points, or only an estimate).
 let W = 300, H = 460;
 const COLS = ['#ff5a7a', '#ffc23a', '#5ad86a', '#4ab0ff', '#b06aff'];
+// where the floor height comes from (v.floorSource), in words
+const FLOOR_FROM = { plane: 'found: a mapped surface', points: 'found: a layer of points', hits: 'found: hit points', hand: 'set by hand', kept: 'kept from last round', rough: 'estimate: a few points', guess: 'estimate: usual phone height' };
 
 function make(api) {
   want('motion');
@@ -63,10 +66,13 @@ function make(api) {
       v.draw(c, W, H);
       v.pointers(c, W, H, [{ p: cube.position, col: '#f2f5fb' }]);
       // status panel
-      const n = v.nat, cp = v.eyePos, rows = [
-        ['Mode', v.mode === 'world' ? 'World (native AR)' : `Look-around (${v.camState})`],
-        ['Tracking', n ? n.tracking : v.sensor ? 'gyro' : 'none'],
-        ['Surfaces', n ? `${n.planes.length}${v.floorFound ? ' · floor found' : ''}` : '-'],
+      // (st: what the AR system is doing; an older app's kit has no status(), so read what it has)
+      const st = v.status?.() || { tracking: v.sensor ? 'gyro' : 'none', why: 'NONE', surfaces: 0, points: 0, floor: null, layer: 0 }, world = v.mode === 'world', cp = v.eyePos, rows = [
+        ['Mode', world ? 'World (native AR)' : `Look-around (${v.camState})`],
+        ['Tracking', st.why !== 'NONE' ? `${st.tracking} · ${st.why.toLowerCase().replace(/_/g, ' ')}` : st.tracking],
+        ['Floor', world ? FLOOR_FROM[st.floor] || 'searching' : 'lined up by hand'],
+        ['Surfaces', world ? `${st.surfaces} mapped` : '-'],
+        ['Points', world ? `${st.points} in view · layer of ${st.layer}` : '-'],
         ['Phone', `${cp.x.toFixed(2)}, ${(cp.y - FLOOR).toFixed(2)} up, ${cp.z.toFixed(2)}`],
         ['Cube', `${cube.position.distanceTo(cp).toFixed(2)} m away`],
       ];

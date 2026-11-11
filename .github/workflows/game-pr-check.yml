@@ -77,6 +77,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      ar: ${{ steps.plan.outputs.ar }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -95,7 +96,9 @@ jobs:
           changed=$(echo "$files" | grep -E '^src/games/[a-z0-9-]+\.js$' | while read -r f; do [ -f "$f" ] && basename "$f" .js; done | tr '\n' ' ')
           # Shared code runs inside every game, so a change there also plays a sample: from each style, the
           # 3 games that use the most engine parts (scripts/pick-games.mjs), plus the changed games.
-          shared=$(echo "$files" | grep -E '^(src/|public/|index\.html|vite\.config\.js|package(-lock)?\.json|\.nvmrc|\.env|scripts/(smoke|fold|sweep|stream-smoke|build-games|pick-games)\.|\.github/workflows/game-pr-check\.yml)' | grep -vE '^src/(games/|licences\.js)' || true)
+          shared=$(echo "$files" | grep -E '^(src/|public/|index\.html|vite\.config\.js|package(-lock)?\.json|\.nvmrc|\.env|scripts/(smoke|fold|sweep|stream-smoke|build-games|pick-games|ar-floor)\.|\.github/workflows/game-pr-check\.yml)' | grep -vE '^src/(games/|licences\.js)' || true)
+          # The AR kit or its phone bridge changed: also play the pretend-room scenes (scripts/ar-floor.cjs).
+          if echo "$files" | grep -qE '^(src/kit/(ar3d|ar-floor|native-ar)\.js|scripts/(ar-floor\.cjs|lib/fake-native-ar\.js))$'; then echo "ar=true" >> "$GITHUB_OUTPUT"; fi
           # Sweep (fast-forwarded long play at odd sizes): Console games, and Next Gen games the PR changes
           # (Next Gen draws in software here, so sweeping all of them would take too long).
           sweepable() { grep -qE "era: *'console'" "src/games/$1.js" || { grep -qE "era: *'nextgen'" "src/games/$1.js" && case " $changed " in *" $1 "*) true;; *) false;; esac; }; }
@@ -180,6 +183,10 @@ jobs:
       - name: Fold test
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: node scripts/fold.cjs $IDS
+
+      - name: AR floor finding in pretend rooms (when the AR kit changed)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && matrix.part == 1 && needs.plan.outputs.ar == 'true' }}
+        run: node scripts/ar-floor.cjs
 
       - name: Sweep test (Console games, and changed Next Gen games)
         if: ${{ !cancelled() && steps.build.outcome == 'success' && matrix.sweep != '' }}

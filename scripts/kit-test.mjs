@@ -1700,5 +1700,118 @@ console.log('physics ok');
   console.log('gs.voxels ok (64x32x64 made and meshed in', Math.round(performance.now() - t0), 'ms)');
 }
 
+// gs.ar's floor finder: whole rooms played through it (heights are native: the phone starts at y = 0)
+{
+  const { FloorFinder } = await import('../src/kit/ar-floor.js');
+  let seed = 7; const rnd = () => ((seed = Math.imul(seed ^ seed >>> 15, 2246822507) ^ Math.imul(seed ^ seed >>> 13, 3266489909), (seed ^= seed >>> 16) >>> 0) / 4294967296);
+  const gauss = () => (rnd() + rnd() + rnd() + rnd() - 2) * .87;
+  const near = (a, b, e = .03) => Math.abs(a - b) <= e;
+  // n feature points on a level, spread over w x d metres centred at (x, z), each seen a little noisily
+  const level = (n, y, { x = 0, z = -1.8, w = 2, d = 2 } = {}) => Array.from({ length: n }, () => [x + (rnd() - .5) * w, y, z + (rnd() - .5) * d]);
+  const see = pts => pts.flatMap(([x, y, z]) => [x + gauss() * .01, y + gauss() * .012, z + gauss() * .01]);
+  // play a room for `secs`: each quarter second the finder hears the mapped surfaces and the points
+  function play(f, secs, { planes = [], pts = null, good = true, py = 0 } = {}) {
+    for (let t = 0; t < secs - 1e-9; t += .05) {
+      if (good) f.pose(0, py, 0);
+      if (good && Math.round(t / .05) % 5 === 0) { if (pts) f.points(see(pts)); f.planes(planes); }
+      f.update(.05, good);
+    }
+    return f;
+  }
+  const P = (y, a, o = {}) => ({ x: 0, y, z: -1, a, ...o });
+
+  // standing over a mapped floor: found at once
+  let f = play(new FloorFinder(), .3, { planes: [P(-1.3, 1)] });
+  assert.ok(f.floor === -1.3 && f.src === 'plane' && f.take() === 'found', 'mapped floor found at once');
+  // sitting at a desk with no floor in view: the desk is not the floor; after 5 s the usual phone height is used
+  f = play(new FloorFinder({ eye: 1.25 }), 4.9, { planes: [P(-.5, 1.2, { z: -.6 })] });
+  assert.equal(f.floor, null, 'a desk close under the phone is not the floor');
+  play(f, .3, { planes: [P(-.5, 1.2, { z: -.6 })] });
+  assert.ok(f.floor === -1.25 && f.src === 'guess' && !f.sure && f.take() === 'guess', 'the search ends on a guess, nobody waits for ever');
+  // ...and the real floor replaces the guess when it is mapped
+  play(f, .3, { planes: [P(-.5, 1.2, { z: -.6 }), P(-1.1, .6, { z: -2 })] });
+  assert.ok(f.floor === -1.1 && f.src === 'plane' && f.take() === 'found', 'a mapped floor replaces the guess');
+  // sitting low (phone 65 cm up) over a floor-sized surface, or one that reaches well away: that is the floor
+  f = play(new FloorFinder(), .3, { planes: [P(-.65, 4)] }); assert.equal(f.floor, -.65, 'low phone, big floor');
+  f = play(new FloorFinder(), .3, { planes: [P(-.65, .5, { z: -2.2 })] }); assert.equal(f.floor, -.65, 'low phone, floor patch far ahead');
+  // a bed and a smaller patch of floor: the floor is the lower one
+  f = play(new FloorFinder(), .3, { planes: [P(-.8, 2.7), P(-1.3, .5, { z: -2.5 })] }); assert.equal(f.floor, -1.3, 'floor under a bed-sized surface');
+  // a scrap of surface far below a big floor is a mistake, not the floor
+  f = play(new FloorFinder(), .3, { planes: [P(-1.3, 3), P(-2.1, .1)] }); assert.equal(f.floor, -1.3, 'a scrap below the floor is ignored');
+  // once a mapped surface is the floor, a bigger one above it changes nothing...
+  f = play(new FloorFinder(), .3, { planes: [P(-1.3, .6)] }); play(f, 3, { planes: [P(-1.3, .6), P(-.8, 2.7)] });
+  assert.equal(f.floor, -1.3, 'a bed mapped later does not lift the floor');
+  // ...unless the floor's own surface has left the map (it was a mistake), then the room comes back up
+  play(f, 3, { planes: [P(-.8, 2.7)] }); assert.equal(f.floor, -.8, 'floor gone from the map: the next surface takes over');
+  // a lower surface of real size does take over (the first one was a table)
+  f = play(new FloorFinder(), .3, { planes: [P(-.85, 1)] }); play(f, .3, { planes: [P(-.85, 1), P(-1.3, .5)] });
+  assert.ok(f.floor === -1.3 && f.take() === 'found', 'a table first, then the floor below it');
+  // the same surface growing follows its refined height
+  f = play(new FloorFinder(), .3, { planes: [P(-1.3, .5)] }); play(f, .3, { planes: [P(-1.32, 1.5)] }); assert.equal(f.floor, -1.32, 'floor refines as it grows');
+
+  // no mapped surface yet, but feature points lie in a flat layer on the floor: found from points
+  const floorPts = level(40, -1.3);
+  f = play(new FloorFinder(), 1.5, { pts: floorPts });
+  assert.ok(f.src === 'points' && near(f.floor, -1.3) && f.sure, `floor from points: ${f.floor} ${f.src}`);
+  assert.equal(f.take(), 'found');
+  // a busy table and a thin scatter of floor under it: the floor is still the lower layer
+  const table = level(80, -.85, { z: -1.2, w: 1.2, d: .8 }), thin = level(14, -1.3, { w: 2.4, d: 2.4 });
+  f = play(new FloorFinder(), 2, { pts: [...table, ...thin] });
+  assert.ok(f.src === 'points' && near(f.floor, -1.3), `floor under a table from points: ${f.floor}`);
+  // the table gets mapped: the floor stays down, even after the points have gone out of view
+  play(f, 1, { pts: [...table, ...thin], planes: [P(-.85, 1)] }); assert.ok(near(f.floor, -1.3), 'mapped table above a points floor');
+  play(f, 8, { planes: [P(-.85, 1)] }); assert.ok(near(f.floor, -1.3), 'looking away does not lift the floor onto the table');
+  // then the floor itself is mapped and takes over as the surer source
+  play(f, .3, { planes: [P(-.85, 1), P(-1.31, .5)] }); assert.ok(f.floor === -1.31 && f.src === 'plane', 'mapped floor refines a points floor');
+  // a table already mapped when the round starts, with floor points in view below it: the points get
+  // a moment to speak first, and veto the table
+  f = play(Object.assign(new FloorFinder(), { expect: true }), 2, { pts: [...table, ...thin], planes: [P(-.85, 1)] });
+  assert.ok(near(f.floor, -1.3) && f.src === 'points', `table vetoed by the layer under it: ${f.floor} ${f.src}`);
+  // points asked for but the phone sends none (an older app): a mapped floor waits a second at most
+  f = play(Object.assign(new FloorFinder(), { expect: true }), .8, { planes: [P(-1.3, 1)] }); assert.equal(f.floor, null);
+  play(f, .5, { planes: [P(-1.3, 1)] }); assert.ok(f.floor === -1.3 && f.src === 'plane', 'no points: the mapped floor after a second');
+  // ...and not at all when it is last round's floor
+  f = play(Object.assign(new FloorFinder({ kept: { y: -1.3, src: 'plane', sure: true } }), { expect: true }), .3, { planes: [P(-1.31, 1)] }); assert.equal(f.floor, -1.31, 'last round\'s floor again: no wait');
+  // stray points below a well-seen floor (noise, reflections in a shiny floor) don't drag it down
+  const strays = Array.from({ length: 14 }, () => [(rnd() - .5) * 3, -1.4 - rnd() * .8, -2 + (rnd() - .5) * 3]);
+  f = play(new FloorFinder(), 2, { pts: [...level(60, -1.3, { w: 3, d: 3 }), ...strays] });
+  assert.ok(near(f.floor, -1.3), `strays below the floor ignored: ${f.floor}`);
+  // points in a row (a skirting board, a table edge) are a line, not a floor
+  const row = Array.from({ length: 40 }, (_, i) => [-1 + i * .05, -1.0, -1 - i * .05]);
+  f = play(new FloorFinder(), 3, { pts: row }); assert.equal(f.floor, null, 'a row of points is not a floor');
+  f = play(new FloorFinder(), 3, { pts: [...row, ...level(40, -1.3)] }); assert.ok(near(f.floor, -1.3), `floor found past a row of points above it: ${f.floor}`);
+  // a desk's points close under the phone are not a floor
+  f = play(new FloorFinder(), 3, { pts: level(80, -.5, { z: -.6, w: 1.2, d: .7 }) }); assert.equal(f.floor, null, 'desk points are not a floor');
+  // too few points for a sure answer, but better than a blind guess when time runs out
+  f = play(new FloorFinder(), 5.2, { pts: level(8, -1.1, { w: 1.5, d: 1.5 }) });
+  assert.ok(f.src === 'rough' && near(f.floor, -1.1, .04) && !f.sure, `thin layer used as the estimate: ${f.floor} ${f.src}`);
+
+  // rough hit-test points: three that agree
+  f = new FloorFinder(); f.pose(0, 0, 0);
+  f.hit(0, -1.31, -2, 'point'); f.hit(.3, -.2, -2, 'point'); f.hit(0, -1.9, -2, 'point'); f.hit(.2, -1.29, -2, 'point'); assert.equal(f.floor, null);
+  f.hit(.1, -1.3, -2.2, 'point'); assert.ok(f.src === 'hits' && near(f.floor, -1.3, .011), 'three rough points agree');
+  // a hit on a mapped surface counts at once; on a table an iPhone has named, never
+  f = new FloorFinder(); f.pose(0, 0, 0); f.hit(0, -1.2, -2, 'plane'); assert.ok(f.floor === -1.2 && f.src === 'plane');
+  f = new FloorFinder(); f.pose(0, 0, 0); f.planes([P(-.9, 1, { kind: 'table' })]); f.hit(0, -.9, -1, 'plane'); assert.equal(f.floor, null, 'a named table is never the floor');
+  // iPhone: a surface it calls the floor is taken at once, however close; seats and tables are skipped
+  f = play(new FloorFinder(), .3, { planes: [P(-.5, .3, { kind: 'floor' }), P(-.8, 2, { kind: 'seat' })] }); assert.equal(f.floor, -.5, 'named floor');
+
+  // last round's floor: used after a short wait when nothing new turns up, at once when set by hand
+  f = play(new FloorFinder({ kept: { y: -1.28, src: 'plane', sure: true } }), 1, {}); assert.equal(f.floor, null);
+  play(f, .3, {}); assert.ok(f.floor === -1.28 && f.src === 'kept' && f.take() === 'kept', 'last round\'s floor kept');
+  f = play(new FloorFinder({ kept: { y: -1.28, src: 'plane', sure: true } }), .3, { planes: [P(-1.3, 1)] }); assert.ok(f.floor === -1.3 && f.src === 'plane', 'fresh evidence beats the kept floor');
+  f = play(new FloorFinder({ kept: { y: -1.1, src: 'hand', sure: true } }), .1, {}); assert.ok(f.floor === -1.1 && f.src === 'hand', 'a floor set by hand stands');
+  play(f, 1, { planes: [P(-.8, 2), P(-1.5, 2)] }); assert.equal(f.floor, -1.1, 'mapped surfaces do not move a hand-set floor');
+  play(f, .3, { planes: [P(-1.13, 2)] }); assert.equal(f.floor, -1.13, '...but one right at it tidies it');
+  // a kept floor that can't be right any more (the player went upstairs) is dropped
+  f = play(new FloorFinder({ kept: { y: -3.2, src: 'plane', sure: true } }), 4, {}); assert.equal(f.floor, null, 'an impossible kept floor waits the full time');
+  play(f, 1.2, {}); assert.ok(f.src === 'guess' && near(f.floor, -1.3));
+  // the search only counts time while the room is being tracked; Skip ends it at once
+  f = play(new FloorFinder(), 20, { good: false }); assert.equal(f.floor, null, 'no tracking: no time passes');
+  f = play(new FloorFinder(), .5, {}); f.giveUp(); assert.ok(f.src === 'guess' && f.take() === 'guess', 'Skip gives the estimate');
+  assert.ok(f.progress === 1 && new FloorFinder().progress === 0);
+  console.log('gs.ar floor finder ok');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);

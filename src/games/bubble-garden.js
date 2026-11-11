@@ -73,7 +73,8 @@ function make(api) {
     },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      v.live(); fx.update(dt); sparks.update(dt); t += dt;
+      v.live(); if (v.calibrating) return;   // finding or lining up the floor: the round waits
+      fx.update(dt); sparks.update(dt); t += dt;
       for (const b of buds) { b.grow = Math.min(1, (b.grow || 0) + dt * 2); b.grp.scale.setScalar(b.grow); if (b.bloom > 0) { b.bloom += dt; b.petals.scale.setScalar(Math.min(1, b.bloom * 2)); if (b.bloom > 1.4) placeBud(b); } }
       if (!started || ended) return;
       time -= dt;
@@ -116,14 +117,15 @@ function make(api) {
       arNote(c, v, W, H);
     },
     down(x, y, id) {
+      if (v?.input?.('down', x, y, id)) return;   // the AR kit's floor panels get touches first
       if (inBtn(x, y)) {
         if (!started) { started = true; if (!asked) { asked = true; startMic().then(m => { mic = m; }).catch(() => {}); } return; }
         holding = id; return;
       }
       g.down(x, y, id);
     },
-    move: (x, y, p, id) => { if (id !== holding) g.move(x, y, p, id); },
-    up: (x, y, id) => { if (id === holding) { holding = null; return; } g.up(x, y, id); },
+    move: (x, y, p, id) => { if (v?.input?.('move', x, y, id, p)) return; if (id !== holding) g.move(x, y, p, id); },
+    up: (x, y, id) => { if (v?.input?.('up', x, y, id)) return; if (id === holding) { holding = null; return; } g.up(x, y, id); },
     key(k, d) { if (k === ' ') { if (d && !started) started = true; holding = d && started ? 'key' : null; } },
   };
 }

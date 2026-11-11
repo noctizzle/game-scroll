@@ -55,7 +55,8 @@ function make(api) {
     },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      v.live(); fx.update(dt); sparks.update(dt);
+      v.live(); if (v.calibrating) return;   // finding or lining up the floor: the round waits
+      fx.update(dt); sparks.update(dt);
       if (!on || ended) return;
       t += dt; spawnT -= dt;
       if (spawnT <= 0 && ghosts.length < 7) { spawnT = Math.max(1.6, 3.6 - t / 40); addGhost(); }
@@ -97,9 +98,10 @@ function make(api) {
       if (!on) { c.fillStyle = '#fff'; c.font = '700 16px Rubik, sans-serif'; c.fillText('Tap to switch on your torch', W / 2, H * .78); c.font = '500 12px Rubik, sans-serif'; c.fillStyle = '#cfe0ff'; c.fillText('Turn the phone (or drag) to catch ghosts in the light', W / 2, H * .78 + 20); }
       arNote(c, v, W, H);
     },
-    down: (x, y, id) => g.down(x, y, id),
-    move: (x, y, p, id) => g.move(x, y, p, id),
-    up: (x, y, id) => g.up(x, y, id),
+    // the AR kit gets touches first: its floor panels (Skip, Done, the Floor chip) use them
+    down: (x, y, id) => { if (!v?.input?.('down', x, y, id)) g.down(x, y, id); },
+    move: (x, y, p, id) => { if (!v?.input?.('move', x, y, id, p)) g.move(x, y, p, id); },
+    up: (x, y, id) => { if (!v?.input?.('up', x, y, id)) g.up(x, y, id); },
   };
 }
 

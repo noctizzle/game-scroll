@@ -29,6 +29,7 @@ How to check a change without waiting longer than you need to. Written for peopl
 | Sound (`src/sfx.js`, `src/kit/sound.js`, `instruments.js`) | `npm run sound-test [sounds\|band\|clock]`: renders the sound off screen and measures it (every ready-made sound is heard and none is too loud, the limiter holds, instrument sets are as loud as each other, the music clock keeps the beat through a frozen frame) | about 90 s |
 | A starter template (`scripts/templates/`) | `npm run new zz-try --style <style>`, then lint, types and smoke it like any game, and delete it | under 30 s |
 | The 3D look (hd3d, toon3d, post effects, a three.js update) | `node scripts/look-compare.cjs save base` **before** the change, `check base` after; add `--webgpu` to check the WebGPU path | about 16 s each |
+| The AR kit (`ar3d.js`, `ar-floor.js`, `native-ar.js`) or a native AR plugin | `npm run kit-test` (rooms played through the floor search), then `node scripts/ar-floor.cjs [word] [--shots dir]`: Bin Flick against a pretend native AR phone ([ar-3d.md](ar-3d.md), Testing). Then AR Lab on a real phone | about 2 min |
 | Next Gen / AR on WebGPU | `node scripts/gpu-games.cjs [id ...]` | about 25 s a game |
 | Shaders built mid-round (hd3d `holdNew`) | `node scripts/shader-hold.cjs [--webgpu]` | about a minute |
 | Frame generation | `node scripts/framegen-test.cjs --check` (8 suites against `scripts/framegen-test/baseline.json`; `--save` after a change meant to move the numbers), `node scripts/framegen-games.cjs [--jobs n]` | about 3 min, then 1 to 4 min |
@@ -41,7 +42,7 @@ The PR check (`.github/workflows/game-pr-check.yml`) runs the node checks (`npm 
 `licences`, `types-check`, `game-types`, the starter templates, `kit-test`, `brains`, `recommend`, `site`), the app and
 sound checks when shared code changes, and then smoke, streamed,
 fold, sweep, Tiny Brains, the AI playtester and budget on the changed games, split over several machines. When frame
-generation's code changes it also runs `framegen-test.cjs --check`.
+generation's code changes it also runs `framegen-test.cjs --check`, and when the AR kit changes, `ar-floor.cjs`.
 
 ## The AI playtester: can a player reach the goal?
 
