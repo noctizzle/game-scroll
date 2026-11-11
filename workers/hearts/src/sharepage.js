@@ -6,14 +6,24 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const GAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /**
- * Build the page. game: the catalogue entry ({ id, title, hint, tag }) or null when unknown.
- * webUrl: where to play in a browser (the test site for now), or '' to leave that button out.
+ * What the page shows for a catalogue entry. The catalogue keeps a game's title, hint and tag
+ * under meta ({ id, file, hash, meta: { title, hint, tag... } }); the page wants them beside the id.
  */
-export function sharePage(game, { webUrl = '' } = {}) {
+export const shareGame = entry => entry && entry.id ? { ...(entry.meta || {}), id: entry.id } : null;
+
+/**
+ * Build the page. game: { id, title, hint, tag } (see shareGame) or null when unknown.
+ * webUrl: where to play in a browser (the test site for now), or '' to leave that button out.
+ * id: a well-formed game id to keep in the links when the catalogue couldn't be read, so the game
+ *     can't be named here. The app then works out whether it exists.
+ */
+export function sharePage(game, { webUrl = '', id = '' } = {}) {
+  if (game && !game.title) { id = game.id; game = null; }   // an entry with no details: still that game's links
+  const gid = game ? game.id : GAME_RE.test(id) ? id : '';
   const title = game ? `${game.title} · Game Scroll` : 'Game Scroll';
   const desc = game ? `${game.hint || ''}`.slice(0, 200) : 'Scroll a feed of quick mini games.';
-  const appUrl = game ? `gamescroll://game/${game.id}` : 'gamescroll://';
-  const web = webUrl ? (game ? `${webUrl}?g=${encodeURIComponent(game.id)}` : webUrl) : '';
+  const appUrl = gid ? `gamescroll://game/${gid}` : 'gamescroll://';
+  const web = webUrl ? (gid ? `${webUrl}?g=${encodeURIComponent(gid)}` : webUrl) : '';
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -45,7 +55,7 @@ export function sharePage(game, { webUrl = '' } = {}) {
          : `<h1>Game Scroll</h1><p>${esc(desc)}</p>`}
   <a class="btn primary" href="${esc(appUrl)}">Open in Game Scroll</a>
   ${web ? `<a class="btn secondary" href="${esc(web)}">Play in your browser</a>` : ''}
-  <small>${game ? 'Someone shared this game with you.' : 'That game link didn’t work, but the rest of the feed is waiting.'}</small>
+  <small>${game ? 'Someone shared this game with you.' : gid ? 'Someone shared a game with you.' : 'That game link didn’t work, but the rest of the feed is waiting.'}</small>
 </main></body></html>`;
 }
 

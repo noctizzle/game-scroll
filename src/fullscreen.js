@@ -99,7 +99,7 @@ function pill(ms) {
 function hidePill() { clearTimeout(pillT); pillEl?.classList.remove('show'); }
 {
   let edge = null;
-  addEventListener('pointerdown', () => { edge = cur && e.clientY < 32 ? { id: e.pointerId, y: e.clientY } : null; }, { capture: true, passive: true });
+  addEventListener('pointerdown', e => { edge = cur && e.clientY < 32 ? { id: e.pointerId, y: e.clientY } : null; }, { capture: true, passive: true });
   addEventListener('pointermove', e => {
     if (!edge || e.pointerId !== edge.id) return;
     if (e.clientY - edge.y > 36) { edge = null; pill(3000); }

@@ -3,7 +3,8 @@
 // A shared link looks like https://play.game-scroll.com/<game id>. That page (served by the API
 // Worker, workers/hearts/src/sharepage.js) has an "Open in Game Scroll" button that opens
 // gamescroll://game/<id>, which the app catches here and jumps to that game. On the web test site
-// the page links to ?g=<id> instead.
+// the page links to ?g=<id> instead. What the feed then does is openShared in src/main.js (the shared
+// game goes first; a game that has been taken down gets a note); scripts/share-link.mjs checks it.
 import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
 import { App } from '@capacitor/app';
