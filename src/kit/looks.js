@@ -14,7 +14,10 @@
 // string. A missing anchor skips that edit; check(shader) => false skips the whole effect (a
 // material without fog, say).
 // Each material records its effects in material.userData.gsLooks, and three's program cache key gets
-// '|gs<name>' per effect so patched and plain materials never share a program. Kit use only.
+// '|gs<name>' per effect so patched and plain materials never share a program. On WebGPU three keys a
+// classic material's shader by its settings, not by its nodes, so material.gsGpuKey (a setting only
+// that key reads) says whose { value } objects each effect holds: two materials share a shader there
+// only when their effects read the same numbers and pictures. Kit use only.
 
 import { Color, DataTexture, Float32BufferAttribute, BufferGeometry, Mesh, MeshStandardMaterial, RepeatWrapping, LinearFilter, LinearMipmapLinearFilter, RGBAFormat, ShaderChunk, Vector2, Vector3, Vector4 } from 'three';
 import { noiseTex } from './hd3d.js';
@@ -41,13 +44,21 @@ function apply(src, edits) {
   return src;
 }
 
-/** Adds a named effect to a material (once). Returns true if it was added now. */
+const HOLDERS = new WeakMap(); let holders = 0;
+const holderId = u => { if (!u || typeof u !== 'object') return 0; let i = HOLDERS.get(u); if (!i) HOLDERS.set(u, i = ++holders); return i; };
+
+/**
+ * Adds a named effect to a material (once). Returns true if it was added now. spec.gpuShared: the
+ * effect's WebGPU version reads everything from the material being drawn, so all its materials
+ * share one shader there (3D text: a label each).
+ */
 export function lookPatch(m, name, spec) {
   if (!m) return false;
   const names = m.userData.gsLooks ||= [];
   if (names.includes(name)) return false;
   EFFECTS.set(name, spec);
   names.push(name);
+  if (!spec.gpuShared) m.gsGpuKey = (m.gsGpuKey || '') + '|' + name + Object.values(spec.uniforms || {}).map(holderId).join('.');
   let own = SPECS.get(m); if (!own) SPECS.set(m, own = {}); own[name] = spec;
   const base = m.onBeforeCompile, baseKey = m.customProgramCacheKey;
   m.onBeforeCompile = function (sh, r) {

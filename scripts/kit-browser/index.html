@@ -32,8 +32,39 @@ try {
   // fx3d
   try { gs.fx3d.text3d('x'); } catch (x) { e = x; } ok(e?.kitLoading, 'fx3d StillLoading'); await e.kitLoading;
   const scene = new gs.THREE.Scene(); const t = gs.fx3d.text3d('HI', { size: .5 }); scene.add(t); ok(!!t.isMesh, 'text3d');
+  {
+    // 3D text: sized by a capital's height, laid out again by sync(), wrapped at spaces, any gs.fonts font
+    ok(Math.abs(t.height - .5) < .02 && t.width > .3 && t.width < 1.2, 'text3d: a capital is `size` high (' + t.height.toFixed(2) + ' x ' + t.width.toFixed(2) + ')');
+    const w0 = t.width; t.text = 'HI THERE'; t.sync(); ok(t.width > w0 * 2 && t.geometry.index.count === 7 * 6, 'text3d: sync() lays out the new text (a quad a letter, none for the space)');
+    const w1 = t.width; t.maxWidth = w0 * 1.5; t.sync(); ok(t.height > .9 && t.width < w1 * .8, 'text3d: maxWidth wraps at the space (two lines, ' + t.height.toFixed(2) + ' high, ' + t.width.toFixed(2) + ' wide from ' + w1.toFixed(2) + ')');
+    t.size = 1; t.maxWidth = Infinity; t.sync(); ok(Math.abs(t.height - 1) < .04, 'text3d: size changes');
+    t.outline = .05; t.outlineColor = '#ff0000'; t.sync(); const U = t.material.userData.gsSdf; ok(U.gsSdfOutline.value > 0 && U.gsSdfOutlineCol.value.r === 1, 'text3d: outline');
+    t.color = '#00ff00'; ok(t.color.g === 1 && t.color.r === 0, 'text3d: color');
+    const L = gs.fx3d.text3d('AB', { align: 'left' }), R = gs.fx3d.text3d('AB', { align: 'right' }), bx = m => (m.geometry.computeBoundingBox(), m.geometry.boundingBox);
+    ok(bx(L).min.x > -.2 && bx(R).max.x < .2 && bx(L).max.x > .3 && bx(R).min.x < -.3, 'text3d: align left and right');
+    let fe = null, fancy = null; for (let i = 0; i < 3 && !fancy; i++) try { fancy = gs.fx3d.text3d('Wow', { font: 'Bangers' }); } catch (x) { fe = x; if (!x.kitLoading) throw x; await x.kitLoading; }
+    ok(!!fancy && fancy.atlas !== t.atlas && fancy.width > 0, 'text3d: a gs.fonts font (its own picture of letters)' + (fe ? ', loaded on first use' : ''));
+    let bad = null; try { gs.fx3d.text3d('x', { font: 'Nope Sans' }); } catch (x) { bad = x; } ok(/no font called/.test(bad?.message || ''), 'text3d: an unknown font says which there are');
+    ok(t.material.gsGpuKey === undefined && fancy.material.gsGpuKey === undefined, 'text3d: every label shares one shader on WebGPU');
+  }
   const fx = new gs.fx3d.Particles3D(scene); fx.boom({ x: 0, y: 0, z: 0 }); fx.fire({ x: 0, y: 0, z: 0 }); fx.update(.016); fx.update(.016); ok(fx.live.size >= 3, 'particles3d ' + fx.live.size);
-  const v = new gs.hd.HDView({}); gs.fx3d.outline(v, []); gs.fx3d.pixelate(v, 4); gs.fx3d.glitch(v); gs.fx3d.trails(v); ok(v.extras.length === 4, 'extra passes');
+  {
+    // 3D particles: a seed gives the same particles every time; effects stop, move and go away
+    const run = () => { const p = new gs.fx3d.Particles3D(new gs.THREE.Scene(), { seed: 7 }); const f = p.fire({ x: 1, y: 2, z: 3 }); p.boom({ x: 0, y: 0, z: 0 }); for (let i = 0; i < 20; i++) p.update(1 / 30); return [p, f]; };
+    const [pa, fa] = run(), [pb] = run();
+    ok(pa.count > 20 && pa.count === pb.count, 'particles3d: ' + pa.count + ' flying, the same count for the same seed');
+    ok(pa.glow.P.slice(0, pa.glow.n * 19).every((v, i) => v === pb.glow.P[i]), 'particles3d: and the same places, speeds and colours');
+    const n0 = pa.count; fa.remove(); pa.update(1 / 30); ok(pa.count < n0 && !pa.live.has(fa), 'particles3d: remove() takes an effect and its particles away');
+    const sm = pa.smoke({ x: 0, y: 0, z: 0 }); for (let i = 0; i < 10; i++) pa.update(.1); const before = pa.soft.n; sm.stop(); for (let i = 0; i < 40; i++) pa.update(.1);
+    ok(before > 0 && pa.soft.n === 0, 'particles3d: stop() lets the ones flying finish');
+    const sn = pa.snow({ x: 0, y: 5, z: 0 }); sn.at({ x: 9, y: 5, z: 0 }); ok(sn.pos.x === 9, 'particles3d: at() moves an effect');
+    pa.clear(); ok(pa.count === 0 && pa.live.size === 0, 'particles3d: clear()'); pa.dispose(); pb.dispose();
+    ok(pa.glow.mesh.parent === null, 'particles3d: dispose() takes the meshes out of the scene');
+  }
+  // (the screen effects' WebGL passes load the first time one is asked for: text and particles no longer bring them)
+  let v = null, fxWait = null;
+  for (let i = 0; i < 3 && !v; i++) try { const w = new gs.hd.HDView({}); gs.fx3d.outline(w, []); gs.fx3d.pixelate(w, 4); gs.fx3d.glitch(w); gs.fx3d.trails(w); v = w; } catch (x) { if (!x.kitLoading) throw x; fxWait = x; await x.kitLoading; }
+  ok(!!fxWait, 'screen effects StillLoading the first time'); ok(v.extras.length === 4, 'extra passes');
   const cc = document.createElement('canvas'); cc.width = 180; cc.height = 320; document.body.append(cc); const cx = cc.getContext('2d');
   v.render(cx, 180, 320); v.render(cx, 180, 320); ok(true, 'HDView render with extras');
   // round 3: game objects, scenes, pacing, aim, senses, camera, characters, nav3d, ragdoll
