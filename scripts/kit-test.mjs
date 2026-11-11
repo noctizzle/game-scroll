@@ -1625,6 +1625,11 @@ console.log('physics ok');
     const arm = HS.sculpt(jobs[1]); assert.deepEqual([...arm.names].sort(), ['armL', 'foreL']); assert.ok(arm.n > 500 && arm.slots.includes('top'));
     let minX = 9; for (let i = 0; i < arm.n; i++) minX = Math.min(minX, arm.P[i * 3]); assert.ok(minX > .1, 'a left arm, on its own side: ' + minX);
     assert.deepEqual([...HS.mirrored(arm).names].sort(), ['armR', 'foreR']);
+    // a kind that is not on the list is no hat and no pack, even a name every object answers to (a kind reaches the sculptor as text, over a worker message)
+    for (const kind of ['constructor', 'toString', 'nonsuch']) {
+      assert.deepEqual(HS.jobsFor({ ...sp, hat: { kind }, pack: { kind } }).map(j => j.kind), ['trunk', 'arm', 'hand', 'head'], 'no hat or pack of kind ' + kind);
+      for (const what of ['hat', 'pack']) assert.throws(() => HS.sculpt({ kind: what, a: { kind } }), new RegExp(`no ${what} called '${kind}'`));
+    }
     assert.ok(typeof HS.VERSION === 'string' && HS.VERSION.length > 4, 'the sculptor has a stamp for saved copies');
   }
   console.log('gs.models: sculpted people ok');

@@ -252,7 +252,7 @@ function head(a) {
   S.push({ taper: [Hd(.0125, .0245, .093), Hd(.031, .0285, .089)], r: [.0046 * bw, .0042 * bw], mirror: true, slot: 'brow', paint: true }, { taper: [Hd(.031, .0285, .089), Hd(.051, .0245, .0745)], r: [.0042 * bw, .003 * bw], mirror: true, slot: 'brow', paint: true });
   if (a.moustache) S.push({ ball: [.019, .0045, .0065], at: Hd(.011, -.0535, .0965), rot: [0, .3, -.18], mirror: true, slot: 'brow', lumpy: [.004, .001], blend: .002 });
   // the hat stands over the face: a brim's shadow on the brow
-  for (const g of (a.hat && HATS[a.hat.kind]?.(a.hat).ghost) || []) S.push({ ...g, ghost: true, slot: null });
+  for (const g of (a.hat && HATS.get(a.hat.kind)?.(a.hat).ghost) || []) S.push({ ...g, ghost: true, slot: null });
   return S;
 }
 // an eye: white, iris, pupil in clean rings (looking along +z)
@@ -264,7 +264,8 @@ function eyeball(c, r, n = 14) {
 }
 
 // ---- hats (their own bone, so one can fly off): shapes in the head's space, and what they shade
-const HATS = {
+// (hats and packs are lists looked up by kind, never an object's own names: a kind comes from a game, and reaches the sculptor as text)
+const HATS = new Map(Object.entries({
   // a steel helmet: a deep shell, lower at the back than the brow, flared round the sides and nape, a short peak, a low comb on top
   helmet(o) {
     const n = [0, .964, -.265], off = HC[1] * .964 - HC[2] * .265 + .004, dome = { ball: [.099, .127, .123], at: Hd(0, .012, -.011), clip: [n, off, .003] };
@@ -304,17 +305,17 @@ const HATS = {
     S.push({ ball: [.068, .094, .075], at: Hd(0, -.012, .062), cut: true, blend: .014 }, { ball: [.081, .1, .101], at: Hd(0, .016, -.012), cut: true, blend: .004 }, { taper: [Hd(0, -.07, -.02), Hd(0, -.2, -.03)], r: .058, cut: true, blend: .004 });
     return { S, ghost: [{ ball: [.094, .112, .116], at: Hd(0, .016, -.02), shell: .012, clip: [[0, .3, -1], -(HC[2] + .03) + HC[1] * .3, .01] }] };
   },
-};
+}));
 
 // ---- things carried on the back (each on its own bone under the spine, so a game can hide it)
-const PACKS = {
+const PACKS = new Map(Object.entries({
   pack: () => [{ box: [.29, .33, .13], round: .04, at: [0, 1.3, -.19], rot: [.05, 0, 0], slot: 'kit', lumpy: [.05, .005], blend: 0 }, { box: [.3, .12, .14], round: .04, at: [0, 1.41, -.19], rot: [.05, 0, 0], slot: 'kit', blend: .004 },
     { rod: [[-.16, 1.49, -.19], [.16, 1.49, -.19]], r: .05, round: .03, slot: 'roll', lumpy: [.03, .004], blend: .004 }, ...[1, -1].map(s => ({ box: [.03, .26, .012], round: .004, at: [s * .08, 1.33, -.122], slot: 'strap', blend: .002 }))],
   radio: () => [{ box: [.3, .36, .14], round: .012, at: [0, 1.3, -.2], rot: [.04, 0, 0], slot: 'case', blend: 0 }, { box: [.26, .06, .1], round: .01, at: [0, 1.49, -.2], slot: 'case', blend: .002 },
     { rod: [[.1, 1.47, -.24], [.1, 2.35, -.27]], r: .0045, slot: 'steel', blend: 0 }, { rod: [[-.06, 1.5, -.16], [-.06, 1.53, -.16]], r: .02, round: .004, slot: 'steel', blend: .001 }, { rod: [[.02, 1.5, -.16], [.02, 1.525, -.16]], r: .014, round: .004, slot: 'steel', blend: .001 },
     ...[1, -1].map(s => ({ box: [.034, .3, .012], round: .004, at: [s * .1, 1.31, -.125], slot: 'strap', blend: .002 }))],
   roll: () => [{ rod: [[-.17, 1.4, -.15], [.17, 1.4, -.15]], r: .06, round: .035, slot: 'roll', lumpy: [.03, .005], blend: 0 }, ...[1, -1].map(s => ({ torus: [.062, .006], at: [s * .09, 1.4, -.15], rot: [0, 0, PI / 2], slot: 'strap', blend: .002 }))],
-};
+}));
 
 // ================================================================= pieces: meshed, weighted, thinned
 // a pretend colour per slot (so thinning keeps the edges between a belt and a tunic where they are)
@@ -383,14 +384,16 @@ export function jobsFor(sp) {
   const armA = band => ({ build: sp.build, top: { kind: top.kind, sleeves: top.sleeves, cuffs: bit(top.cuffs), band } });
   add('arm', armA(bit(top.band)), { side: top.band ? 'L' : 'LR' }); if (top.band) add('arm', armA(0), { side: 'R' });
   add('hand', { limbs: sp.build.limbs, grip: bit(sp.hands === 'grip'), gloves: bit(sp.gloves) });
-  const hatA = hat && HATS[hat.kind] ? { kind: hat.kind, ridge: bit(hat.ridge !== false), strap: bit(hat.strap !== false) } : null;
+  const hatA = hat && HATS.has(hat.kind) ? { kind: hat.kind, ridge: bit(hat.ridge !== false), strap: bit(hat.strap !== false) } : null;
   add('head', { face: sp.face, neck: sp.build.neck, hair: sp.hair ? sp.hairStyle : 'bald', moustache: bit(sp.moustache), hat: hatA });
   if (hatA) add('hat', hatA);
-  if (sp.pack && PACKS[sp.pack.kind]) add('pack', { kind: sp.pack.kind });
+  if (sp.pack && PACKS.has(sp.pack.kind)) add('pack', { kind: sp.pack.kind });
   for (const g of sp.gear) add('gear', { shapes: g.shapes, cell: g.cell || .004, keep: g.keep || [.3, .06, .012], err: g.err || null, blend: g.blend ?? .004 }, { g, local: !plain(g.shapes) });
   return J;
 }
 const whole = () => [['$', 1]];
+// the maker of a hat or pack by its kind: one from the list, or a plain error
+const listed = (list, kind, what) => { const f = list.get(kind); if (!f) throw new Error(`gs.models.human: no ${what} called '${kind}'`); return f; };
 /** Sculpts one piece (a job from jobsFor). The slow part: a tenth of a second for a hand, a second or two for a trunk on a phone. */
 export function sculpt({ kind, a }) {
   if (kind === 'trunk') { const S = trunk(a); return finish(S, { cell: .006, bones: trunkBones, extra: S.extra }); }
@@ -401,11 +404,11 @@ export function sculpt({ kind, a }) {
     for (const s of [1, -1]) { const e = eyeball(Hd(s * EYE[0], EYE[1], EYE[2]), .0122), base = eye.P.length / 3; eye.P.push(...e.P); eye.N.push(...e.N); eye.K.push(...e.K.map(k => 'eye' + k)); eye.I.push(...e.I.map(i => i + base)); }
     return finish(head(a), { cell: .003, bones: (x, y) => { const h = ss(1.5, 1.585, y); return [['spine', 1 - h], ['head', h]]; }, keep: [.34, .05, .008], err: [.0005, .004, .02], reach: .07, blend: .01, extra: eye });
   }
-  if (kind === 'hat') return finish(HATS[a.kind](a).S, { cell: .004, bones: whole, keep: [.3, .06, .012], blend: .006 });
-  if (kind === 'pack') return finish(PACKS[a.kind](), { cell: .006, bones: whole, keep: [.25, .06, .012], blend: .006 });
+  if (kind === 'hat') return finish(listed(HATS, a.kind, 'hat')(a).S, { cell: .004, bones: whole, keep: [.3, .06, .012], blend: .006 });
+  if (kind === 'pack') return finish(listed(PACKS, a.kind, 'pack')(), { cell: .006, bones: whole, keep: [.25, .06, .012], blend: .006 });
   return finish(a.shapes, { cell: a.cell, bones: whole, keep: a.keep, err: a.err || undefined, blend: a.blend });
 }
 // a number for all of the above as it stands: saved pieces made by other workings are not used
 const cyrb = s => { let a = 0xdeadbeef, b = 0x41c6ce57; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); a = Math.imul(a ^ c, 2654435761); b = Math.imul(b ^ c, 1597334677); } a = Math.imul(a ^ (a >>> 16), 2246822507) ^ Math.imul(b ^ (b >>> 13), 3266489909); b = Math.imul(b ^ (b >>> 16), 2246822507) ^ Math.imul(a ^ (a >>> 13), 3266489909); return (4294967296 * (2097151 & b) + (a >>> 0)).toString(36); };
 export const hashOf = cyrb;
-export const VERSION = cyrb(stamp() + [trunk, trunkBones, torsoOf, sleeveRows, arm, armBones, hand, head, eyeball, stud, finish, sculpt, ...Object.values(HATS), ...Object.values(PACKS)].map(String).join(''));
+export const VERSION = cyrb(stamp() + [trunk, trunkBones, torsoOf, sleeveRows, arm, armBones, hand, head, eyeball, stud, finish, sculpt, ...HATS.values(), ...PACKS.values()].map(String).join(''));
