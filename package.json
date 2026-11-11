@@ -100,6 +100,7 @@
     "@mediapipe/tasks-vision": "1.2.2",
     "@three.ez/instanced-mesh": "0.3.16",
     "animejs": "4.5.0",
+    "chess.js": "1.4.0",
     "fflate": "0.8.3",
     "game-services": "file:plugins/game-services",
     "honeycomb-grid": "4.1.5",

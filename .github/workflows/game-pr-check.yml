@@ -56,7 +56,7 @@ jobs:
       - name: Starter templates make games that pass the lint and the types
         run: |
           ids=""
-          for s in phone pocket color advance console nextgen ar; do node scripts/new-game.mjs "zz-template-$s" --style "$s" --creator CI > /dev/null; ids="$ids zz-template-$s"; done
+          for s in phone pocket color advance console nextgen ar board; do node scripts/new-game.mjs "zz-template-$s" --style "$s" --creator CI > /dev/null; ids="$ids zz-template-$s"; done
           node scripts/game-lint.mjs $ids && node scripts/game-types.mjs $ids
           for id in $ids; do rm "src/games/$id.js"; done
 
@@ -106,9 +106,9 @@ jobs:
           shared=$(echo "$files" | grep -E '^(src/|public/|index\.html|vite\.config\.js|package(-lock)?\.json|\.nvmrc|\.env|scripts/(smoke|fold|sweep|stream-smoke|build-games|pick-games|ar-floor)\.|\.github/workflows/game-pr-check\.yml)' | grep -vE '^src/(games/|licences\.js)' || true)
           # The AR kit or its phone bridge changed: also play the pretend-room scenes (scripts/ar-floor.cjs).
           if echo "$files" | grep -qE '^(src/kit/(ar3d|ar-floor|native-ar)\.js|scripts/(ar-floor\.cjs|lib/fake-native-ar\.js))$'; then echo "ar=true" >> "$GITHUB_OUTPUT"; fi
-          # Sweep (fast-forwarded long play at odd sizes): Console games, and Next Gen games the PR changes
+          # Sweep (fast-forwarded long play at odd sizes): Console games, and Next Gen and Board games the PR changes
           # (Next Gen draws in software here, so sweeping all of them would take too long).
-          sweepable() { grep -qE "era: *'console'" "src/games/$1.js" || { grep -qE "era: *'nextgen'" "src/games/$1.js" && case " $changed " in *" $1 "*) true;; *) false;; esac; }; }
+          sweepable() { grep -qE "era: *'console'" "src/games/$1.js" || { grep -qE "era: *'(nextgen|board)'" "src/games/$1.js" && case " $changed " in *" $1 "*) true;; *) false;; esac; }; }
           if [ -n "$shared" ]; then
             echo "Shared code changed, so the engine-heavy games are played too:"; echo "$shared" | sed 's/^/  /'
             all=$(echo $(node scripts/pick-games.mjs 3 --why) $changed | tr ' ' '\n' | awk 'NF && !seen[$0]++' | tr '\n' ' ')

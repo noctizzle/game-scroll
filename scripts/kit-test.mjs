@@ -1754,7 +1754,55 @@ console.log('physics ok');
   }
   let s = { b: Array(9).fill(null), t: 'X' }; while (!g.over(s)) s = g.play(s, S.best(s, { time: 40 }));
   assert.equal(win(s.b), null, 'perfect play draws');
+  // think(): the same answer a few milliseconds at a time (what board games' table.think() runs each frame)
+  for (const mode of ['minimax', 'mcts']) {
+    const job = S.think({ b: ['O', 'O', null, 'X', 'X', null, null, null, null], t: 'X' }, { mode, time: 80, rng: 1 });
+    let steps = 0; while (!job.step(2) && steps < 2000) steps++;
+    assert.ok(job.done && job.move === 5 && job.ranked.length === 5, mode + ' think() takes the win in steps');
+  }
+  {   // a step stops wherever its milliseconds run out, even deep inside one move's subtree, and still gets rank()'s answer
+    const from = { b: Array(9).fill(null), t: 'X' }, want = S.rank(from, { depth: 9, time: 1e9 });
+    let clock = 0; const job = S.think(from, { depth: 9, time: 1e9, now: () => clock += .01 });
+    let steps = 0, longest = 0; for (;;) { const c0 = clock; const done = job.step(.2); longest = Math.max(longest, clock - c0); steps++; if (done || steps > 1e6) break; }
+    assert.deepEqual(job.ranked, want, 'think() in small steps ranks the moves as rank() does');
+    assert.ok(steps > 40, 'think() paused inside the tree (' + steps + ' steps)'); assert.ok(longest < .5, 'no step ran long (' + longest.toFixed(2) + ')');
+    const short = S.think(from, { depth: 9, time: 3 }); let n = 0; while (!short.step(1) && n < 1000) n++;
+    assert.ok(short.done && short.spent < 30 && g.moves(from).includes(short.move), 'think() stops when its time is up');
+  }
+  const one = S.think({ b: ['X', 'O', 'X', 'O', 'X', 'O', 'O', 'X', null], t: 'X' }); assert.ok(one.done && one.move === 8 && one.step(), 'think() with one move is done at once');
   console.log('gs.solve ok');
+}
+
+// gs.tabletop.Chess: chess.js rules behind a small API, and the opponent (chess-ai.js) that searches chess.js's inner move list
+{
+  const { Chess, loadChess } = await import('../src/kit/chess.js');
+  const { bestMove, LEVELS, evaluate } = await import('../src/kit/chess-ai.js');
+  let early = null; try { new Chess(); } catch (e) { early = e; }
+  assert.ok(early?.kitLoading, 'Chess before the rules load throws StillLoading');
+  await loadChess();
+  const { Chess: Rules } = await import('chess.js');
+  const raw = new Rules();
+  for (const k of ['_moves', '_makeMove', '_undoMove']) assert.equal(typeof raw[k], 'function', 'chess.js still has ' + k + ' (the search needs it: see chess-ai.js before updating chess.js)');
+  assert.ok(Array.isArray(raw._board) || raw._board?.length === 128, 'chess.js still has _board'); assert.equal(raw._turn, 'w', 'chess.js still has _turn');
+  assert.equal(evaluate(raw), 0, 'the start is level');
+  const g = new Chess();
+  assert.equal(g.turn, 'w'); assert.equal(g.moves().length, 20, 'twenty first moves'); assert.equal(g.moves('e2').length, 2);
+  assert.equal(g.move({ from: 'e2', to: 'e5' }), null, 'an illegal move is refused');
+  const m = g.move({ from: 'e2', to: 'e4' }); assert.ok(m && m.san === 'e4' && m.piece === 'p' && !m.captured && g.turn === 'b' && g.count === 1);
+  assert.equal(g.at('e4')?.type, 'p'); assert.equal(g.pieces().length, 32);
+  assert.equal(g.undo()?.to, 'e4'); assert.equal(g.fen, new Rules().fen(), 'undo puts it back');
+  assert.equal(new Chess('not a position').moves().length, 20, 'a damaged save starts a fresh game');
+  const castle = new Chess('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1'); assert.equal(castle.move({ from: 'e1', to: 'g1' })?.castle, 'k', 'castling is flagged');
+  const mated = new Chess('7k/5Q2/6K1/8/8/8/8/8 w - - 0 1'); mated.move({ from: 'f7', to: 'g7' }); assert.ok(mated.mate && mated.over && !mated.draw, 'checkmate is seen');
+  // the opponent: takes a mate in one, takes a free queen, leaves the position as it found it, and never plays an illegal move
+  const mate = new Rules('6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1'), fen = mate.fen();
+  const best = bestMove(mate, { level: 3, rng: () => .5 }); assert.ok(best.from === 'a1' && best.to === 'a8', 'mate in one: ' + JSON.stringify(best)); assert.equal(mate.fen(), fen, 'the search leaves the game as it was');
+  const free = bestMove(new Rules('rnb1kbnr/pppp1ppp/8/4p1q1/4P3/3P4/PPP2PPP/RNBQKBNR w KQkq - 0 3'), { level: 3, rng: () => .5 }); assert.ok(free.from === 'c1' && free.to === 'g5', 'takes the free queen: ' + JSON.stringify(free));
+  assert.equal(bestMove(new Rules('7k/8/5K2/8/8/8/8/6R1 b - - 0 1'), { level: 2 })?.to, 'h7', 'a side with one move finds it'); assert.equal(bestMove(new Rules('7k/5Q2/6K1/8/8/8/8/8 b - - 0 1'), { level: 2 }), null, 'no move in a stalemate');
+  const play = new Chess(); let plies = 0;
+  for (; plies < 24 && !play.over; plies++) { const r = await play.think({ level: 1 + plies % 2, time: 30 }); assert.ok(r && play.move(r), 'level ' + (1 + plies % 2) + ' plays a legal move at ply ' + plies); }
+  assert.ok(plies >= 20, 'two levels play each other'); assert.equal(Chess.LEVELS.length, 5); assert.equal(LEVELS[4].name, 'Master');
+  console.log('gs.tabletop.Chess ok');
 }
 
 // gs.voxels: a world made, meshed (merged faces, shading), dug, picked, walked on, packed

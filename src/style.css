@@ -395,18 +395,35 @@ dialog.info::backdrop{background:#000a;backdrop-filter:blur(3px)}
 .retro.ar .tag,.retro.ar .ov-win{background:linear-gradient(90deg,#19e3b1,#2a8cff);color:#04110e}
 .retro.ar .ov-k,.retro.ar .ov-best,.retro.ar .chip span,.retro.ar .shop-k{color:#8affdc}
 .retro.ar .play{box-shadow:0 0 0 4px #19e3b144,0 0 24px #19e3b166}
+/* Board games shell: a walnut game table with a felt inset and brass trim, for games played on a board (3D or AR) */
+.slide.board{background:radial-gradient(120% 70% at 50% 30%,#3a2415 0%,#0e0906 74%)}
+.retro.board .device{background:linear-gradient(160deg,#8a5a34 0%,#5c3a20 46%,#2e1c10 46.4%,#1c110a 100%);border-radius:18px;padding:7px;box-shadow:inset 0 1px 0 #ffffff26,inset 0 -3px 0 #0007,0 18px 40px #000a}
+.retro.board .screen{border:3px solid #0d0805;border-radius:12px;box-shadow:0 0 0 1px #d8b46a66,0 0 16px #d8b46a22}
+.retro.board .bezel-top{color:#c8a880}
+.retro.board .bezel-top .era{color:#ffe9c4}
+.retro.board .led{background:#d8b46a;box-shadow:0 0 6px #d8b46a}
+.retro.board.playing .led{background:#ffe9b0;box-shadow:0 0 10px #f0c060,0 0 3px #fff}
+.retro.board .bezel-bottom .slot{background:linear-gradient(90deg,#0000,#d8b46a,#0000);box-shadow:0 0 8px #d8b46a66}
+.retro.board .pads i{background:#3e2a1a}
+.retro.board .pads i:first-child{background:#2f8a5c;box-shadow:0 0 6px #2f8a5c}
+.retro.board .tag,.retro.board .ov-win{background:linear-gradient(90deg,#2f8a5c,#d8b46a);color:#0c0805}
+.retro.board .overlay{background:linear-gradient(180deg,#120b06b8,#120b06ea)}
+.retro.board .ov-k,.retro.board .ov-best,.retro.board .chip span,.retro.board .shop-k{color:#f0c878}
+.retro.board .ov-title{background:linear-gradient(#fff6e4,#d8b98a);-webkit-background-clip:text;background-clip:text}
+.retro.board .play{box-shadow:0 0 0 4px #d8b46a44,0 0 24px #d8b46a55}
 /* native AR (src/kit/native-ar.js): the camera picture is drawn natively BEHIND the page, so while an AR
    game plays the page goes see-through. Only the game screen stays clear: a huge shadow around it repaints
    the shell and the dark backdrop, and the shell's labels and the game info sit above that shadow. */
 html.ar-live,html.ar-live body{background:transparent}
 /* the strips under the status bar and the home bar (html's safe-area padding) stay dark */
 html.ar-live{background:linear-gradient(var(--ink),var(--ink)) top/100% env(safe-area-inset-top,0px) no-repeat,linear-gradient(var(--ink),var(--ink)) bottom/100% env(safe-area-inset-bottom,0px) no-repeat}
-html.ar-live .slide.ar.playing,html.ar-live .retro.ar.playing .device{background:transparent}
-html.ar-live .slide.ar.playing .stage{z-index:0}
+html.ar-live .slide.ar.playing,html.ar-live .retro.ar.playing .device,html.ar-live .slide.board.playing,html.ar-live .retro.board.playing .device{background:transparent}
+html.ar-live .slide.ar.playing .stage,html.ar-live .slide.board.playing .stage{z-index:0}
 html.ar-live .slide.ar.playing .screen{box-shadow:0 0 0 1px #19e3b155,0 0 0 7px #1a1d24,0 0 0 200vmax #070a12}
-html.ar-live .slide.ar.playing .bezel-top,html.ar-live .slide.ar.playing .bezel-bottom{position:relative;z-index:1}
-html.ar-live .slide.ar.playing .meta{position:relative;z-index:1}
+html.ar-live .slide.ar.playing .bezel-top,html.ar-live .slide.ar.playing .bezel-bottom,html.ar-live .slide.board.playing .bezel-top,html.ar-live .slide.board.playing .bezel-bottom{position:relative;z-index:1}
+html.ar-live .slide.ar.playing .meta,html.ar-live .slide.board.playing .meta{position:relative;z-index:1}
 html.ar-live .slide.ar.playing .bezel-top .era{color:#8affdc}
+html.ar-live .slide.board.playing .screen{box-shadow:0 0 0 1px #d8b46a66,0 0 0 7px #2e1c10,0 0 0 200vmax #0e0906}
 /* Sound & haptics controls */
 .set-slider{display:flex;align-items:center;gap:12px;margin:0 16px 12px;font-size:15px}
 .set-slider input{flex:1;min-width:0;accent-color:var(--accent,#ff4d6d);height:28px}

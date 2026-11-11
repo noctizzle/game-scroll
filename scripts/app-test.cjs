@@ -526,7 +526,7 @@ async function tour(b) {
       k.verdict({ ...base, errors: ['x'] }), k.verdict({ ...base, loaded: false }), k.verdict({ ...base, frames: 0, fps: 0 })];
     out.long = [k.howLong(46, 20), k.howLong(244, 20), k.howLong(1, 10)];
     out.sets = k.sets(__gs.GAMES).map(([key, name, list]) => [key, list.length]);
-    out.threeD = __gs.GAMES.filter(g => ['console', 'nextgen', 'ar'].includes(g.era)).length;
+    out.threeD = __gs.GAMES.filter(g => ['console', 'nextgen', 'ar', 'board'].includes(g.era)).length;
     // a guest's saves and brains go nowhere, and read the player's own until the bot saves
     const loud = what => () => { throw new Error(what + ' reached the real one'); };
     const g = k.guestApi({ load: () => 'real', loadLocal: () => 'big', save: loud('save'), saveLocal: loud('saveLocal'), clearSave: loud('clearSave'), clearLocal: loud('clearLocal'),

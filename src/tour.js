@@ -31,7 +31,7 @@ import { prefs } from './kit/prefs.js';
 const SLOW_MS = 25, FREEZE_MS = 70;   // the same lines src/perf.js draws
 const EARLY_MS = 2000;                // a freeze this soon after Play is the round starting up, not play
 const LOAD_LIMIT = 40, PLUGIN_LIMIT = 4000, LAST_KEY = 'gs_tour_last';
-const ERAS = { console: 'Console', nextgen: 'Next Gen', ar: 'AR' };
+const ERAS = { console: 'Console', nextgen: 'Next Gen', ar: 'AR', board: 'Board' };
 const is3D = g => !!ERAS[g.era];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wait = ms => new Promise(r => setTimeout(r, ms));

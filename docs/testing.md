@@ -20,7 +20,7 @@ How to check a change without waiting longer than you need to. Written for peopl
 | One game file | `node scripts/game-lint.mjs <id>` (it also gives kit hints: advice, never a failure), `node scripts/game-types.mjs <id>`, `npm run games`, then `node scripts/smoke.cjs <id>` and `node scripts/stream-smoke.mjs <id>` | under 20 s |
 | How games use `gs` (a kit, method, option or definition field that doesn't exist) | `npm run game-types` (every game against `src/gamescroll.d.ts`; `-- --self-test` checks the check, `-- --all` also lists what it leaves alone) | about a second |
 | Does a game play differently from the others? | `node scripts/unique.mjs <id>` (its three nearest games and what they share; no ids: the closest pairs of all; `--since origin/main...HEAD`: the games a branch adds or changes; `--self-test`). A near-copy (new names on the same code) fails; a near-twin (plays and reads like another) is a warning | 4 s |
-| A 3D game (Console, Next Gen, AR) | add `node scripts/sweep.cjs <id>` | 20 s to 2 min |
+| A 3D game (Console, Next Gen, AR, Board) | add `node scripts/sweep.cjs <id>` | 20 s to 2 min |
 | A game's speed | `node scripts/budget.cjs <id>` | about 25 s |
 | Can the goal be reached? | `node scripts/playtest.cjs <id> [--budget 20] [--strict]`: a bot plays faster than real time and tries to win (see below) | about 20 s a game |
 | Layout, cards, folding | `node scripts/fold.cjs [id ...]` | about 12 s |
@@ -39,7 +39,7 @@ How to check a change without waiting longer than you need to. Written for peopl
 | Engine speed (CPU per frame) | `node scripts/perf-bench.cjs [id ...] --json before.json` before, `--vs before.json` after (see below) | about 15 s a game per backend |
 | The frame lab (`src/framelab.js`) | `node scripts/framelab-test.cjs [2d-id] [3d-id] [--shots dir] [--report file.html]` | about 3 min |
 | How a game really runs (pacing, hitch causes, upscaler, frame gen) | the frame lab on a phone: QA panel › Frame lab, Rec, Report ([frame-lab.md](frame-lab.md)) | |
-| Every 3D game and every native plugin on a real phone | the phone test tour: QA panel › Phone test tour (see below) | about 20 min for the 46 3D games |
+| Every 3D game and every native plugin on a real phone | the phone test tour: QA panel › Phone test tour (see below) | about 25 min for the 56 3D games |
 | The tour itself (`src/tour.js`, the guest in `src/main.js`) | `node scripts/app-test.cjs tour` | about 40 s |
 | Everything (before a big engine PR) | `node scripts/smoke.cjs` (all 162 games) | about 3.5 min |
 

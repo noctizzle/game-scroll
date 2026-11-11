@@ -10,7 +10,7 @@ The human-facing guide is [CONTRIBUTING.md](CONTRIBUTING.md); the kit reference 
 
 1. Pick an idea that plays differently from the games already in `src/games/` (look at their
    `title`, `tag` and `hint`) and from `docs/game-ideas.md`. A new mechanic, not a reskin.
-2. Start from a template: `npm run new <id> --style <phone|pocket|color|advance|console|nextgen|ar>`.
+2. Start from a template: `npm run new <id> --style <phone|pocket|color|advance|console|nextgen|ar|board>`.
    It writes `src/games/<id>.js`, a small working game. Then change it into the new game.
 3. Write the game (rules below). Use `gs` for everything shared.
 4. Check it, and fix whatever fails:
@@ -23,7 +23,7 @@ The human-facing guide is [CONTRIBUTING.md](CONTRIBUTING.md); the kit reference 
    node scripts/stream-smoke.mjs <id>        # plays it streamed, the way the store apps run it
    node scripts/fold.cjs <id>                # survives folding / unfolding the screen
    ```
-   For Console and Next Gen games also run `node scripts/sweep.cjs <id>`. `node scripts/playtest.cjs <id>`
+   For Console, Next Gen and Board games also run `node scripts/sweep.cjs <id>`. `node scripts/playtest.cjs <id>`
    has a bot try to reach the goal (warnings only). `node scripts/budget.cjs <id>`
    checks frame time and memory on a slowed CPU (the PR check runs it too).
    Which check fits which change, and how to keep testing fast (`--jobs`, software 3D): [docs/testing.md](docs/testing.md).
@@ -46,7 +46,8 @@ The human-facing guide is [CONTRIBUTING.md](CONTRIBUTING.md); the kit reference 
   player with `api.location()`.
 - **Touch first.** Fully playable with touch alone. Sensors (tilt, mic, camera, face, motion moves)
   need a touch fallback.
-- **Quick.** One sentence of hint explains it; a round lasts about 20 seconds to 3 minutes.
+- **Quick.** One sentence of hint explains it; a round lasts about 20 seconds to 3 minutes (a Board game
+  may run longer, and then saves after every turn with `api.save()` so it can be picked up again).
 - **Family friendly.** Cartoon action is fine; no gore, hate, real-money gambling.
 - `goal` is required: the score that counts as a win (a decent player reaches it in about a minute).
 
@@ -119,10 +120,11 @@ The app draws the start and game-over screens and the score. The game only draws
 | Classic Console (3D) | `retro: true, era: 'console', pal: 'grape'` | `Console ·` | 192 × 160 | `gs.toon` cel-shaded 3D |
 | Next Gen (HD 3D) | `retro: true, era: 'nextgen', pal: 'grape'` | `Next Gen ·` | 300 × 300 | `gs.hd` PBR, shadows, bloom |
 | AR · 3D | `retro: true, era: 'ar', pal: 'grape'` | `AR ·` | 300 × 460 | `gs.ar` camera + gyro |
+| Board (3D + AR) | `retro: true, era: 'board', pal: 'grape'` | `Board ·` | 300 × 460 | `gs.tabletop`: a board on a table in 3D, or on your floor in AR |
 
 Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pixel positions and
 `gs.pixel` for text and sprites. 3D: copy the matching template; docs are `docs/console-3d.md`,
-`docs/nextgen-3d.md`, `docs/ar-3d.md`.
+`docs/nextgen-3d.md`, `docs/ar-3d.md`, `docs/board-games.md`.
 
 ## What's on `gs` (use it rather than writing your own)
 
@@ -212,6 +214,12 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - `gs.real` (real-world signals, no permission): `sun(place?)` (`up`, `height`, `compass`, `light` 0..1, `part`, `rise`/`set`, `hour` for gs.sky), `moon(place?)` (`phase`, `lit`, `name`), `battery()` (`level`, `charging`, `saver`), `headphones()`; null where the phone won't say, and never the only way to win.
 - `gs.toon` (Console 3D: `View`, `G`, `part`, `grp`, `blob`, `toon`), `gs.hd` (Next Gen: `HDView` with `decal`, `bounce` (bounce light), `room` (room reflections), `occluders` (occlusion culling), `beams` (volumetric light), `motionBlur`, `bakeLight`, `shafts`,
   `pbr`, `rbox`, `surface`, `speckle`, `Particles`, `sun`, `spot`), `gs.ar` (`ARView`, `FLOOR`, `arNote`), `gs.THREE`.
+- `gs.tabletop` (Board games; guide `docs/board-games.md`): `Table(api, { span, room, table, pitch, frame })` is the table in a 3D room and, on the AR
+  chip, on the player's floor: `board` (add pieces here, in board units), `update`/`draw`/`hud`, `down`/`move`/`up` (a tap, or `{ chip }`), `claim(id)`,
+  `pick`, `over`, `nearest`, `toScreen`; turns as promises (`run`, `hop`, `slide`, `drop`, `pop`, `tween`, `wait`, `until`, `busy`), `think(search, state)`
+  (a `gs.solve.Search` opponent, a little each frame), `dice(n, { tray })` (real dice: `roll({ keep })`, `park`), `crumble`, `puff`, `shake`, `lookAt`,
+  `strip`, `status`, `say`, `frame`, `tall`, `hidden`. Pieces made in code: `slab({ w, d, paint })`, `decal`, `pawn`, `disc`, `stone`, `die`, `chessman`,
+  `eyes`, `ring`, `dot`, `wood`, `fuse(group)`; `sounds`; `ROOMS`; `Chess` (rules + worker opponent: `moves`, `move`, `think({ level })`, `fen`).
 - `gs.fx3d` (lazy): `text3d()`, `Particles3D` (`fire`, `smoke`, `sparks`, `boom`, `magic`, `snow`),
   `outline`, `glitch`, `trails`, `focus`, `pixelate`.
 - `gs.vision` (lazy): `Face` (`x`, `y`, `yaw`, `mouth`, `smile`, `blink`...), `Hands` (`pinch`, `open`, `point`...),
@@ -220,9 +228,9 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   `Voice({ words, also })` (`start()`, `said(word)`, `available`). `gs.doodle` (lazy): `Doodle` (`guess(strokes, { among })` of 200 things: pass `among`, the few your game cares about).
   `gs.phoneai`: `PhoneAI({ persona, words })` `ask(prompt, { fallback })` for flavour lines only; play must never depend on it.
 
-**Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `sound.instrument`, `api.loadLocal`, `story.Story`, `look2d.Screen`, `look2d.Batch`, `words.Words`, `trivia.Quiz`, `ui.UI`, `juice.Timeline`, `hear.Sounds`, `doodle.Doodle`, `fonts.use`): create them in `make()` or `reset()`, never
+**Lazy parts** (physics, physics3d, nav3d, fx3d, vision, Tone, `sound.instrument`, `api.loadLocal`, `tabletop.Chess`, `Table.dice()`, `story.Story`, `look2d.Screen`, `look2d.Batch`, `words.Words`, `trivia.Quiz`, `ui.UI`, `juice.Timeline`, `hear.Sounds`, `doodle.Doodle`, `fonts.use`): create them in `make()` or `reset()`, never
 later. The app shows "Loading…" and remakes the game once the library is in.
-The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `city`, `models`, `voxels`, `THREE`)
+The 3D parts (`toon`, `hd`, `ar`, `bricks`, `physics3d`, `fx3d`, `camera`, `nav3d`, `characters`, `level3d`, `sky`, `poses`, `destruction`, `props`, `outdoors`, `city`, `models`, `voxels`, `tabletop`, `THREE`)
 and `ai`, plus the action kits (`combat`, `tactics`, `climb`, `missions`, `cutscene`, `prompts`, `stealth`, `gadgets`, `campaign`, `arena`) and play kits (`craft`, `soft`, `cards`, `dice`, `words`, `trivia`, `ui`) and smarts (`hear`, `doodle`, `phoneai`) and looks (`sketch`, `icons`), also load on first use, so the app opens fast. The app loads the ones a game uses before it
 runs, so read them as usual (`const { HDView } = gs.hd` at the top of the file is fine).
 

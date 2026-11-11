@@ -1,7 +1,7 @@
 // Starts a new game from a working template, so makers begin with something that already plays.
 //
 //   npm run new my-game                       Phone (Casual) game
-//   npm run new my-game --style pocket        or: phone, pocket, color, advance, console, nextgen, ar
+//   npm run new my-game --style pocket        or: phone, pocket, color, advance, console, nextgen, ar, board
 //   npm run new my-game --style ar --title "Balloon Pop" --creator "Sam"
 //
 // It writes src/games/my-game.js (the file name is the game's id) and prints what to do next. Every
@@ -20,6 +20,7 @@ const STYLES = {
   console: 'Classic · Console: cel-shaded 3D',
   nextgen: 'Next Gen · Console: modern HD 3D',
   ar: 'AR · 3D: 3D in the player\'s real room',
+  board: 'Board game: on a table in 3D, or in the player\'s room with AR',
 };
 
 // npm swallows --flags given to `npm run new` and passes them as npm_config_* instead; read both.

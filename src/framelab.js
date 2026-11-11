@@ -42,7 +42,7 @@ import { BUILD } from './perf.js';
 import { store } from './util.js';
 
 const KEY = 'gs_lab', N = 8192, WIN = 4000, REC_MAX = 60000, PAUSE_GAP = 250;
-const is3D = d => d && (d.era === 'nextgen' || d.era === 'ar');
+const is3D = d => d && (d.era === 'nextgen' || d.era === 'ar' || d.era === 'board');
 const r1 = v => Math.round(v * 10) / 10, r2 = v => Math.round(v * 100) / 100;
 const file = u => String(u || '').split(/[?#]/)[0].split('/').pop() || '';
 

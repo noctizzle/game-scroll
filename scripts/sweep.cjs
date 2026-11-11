@@ -21,7 +21,7 @@ const { jobs, pool } = require('./lib/pool.cjs');
   };
   let spare = await open();
   const ids = argv.length ? argv
-    : await spare.p.evaluate(() => __gs.GAMES.filter(g => g.era === 'console' || g.era === 'nextgen' || g.era === 'ar').map(g => g.id));
+    : await spare.p.evaluate(() => __gs.GAMES.filter(g => g.era === 'console' || g.era === 'nextgen' || g.era === 'ar' || g.era === 'board').map(g => g.id));
   let failed = 0;
   await pool(ids, n, async () => { const w = spare || await open(); spare = null; return w; }, async (w, id) => {
     const { p } = w, pageErrs = w.errs;
@@ -30,7 +30,7 @@ const { jobs, pool } = require('./lib/pool.cjs');
     for (let i = 0; i < 80 && await p.evaluate(() => !__gs.active || __gs.active.loading); i++) await p.waitForTimeout(100);
     const res = await p.evaluate(async full => {
       const s = __gs.active, g = s.game, c = s.ctx;
-      const hd = !full && window.__hd && (s.def.era === 'nextgen' || s.def.era === 'ar');
+      const hd = !full && window.__hd && (s.def.era === 'nextgen' || s.def.era === 'ar' || s.def.era === 'board');
       // tall and wide extremes put a level's start and end on screen at once
       const sizes = [[200, 1400], [480, 200], [160, 300], [s.w || 200, s.h || 300]];
       for (const [w, h] of sizes) {

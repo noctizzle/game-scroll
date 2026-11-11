@@ -9,7 +9,7 @@ There is a friendlier walkthrough at **https://game-scroll.com/make/**. This gui
 1. [The rules](#the-rules)
 2. [Quick start](#quick-start)
 3. [How a game file works](#how-a-game-file-works)
-4. [Choosing a style](#choosing-a-style): Phone, Dot matrix, Color, Advance, Classic Console, Next Gen Console or AR · 3D
+4. [Choosing a style](#choosing-a-style): Phone, Dot matrix, Color, Advance, Classic Console, Next Gen Console, AR · 3D or Board
 5. [Palettes and shells](#palettes-and-shells)
 6. [Screen sizes, foldables and fluid games](#screen-sizes-foldables-and-fluid-games)
 7. [Sound, haptics and phone sensors](#sound-haptics-and-phone-sensors)
@@ -58,7 +58,7 @@ cd game-scroll
 npm install
 
 # 2. Start your game from a working template (the file name is the game's id)
-npm run new my-game --style pocket      # phone, pocket, color, advance, console, nextgen or ar
+npm run new my-game --style pocket      # phone, pocket, color, advance, console, nextgen, ar or board
 
 # 3. Run the app with your game built in
 npm run dev
@@ -206,6 +206,7 @@ game-over screens, which feed tab it appears in and how it is scaled.
 | **Classic · Console (3D)** | `retro: true, era: 'console', pal: 'grape'` | `Console ·` | `192 x 160` (fluid up to ~300 x 240) | TV frame, real-time 3D, cel-shaded with ink outlines, sharp hi-res HUD. |
 | **Next Gen · Console (HD 3D)** | `retro: true, era: 'nextgen', pal: 'grape'` | `Next Gen ·` | `300 x 300` (fluid up to ~600 x 420, so landscape foldables are filled edge to edge) | Slim glossy console, modern HD 3D: PBR materials, shadows, bloom, AO, particles. |
 | **AR · 3D** | `retro: true, era: 'ar', pal: 'grape'` | `AR ·` | `300 x 460` (fluid up to ~600 x 680) | 3D objects in the player's real room: camera picture behind, gyro to look around. |
+| **Board (3D + AR)** | `retro: true, era: 'board', pal: 'grape'` | `Board ·` | `300 x 460` (fluid up to ~600 x 680) | A board game on a table in a 3D room; the AR chip puts the same board on the player's floor. |
 
 How each style looks in the app, start screen and in play:
 
@@ -309,6 +310,19 @@ renderer, with real-time shadows cast onto the real floor. Every AR game must al
 camera (a virtual room is drawn instead) and with no gyro (drag to look). Read
 [`docs/ar-3d.md`](docs/ar-3d.md) for the kit, sizes and testing. These appear under **AR · 3D**.
 
+### Board
+
+Games you play on a board: chess, dice, tile laying, a deduction game round a table. The board
+stands on a table in a 3D room made in code (drag to walk round it, pinch to zoom), and the **AR**
+chip sets the very same board down on the player's real floor. They use `gs.tabletop`
+(`src/kit/tabletop.js`), which gives the table, the camera, AR, picking, moves as promises, real
+dice, pieces made in code and a chess engine; the rules, the board's look and the HUD are yours.
+Board games may run longer than three minutes, so they save after every turn (`api.save`) and pick
+the game back up. Old public-domain games are fine as they are; for a modern published game, take
+the kind of game it is and invent your own rules, names and look. Read
+[`docs/board-games.md`](docs/board-games.md). Run `npm run sweep` on these too. They appear under
+**Board**.
+
 ## Palettes and shells
 
 For retro styles, `pal` sets the handheld shell colour, the start and game-over screen colours, and
@@ -380,7 +394,7 @@ any other app code. The full guide is [docs/maker-kit.md](docs/maker-kit.md). Th
   location itself comes from `api.location()` (see [Location](docs/maker-kit.md#location)).
 - `gs.util`: `clamp`, `rnd`, `pix`, `disc`, `flickTracker`, `hash`, `fmt` (no raw storage: use `api.save`).
 - `gs.palettes`: `PAL`, `SHELL`, `C16`.
-- `gs.gfx` (2D shading helpers), `gs.toon` (Classic Console 3D), `gs.hd` (Next Gen Console HD 3D), `gs.ar` (AR · 3D: camera + gyro), `gs.bricks` (toy bricks), `gs.THREE`.
+- `gs.gfx` (2D shading helpers), `gs.toon` (Classic Console 3D), `gs.hd` (Next Gen Console HD 3D), `gs.ar` (AR · 3D: camera + gyro), `gs.tabletop` (Board games: a table in 3D or AR, dice, pieces, chess), `gs.bricks` (toy bricks), `gs.THREE`.
 
 All of the new kits are explained, with examples, in [`docs/maker-kit.md`](docs/maker-kit.md).
 

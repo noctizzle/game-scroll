@@ -253,9 +253,89 @@ export class Search {
     return best;
   }
 
+  /**
+   * The same thinking as best(), a little each frame, so a 3D game doesn't miss frames while its
+   * opponent thinks: job = search.think(state, { time: 300, skill }); then every update
+   * `if (job.step(6)) play(job.move)` (step's number is milliseconds to spend now; it returns true once
+   * it has the move). time is the total thinking time over all the steps. job.ranked lists the moves.
+   */
+  think(state, { time = 300, depth = 8, skill = 1, rng = null, mode = 'minimax', now = () => performance.now() } = {}) {
+    const g = this.g, moves = g.moves(state), r = rng == null ? Math.random : typeof rng === 'function' ? rng : makeRng(rng);
+    const job = { done: false, move: null, ranked: moves.map(m => ({ move: m, value: 0 })), spent: 0, step: () => true };
+    const finish = ranked => { job.ranked = ranked; job.move = ranked.length ? pickBySkill(ranked, skill, r) : null; job.done = true; };
+    if (moves.length <= 1) { finish(job.ranked); return job; }
+    if (mode === 'mcts') {
+      const tree = this.tree(state, r);
+      job.step = (ms = 6) => {
+        if (job.done) return true;
+        const t0 = now(); tree.run(t0 + Math.min(ms, Math.max(1, time - job.spent)), now); job.spent += now() - t0;
+        if (job.spent >= time) finish(tree.ranked());
+        return job.done;
+      };
+      return job;
+    }
+    if (typeof g.score !== 'function') throw new Error('Search: minimax needs score(state, player)');
+    // one move from the top of the tree at a time, deeper each pass. Each move's subtree is a walk()
+    // that stops wherever the step's milliseconds run out and carries on from there next step.
+    const me = g.turn(state); let ranked = job.ranked, d = 1, i = 0, out = [], alpha = -Infinity, w = null;
+    this.nodes = 0;
+    // out of time: the last full pass stands (a first pass cut short keeps what it has, best first)
+    const stop = () => finish(d > 1 ? ranked : out.concat(ranked.slice(out.length)).sort((a, b) => b.value - a.value));
+    job.step = (ms = 6) => {
+      if (job.done) return true;
+      const t0 = now(), end = t0 + ms;
+      while (!job.done) {
+        const left = time - job.spent - (now() - t0);
+        if (left <= 0) { stop(); break; }
+        if (!w) w = this.walk(g.play(state, ranked[i].move), d - 1, alpha, Infinity, me);
+        if (!w.run(Math.min(end, now() + left), now)) { if (now() < end) stop(); break; }
+        const v = w.value; w = null;
+        out.push({ move: ranked[i].move, value: v }); if (v > alpha) alpha = v; i++;
+        if (i >= ranked.length) { ranked = out.sort((a, b) => b.value - a.value); out = []; i = 0; alpha = -Infinity; d++; if (d > depth) finish(ranked); }
+        if (now() >= end) break;
+      }
+      job.spent += now() - t0;
+      return job.done;
+    };
+    return job;
+  }
+  // ab() as a walk that can stop anywhere and carry on (think()): the same values, kept on its own stack.
+  walk(s, depth, alpha, beta, me) {
+    const g = this.g, frame = (s, depth, alpha, beta) => ({ s, depth, alpha, beta, moves: null, i: 0, mine: false, best: 0 });
+    const stack = [frame(s, depth, alpha, beta)]; let ret = null;
+    const w = {
+      value: null,
+      /** Runs until the clock passes `end`; true once `value` is in. */
+      run: (end, now) => {
+        while (stack.length) {
+          const f = stack[stack.length - 1];
+          if (!f.moves) {                                    // a new position
+            if ((++this.nodes & 15) === 0 && now() >= end) return false;
+            const over = this.over(f.s);
+            if (f.depth <= 0 || over) { ret = g.score(f.s, me) + (over ? f.depth : 0); stack.pop(); continue; }   // win sooner, lose later
+            const moves = g.moves(f.s);
+            if (!moves.length) { ret = g.score(f.s, me); stack.pop(); continue; }
+            f.moves = moves; f.mine = g.turn(f.s) === me; f.best = f.mine ? -Infinity : Infinity;
+          } else {                                           // a move below came back with its value
+            const v = ret; ret = null;
+            if (f.mine) { if (v > f.best) f.best = v; if (v > f.alpha) f.alpha = v; } else { if (v < f.best) f.best = v; if (v < f.beta) f.beta = v; }
+            if (f.alpha >= f.beta || f.i >= f.moves.length) { ret = f.best; stack.pop(); continue; }
+          }
+          stack.push(frame(g.play(f.s, f.moves[f.i++]), f.depth - 1, f.alpha, f.beta));
+        }
+        w.value = ret; return true;
+      },
+    };
+    return w;
+  }
+
   // Monte Carlo tree search (UCT): random play-outs, scored by winner(state) or score().
   mcts(state, moves, time, r, now) {
-    const g = this.g, me = g.turn(state), end = now() + time;
+    const tree = this.tree(state, r); tree.run(now() + time, now); return tree.ranked();
+  }
+  // The search tree on its own, so it can grow over several frames (think()).
+  tree(state, r) {
+    const g = this.g;
     const result = (s, who) => {   // 1 win, 0 loss, .5 draw for `who`
       if (g.winner) { const w = g.winner(s); return w == null ? .5 : w === who ? 1 : 0; }
       if (g.score) { const v = g.score(s, who); return v > 0 ? 1 : v < 0 ? 0 : .5; }
@@ -265,20 +345,22 @@ export class Search {
     const expand = node => { node.kids = g.moves(node.s).map(m => ({ move: m, s: g.play(node.s, m), kids: null, n: 0, w: 0, who: g.turn(node.s) })); };
     expand(root);
     let runs = 0;
-    while (runs < 20 || now() < end) {
-      runs++; if (runs > 200000) break;
-      const path = [root]; let node = root;
-      while (node.kids && node.kids.length && node.n > 0) {
-        let best = null, bv = -Infinity;
-        for (const k of node.kids) { const v = k.n ? k.w / k.n + 1.4 * Math.sqrt(Math.log(node.n) / k.n) : 1e9 + r(); if (v > bv) { bv = v; best = k; } }
-        node = best; path.push(node);
-        if (!node.kids && !this.over(node.s)) { expand(node); break; }
+    const run = (end, now) => {
+      while (runs < 20 || now() < end) {
+        runs++; if (runs > 200000) break;
+        const path = [root]; let node = root;
+        while (node.kids && node.kids.length && node.n > 0) {
+          let best = null, bv = -Infinity;
+          for (const k of node.kids) { const v = k.n ? k.w / k.n + 1.4 * Math.sqrt(Math.log(node.n) / k.n) : 1e9 + r(); if (v > bv) { bv = v; best = k; } }
+          node = best; path.push(node);
+          if (!node.kids && !this.over(node.s)) { expand(node); break; }
+        }
+        let s = node.s, steps = 0;
+        while (!this.over(s) && steps++ < 400) { const ms = g.moves(s); if (!ms.length) break; s = g.play(s, ms[Math.floor(r() * ms.length)]); }
+        for (const p of path) { p.n++; if (p.who != null) p.w += result(s, p.who); }
       }
-      let s = node.s, steps = 0;
-      while (!this.over(s) && steps++ < 400) { const ms = g.moves(s); if (!ms.length) break; s = g.play(s, ms[Math.floor(r() * ms.length)]); }
-      for (const p of path) { p.n++; if (p.who != null) p.w += result(s, p.who); }
-    }
-    return root.kids.map(k => ({ move: k.move, value: k.n ? k.w / k.n : 0, visits: k.n })).sort((a, b) => b.visits - a.visits || b.value - a.value);
+    };
+    return { run, ranked: () => root.kids.map(k => ({ move: k.move, value: k.n ? k.w / k.n : 0, visits: k.n })).sort((a, b) => b.visits - a.visits || b.value - a.value) };
   }
 }
 

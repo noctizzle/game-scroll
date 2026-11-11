@@ -15,7 +15,7 @@ import { compose, MOODS } from './kit/compose.js';
 
 const MOOD_SET = { happy: 'band', calm: 'band', tense: 'synth', spooky: 'orchestra', heroic: 'orchestra', sad: 'orchestra', silly: 'band', chase: 'synth', puzzle: 'band' };
 const SETS = ['chip', 'synth', 'band', 'orchestra'];
-const pixel = d => !!d.retro && d.era !== 'console' && d.era !== 'nextgen' && d.era !== 'ar';
+const pixel = d => !!d.retro && d.era !== 'console' && d.era !== 'nextgen' && d.era !== 'ar' && d.era !== 'board';
 
 /** What a game's `music` field asks for: { mood, set, seed, vol, ... }, or null (none, or not understood). */
 export function trackOf(def) {
