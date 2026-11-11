@@ -1679,9 +1679,11 @@ export class HDView {
    * swapped materials), so nothing compiles mid-game and stutters. Call after building a level;
    * extra materials that get swapped in later can be passed in.
    */
-  warm(...extra) {
+  warm(...extra) { return this.warmOn(gpuFor(this), extra); }
+  // (a frame already being drawn warms for its own renderer: asked again in the middle of a WebGL frame, a
+  // view that had just come to fit WebGPU swapped its WebGPU materials in, and WebGL then drew them)
+  warmOn(G, extra = []) {
     this.holdBase = 'all';   // (what it builds never waits: holdNew)
-    const G = gpuFor(this);
     if (G) { gpuSwap(this, G); this.warmed = true; try { this.envMaker?.(); } catch (e) { /* the studio reflections stay */ } this.scene.environment = this.envFor(G); G.r.compileAsync(this.scene, this.cam).catch(() => {}); return; }
     const r = renderer(); if (!r) return; this.warmed = true; gpuSwap(this, null);
     const hidden = [], tmp = [];
@@ -2157,7 +2159,7 @@ export class HDView {
       P.final.needsSwap = up || !!s2;   // the final pass writes into the next buffer only when SGSR reads it
       for (const p of ex) if (p.cw !== pw || p.ch !== ph) { p.setSize(pw, ph); p.cw = pw; p.ch = ph; }
     }
-    if (!this.warmed && !off) this.warm();
+    if (!this.warmed && !off) this.warmOn(null);
     // shadows: redraw the maps only when a shadow caster or a shadow light moved (or the tier, view or map changed)
     this.scene.updateMatrixWorld();
     if (!baking && !off) { autoLod(this, r.domElement.height); autoBatch(this, now); }
@@ -2217,7 +2219,12 @@ export function gpuFits(v) {
 // asked every frame (a quick walk over the scene), so a game that adds an effect mid-round moves back to WebGL before it draws
 function gpuFor(v) {
   const G = webgpu(); if (!G) { v._onGpu = false; return null; }
-  v._gpuWhy = gpuFits(v); v._onGpu = !v._gpuWhy;
+  v._gpuWhy = gpuFits(v);
+  // a material the air hasn't been laid on yet (instanced grass, with its library's own hook) reads as a
+  // shader of its own: lay the air on first and ask again, or the view's first frame went to WebGL (every
+  // WebGL shader built for one frame) before it moved to WebGPU
+  if (v._gpuWhy && v._air && v._gpuWhy.startsWith('a material')) { v.patchAir(true); v._gpuWhy = gpuFits(v); }
+  v._onGpu = !v._gpuWhy;
   return v._gpuWhy ? null : G;
 }
 // swap each view's parts between their WebGL and WebGPU versions (particles: points or sprites)

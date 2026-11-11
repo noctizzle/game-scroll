@@ -1551,8 +1551,23 @@ export interface ModelsPart {
   building(o?: { style?: 'brick' | 'plaster' | 'concrete' | 'stone' | 'timber' | Record<string, Loose>; w?: number; d?: number; floors?: number; roof?: 'flat' | 'gable'; floor?: number; bay?: number; win?: [number, number]; lit?: number; colour?: string; color?: string; door?: boolean; seed?: number; wear?: false | Record<string, Loose> }): Loose;
   /** The building styles (copy one and change it: { ...gs.models.buildings.brick, bay: 3 }). */
   readonly buildings: Record<string, Record<string, Loose>>;
-  /** A close-up person with the same skeleton, Rig and Face as gs.poses.person (same poses, blends, foot planting, face shapes, lip sync): body smoothed by subdivision, a sculpted head (jaw, cheekbones, nose, brow, ears, eye sockets), eyes with iris and pupil under a clear coat, eyelids that blink, hair that shines along its strands, skin that lets light through (WebGPU), clothes in the fabric and leather recipes. person()'s options plus hairStyle ('short' | 'long' | 'bun' | 'bald'), iris, jaw, nose (1 average), smooth (1; 2 up close), cloth (false: plain). About 0.3 s each: make people in make() or reset(). */
-  human(o?: { body?: string; skin?: string; legs?: string; shoes?: string; hair?: string | null; eyes?: string; lips?: string; sleeves?: 'long' | 'short'; girth?: number; scale?: number; shadows?: boolean; hairStyle?: 'short' | 'long' | 'bun' | 'bald'; iris?: string; jaw?: number; nose?: number; smooth?: number; cloth?: boolean }): Loose;
+  /**
+   * A person to see up close, sculpted in code (a face with eyes, hands with fingers, clothes cut and worn, hats, webbing, a pack; creases in soft shadow, no texture files), on gs.poses' skeleton in three levels of detail.
+   * Returns a Group with rig, bones, mesh, lods, lod (0 close .. 2 far), see(camera, screenHeightPx), twin() (another of the same person, nearly free), hold(thing, rightPoint, leftPoint) (both hands onto a thing: after rig.update()), gear (gear.hat.visible = false; gear.hat.loose(): a loose copy, a plain mesh), face.
+   * A cut of clothes this phone hasn't sculpted yet takes a second or two in the background: the app shows "Loading…" and makes the game again (make people in make() or reset()); it is then saved. Several kinds: human.all([...]) first thing.
+   * Options: sex, build, girth, scale, skin, hair, hairStyle, iris, lips, moustache, stubble, face ({ jaw, chin, brow, nose, lips, cheeks, eyes }), hands ('open' | 'grip'), outfit ({ top, legs, feet, hat, belt, webbing, gloves, pack, extras }; camo: [colour, colour] on top, legs or hat brushes blotches over its colour), gear, slots, now (sculpt on the spot: tools). The plain options (body, legs, shoes: colours) still dress a simple person.
+   */
+  human: {
+    (o?: { sex?: 'm' | 'f'; build?: Record<string, number>; girth?: number; scale?: number; shadows?: boolean; skin?: string; hair?: string | null; hairStyle?: 'short' | 'long' | 'bun' | 'bald'; eyes?: string; iris?: string; lips?: string; moustache?: boolean; stubble?: number; jaw?: number; nose?: number; face?: Record<string, number>; hands?: 'open' | 'grip'; body?: string; legs?: string; shoes?: string; sleeves?: 'long' | 'short'; outfit?: Record<string, Loose>; gear?: Loose[]; slots?: Record<string, Loose>; now?: boolean }): Loose;
+    /** Several people at once, in the same order: everything that still needs sculpting is started together, so the app waits once. */
+    all(list: Loose[]): Loose[];
+    /** Starts sculpting whatever these people still need and makes the app wait if anything does; nothing otherwise. First thing in make(), before anything costly. */
+    need(list: Loose[]): void;
+    /** For tools and tests: resolves once human(options) for each of these would come straight back. */
+    ready(list: Loose | Loose[]): Promise<boolean>;
+    /** Forgets every saved sculpt. */
+    clear(): Promise<void>;
+  };
   /** Per-vertex curvature of a geometry (convex > 0, concave < 0) and how much each vertex faces up. */
   curvature(geometry: Loose): { curve: Float32Array; up: Float32Array };
 }

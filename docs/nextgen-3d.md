@@ -684,11 +684,27 @@ const rock = gs.models.sculpt([{ box: [.9, .6, .7], round: .15 }, { cylinder: [.
   (metres, 8 x 6), `floors`, `roof`, `floor` (storey height), `bay` (metres per window), `win` ([w, h]), `lit` (0..1
   of windows glowing), `colour` (walls), `door: false`, `seed`, `wear`. Its door faces +z. About 0.1 to 0.25 s
   each, so make them while loading; for a whole town in the distance `gs.city` is far cheaper.
-- **`human(o)`**: a person to see up close. It has the same skeleton, `rig` and `face` as `gs.poses.person`, so
-  the same poses, blends, foot planting, face shapes and lip sync drive it; only the build is finer. The body
-  is smoothed by subdivision, and the head is sculpted (jaw, cheekbones, nose, brow, ears, eye sockets). The
-  eyes have an iris and pupil under a clear coat, and eyelids that blink. The hair shines along its strands,
-  the skin lets light through at thin edges (WebGPU), and the clothes are in the fabric and leather recipes.
-  It takes `person()`'s options plus `hairStyle` ('short', 'long', 'bun', 'bald'), `iris`, `jaw` and `nose` (1 is
-  average), `smooth` (1; 2 for a hero right in front of the camera) and `cloth: false`. About 0.3 s each, and
-  people with the same build and face shape share their smoothed parts, so make them in `make()` or `reset()`.
+- **`human(o)`**: a person to see up close, sculpted in code: a head with a brow, cheekbones, a nose, lips,
+  ears and eyes with lids; hands with fingers; clothes cut the way a tailor cuts them (a tunic with its
+  collar, pockets, buttons and belt, a blouse, a smock, breeches, tall boots, gaiters), hats (helmet, cap,
+  beret, wool cap, hood), webbing, pouches, a pack. Creases, collars and hat brims sit in soft shadow worked
+  out from the shapes themselves, so there is still no texture file. It stands on `gs.poses`' skeleton (`rig`,
+  `bones`: the same poses, blends and foot planting) in three levels of detail: call
+  `person.see(camera, screenHeightInPixels)` each frame, or set `person.lod` (0 close .. 2 far).
+  `person.twin()` is another of the same person for almost nothing (a squad from two or three faces),
+  `person.hold(thing, rightPoint, leftPoint)` bends both arms to put the hands on something carried (after
+  `rig.update()`), and `person.gear.hat.visible = false` takes the hat off (also `gear.pack`, and your own
+  `gear: [{ name, bone, shapes, hide: true }]`); `person.gear.hat.loose()` is a loose copy of it (a plain
+  mesh, its middle at its origin, `userData.at` where that sits on its bone) for the helmet that flies off.
+  Looks: `sex`, `build`, `girth`, `skin`, `hair`, `hairStyle`, `iris`, `lips`, `moustache`, `stubble`, `face`
+  (`{ jaw, chin, brow, nose, lips, cheeks, eyes }`, 1 is average), `hands: 'grip'`, and `outfit: { top, legs,
+  feet, hat, belt, webbing, gloves, pack, extras }` (every option is listed above `human` in
+  `src/kit/models/human.js`); `camo: [colour, colour]` on the top, legs or hat brushes blotches of those over
+  its colour. The plain options (`body`, `legs`, `shoes`: colours) still dress a simple person. Each arm is
+  a piece of its own that turns in the shoulder, so any pose is safe: nothing stretches at the armpit.
+  **A cut of clothes this phone hasn't made yet takes a second or two to sculpt, so it happens in the
+  background**: the app shows "Loading…" and makes the game again, exactly as when a big library loads, and
+  each piece is saved on the phone for next time. So make people in `make()` or `reset()`; when there are
+  several kinds, make them together and first: `const [a, b] = human.all([optsA, optsB])` (or
+  `human.need([...])` before anything costly is built, then `human(opts)` wherever you like).
+  Faces don't blink or speak yet (`person.face` is there, with nothing to move).
