@@ -605,13 +605,18 @@ function holdFor(id){
 }
 // stop waiting for the shared game: the feed starts with the usual games
 function letGo(id){if(lead!==id)return;unlead(id);if(!slides.length){addBatch();if(!active&&slides[0])setActive(slides[0])}}
+// a game about to be slotted in: the queue and the cards waiting below the current one give up their copy of it
+function dropCopies(id){
+  queue=queue.filter(q=>q.id!==id);
+  for(const s of slides.slice(active?slides.indexOf(active)+1:0))if(s.def.id===id){dropSlide(s);slides.splice(slides.indexOf(s),1)}
+}
 function openShared(id,checked=''){
   const g=GAMES.find(x=>x.id===id);
   if(!g){
     if(STREAM&&!checked){holdFor(id);remote.refresh().then(ok=>openShared(id,ok?'fresh':'failed'));return}
     letGo(id);
     qaToast(checked==='failed'?'Couldn’t find that shared game just now. Here are some others.':'That shared game isn’t in Game Scroll any more. Here are some others.');return}
-  if(!atStart()){unlead(id);playNow(id);return}
+  if(!atStart()){unlead(id);if(!active||active.def.id!==id){dropCopies(id);playNow(id)}return}   // (already on it: nothing to do)
   const def=playable(g);
   if(!def){
     holdFor(id);
@@ -619,11 +624,12 @@ function openShared(id,checked=''){
       if(!d){letGo(id);qaToast(`Couldn’t load ${g.title} just now. Here are some others.`);return}
       if(atStart()){openShared(id,checked);return}
       // it took so long that they've moved on: don't pull them out of what they're doing
-      unlead(id);if(!slides.some(x=>x.def.id===id)){playNow(id,false);qaToast(`${g.title} is ready: it’s the next game.`)}
+      unlead(id);if(active&&active.def.id===id)return;
+      dropCopies(id);playNow(id,false);qaToast(`${g.title} is ready: it’s the next game.`);
     });return}
   unlead(id);
   if(slides[0]&&slides[0].def.id===id){feed.scrollTop=0;setActive(slides[0]);return}
-  queue=queue.filter(q=>q.id!==id);   // it's on screen now: not again later in this cycle
+  dropCopies(id);   // it's on screen now: not again further down
   const s=makeSlide(def);feedMsg(null);feed.insertBefore(s.el,slides[0]?slides[0].el:null);slides.unshift(s);fit(s);paint(s);io.observe(s.el);feed.scrollTop=0;setActive(s);
 }
 function setActive(s){

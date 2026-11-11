@@ -3,7 +3,8 @@
 // host, over a slow or quick connection, on a first visit or with an old catalogue saved from an
 // earlier one. The shared game must be the first card, be the one being played when Play is tapped,
 // and a link to a game that has been taken down must still land in the feed.
-//   node scripts/share-link.mjs [id] [--keep]      (about 40 s; no build needed first)
+//   node scripts/share-link.mjs [id] [--cpu 6] [--only=text] [--keep]      (about 40 s; no build needed first)
+//   --cpu n slows the browser n times, like a busy test machine: the checks must not depend on speed.
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, existsSync, statSync, rmSync } from 'node:fs';
@@ -13,7 +14,8 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require('playwright');
-const argv = process.argv.slice(2), ID = argv.find(a => !a.startsWith('--')) || 'ant-trail';
+const argv = process.argv.slice(2), CPU = argv.includes('--cpu') ? +argv.splice(argv.indexOf('--cpu'), 2)[1] || 1 : 1;
+const ID = argv.find(a => !a.startsWith('--')) || 'ant-trail';
 const ROOT = resolve(import.meta.dirname, '..'), tmp = mkdtempSync(join(tmpdir(), 'gs-share-'));
 const GAMES = join(tmp, 'games-host'), APP = join(tmp, 'app');
 const HOST = 'http://127.0.0.1:4196', SITE = 'http://127.0.0.1:4195/game-scroll/';   // a sub-path, like GitHub Pages
@@ -39,10 +41,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // One visitor: their own browser storage, and their own connection to the games host.
 //   net.catalogue / net.game / net.shared: ms before the catalogue, a game file, the shared game's file arrives
+//   net.hold: the shared game's file doesn't arrive until v.release() (so a check never races the clock)
 //   net.without: an id the catalogue doesn't list (and is older);  net.broken: the shared game's file is a 404
+//   v.others: how many other games' files have been sent
 async function visitor() {
   const ctx = await browser.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 1 });
-  const v = { ctx, net: {}, errs: [] };
+  const v = { ctx, net: {}, errs: [], others: 0 };
+  const held = new Promise(r => { v.release = r; });
   await ctx.route(HOST + '/**', async route => {
     const path = new URL(route.request().url()).pathname, n = v.net;
     const mine = path.startsWith(`/games/${ID}.`);
@@ -55,37 +60,45 @@ async function visitor() {
         return await route.fulfill({ response: r, json: m });
       }
       await sleep(mine && n.shared != null ? n.shared : n.game || 0);
+      if (mine && n.hold) await held;
       if (mine && n.broken) return await route.fulfill({ status: 404, headers: { 'Access-Control-Allow-Origin': '*' }, body: '' });
       await route.continue();
+      if (!mine) v.others++;
     } catch (_) { /* the page closed while a file was on its way */ }
   });
   v.p = await ctx.newPage();
   v.p.on('pageerror', e => v.errs.push(e.message));
+  if (CPU > 1) await (await ctx.newCDPSession(v.p)).send('Emulation.setCPUThrottlingRate', { rate: CPU });
   return v;
 }
-const feedUp = p => p.waitForFunction(() => window.__gs && __gs.active && !document.querySelector('#feed .feed-msg'), null, { timeout: 30000 });
+const feedUp = p => p.waitForFunction(() => window.__gs && __gs.active && !document.querySelector('#feed .feed-msg'), null, { timeout: 60000 });
+const until = async (ok, ms) => { const t = Date.now(); while (!ok() && Date.now() - t < ms) await sleep(50); };
+const cardCount = p => p.evaluate(() => document.querySelectorAll('#feed .slide').length);
+const playing = (p, id) => p.waitForFunction(id => __gs.active && __gs.active.state === 'playing' && (!id || __gs.active.def.id === id), id || '', { timeout: 20000 });
 const look = p => p.evaluate(() => {
   const feed = document.getElementById('feed'), cards = [...feed.querySelectorAll('.slide')], top = feed.getBoundingClientRect().top;
   const shown = cards.find(c => Math.abs(c.getBoundingClientRect().top - top) < 40), toast = document.querySelector('.qa-toast.on');
   return { active: __gs.active ? __gs.active.def.id : null, title: __gs.active ? __gs.active.def.title : null, state: __gs.active ? __gs.active.state : null,
-    shown: shown ? shown.getAttribute('aria-label') : null, first: cards[0] ? cards[0].getAttribute('aria-label') : null,
+    shown: shown ? shown.getAttribute('aria-label') : null, at: cards.indexOf(shown), first: cards[0] ? cards[0].getAttribute('aria-label') : null,
     cards: cards.map(c => c.getAttribute('aria-label')), toast: toast ? toast.textContent : '', query: location.search };
 });
 const TITLE = JSON.parse(readFileSync(join(GAMES, 'manifest.json'), 'utf8')).games.find(g => g.id === ID)?.meta?.title;
 if (!TITLE) { console.error(`No game "${ID}" in src/games/`); process.exit(1); }
 
-// The shared game is the first card, on screen, the current one, and Play starts it.
+// The shared game is the first card (or, in a feed already in use, the card on screen), the current
+// one, not there a second time further down, and Play starts it.
 // (force: the Play button pulses, so the test browser would wait for ever for it to hold still)
 async function landed(v, { first = true } = {}) {
   const r = await look(v.p), bad = [];
   if (r.active !== ID) bad.push(`the current game is ${r.active}, not ${ID}`);
   if (r.shown !== TITLE) bad.push(`"${r.shown}" is on screen, not "${TITLE}"`);
   if (first && r.first !== TITLE) bad.push(`the first card is "${r.first}"`);
-  if (r.cards.filter(t => t === TITLE).length !== 1) bad.push(`"${TITLE}" is in the feed ${r.cards.filter(t => t === TITLE).length} times`);
+  const copies = r.cards.slice(Math.max(0, r.at)).filter(t => t === TITLE).length;
+  if (!bad.length && copies !== 1) bad.push(`"${TITLE}" is in the feed ${copies} times from the card on screen down`);
   if (r.query.includes('g=')) bad.push('?g= is still in the address (a reload would jump back)');
   if (!bad.length) {
-    await v.p.locator('.slide', { has: v.p.locator(`h2:text-is("${TITLE}")`) }).locator('.overlay button.play').click({ force: true, timeout: 5000 }).catch(e => bad.push('no Play button to tap: ' + String(e.message).split('\n')[0]));
-    await v.p.waitForFunction(id => __gs.active && __gs.active.def.id === id && __gs.active.state === 'playing', ID, { timeout: 8000 }).catch(() => bad.push('Play did not start the shared game'));
+    await v.p.locator('#feed .slide').nth(r.at).locator('.overlay button.play').click({ force: true, timeout: 10000 }).catch(e => bad.push('no Play button to tap: ' + String(e.message).split('\n')[0]));
+    await playing(v.p, ID).catch(() => bad.push('Play did not start the shared game'));
   }
   return bad;
 }
@@ -97,12 +110,12 @@ const tests = {
     return landed(v);
   },
   async 'first visit: the shared game arrives after the others'(v) {
-    v.net = { game: 40, shared: 1200 };
+    v.net = { game: 40, hold: true };
     await v.p.goto(SITE + '?g=' + ID);
-    await sleep(700);   // the others are in by now: the feed waits rather than showing one of them first
-    const early = await v.p.evaluate(() => document.querySelectorAll('#feed .slide').length);
-    await feedUp(v.p);
-    return [...(early ? [`${early} other cards showed before the shared game arrived`] : []), ...await landed(v)];
+    await until(() => v.others >= 5, 20000); await sleep(600 * CPU);   // the others are in: the feed waits rather than showing one of them first
+    const early = await cardCount(v.p);
+    v.release(); await feedUp(v.p);
+    return [...(v.others < 5 ? ['the other games never downloaded'] : []), ...(early ? [`${early} other cards showed before the shared game arrived`] : []), ...await landed(v)];
   },
   async 'return visit: everything already on the phone (a page that loads at once)'(v) {
     await v.p.goto(SITE); await feedUp(v.p); await sleep(800);
@@ -147,38 +160,61 @@ const tests = {
     return bad;
   },
   async 'a very slow shared game stops holding the feed up, then takes first place'(v) {
-    v.net = { game: 40, shared: 11500 };
+    v.net = { game: 40, hold: true };
     await v.p.goto(SITE + '?g=' + ID);
-    await sleep(8000);
+    await v.p.waitForFunction(() => window.__gs && document.querySelector('#feed .feed-msg'), null, { timeout: 30000 });
+    await sleep(7000);
     const bad = [];
-    if (await v.p.evaluate(() => document.querySelectorAll('#feed .slide').length)) bad.push('the feed did not wait for the shared game');
+    if (await cardCount(v.p)) bad.push('the feed did not wait for the shared game');
     await feedUp(v.p);   // 10 s in: the usual games
     if ((await look(v.p)).active === ID) bad.push('the shared game was there before its file arrived');
-    await v.p.waitForFunction(id => __gs.active && __gs.active.def.id === id, ID, { timeout: 8000 }).catch(() => {});
+    v.release();
+    await v.p.waitForFunction(id => __gs.active && __gs.active.def.id === id, ID, { timeout: 20000 }).catch(() => {});
     return [...bad, ...await landed(v)];
   },
   async 'a very slow shared game does not interrupt a round already being played'(v) {
-    v.net = { game: 40, shared: 12500 };
+    v.net = { game: 40, hold: true };
     await v.p.goto(SITE + '?g=' + ID);
-    await sleep(9000); await feedUp(v.p);
+    await feedUp(v.p);   // 10 s in: the usual games
     await v.p.locator('#feed .slide').first().locator('.overlay button.play').click({ force: true });
-    await v.p.waitForFunction(() => __gs.active && __gs.active.state === 'playing', null, { timeout: 8000 });
-    const playing = (await look(v.p)).active;
-    await v.p.waitForFunction(() => document.querySelector('.qa-toast.on'), null, { timeout: 8000 }).catch(() => {});
+    await playing(v.p);
+    const round = (await look(v.p)).active;
+    v.release();
+    await v.p.waitForFunction(() => document.querySelector('.qa-toast.on'), null, { timeout: 20000 }).catch(() => {});
     const r = await look(v.p), bad = [];
-    if (r.active !== playing || r.state !== 'playing' && r.state !== 'over') bad.push(`the round of ${playing} was interrupted (now ${r.active}, ${r.state})`);
+    if (r.active !== round || r.state !== 'playing' && r.state !== 'over') bad.push(`the round of ${round} was interrupted (now ${r.active}, ${r.state})`);
     if (r.cards[1] !== TITLE) bad.push(`the shared game is not the next card (the cards are ${r.cards.slice(0, 3).join(', ')})`);
+    if (r.cards.filter(t => t === TITLE).length !== 1) bad.push(`"${TITLE}" is in the feed ${r.cards.filter(t => t === TITLE).length} times`);
     if (!/is ready/.test(r.toast)) bad.push(`no note that the shared game is next (the note says "${r.toast}")`);
     return bad;
   },
   async 'a link opened while the app is in use goes to the shared game, even just after a resize'(v) {
     await v.p.goto(SITE); await feedUp(v.p);
-    await v.p.locator('#feed .slide').first().locator('.nextbtn').click({ force: true }); await sleep(1200);
+    await sleep(700);   // (the page was resized as it loaded, and for half a second after that the feed ignores a swipe's news)
+    await v.p.locator('#feed .slide').first().locator('.nextbtn').click({ force: true });
+    await v.p.waitForFunction(() => document.getElementById('feed').scrollTop > 100 && __gs.active && __gs.active.el !== document.querySelector('#feed .slide'), null, { timeout: 20000 });
+    await sleep(600);
     await v.p.setViewportSize({ width: 400, height: 820 }); await sleep(120);   // scroll news is ignored for a moment now
     await v.p.evaluate(id => __gs.shared(id), ID);
-    await v.p.waitForFunction(id => __gs.active && __gs.active.def.id === id, ID, { timeout: 8000 }).catch(() => {});
+    await v.p.waitForFunction(id => __gs.active && __gs.active.def.id === id, ID, { timeout: 20000 }).catch(() => {});
     await sleep(700);
     return landed(v, { first: false });
+  },
+  async 'a link to a game that is already waiting further down the feed moves it up (no second copy)'(v) {
+    await v.p.goto(SITE); await feedUp(v.p);
+    await v.p.waitForFunction(() => document.querySelectorAll('#feed .slide').length >= 4, null, { timeout: 30000 });
+    // whichever game is three cards down: a link to it arrives
+    const below = await v.p.evaluate(() => { const c = document.querySelectorAll('#feed .slide')[3].getAttribute('aria-label'); return __gs.GAMES.find(g => g.title === c).id; });
+    await v.p.locator('#feed .slide').first().locator('.overlay button.play').click({ force: true });
+    await playing(v.p);
+    await v.p.evaluate(id => __gs.shared(id), below);
+    await v.p.waitForFunction(id => __gs.active && __gs.active.def.id === id, below, { timeout: 20000 }).catch(() => {});
+    await sleep(500);
+    const r = await look(v.p), title = r.title, n = r.cards.filter(t => t === title).length, bad = [];
+    if (r.active !== below) bad.push(`the current game is ${r.active}, not ${below}`);
+    if (r.shown !== title || r.at !== 1) bad.push(`"${r.shown}" is on screen at card ${r.at + 1}, not "${title}" at card 2`);
+    if (n !== 1) bad.push(`"${title}" is in the feed ${n} times`);
+    return bad;
   },
 };
 
