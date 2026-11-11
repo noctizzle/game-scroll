@@ -60,6 +60,7 @@ Genre-level only, fine to keep: shell-duel (turn-based artillery), sling-smash (
 - **Same speed on 60 and 120 Hz screens.** Per-frame damping (`v *= .98`) became `Math.pow(.98, dt * 60)` in blitz-sense, blow-sail, fly-swatter, gravity-grip, pet-pocket, shell-duel, stud-smash, stylus-rally and wrecking-ball; camera easing in canyon-ace, deep-pressure, frost-line and storm-hook.
 - **Goals the bot reached in seconds.** dart-wheel 25 to 60, merge-ten 150 to 500, mini-golf 12 to 25, moto-hills 120 to 350, rope-swing 200 to 1000, freeze-rex 500 to 1200 (plus a 1.5 s wind-on between photos).
 - **Bugs.** bricks: the ball could speed up without limit off the paddle. street-lamps: a failed location request could leave it waiting for ever. pocket-pinball: each finger now works its own flipper. fishing-line: a smooth gradient broke the four-shade Pocket rule. critter-quest: the battle strobe follows Reduce motion. spot-difference: the pictures stay covered until you start, so the clock is fair. Several games kept a little state from the last round (held keys, a drag in progress); all round state is set in `reset()` now.
+- **Reading the bot report.** In [auto-report.md](auto-report.md), `dies-instantly-idle` on ink-ward and path-doodle is the physics library arriving (the app makes the game again once it is in), not a round ending: a 20-second no-touch run ends neither. The flag moves between the physics games from run to run (dummy-tumble had it in the last report).
 
 ### Games added since the first review (102)
 
