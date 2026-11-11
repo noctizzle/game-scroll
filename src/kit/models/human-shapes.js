@@ -252,7 +252,8 @@ function head(a) {
   S.push({ taper: [Hd(.0125, .0245, .093), Hd(.031, .0285, .089)], r: [.0046 * bw, .0042 * bw], mirror: true, slot: 'brow', paint: true }, { taper: [Hd(.031, .0285, .089), Hd(.051, .0245, .0745)], r: [.0042 * bw, .003 * bw], mirror: true, slot: 'brow', paint: true });
   if (a.moustache) S.push({ ball: [.019, .0045, .0065], at: Hd(.011, -.0535, .0965), rot: [0, .3, -.18], mirror: true, slot: 'brow', lumpy: [.004, .001], blend: .002 });
   // the hat stands over the face: a brim's shadow on the brow
-  for (const g of (a.hat && HATS.get(a.hat.kind)?.(a.hat).ghost) || []) S.push({ ...g, ghost: true, slot: null });
+  const hat = a.hat && listed(HATS, a.hat.kind);
+  for (const g of (hat && hat(a.hat).ghost) || []) S.push({ ...g, ghost: true, slot: null });
   return S;
 }
 // an eye: white, iris, pupil in clean rings (looking along +z)
@@ -392,8 +393,8 @@ export function jobsFor(sp) {
   return J;
 }
 const whole = () => [['$', 1]];
-// the maker of a hat or pack by its kind: one from the list, or a plain error
-const listed = (list, kind, what) => { const f = list.get(kind); if (!f) throw new Error(`gs.models.human: no ${what} called '${kind}'`); return f; };
+// the maker of a hat or pack by its kind: one from the list (and a function, checked before anything calls it), or null
+function listed(list, kind) { const f = list.get(kind); if (typeof f === 'function') return f; return null; }
 /** Sculpts one piece (a job from jobsFor). The slow part: a tenth of a second for a hand, a second or two for a trunk on a phone. */
 export function sculpt({ kind, a }) {
   if (kind === 'trunk') { const S = trunk(a); return finish(S, { cell: .006, bones: trunkBones, extra: S.extra }); }
@@ -404,8 +405,10 @@ export function sculpt({ kind, a }) {
     for (const s of [1, -1]) { const e = eyeball(Hd(s * EYE[0], EYE[1], EYE[2]), .0122), base = eye.P.length / 3; eye.P.push(...e.P); eye.N.push(...e.N); eye.K.push(...e.K.map(k => 'eye' + k)); eye.I.push(...e.I.map(i => i + base)); }
     return finish(head(a), { cell: .003, bones: (x, y) => { const h = ss(1.5, 1.585, y); return [['spine', 1 - h], ['head', h]]; }, keep: [.34, .05, .008], err: [.0005, .004, .02], reach: .07, blend: .01, extra: eye });
   }
-  if (kind === 'hat') return finish(listed(HATS, a.kind, 'hat')(a).S, { cell: .004, bones: whole, keep: [.3, .06, .012], blend: .006 });
-  if (kind === 'pack') return finish(listed(PACKS, a.kind, 'pack')(), { cell: .006, bones: whole, keep: [.25, .06, .012], blend: .006 });
+  if (kind === 'hat' || kind === 'pack') {
+    const make = listed(kind === 'hat' ? HATS : PACKS, a.kind); if (!make) throw new Error(`gs.models.human: no ${kind} called '${a.kind}'`);
+    return kind === 'hat' ? finish(make(a).S, { cell: .004, bones: whole, keep: [.3, .06, .012], blend: .006 }) : finish(make(), { cell: .006, bones: whole, keep: [.25, .06, .012], blend: .006 });
+  }
   return finish(a.shapes, { cell: a.cell, bones: whole, keep: a.keep, err: a.err || undefined, blend: a.blend });
 }
 // a number for all of the above as it stands: saved pieces made by other workings are not used
