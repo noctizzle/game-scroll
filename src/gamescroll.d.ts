@@ -307,7 +307,8 @@ export interface MathPart {
 
 export interface PalettesPart { PAL: Record<string, string[]>; SHELL: Loose; C16: string[] }
 
-export interface BurstOpts { n?: number; speed?: number; life?: number; size?: number; color?: Colour; shape?: string; angle?: number; arc?: number; gravity?: number; drag?: number; glow?: boolean }
+/** spread: how much each particle's speed varies, 0..1 (default .6). The cone is angle + arc (radians). shrink: false keeps them full size as they fade. */
+export interface BurstOpts { n?: number; speed?: number; spread?: number; life?: number; size?: number; shrink?: boolean; color?: Colour; shape?: string; angle?: number; arc?: number; gravity?: number; drag?: number; glow?: boolean }
 export declare class Juice {
   constructor(o?: { pixel?: boolean; max?: number; font?: string; size?: number; color?: string });
   burst(x: number, y: number, o?: BurstOpts): this;
@@ -378,7 +379,7 @@ export interface ControlsPart {
   /** Tap, double tap, hold and swipe. */
   Gestures: new (o?: Loose) => Loose;
   /** Pinch, twist and two-finger pan (one-finger touches go to `one`). Reads: active, scale, angle, x, y. */
-  TwoFingers: new (o?: { zone?: number[]; one?: Loose; pinch?: (scale: number, x: number, y: number) => void; twist?: (angle: number, x: number, y: number) => void; pan?: (dx: number, dy: number) => void; start?: (x: number, y: number) => void; end?: (scale: number, angle: number) => void }) => Control & { readonly active: boolean; readonly scale: number; readonly angle: number; readonly x: number; readonly y: number; update(): void };
+  TwoFingers: new (o?: { zone?: number[]; one?: Loose; minScale?: number; minTurn?: number; pinch?: (scale: number, x: number, y: number) => void; twist?: (angle: number, x: number, y: number) => void; pan?: (dx: number, dy: number) => void; start?: (x: number, y: number) => void; end?: (scale: number, angle: number) => void }) => Control & { readonly active: boolean; readonly scale: number; readonly angle: number; readonly x: number; readonly y: number; update(): void };
   /** Keyboard state: keys.held('ArrowLeft'), keys.axis(). Pass key(k, isDown) to keys.key. */
   Keys: new () => { key(k: string, isDown: boolean): void; held(k: string): boolean; axis(): XY; clear(): void };
   /** Hands each finger to the first control that wants it. */
