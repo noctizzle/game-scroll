@@ -1892,5 +1892,50 @@ console.log('physics ok');
   console.log('gs.ar floor finder ok');
 }
 
+// gs.real: the sun and moon for the player, the battery, headphones
+{
+  const { sun, moon, battery, headphones, guessPlace, readOutputs } = await import('../src/kit/real.js');
+  const london = { lat: 51.5, lon: -.12 }, at = iso => new Date(iso);
+  let s = sun(london, at('2026-06-21T12:00:00Z'));
+  assert.ok(s.up && s.part === 'day' && s.light === 1 && !s.guess, 'midsummer noon in London is day');
+  assert.ok(Math.abs(s.height - 61.9) < 1 && Math.abs(s.compass - 180) < 6, `the sun is high in the south: ${s.height.toFixed(1)} up, ${s.compass.toFixed(0)} round`);
+  assert.ok(Math.abs(s.hour - 12) < .2, 'the sky hour is 12 at the sun\'s highest: ' + s.hour.toFixed(2));
+  s = sun(london, at('2026-06-21T00:00:00Z'));
+  assert.ok(!s.up && s.part === 'night' && s.light === 0 && s.height < -10, 'and midnight is night');
+  assert.ok(s.hour > 22 || s.hour < 2, 'the sky hour at midnight is around 24: ' + s.hour.toFixed(2));
+  const dawn = sun(london, at('2026-06-21T03:43:00Z'));   // sunrise in London on the longest day is 04:43 BST
+  assert.ok(Math.abs(dawn.height) < 1.5 && dawn.part === 'dawn' && dawn.light > .2 && dawn.light < .8 && Math.abs(dawn.hour - 6) < .3, `sunrise: ${dawn.height.toFixed(2)} up, light ${dawn.light.toFixed(2)}, sky hour ${dawn.hour.toFixed(2)}`);
+  const dusk = sun(london, at('2026-06-21T20:21:00Z'));   // and sunset is 21:21 BST
+  assert.ok(Math.abs(dusk.height) < 1.5 && dusk.part === 'dusk' && Math.abs(dusk.hour - 18) < .3, `sunset: ${dusk.height.toFixed(2)} up, sky hour ${dusk.hour.toFixed(2)}`);
+  let last = -1, wraps = 0; for (let h = 0; h < 24; h += .25) { const x = sun(london, +at('2026-03-20T00:00:00Z') + h * 36e5).hour; if (x < last - 12) wraps++; else assert.ok(x >= last - 1e-6 || last < 0, 'the sky hour only runs forwards'); last = x; }
+  assert.ok(wraps <= 1, 'and passes midnight once a day');
+  const sydney = sun({ lat: -33.87, lon: 151.21 }, at('2026-06-21T12:00:00Z'));
+  assert.ok(!sydney.up, 'the same moment is night in Sydney');
+  const polar = sun({ lat: 69.65, lon: 18.96 }, at('2026-12-21T11:00:00Z'));   // Tromso in midwinter
+  assert.ok(!polar.up && polar.rise === null && polar.set === null && Number.isFinite(polar.hour), 'the polar night has no sunrise, and still gives a sky hour');
+  const never = sun({ lat: 69.65, lon: 18.96 }, at('2026-06-21T23:00:00Z'));
+  assert.ok(never.up && never.rise === null && never.hour >= 9 && never.hour <= 15, 'the midnight sun stays up: sky hour ' + never.hour.toFixed(1));
+  const g = sun(null, at('2026-06-21T12:00:00Z'));
+  assert.ok(g.guess && Number.isFinite(g.height) && Number.isFinite(g.hour), 'no place: a guess from the time zone');
+  const gp = guessPlace(at('2026-06-21T12:00:00Z'));
+  assert.ok(gp.guess && Math.abs(gp.lon) <= 180 && Math.abs(gp.lat) <= 90 && Math.abs(gp.lon + Math.max(new Date(2026, 0, 1).getTimezoneOffset(), new Date(2026, 6, 1).getTimezoneOffset()) / 4) < 1e-9, 'the guess sits on the time zone\'s own meridian (winter time)');
+  // the moon: two eclipses give a new and a full moon to the minute
+  let m = moon(london, at('2024-04-08T18:21:00Z'));    // total solar eclipse
+  assert.ok((m.phase < .01 || m.phase > .99) && m.lit < .01 && m.name === 'new', `new moon at a solar eclipse: phase ${m.phase.toFixed(3)}, lit ${m.lit.toFixed(3)}`);
+  m = moon(london, at('2025-03-14T06:59:00Z'));        // total lunar eclipse
+  assert.ok(Math.abs(m.phase - .5) < .01 && m.lit > .99 && m.name === 'full', `full moon at a lunar eclipse: phase ${m.phase.toFixed(3)}, lit ${m.lit.toFixed(3)}`);
+  m = moon(london, at('2025-03-21T12:00:00Z'));
+  assert.ok(!m.waxing && m.lit < .8 && m.lit > .3 && /waning|last/.test(m.name), 'a week later it is waning: ' + m.name);
+  assert.equal(moon(null, at('2025-03-14T06:59:00Z')).phase, moon(london, at('2025-03-14T06:59:00Z')).phase, 'the phase needs no place');
+  // battery and headphones: unknown is null, never a made-up answer
+  const b = battery(); assert.ok(b.level === null && b.charging === null && b.saver === false, 'the battery is unknown until the phone says');
+  assert.equal(headphones(), null, 'headphones are unknown where nothing can say');
+  assert.equal(readOutputs([{ kind: 'audiooutput', label: '' }, { kind: 'audioinput', label: 'Mic' }]), null, 'a browser that hides the names: unknown');
+  assert.equal(readOutputs([{ kind: 'audiooutput', label: 'Speakers' }]), false, 'only speakers: no');
+  assert.equal(readOutputs([{ kind: 'audiooutput', label: 'Speakers' }, { kind: 'audiooutput', label: 'WH-1000XM5 (Bluetooth)' }]), true, 'a Bluetooth output: yes');
+  assert.equal(readOutputs([{ kind: 'audiooutput', label: 'Pixel Buds' }]), true, 'ear buds: yes');
+  console.log(`gs.real: sun (day, night, dawn, dusk, polar, guess), moon phases, battery and headphones ok`);
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);

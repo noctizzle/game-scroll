@@ -97,6 +97,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Play with your whole body; put the player inside the game; thumbs up and other hand signs | `gs.vision.Body`, `CutOut`, `Signs` | [Body, cut-outs and hand signs](#body-cut-outs-and-hand-signs) |
 | Walk to play, lift the phone, a dark room, a hand over the phone | `gs.device.steps()`, `pressure()`, `light()`, `near()` | [Steps, air pressure, light, proximity](#steps-air-pressure-light-proximity) |
 | Block worlds to dig, build and craft in | `gs.voxels` | [Voxel worlds](#voxel-worlds) |
+| Night in the game when it is night outside; the real moon; plug in to charge; headphones in | `gs.real` (SunCalc) | [The real world: sun, moon, battery, headphones](#the-real-world-sun-moon-battery-headphones) |
 
 ## What `gs` has, and what it doesn't
 
@@ -1913,6 +1914,42 @@ null until it's running (and allowed), so a game always has a touch way to play.
 
 iPhones don't share the light sensor, and their proximity sensor turns the screen off, so those two are
 Android only. The card says which sensors a game uses, as it does for the camera and mic.
+
+## The real world: sun, moon, battery, headphones
+
+`gs.real` turns things about the player's real surroundings into game inputs. All of it is worked out
+on the phone (the sun and moon with SunCalc's maths), nothing is sent anywhere, and none of it asks for
+a permission.
+
+```js
+const { sun, moon, battery, headphones } = gs.real;
+
+reset() { const s = sun(); night = !s.up; stars = 1 - s.light; }      // dark outside? the level starts at night
+update(dt) { if (battery().charging) hero.energy += dt; }             // plug the phone in to charge the hero
+draw(c) { if (moon().name === 'full') drawWerewolf(c); }
+```
+
+- `sun(place)`: `up`, `height` (degrees above the horizon), `compass` (degrees clockwise from north,
+  like `gs.device.heading()`), `light` (0 at night to 1 in full day, smooth through dawn and dusk),
+  `part` (`'night'`, `'dawn'`, `'day'`, `'dusk'`), `rise`, `set` and `noon` (hours on the phone's clock;
+  null where the sun doesn't rise or set today) and `hour`, the hour to give `gs.sky`'s `Sky` so its sky
+  matches the real one (6 at sunrise, 12 at the sun's highest, 18 at sunset).
+- `moon(place)`: `phase` (0 new, .25 first quarter, .5 full, .75 last quarter), `lit` (0 to 1), `waxing`,
+  `name` (`'new'`, `'waxing crescent'`, `'first quarter'`, `'waxing gibbous'`, `'full'`, `'waning gibbous'`,
+  `'last quarter'`, `'waning crescent'`), and `up`, `height`, `compass`.
+- `battery()`: `level` (0 to 1) and `charging`, both null where the phone won't say (iPhones in a
+  browser), and `saver` (the phone's power saving mode is on). Read about every 15 seconds.
+- `headphones()`: true, false, or null when the phone won't say (most browsers, and the first moment
+  after a game first asks). Wired, USB and Bluetooth all count; a Bluetooth speaker can't be told from
+  Bluetooth headphones.
+
+`place` is a `{ lat, lon }` from `api.location()` ([Location](#location)). Without one, `sun()` and
+`moon()` guess where the player is from the phone's clock and time zone: right about day and night,
+rough about the exact angle, and the result says `guess: true`. The moon's phase is the same everywhere.
+Pass a second argument (a `Date` or a time in ms) to ask about another moment: tonight, or next full moon.
+
+Keep these for flavour and for play that is as fair at night as by day. A game that can only be won at
+noon, on a full battery or with headphones in isn't quick or fair, so never make one the only way to win.
 
 ## Voxel worlds
 

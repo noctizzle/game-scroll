@@ -43,6 +43,7 @@ export const OPEN_SOURCE = [
   { name: 'Capacitor Text to Speech', for: 'characters that speak, by the Capacitor Community', licence: 'MIT', spdx: 'MIT', packages: ['@capacitor-community/text-to-speech'] },
   { name: 'Capacitor Keep Awake', for: 'keeping the screen on while a round is played, by the Capacitor Community', licence: 'MIT', spdx: 'MIT', packages: ['@capacitor-community/keep-awake'] },
   { name: 'fflate', for: 'packing game saves small, by Arjun Barrett', licence: 'MIT', spdx: 'MIT', packages: ['fflate'] },
+  { name: 'SunCalc', for: 'where the sun and moon are for the player (gs.real), by Volodymyr Agafonkin', licence: 'BSD 2-Clause', spdx: 'BSD-2-Clause', packages: ['suncalc'], notice: '© 2026 Volodymyr Agafonkin' },
   { name: 'Slop New York', for: 'the city kit\'s facade looks and lit windows, and its idea of building the city round the player, by Mr.doob', licence: 'MIT', spdx: 'MIT', vendored: 'src/kit/city.js', notice: '© 2026 Mr.doob' },
   { name: 'ZzFX', for: 'sound effects, by Frank Force', licence: 'MIT', spdx: 'MIT', vendored: 'src/kit/zzfx.js' },
   { name: 'simplex-noise', for: 'noise for terrain and motion', licence: 'MIT', spdx: 'MIT', packages: ['simplex-noise'] },

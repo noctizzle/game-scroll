@@ -155,6 +155,7 @@ import { tick } from './kit/tick.js';
 import * as composer from './kit/compose.js';
 import * as solve from './kit/solve.js';
 import * as phoneSensors from './kit/sensors.js';
+import * as real from './kit/real.js';
 import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
@@ -163,6 +164,7 @@ export const HIDDEN = {
   sound: ['sound', 'setSound', 'audio', 'setSfxOut', 'stopMusic', 'pauseMusic', 'resumeMusic', 'warm'],
   util: ['store', 'deviceId'],
   device: ['location', 'hapticSettings', 'setHaptics', 'stopSensors'],
+  real: ['guessPlace', 'readOutputs'],
   moves: ['stopMoves'],
   pad: ['pollPads'],
   vision: ['stopVision'],
@@ -268,6 +270,7 @@ const core = {
   physics: pick('physics', physics, physics2d),
   vision: pick('vision', vision),
   geo: pick('geo', geo),
+  real: pick('real', real),
   things: pick('things', things),
   rounds: pick('rounds', rounds),
   pacing: pick('pacing', pacing),

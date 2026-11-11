@@ -6,6 +6,8 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.os.Build;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -27,6 +29,8 @@ import java.util.Map;
  *   'pressure', 'light' or 'near'. Readings arrive as 'reading' events: { kind, value, max }.
  *   steps: steps since start; pressure: hPa; light: lux; near: centimetres (max = the sensor's range).
  * stop({ kind }) / stopAll()
+ * output() -> { headphones, kind }: where the sound goes (src/kit/real.js). kind: 'wired', 'usb',
+ *   'bluetooth' (headphones or a speaker: Android doesn't say which) or 'speaker'.
  */
 @CapacitorPlugin(name = "PhoneSensors", permissions = {
     @Permission(alias = "activity", strings = { Manifest.permission.ACTIVITY_RECOGNITION })
@@ -97,6 +101,23 @@ public class PhoneSensorsPlugin extends Plugin {
         running.put(kind, l);
         s.registerListener(l, sensor, kind.equals("steps") ? SensorManager.SENSOR_DELAY_NORMAL : SensorManager.SENSOR_DELAY_UI);
         call.resolve();
+    }
+
+    @PluginMethod
+    public void output(PluginCall call) {
+        AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+        String kind = "speaker";
+        if (am != null) {
+            for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                int t = d.getType();
+                if (t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || t == AudioDeviceInfo.TYPE_WIRED_HEADSET) { kind = "wired"; break; }
+                if (t == AudioDeviceInfo.TYPE_USB_HEADSET) kind = "usb";
+                else if (!kind.equals("usb") && (t == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || t == AudioDeviceInfo.TYPE_BLE_HEADSET || t == AudioDeviceInfo.TYPE_HEARING_AID)) kind = "bluetooth";
+            }
+        }
+        JSObject o = new JSObject();
+        o.put("headphones", !kind.equals("speaker")); o.put("kind", kind);
+        call.resolve(o);
     }
 
     @PluginMethod

@@ -446,6 +446,36 @@ export interface VisionPart {
 type LatLon = { lat: number; lon: number };
 export interface GeoPart { distance(a: LatLon, b: LatLon): number; bearing(a: LatLon, b: LatLon): number; offset(p: LatLon, east: number, north: number): LatLon; toLocal(origin: LatLon, p: LatLon): XY; cellId(p: LatLon, metres?: number): string }
 
+/** gs.real: real-world signals as game inputs. Worked out on the phone; no permission needed. */
+export interface RealPart {
+  /**
+   * The sun where the player is. place: a { lat, lon } from api.location(); without one it is a guess from the
+   * phone's clock and time zone (guess: true). when: a Date or a time in ms (default: now).
+   */
+  sun(place?: { lat: number; lon: number } | null, when?: Date | number): {
+    /** Above the horizon. */ up: boolean;
+    /** Degrees above the horizon (negative below it). */ height: number;
+    /** Degrees clockwise from north, like gs.device.heading(). */ compass: number;
+    /** 0 at night to 1 in full day, smooth through dawn and dusk. */ light: number;
+    part: 'night' | 'dawn' | 'day' | 'dusk';
+    /** Hours on the phone's clock (6.5 = half past six); null where the sun doesn't rise or set today. */ rise: number | null; set: number | null; noon: number | null;
+    /** The hour for gs.sky's Sky so its sky matches the real one: 6 at sunrise, 12 at the sun's highest, 18 at sunset. */ hour: number;
+    guess: boolean;
+  };
+  /** The moon where the player is (the phase is the same everywhere). */
+  moon(place?: { lat: number; lon: number } | null, when?: Date | number): {
+    /** 0 new, .25 first quarter, .5 full, .75 last quarter. */ phase: number;
+    /** How much of its face is lit, 0 to 1. */ lit: number;
+    waxing: boolean;
+    name: 'new' | 'waxing crescent' | 'first quarter' | 'waxing gibbous' | 'full' | 'waning gibbous' | 'last quarter' | 'waning crescent';
+    up: boolean; height: number; compass: number; guess: boolean;
+  };
+  /** The phone's battery: level 0 to 1 and charging (both null where the phone won't say), and whether power saving is on. */
+  battery(): { level: number | null; charging: boolean | null; saver: boolean };
+  /** Is the sound going to headphones (wired, USB or Bluetooth)? null when the phone won't say. */
+  headphones(): boolean | null;
+}
+
 export interface Thing { dead?: boolean; tags?: Set<string>; x?: number; y?: number; r?: number; w?: number; h?: number; update?(dt: number, things: Loose): void; [k: string]: Loose }
 /** A place that moves with its parent: x, y, angle, scale are relative; wx, wy, wangle, wscale are in game units after update(). */
 export declare class Node {
@@ -1783,7 +1813,7 @@ export interface PhoneaiPart {
 export interface GS {
   sound: SoundPart; device: DevicePart; util: UtilPart; math: MathPart; palettes: PalettesPart;
   juice: JuicePart; effects: { Feel: typeof Feel }; controls: ControlsPart; pad: PadPart; moves: MovesPart;
-  pixel: PixelPart; gfx: GfxPart; physics: PhysicsPart; vision: VisionPart; geo: GeoPart;
+  pixel: PixelPart; gfx: GfxPart; physics: PhysicsPart; vision: VisionPart; geo: GeoPart; real: RealPart;
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart; tick: TickPart; solve: SolvePart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;

@@ -103,6 +103,7 @@
     "rot-js": "2.2.1",
     "screen-rate": "file:plugins/screen-rate",
     "simplex-noise": "4.0.3",
+    "suncalc": "2.1.1",
     "three": "^0.187.0",
     "three-subdivide": "^1.1.5",
     "three.quarks": "0.17.1",
