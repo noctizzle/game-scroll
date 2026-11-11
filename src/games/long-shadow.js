@@ -20,7 +20,6 @@ const { HDView, Particles, pbr, rbox, sun, surface, speckle, THREE } = gs.hd;
 const { Land, Water, Wind, looks, groundDetail, horizon, impostor } = gs.outdoors;
 const { Props } = gs.props;
 const { Sky, Weather } = gs.sky;
-const { Rig } = gs.poses;
 const { Gun, Health, Explosives } = gs.combat;
 const { CoverMap, Squad } = gs.tactics;
 const { NavGrid } = gs.ai;
@@ -33,7 +32,7 @@ const { Prompts } = gs.prompts;
 const { Zipline } = gs.gadgets;
 const { Campaign } = gs.campaign;
 const { shatter } = gs.destruction;
-const { human, material: recipe } = gs.models;
+const { human } = gs.models;
 const { Group, Mesh, InstancedMesh, Object3D, Vector3, BoxGeometry, CylinderGeometry, ConeGeometry, PlaneGeometry, SphereGeometry, CapsuleGeometry, TorusGeometry, Color } = THREE;
 
 let W = 300, H = 420;
@@ -416,6 +415,7 @@ function villageTextures() {
 let WD = null;
 function world() {
   if (WD) return WD;
+  human.need(ALL_PEOPLE);   // the people first: if this phone hasn't sculpted them yet the app waits here, before anything else is built
   const v = new HDView({ bg: '#c9c3b2', env: .55, sky: '#c8d2e0', ground: '#4a4434', amb: .42, fov: 62 });
   v.cam.near = .3; v.cam.far = 1600; v.cam.updateProjectionMatrix();
   v.exposure = 1; v.bloom = .3;
@@ -762,23 +762,22 @@ function world() {
   // tracers from enemy fire (pooled)
   const trMat = pbr('#ffd890', { glow: 3.2 }), trGeo = new BoxGeometry(.028, .028, 1);
   WD.tracers = Array.from({ length: 10 }, () => { const m = new Mesh(trGeo, trMat); m.visible = false; m.castShadow = false; v.scene.add(m); return m; });
-  // first-person rifle (shown when not scoped): walnut stock, blued steel, a scope on two rings
-  const gun = new Group(), steel = pbr('#ffffff', { vertexColors: true, rough: .32, metal: .85 }), walnut = pbr('#ffffff', { tex: wood, rough: .55, vertexColors: true });
-  const kw = baker(), ks = baker(), Z = Math.PI / 2, W_ = '#a07050', S_ = '#30343a';
-  kw.add(rbox(.046, .13, .2, .02), W_, [0, -.055, .27], { r: [.12, 0, 0] }).add(rbox(.04, .06, .16, .015), W_, [0, -.012, .12], { r: [.2, 0, 0] }).add(rbox(.05, .056, .52, .018), W_, [0, -.004, -.23]);
-  ks.add(new CylinderGeometry(.016, .016, .13, 12), S_, [0, .026, -.01], { r: [Z, 0, 0] }).add(new CylinderGeometry(.009, .011, .64, 10), S_, [0, .03, -.4], { r: [Z, 0, 0] });
-  ks.add(new CylinderGeometry(.016, .016, .25, 14), S_, [0, .086, -.03], { r: [Z, 0, 0] }).add(new CylinderGeometry(.022, .017, .05, 14), S_, [0, .086, .115], { r: [Z, 0, 0] }).add(new CylinderGeometry(.025, .017, .08, 14), S_, [0, .086, -.19], { r: [Z, 0, 0] });
-  ks.add(new CylinderGeometry(.011, .011, .03, 10), S_, [0, .108, -.03]).add(new CylinderGeometry(.011, .011, .03, 10), S_, [.022, .086, -.03], { r: [0, 0, Z] });
-  for (const z of [.05, -.1]) ks.add(new BoxGeometry(.02, .05, .022), S_, [0, .058, z]);
-  ks.add(new BoxGeometry(.008, .03, .05), S_, [0, -.04, .06]);
-  for (const [k, m] of [[kw, walnut], [ks, steel]]) gun.add(new Mesh(k.geo(), m));
-  const bolt = new Group(), bk = baker(); bk.add(new CylinderGeometry(.005, .005, .06, 6), S_, [.03, 0, 0], { r: [0, 0, Z] }).add(new SphereGeometry(.011, 8, 6), S_, [.062, -.008, 0]);
-  bolt.add(new Mesh(bk.geo(), steel)); bolt.position.set(0, .03, .05); gun.add(bolt);
-  gun.position.set(.13, -.15, -.3); gun.traverse(m => { m.castShadow = false; m.userData.noAO = true; }); v.cam.add(gun); WD.gun = gun; WD.bolt = bolt;
+  // first-person rifle (shown when not scoped): walnut stock, blued steel, a scope on two rings; held low and
+  // a little across, so it comes into view from the corner. Half as big again and half as far again: the
+  // same picture, but its near end stays the far side of the camera's near plane (.3), which used to cut
+  // the bolt and the back of the scope away
+  const gun = new Group(), steel = pbr('#ffffff', { vertexColors: true, rough: .34, metal: .85 }), walnut = pbr('#ffffff', { tex: wood, rough: .5, vertexColors: true });
+  WD.rifleMats = [walnut, steel];
+  { const P = rifleParts(true, true), near = [new THREE.MeshPhysicalMaterial({ map: walnut.map, normalMap: walnut.normalMap, roughnessMap: walnut.roughnessMap, vertexColors: true, roughness: .8, specularIntensity: .3, emissive: '#ffffff', emissiveMap: walnut.map, emissiveIntensity: .1 }), steel.clone()];
+    // (seen along its length the stock is all grazing angles, where any surface mirrors the sky: its wood is given less of that, and a little of its own colour back, or it reads as blue steel)
+    for (const m of near) m.side = THREE.DoubleSide; near[1].roughness = .46; near[1].metalness = .75; gun.add(new Mesh(P.wood, near[0]), new Mesh(P.steel, near[1])); const bolt = new Group(); bolt.add(new Mesh(P.bolt, near[1])); bolt.position.set(0, .03, .05); gun.add(bolt); WD.bolt = bolt; }
+  gun.scale.setScalar(1.5); gun.position.set(.27, -.3, -.56); gun.rotation.set(.05, .13, -.1); gun.traverse(m => { m.castShadow = false; m.userData.noAO = true; }); v.cam.add(gun); WD.gun = gun;
+  // rifles dropped by men who are down
+  WD.dropped = Array.from({ length: 6 }, () => { const g = soldierRifle(false); g.visible = false; v.scene.add(g); return g; }); WD.dropN = 0;
   // nest markers (a soft flare where you can move to)
   WD.marks = new Particles(v, { max: 8, additive: true });
   // a helmet that pops off on a head shot
-  WD.helmets = Array.from({ length: 4 }, () => { const m = new Mesh(new SphereGeometry(.15, 12, 8, 0, TAU, 0, Math.PI / 2), pbr('#3a4238', { rough: .6 })); m.visible = false; m.castShadow = true; v.scene.add(m); return { m, vx: 0, vy: 0, vz: 0, life: 0 }; });
+  WD.helmets = Array.from({ length: 4 }, () => { const m = people().grey[0].gear.hat.loose(); m.visible = false; v.scene.add(m); return { m, vx: 0, vy: 0, vz: 0, life: 0 }; });   // (loose copies of the riflemen's own)
 
   // ---- three lost letters in each mission, tucked where you can spot them with the glasses
   {
@@ -842,19 +841,42 @@ function makeTrain(M) {
   t.userData.chim = chim; t.visible = false; return t;
 }
 
-// soldiers: each one skinned mesh (one draw call) on a skeleton that gs.poses moves. Every part (tunic,
-// webbing, helmet, boots, rifle) is bound to one bone; a part is hidden by shrinking its bone to nothing
-// (the helmet that flies off, the radio pack, the officer's missing rifle).
-const LOOKS = {
-  grey: { tunic: '#5c636b', trousers: '#4a5057', helmet: '#4b5249', boots: '#1f1c19', belt: '#2b2723', kit: '#3f3c33', skin: '#d6a982', band: '#d9c25a', hat: 'helmet' },
-  officer: { tunic: '#3d434b', trousers: '#2f343a', helmet: '#353b42', boots: '#141210', belt: '#1e1b18', kit: '#2e2c28', skin: '#d6a982', band: '#d9c25a', hat: 'cap' },
-  ally: { tunic: '#6b6f40', trousers: '#5a5e37', helmet: '#3f4a2c', boots: '#2b231a', belt: '#7d7656', kit: '#6e6a4c', skin: '#e0b28b', band: null, hat: 'beret' },
-  wren: { tunic: '#58603a', trousers: '#4b4d33', helmet: '#4d5434', boots: '#2a221a', belt: '#5e5640', kit: '#545238', skin: '#e2b490', band: null, hat: 'hood' },
-};
-const BONES = ['hips', 'spine', 'head', 'armL', 'foreL', 'armR', 'foreR', 'legL', 'shinL', 'legR', 'shinR', 'helmet', 'rifle', 'pack', 'aerial'];
-const PARENT = { spine: 'hips', head: 'spine', armL: 'spine', foreL: 'armL', armR: 'spine', foreR: 'armR', legL: 'hips', shinL: 'legL', legR: 'hips', shinR: 'legR', helmet: 'head', rifle: 'foreR', pack: 'spine', aerial: 'spine' };
-const BIND = { hips: [0, .97, 0], spine: [0, .05, 0], head: [0, .42, 0], armL: [.22, .3, 0], foreL: [0, -.3, 0], armR: [-.22, .3, 0], foreR: [0, -.3, 0], legL: [.1, 0, 0], shinL: [0, -.42, 0], legR: [-.1, 0, 0], shinR: [0, -.42, 0], helmet: [0, 0, 0], rifle: [0, 0, 0], pack: [0, 0, 0], aerial: [0, 0, 0] };
-const ORIGIN = {}; for (const b of BONES) { const p = PARENT[b] ? ORIGIN[PARENT[b]] : [0, 0, 0], o = BIND[b]; ORIGIN[b] = [p[0] + o[0], p[1] + o[1], p[2] + o[2]]; }
+// ---- people: sculpted in code by gs.models.human (faces with eyes, hands with fingers, uniforms cut and
+// worn, helmets, straps and pouches; three levels of detail) on the skeleton gs.poses moves. A hat or a
+// pack is hidden by shrinking its bone to nothing (the helmet that flies off, the radio pack). The first
+// of each face is sculpted (in the background, once per phone: the app shows "Loading…"); the rest of a
+// squad are twins that share its geometry.
+const PEOPLE_SPEC = (() => {
+  const grey = (o, top = {}) => ({ hands: 'grip', ...o, outfit: {
+    top: { kind: 'tunic', colour: '#5c636b', collar: '#3e454c', pockets: 4, buttons: '#8a8674', straps: true, tabs: '#23272b', band: '#d9c25a', ...top },
+    legs: { kind: 'trousers', colour: '#4a5057' }, feet: { kind: 'tall', colour: '#1f1c19' }, hat: { kind: 'helmet', colour: '#4b5249' },
+    belt: { colour: '#2b2723', buckle: '#8d8c80' }, webbing: { colour: '#2b2723', y: true, pouches: 3 }, extras: { bag: '#5f5e48', canteen: '#4a4034' }, pack: { kind: 'radio', colour: '#454a40', hide: true } } });
+  const hale = o => ({ hands: 'grip', ...o, outfit: {
+    top: { kind: 'blouse', colour: '#6b6f40', collar: null, pockets: 2, buttons: '#5a5840' }, legs: { kind: 'trousers', colour: '#5a5e37' }, feet: { kind: 'gaiters', colour: '#2b231a', gaiter: '#8a8464' },
+    hat: { kind: 'beret', colour: '#3f4a2c', badge: '#b8a050' }, belt: { colour: '#7d7656', buckle: '#a09060' }, webbing: { colour: '#7d7656', y: true, pouches: 1, kind: 'big' }, pack: { kind: 'pack', colour: '#5f6238', roll: '#6a6450', hide: true } } });
+  return {
+    grey: [grey({ skin: '#d2a583', hair: '#4a3626', iris: '#6c8296', stubble: .4 }), grey({ skin: '#c9997a', hair: '#2e241c', iris: '#5a4a34', stubble: .65, face: { jaw: 1.08, nose: 1.08, brow: 1.12 } }),
+      grey({ skin: '#dcb394', hair: '#8a6a3c', iris: '#5f7f6a', stubble: .12, face: { jaw: .93, chin: .94, nose: .94, cheeks: .9 } })],
+    officer: [{ skin: '#d8ae8c', hair: '#3a2c20', iris: '#5a6f7a', moustache: true, stubble: .2, outfit: {
+      top: { kind: 'tunic', colour: '#3d434b', collar: '#262b31', pockets: 4, buttons: '#b0a678', straps: true, tabs: '#8a2a22', cuffs: '#262b31', band: '#d9c25a' },
+      legs: { kind: 'breeches', colour: '#2f343a' }, feet: { kind: 'tall', colour: '#141210' }, hat: { kind: 'cap', colour: '#353b42', band: '#d9c25a', badge: '#c0b070' },   // (the Order's yellow on his cap too: he is the one to find)
+      belt: { colour: '#3a2416', buckle: '#b0a678' }, webbing: { colour: '#3a2416', cross: true }, extras: { holster: 'left' }, gloves: { colour: '#33261a' } } }],
+    // Sgt. Rook, their marksman: a camouflage smock, a knitted cap, a scarf against the tower's wind
+    rook: [{ hands: 'grip', skin: '#c79a7c', hair: '#57534c', iris: '#7a8a8a', stubble: .8, face: { jaw: 1.06, brow: 1.15, cheeks: .85, nose: 1.05 }, outfit: {
+      top: { kind: 'smock', colour: '#4a4f3c', camo: ['#32372b', '#6b6551'], collar: null, pockets: 4 }, legs: { kind: 'trousers', colour: '#4a5057' }, feet: { kind: 'tall', colour: '#1f1c19' }, hat: { kind: 'wool', colour: '#3a3f38' },
+      belt: { colour: '#2b2723', buckle: '#6d6c62' }, webbing: { colour: '#2b2723', pouches: 2 }, extras: { scarf: '#55584a' } } }],
+    ally: [hale({ skin: '#e0b28b', hair: '#3a2a1a', iris: '#5a4a34', stubble: .3 }), hale({ skin: '#b98a68', hair: '#1e1814', iris: '#3f3428', stubble: .5, face: { jaw: 1.05, nose: 1.1 } }), hale({ skin: '#e6bea0', hair: '#9a6a3a', iris: '#5a7a8a', stubble: .1, face: { jaw: .95, chin: .95 } })],
+    // Wren: a brushed camouflage smock, its hood thrown back, her hair tied up out of the scope's way
+    wren: [{ sex: 'f', skin: '#e2b490', hair: '#4a3424', hairStyle: 'bun', iris: '#6b7a58', lips: '#b0756a', outfit: {
+      top: { kind: 'smock', colour: '#5f6742', camo: ['#3c472b', '#7b6b47'], collar: null, pockets: 4 }, legs: { kind: 'trousers', colour: '#4b4d33' }, feet: { kind: 'boots', colour: '#2a221a' },
+      belt: { colour: '#5e5640', buckle: '#8a7a50' }, webbing: { colour: '#5e5640', pouches: 2 }, extras: { scarf: '#6b6a45', bag: '#545238' } },
+      gear: [{ name: 'hood', bone: 'spine', shapes: [{ ball: [.105, .042, .06], at: [0, 1.5, -.08], rot: [.35, 0, 0], slot: 'top', lumpy: [.03, .006], blend: 0 }, { ball: [.088, .085, .036], at: [0, 1.43, -.118], rot: [.12, 0, 0], slot: 'top', lumpy: [.03, .006], blend: .03 }] }] }],
+  };
+})();
+const ALL_PEOPLE = Object.values(PEOPLE_SPEC).flat();
+let PEOPLE = null;
+// the first of each face, made together the first time anyone is needed
+const people = () => PEOPLE ||= (() => { const made = human.all(ALL_PEOPLE), out = {}; let i = 0; for (const k of Object.keys(PEOPLE_SPEC)) out[k] = PEOPLE_SPEC[k].map(() => made[i++]); return out; })();
 // merges shapes into one geometry with colours (skin: for a soldier, the bone each shape follows;
 // uvs: keep each shape's texture coordinates, times uv [u, v], so a textured material shows its grain)
 function baker(skin = false, uvs = false) {
@@ -880,96 +902,99 @@ function baker(skin = false, uvs = false) {
     },
   };
 }
-const SOLDIER_GEO = {};
-function soldierGeo(look) {
-  const L = LOOKS[look], k = baker(true), O = ORIGIN;
-  const put = (bone, g, col, d, o = {}) => k.add(g, col, [O[bone][0] + d[0], O[bone][1] + d[1], O[bone][2] + d[2]], { ...o, bone: BONES.indexOf(bone) });
-  const cap = (r, l) => new CapsuleGeometry(r, l, 4, 10), cyl = (a, b, h, n = 12, open = false) => new CylinderGeometry(a, b, h, n, 1, open), ball = (r, n = 12) => new SphereGeometry(r, n, Math.max(6, n * .7 | 0));
-  // hips: seat of the trousers, tunic skirt, belt, buckle, pouches, canteen
-  put('hips', cyl(.165, .175, .2), L.trousers, [0, -.07, 0], { s: [1, 1, .72] });
-  put('hips', cyl(.172, .19, .15), L.tunic, [0, -.01, 0], { s: [1, 1, .74] });
-  put('hips', cyl(.18, .18, .055, 16), L.belt, [0, .085, 0], { s: [1, 1, .74] });
-  put('hips', new BoxGeometry(.05, .04, .02), '#8a8270', [0, .085, .135]);
-  for (const x of [-.1, -.045, .045, .1]) put('hips', new BoxGeometry(.045, .07, .045), L.kit, [x, .07, .125], { r: [0, x * 1.4, 0] });
-  put('hips', cyl(.045, .045, .13), look === 'ally' ? '#5a6040' : '#3e4438', [.17, -.02, -.07]);
-  put('hips', new BoxGeometry(.05, .2, .04), L.belt, [-.16, -.06, -.08], { r: [.15, 0, .1] });
-  // chest: the tunic (wider at the shoulders), collar, pockets, straps
-  put('spine', cap(.15, .24), L.tunic, [0, .25, 0], { s: [1.18, 1, .78] });
-  put('spine', cyl(.072, .085, .07), L.tunic, [0, .5, 0]);
-  for (const x of [-.075, .075]) { put('spine', new BoxGeometry(.085, .09, .02), L.tunic, [x, .3, .118]); put('spine', new BoxGeometry(.035, .36, .012), L.belt, [x * 1.05, .28, .124], { r: [-.08, 0, x * .5] }); put('spine', new BoxGeometry(.035, .36, .012), L.belt, [x * 1.05, .28, -.124], { r: [.08, 0, x * .5] }); }
-  // the pack (radio men and Hale's squad), a blanket roll on top; the radio aerial
-  put('pack', new BoxGeometry(.3, .34, .15), look === 'ally' ? '#4f5530' : '#454a40', [0, .26, -.2]);
-  put('pack', cyl(.05, .05, .32), look === 'ally' ? '#6a6450' : '#5a5a54', [0, .45, -.19], { r: [0, 0, Math.PI / 2] });
-  put('aerial', cyl(.006, .009, 1.3, 5), '#222222', [.1, .95, -.24]);
-  // head: neck, face, ears, eyes
-  put('head', cyl(.05, .058, .12), L.skin, [0, .04, 0]);
-  put('head', ball(.112, 14), L.skin, [0, .145, .01], { s: [.92, 1.08, 1] });
-  put('head', new BoxGeometry(.026, .045, .035), L.skin, [0, .135, .118]);
-  for (const x of [-1, 1]) { put('head', ball(.025, 6), L.skin, [x * .108, .14, 0], { s: [.4, 1, .8] }); put('head', ball(.011, 6), '#1a1612', [x * .038, .165, .1]); }
-  put('head', new SphereGeometry(.117, 12, 8, 0, TAU, 0, Math.PI / 2), '#3a3128', [0, .165, -.005], { s: [.95, .85, 1.03] });
-  // what's on the head (pops off on a head shot)
-  if (L.hat === 'helmet') { put('helmet', new SphereGeometry(.148, 16, 9, 0, TAU, 0, Math.PI / 2), L.helmet, [0, .19, -.006], { s: [1, .86, 1.08] }); put('helmet', cyl(.15, .17, .05, 16, true), L.helmet, [0, .175, -.012], { s: [1, 1, 1.08], r: [-.12, 0, 0] }); }
-  else if (L.hat === 'cap') { put('helmet', cyl(.13, .118, .075, 14), L.helmet, [0, .245, -.01]); put('helmet', cyl(.15, .15, .03, 14), L.helmet, [0, .29, -.025], { s: [1, 1, 1.12], r: [-.1, 0, 0] }); put('helmet', new BoxGeometry(.19, .012, .08), '#111111', [0, .225, .11], { r: [.25, 0, 0] }); put('helmet', new BoxGeometry(.2, .02, .01), '#b8a050', [0, .25, .128]); }
-  else if (L.hat === 'hood') { put('helmet', ball(.152, 14), L.helmet, [0, .17, -.03], { s: [1.02, 1.04, 1.12] }); put('helmet', ball(.16, 10), L.tunic, [0, .02, -.04], { s: [1.25, .6, 1.1] }); }   // Wren's scrim hood and scarf
-  else put('helmet', ball(.14, 12), L.helmet, [.025, .245, -.01], { s: [1.08, .34, 1.08], r: [0, 0, -.18] });
-  // arms: shoulders, sleeves, cuffs, hands; the armband
-  for (const [a, f, x] of [['armL', 'foreL', 1], ['armR', 'foreR', -1]]) {
-    put(a, ball(.07, 10), L.tunic, [0, -.01, 0]); put(a, cap(.058, .19), L.tunic, [0, -.14, 0]);
-    put(f, cap(.05, .17), L.tunic, [0, -.12, 0]); put(f, cyl(.054, .054, .035, 10), L.tunic, [0, -.225, 0]);
-    put(f, ball(.047, 10), L.skin, [0, -.29, .008], { s: [.85, 1.12, .72] });
-    void x;
+// ---- rifles, drawn in code: a bolt-action rifle with a walnut stock. The player's is finer and has a
+// scope; the soldiers' are the same rifle with less in it. Its own space: the trigger at the origin, the
+// muzzle towards -z, the bore along z at y = .03. Returns { wood, steel, bolt }: three geometries.
+function rifleParts(fine, scope) {
+  const kw = baker(false, true), ks = baker(), kb = baker(), Z = Math.PI / 2, n = fine ? 20 : 8, W_ = fine ? '#e6b98c' : '#b88458', S_ = '#30343a', D_ = '#191a1d', B_ = '#3a3d42';
+  const tube = (r1, r2, len) => new CylinderGeometry(r1, r2, len, n);   // lying along z once turned: r1 at the butt end, r2 at the muzzle end
+  // the stock: its side as an outline (z along the rifle, y up), given thickness and rounded edges
+  const side = [[.36, .014], [.3, .017], [.2, .021], [.145, .014], [.105, .004], [.075, .008], [.055, .02], [-.46, .02], [-.485, .012], [-.49, -.004], [-.47, -.014], [-.3, -.02], [-.12, -.027], [-.02, -.032], [.03, -.03], [.055, -.022], [.085, -.027], [.115, -.04], [.15, -.058], [.21, -.08], [.3, -.1], [.36, -.112]];
+  const st = new THREE.ExtrudeGeometry(new THREE.Shape(side.map(([z, y]) => new THREE.Vector2(-z, y))), { depth: .024, bevelEnabled: true, bevelThickness: .009, bevelSize: .007, bevelOffset: -.007, bevelSegments: fine ? 4 : 2 });
+  st.translate(0, 0, -.012); st.rotateY(Z);
+  kw.add(st, W_, [0, 0, 0], { uv: [5, 12] });
+  kw.add(new CylinderGeometry(.0168, .0158, .27, n, 1, false, Z, Math.PI), W_, [0, .03, -.275], { r: [Z, 0, 0], uv: [1, 2] });   // the handguard over the barrel
+  // a leather sling from the front band to the butt
+  kw.add(new BoxGeometry(.022, .004, .31), '#4a3524', [0, -.052, -.15], { r: [-.1, 0, 0] }).add(new BoxGeometry(.022, .004, .3), '#4a3524', [0, -.078, .15], { r: [.075, 0, 0] });
+  // steel: barrel, muzzle, sights, receiver, floor plate and trigger guard, bands, butt plate
+  ks.add(tube(.0115, .0085, .62), S_, [0, .03, -.43], { r: [Z, 0, 0] }).add(tube(.0102, .0102, .014), S_, [0, .03, -.735], { r: [Z, 0, 0] });
+  ks.add(new BoxGeometry(.01, .012, .03), S_, [0, .043, -.705]).add(new BoxGeometry(.0025, .013, .008), S_, [0, .054, -.708]);
+  ks.add(tube(.0175, .0175, .19), S_, [0, .03, -.03], { r: [Z, 0, 0] }).add(tube(.0195, .0195, .04), S_, [0, .03, -.106], { r: [Z, 0, 0] }).add(tube(.011, .012, .05), B_, [0, .03, .088], { r: [Z, 0, 0] });
+  ks.add(new BoxGeometry(.014, .012, .05), S_, [0, .051, -.142]).add(new BoxGeometry(.02, .009, .006), S_, [0, .061, -.12]);
+  ks.add(new BoxGeometry(.022, .006, .09), S_, [0, -.033, -.03]).add(new THREE.TorusGeometry(.022, .0028, 6, fine ? 14 : 8, Math.PI), S_, [0, -.03, .028], { r: [Math.PI, Z, 0] }).add(new BoxGeometry(.004, .018, .006), S_, [0, -.04, .03], { r: [.3, 0, 0] });
+  for (const z of [-.3, -.455]) ks.add(rbox(.047, .047, .014, .008), S_, [0, .002, z]);
+  ks.add(new BoxGeometry(.036, .126, .006), B_, [0, -.049, .363]);
+  ks.add(new BoxGeometry(.012, .004, .06), D_, [.0165, .034, -.02]);   // the port the spent case leaves by
+  // the bolt (its own piece: the player's slides back): handle and knob, on the right
+  kb.add(new CylinderGeometry(.0048, .0048, .05, 8), S_, [.036, -.006, 0], { r: [0, 0, Z + .45] }).add(new SphereGeometry(.0105, fine ? 12 : 6, fine ? 8 : 5), S_, [.06, -.018, 0]).add(tube(.0088, .0088, .07), B_, [0, 0, .02], { r: [Z, 0, 0] });
+  if (scope) {
+    const y = .084;
+    ks.add(tube(.0127, .0127, .27), D_, [0, y, -.03], { r: [Z, 0, 0] }).add(tube(.0127, .0195, .06), D_, [0, y, -.19], { r: [Z, 0, 0] }).add(tube(.0195, .0195, .03), D_, [0, y, -.235], { r: [Z, 0, 0] });
+    ks.add(tube(.0168, .0127, .045), D_, [0, y, .122], { r: [Z, 0, 0] }).add(tube(.0178, .0178, .022), D_, [0, y, .153], { r: [Z, 0, 0] });
+    ks.add(new BoxGeometry(.024, .022, .032), D_, [0, y, -.03]).add(new CylinderGeometry(.0095, .0095, .022, n), S_, [0, y + .02, -.03]).add(new CylinderGeometry(.0095, .0095, .022, n), S_, [.021, y, -.03], { r: [0, 0, Z] });
+    for (const z of [.05, -.105]) ks.add(new BoxGeometry(.016, .034, .014), S_, [0, .058, z]).add(tube(.0152, .0152, .014), S_, [0, y, z], { r: [Z, 0, 0] });
+    ks.add(new CylinderGeometry(.0165, .0165, .002, n), '#0a0c10', [0, y, -.2495], { r: [Z, 0, 0] }).add(new CylinderGeometry(.015, .015, .002, n), '#0a0c10', [0, y, .1635], { r: [Z, 0, 0] });   // glass
   }
-  if (L.band) put('armL', cyl(.064, .064, .055, 12), L.band, [0, -.13, 0]);
-  // legs: trousers, boots (leather for the Grey Order, canvas gaiters for Hale's squad)
-  for (const [lg, sh] of [['legL', 'shinL'], ['legR', 'shinR']]) {
-    put(lg, cap(.085, .27), L.trousers, [0, -.21, 0]);
-    put(sh, cap(.07, .14), L.trousers, [0, -.12, 0]);
-    put(sh, cyl(.069, .062, look === 'ally' ? .17 : .27), look === 'ally' ? '#8a8464' : L.boots, [0, look === 'ally' ? -.34 : -.31, 0]);
-    put(sh, new BoxGeometry(.105, .09, .24), L.boots, [0, -.5, .04]); put(sh, ball(.053, 8), L.boots, [0, -.485, .155], { s: [1, .75, 1] });
-  }
-  // the rifle along the right forearm: butt by the elbow, muzzle past the hand
-  const R = (g, col, y, o) => put('rifle', g, col, [0, y, .045], o);
-  R(new BoxGeometry(.04, .3, .07), '#5a3e26', .02, { s: [1, 1, 1] }); R(new BoxGeometry(.035, .22, .05), '#5a3e26', -.22);
-  R(new BoxGeometry(.034, .14, .04), '#2a2a2a', -.37); R(cyl(.011, .011, .5, 8), '#2a2a2a', -.62); R(new BoxGeometry(.03, .3, .042), '#5a3e26', -.5);
-  return k.geo();
+  return { wood: kw.geo(), steel: ks.geo(), bolt: kb.geo() };
 }
-const SOLDIER_MAT = new Map();
-const hider = bone => ({ get visible() { return bone.scale.x > 0; }, set visible(on) { bone.scale.setScalar(on ? 1 : 0); } });
+// a soldier's rifle (a Group: wood, steel, bolt), cheap to make more of
+function soldierRifle(scope) {
+  const P = WD[scope ? 'scoped' : 'rifle'] ||= rifleParts(false, scope), g = new Group(), [wood, steel] = WD.rifleMats;
+  for (const [geo, mat] of [[P.wood, wood], [P.steel, steel], [P.bolt, steel]]) { const m = new Mesh(geo, mat); m.castShadow = true; g.add(m); }
+  g.children[2].position.set(0, .03, .05);
+  return g;
+}
+// where a rifle sits on a man, in his chest's space (the spine bone: its origin at the waist, the shoulders
+// .34 up, z forward, his right at -x): `at` the trigger, f the way the muzzle points, u the rifle's top
+const HOLDS = (() => {
+  const hold = (at, f, u) => { const z = new Vector3(-f[0], -f[1], -f[2]).normalize(), x = new Vector3(...u).cross(z).normalize(), y = new Vector3().crossVectors(z, x); return { p: new Vector3(...at), q: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z)) }; };
+  return { slung: hold([-.17, .27, -.15], [.03, .995, -.1], [0, 0, -1]), ready: hold([0, .08, .3], [.5, -.42, .76], [0, 1, 0]), aim: hold([.063, .43, .357], [.565, 0, .825], [0, 1, 0]), back: hold([.05, .22, -.17], [-.5, .86, -.05], [0, 0, -1]) };
+})();
+const GRIP = [0, -.03, .05], FORE = [0, -.028, -.21], IN_HANDS = { rifle: 1, cs: 1 };
+// a rifleman's aim: bladed to the target, the cheek down on the stock (the arms are then brought onto the rifle)
+const SHOULDER = () => ({ j: { spine: [.14, -.6, 0], head: [.3, .52, .25], armR: [-1.1, 0, .9], foreR: [-1.9, 0, 0], armL: [-1.3, .2, -.2], foreL: [-.5, 0, 0] }, drop: 0 });
+// on the radio: the handset up at his ear
+const CALL = () => ({ j: { spine: [.04, .1, 0], head: [.05, -.15, .12], armR: [-.75, 0, .5], foreR: [-2.25, 0, 0], armL: [0, 0, -.08], foreL: [-.3, 0, 0] }, drop: 0 });
 const POOL = {};
 function man(look) {
   const list = POOL[look] ||= [];
   const free = list.find(f => !f.userData.used);
-  if (free) { free.userData.used = true; free.visible = true; return free; }
-  const geo = SOLDIER_GEO[look] ||= soldierGeo(look);
-  if (!SOLDIER_MAT.has('m')) SOLDIER_MAT.set('m', pbr('#ffffff', { vertexColors: true, rough: .84 }));
-  const root = new Group(), bones = {};
-  for (const b of BONES) { const bone = new THREE.Bone(); bone.position.set(...BIND[b]); bones[b] = bone; (PARENT[b] ? bones[PARENT[b]] : root).add(bone); }
-  const mesh = new THREE.SkinnedMesh(geo, SOLDIER_MAT.get('m')); mesh.castShadow = true; mesh.receiveShadow = true;
-  mesh.boundingSphere = new THREE.Sphere(new Vector3(0, .8, 0), 1.7);
-  root.add(mesh); root.updateMatrixWorld(true); mesh.bind(new THREE.Skeleton(BONES.map(b => bones[b])), mesh.matrixWorld);
-  root.rig = new Rig({ hips: bones.hips, spine: bones.spine, head: bones.head, armL: bones.armL, foreL: bones.foreL, armR: bones.armR, foreR: bones.foreR, legL: bones.legL, shinL: bones.shinL, legR: bones.legR, shinR: bones.shinR }, { height: 1.8 });
-  root.userData = { used: true, look, rifle: hider(bones.rifle), pack: hider(bones.pack), aerial: hider(bones.aerial), helmet: hider(bones.helmet), mesh };
+  if (free) { free.userData.used = true; free.visible = true; free.userData.k = 0; free.lod = 2; return free; }
+  const firsts = people()[look], root = list.length < firsts.length ? firsts[list.length] : firsts[list.length % firsts.length].twin();
+  const none = { visible: true }, gun = look === 'officer' ? null : soldierRifle(look === 'rook' || look === 'wren');
+  if (gun) { root.bones.spine.add(gun); gun.position.copy(HOLDS.slung.p); gun.quaternion.copy(HOLDS.slung.q); }
+  root.rig.add('shoulder', SHOULDER).add('call', CALL);
+  root.userData = { used: true, look, rifle: gun || none, gun, pack: root.gear.pack || none, aerial: none, helmet: root.gear.hat || none, k: 0 };
+  root.lod = 2;   // far off until see() says otherwise (behind the field file nobody is looked at, and a squad at full detail is a lot to draw)
   list.push(root); WD.v.scene.add(root);
   return root;
 }
-// Wren up close (the ladder, the zip line, the train): a code-made person (gs.models.human: a smoothed
-// body, a sculpted face with eyes that blink, skin light shines through, clothes in a woven cloth) with
-// the same skeleton and poses as the soldiers, in her scrim hood and scarf, the rifle slung on her back
+// A rifle where it belongs for what its man is doing: slung behind the shoulder while he is calm, held low
+// in both hands once he is alert, up in the shoulder to aim (h: 0 slung .. 1 in hands). Seen close, both
+// arms are bent to bring the hands onto it. Call after rig.update().
+// pitch: how far above (or below) him his target is, radians: the muzzle rises about the butt in his shoulder.
+const _hp = new Vector3(), _hq = new THREE.Quaternion(), _hx = new Vector3(), _hb = new Vector3(), _hr = new THREE.Quaternion(), BUTT = [0, -.045, .36];
+function carry(m, h, dt, close, pitch = 0) {
+  const u = m.userData, g = u.gun; if (!g || !g.visible) return;
+  u.k += (h - u.k) * Math.min(1, dt * 6); u.pitch = (u.pitch || 0) + (pitch - (u.pitch || 0)) * Math.min(1, dt * 4);
+  const a = m.rig.top === 'shoulder' ? m.rig.topW : 0, k = u.k < .02 ? 0 : u.k > .98 ? 1 : u.k;
+  _hp.copy(HOLDS.ready.p).lerp(HOLDS.aim.p, a); _hq.copy(HOLDS.ready.q).slerp(HOLDS.aim.q, a);
+  if (a > .01 && Math.abs(u.pitch) > .005) {
+    _hb.fromArray(BUTT).applyQuaternion(_hq).add(_hp);   // the butt, where it sits now
+    _hq.premultiply(_hr.setFromAxisAngle(_hx.set(1, 0, 0).applyQuaternion(_hq), u.pitch * a));
+    _hp.fromArray(BUTT).applyQuaternion(_hq).negate().add(_hb);
+  }
+  g.position.copy(HOLDS.slung.p).lerp(_hp, k); g.quaternion.copy(HOLDS.slung.q).slerp(_hq, k);
+  if (k > .5 && close) m.hold(g, GRIP, FORE);
+}
+// Wren up close (the ladder, the zip line, the train): the same kind of person, in her scrim hood and
+// scarf, the scoped rifle slung across her back; her own materials, so the dusk can warm her alone
 function wrenFigure() {
-  const L = LOOKS.wren, w = human({ body: L.tunic, legs: L.trousers, shoes: L.boots, skin: L.skin, hair: '#4a3424', hairStyle: 'bun', iris: '#6b7a58', lips: '#a8665c', jaw: .94, nose: .96 });
-  const hood = recipe('fabric', { colour: L.helmet, repeat: [3, 3], seed: 4, side: THREE.DoubleSide }), sling = pbr('#5e5640', { rough: .9 });
-  const add = (bone, geo, mat, at, r = [0, 0, 0], sc = [1, 1, 1]) => { const m = new Mesh(geo, mat); m.position.set(...at); m.rotation.set(...r); m.scale.set(...sc); m.castShadow = true; w.bones[bone].add(m); return m; };
-  // the hood: over the top, sides and back of the head, open at the face; the scarf round the neck
-  add('head', new SphereGeometry(.142, 20, 12, Math.PI * .5 + 1.05, TAU - 2.1, 0, Math.PI * .66), hood, [0, .135, -.012], [-.12, 0, 0], [1.02, 1.06, 1.12]);
-  add('spine', new TorusGeometry(.078, .034, 8, 18), hood, [0, .41, -.005], [Math.PI / 2 - .2, 0, 0], [1.05, 1.15, 1]);
-  // the rifle across her back, muzzle up past the right shoulder, on a strap
-  const rifle = new Group(); rifle.position.set(0, .26, -.17); rifle.rotation.z = -.55; rifle.scale.setScalar(.78); w.bones.spine.add(rifle);
-  const wood = pbr('#5a3e26', { rough: .6 }), steel = pbr('#2a2a2a', { rough: .35, metal: .8 });
-  for (const [geo, mat, y] of [[new BoxGeometry(.045, .32, .07), wood, -.3], [new BoxGeometry(.035, .4, .045), wood, .02], [new CylinderGeometry(.011, .011, .42, 8), steel, .4], [new BoxGeometry(.035, .12, .04), steel, .12]]) { const m = new Mesh(geo, mat); m.position.y = y; m.castShadow = true; rifle.add(m); }
-  add('spine', new BoxGeometry(.03, .5, .012), sling, [.02, .28, .13], [.12, 0, .62]);
-  w.mats = [w.mesh.material].flat();
+  const w = man('wren'); POOL.wren.length = 0; w.userData.gun.position.copy(HOLDS.back.p); w.userData.gun.quaternion.copy(HOLDS.back.q); w.userData.gun = null;
+  w.mats = [];
+  for (const m of w.lods) { m.material = m.material.map(q => q.clone()); w.mats.push(...m.material); }
   for (const m of w.mats) if (m.emissive) { m.emissive.set('#ffb57a'); m.emissiveIntensity = 0; }
-  WD.wrenMats = w.mats; WD.v.scene.add(w);
+  WD.wrenMats = w.mats;
   return w;
 }
 function freeMen() { for (const k in POOL) for (const f of POOL[k]) { f.userData.used = false; f.visible = false; } }
@@ -1120,7 +1145,7 @@ function make(api) {
   function soldier(o) {
     const look_ = o.look || 'grey', m = man(look_);
     const s = { get down() { return this.ko; }, get alive() { return !this.ko; }, kind: 'rifle', x: 0, y: 0, yaw: 0, hp: 1, maxHp: 1, ko: false, alert: false, route: null, ri: 0, wt: 0, speed: 0, path: null, pathTo: null, fireT: rnd(1, 3), order: { do: 'hold' }, tagged: false, look: look_, sus: 0, crouch: false, aimAt: null, vx: 0, vy: 0, ...o, m };
-    m.userData.aerial.visible = s.kind === 'radio'; m.userData.pack.visible = s.kind === 'radio' || s.look === 'ally';
+    m.userData.pack.visible = s.kind === 'radio' || s.look === 'ally';
     m.userData.helmet.visible = true; m.userData.rifle.visible = s.kind !== 'officer';
     m.rig.play('idle', { fade: 0 }); m.rig.upper(null);
     s.gy = s.deck ?? groundAt(s.x, s.y) + (s.lift || 0); m.position.set(s.x, s.gy, s.y); m.rotation.y = s.yaw;
@@ -1137,7 +1162,7 @@ function make(api) {
   };
   function knockOut(s, head, d, viaCam) {
     if (s.ko) return;
-    s.ko = true; s.m.rig.play('downed', { fade: .25 }); s.m.rig.upper(null);
+    s.ko = true; s.m.rig.play('downed', { fade: .25 }); s.m.rig.upper(null); dropRifle(s);
     // a long duel was a good fight; dropping in the open in his first seconds was a dull one
     endMind(s, s.alert ? (s.alertT > 7 ? .5 : s.alertT < 2 && s.plan !== 'hold' ? -.2 : 0) : 0);
     for (const o of men) if (o !== s && !o.ko && Math.hypot(o.x - s.x, o.y - s.y) < 16) o.shaken = Math.max(o.shaken || 0, .75);
@@ -1160,16 +1185,22 @@ function make(api) {
     for (const o of men) if (!o.ko && !o.alert && Math.hypot(o.x - s.x, o.y - s.y) < 26) o.sus = Math.max(o.sus, .6);
     if (squad.alerted) boss.feel(.3);
   }
+  // his rifle falls beside him
+  function dropRifle(s) {
+    const g = s.m.userData.gun; if (!g || !g.visible) return; g.visible = false;
+    const d = WD.dropped[WD.dropN++ % WD.dropped.length], a = s.yaw + rnd(.8, 1.6);
+    d.position.set(s.x + Math.sin(a) * .75, s.gy + .03, s.y + Math.cos(a) * .75); d.rotation.set(0, rnd(0, TAU), Math.PI / 2); d.visible = true;
+  }
   function popHelmet(s) {
     const h = WD.helmets.find(q => q.life <= 0) || WD.helmets[0]; s.m.userData.helmet.visible = false;
-    s.m.rig.parts.head.getWorldPosition(tmpA);
-    h.m.position.copy(tmpA).y += .14; h.m.visible = true; h.life = 4; h.vx = rnd(-1, 1); h.vy = 5; h.vz = rnd(-1, 1); h.spin = rnd(6, 12);
+    s.m.bones.head.localToWorld(tmpA.fromArray(h.m.userData.at));
+    h.m.position.copy(tmpA); h.m.rotation.set(0, s.yaw, 0); h.m.visible = true; h.life = 4; h.vx = rnd(-1, 1); h.vy = 5; h.vz = rnd(-1, 1); h.spin = rnd(6, 12);
   }
   // (asked for every soldier near every bullet step: the three spheres are filled in place, not made anew)
   function hitSpheres(s, out) {
     const p = s.m.rig.parts;
     if (out.length !== 3) { out.length = 0; out.push([0, 0, 0, .17, true], [0, 0, 0, .27, false], [0, 0, 0, .24, false]); }
-    putSphere(out[0], p.head, .12); putSphere(out[1], p.spine, .24); putSphere(out[2], p.hips, -.05);
+    putSphere(out[0], p.head, .165); putSphere(out[1], p.spine, .17); putSphere(out[2], p.hips, -.08);
     return out;
   }
   function putSphere(q, part, up) { part.getWorldPosition(tmpA); q[0] = tmpA.x; q[1] = tmpA.y + up; q[2] = tmpA.z; }
@@ -1695,7 +1726,7 @@ function make(api) {
   function say(text, who = null, time = 2.6, enemy = false) { lineFx = { text, who, life: time, t: 0, enemy }; }
 
   // ---- Hale's squad (mission 2)
-  function allyDown(a) { if (a.ko) return; a.ko = true; a.m.rig.play('downed'); say(a.name + ' is down!', HALE, 2); haptic('warning'); }
+  function allyDown(a) { if (a.ko) return; a.ko = true; a.m.rig.play('downed'); dropRifle(a); say(a.name + ' is down!', HALE, 2); haptic('warning'); }
 
   // ---- the watchtower and its fuel drums (mission 2)
   function buildTower() {
@@ -1793,7 +1824,7 @@ function make(api) {
       nests: ['chapel', 'mill2'], weather: 'rain',
       setup() {
         const cy = WD.churchTop;
-        cs = soldier({ kind: 'cs', x: CHURCH.x, y: CHURCH.tz + 1.6, lift: cy.y - groundAt(CHURCH.x, CHURCH.tz + 1.6) + .2, yaw: 0, fixed: true, crouch: true, see: 0 });
+        cs = soldier({ kind: 'cs', look: 'rook', x: CHURCH.x, y: CHURCH.tz + 1.6, lift: cy.y - groundAt(CHURCH.x, CHURCH.tz + 1.6) + .2, yaw: 0, fixed: true, crouch: true, see: 0 });
         mgNest = { x: BRIDGE.x - 2, z: -27 };
         const g1 = soldier({ kind: 'mg', x: mgNest.x, y: mgNest.z, yaw: 0, fixed: true, crouch: true }), g2 = soldier({ kind: 'mg2', x: mgNest.x + 2, y: mgNest.z - 1.5, yaw: 0, fixed: true, crouch: true });
         men.push(cs, g1, g2,
@@ -1993,7 +2024,7 @@ function make(api) {
         // paces the balcony; steps inside (behind the wall) now and then
         if (s.route) { const r = s.route[s.ri]; if (Math.hypot(r[0] - s.x, r[1] - s.y) > .2) { const d = Math.hypot(r[0] - s.x, r[1] - s.y), k = Math.min(1, 1.1 * dt / d); s.vx = (r[0] - s.x) / d * 1.1; s.vy = (r[1] - s.y) / d * 1.1; s.x += (r[0] - s.x) * k; s.y += (r[1] - s.y) * k; speed = 1.1; s.yaw = turnTo(s.yaw, Math.atan2(r[0] - s.x, r[1] - s.y), dt * 4); } else if ((s.wt += dt) > r[2]) { s.wt = 0; s.ri = (s.ri + 1) % s.route.length; } }
         if (s.sending) { s.send += dt; if (s.send > 60) mission.fail('The call went through. The column is coming.'); }
-        m.rig.upper(s.sending ? 'aim' : null);
+        m.rig.upper(s.sending ? 'call' : null);
       } else if (s.kind === 'cs') {
         // the marksman: scans, then settles on you when he sees you looking at him (scope glint both ways)
         // Sgt. Rook hunts you: he settles on your lens, his own glint flares as he takes aim (drop the
@@ -2092,7 +2123,12 @@ function make(api) {
       s.inside = (s.kind === 'radio' && WD.millDoor && s.y < WD.millDoor.z - .05) || (s.kind === 'cs' && s.hideT > 0); m.visible = !s.inside;
       // far soldiers animate less often
       const far = Math.hypot(s.x - eye.x, s.y - eye.z) > 160 && !scoped;
-      if (!far || (frame + (s.x | 0)) % 3 === 0) m.rig.update(far ? dt * 3 : dt, { speed, aim: s.alert ? -.05 : 0 });
+      // a rifleman shoulders his rifle to aim (the gunners and the officer keep the plain pose: hands out to what they hold)
+      const armed = IN_HANDS[s.kind] && m.userData.gun; if (armed && m.rig.topOn && m.rig.top === 'aim') m.rig.top = 'shoulder';
+      if (!far || (frame + (s.x | 0)) % 3 === 0) {
+        m.rig.update(far ? dt * 3 : dt, { speed, aim: s.alert ? -.05 : 0 });
+        if (!s.inside) { m.see(WD.v.cam, 1000); if (armed) carry(m, s.kind === 'cs' || s.alert || m.rig.topOn || s.sus > .5 ? 1 : 0, far ? dt * 3 : dt, m.lod < 2, s.alert || s.kind === 'cs' ? clamp(Math.atan2(eye.y - s.gy - 1.45, Math.hypot(eye.x - s.x, eye.z - s.y)), -.35, .5) : 0); }
+      }
       // through the scope his feet meet the slope he stands on (foot IK), for the few men in view
       if (scoped && !s.deck && plantN > 0 && watched(s)) { plantN--; m.rig.plant(WD.ground, m); }
     }
@@ -2119,7 +2155,7 @@ function make(api) {
       }
       a.gy = groundAt(a.x, a.y); a.m.position.set(a.x, a.gy, a.y); a.m.rotation.y = a.yaw;
       if (!a.ko) a.m.rig.play(speed > 0 ? 'run' : a.crouch ? 'crouch' : 'idle');
-      a.m.rig.update(dt, { speed });
+      a.m.rig.update(dt, { speed }); a.m.see(WD.v.cam, 1000); if (!a.ko) carry(a.m, 1, dt, a.m.lod < 2);
     }
     if (allies.filter(a => a.ko).length >= 2) mission.fail('Hale\'s squad was lost on the bridge.');
   }
@@ -2231,6 +2267,7 @@ function make(api) {
     tower = null; drums = null; car = null; op = null; cs = null; boom.list.length = 0; if (WD.bags) WD.bags.visible = false;
     WD.solids = WD.solids.filter(b => !b.temp);
     for (const h of WD.helmets) { h.life = 0; h.m.visible = false; }
+    for (const d of WD.dropped) d.visible = false;
     bodies.list.length = 0; for (const m of temps) m.removeFromParent(); temps.length = 0;
     squad = new Squad([], { cover: WD.cover, sees: (a, b) => WD.nav.sees(a.x - GX0, a.y - GZ0, b.x - GX0, b.y - GZ0), range: 110, grenades: 2, camp: 10, aggression: .5 });
     squad.on('call', callout); lastCall = -99;
@@ -2364,7 +2401,9 @@ function make(api) {
     reset() {
       audioDown(); theme?.stop();
       world(); layout();
-      if (!sky) { sky = new Sky(WD.v, { time: MOODS.m1.time, tilt: MOODS.m1.tilt, stars: 300, sun: WD.sl, day: DAY_CLEAR, clouds: MOODS.m1.clouds, gap: MOODS.m1.gap, env: true, fog: false }); rain = new Weather(WD.v, { kind: 'clear', amount: 0, wind: AIR, area: 40 }); rain.onFlash = far => { storm = 1.6; thunder(far); }; if (rain.rainMesh) { rain.rainMesh.material.opacity = .3; rain.rainMesh.material.color.set('#8c9cb0'); } }
+      // (one sky and one weather for the world, which every card of this game shares: a second card used to add its own dome)
+      if (!WD.sky) { WD.sky = new Sky(WD.v, { time: MOODS.m1.time, tilt: MOODS.m1.tilt, stars: 300, sun: WD.sl, day: DAY_CLEAR, clouds: MOODS.m1.clouds, gap: MOODS.m1.gap, env: true, fog: false }); WD.rain = new Weather(WD.v, { kind: 'clear', amount: 0, wind: AIR, area: 40 }); if (WD.rain.rainMesh) { WD.rain.rainMesh.material.opacity = .3; WD.rain.rainMesh.material.color.set('#8c9cb0'); } }
+      sky = WD.sky; rain = WD.rain; rain.onFlash = far => { storm = 1.6; thunder(far); };
       fx.clear(); me.reset(); gun.ammo = gun.mag; gun.reloadLeft = 0; gun.reserve = Infinity; gun.shotsAtCs = 0;
       state = 'brief'; briefT = 0; t = 0; score = 0; heat = 0; located = false; alertedN = 0; frame = 0;
       scoped = false; glass = false; zoom = 7; breath = { v: 1, held: false }; gasp = 0; storm = 0;
@@ -2481,7 +2520,7 @@ function make(api) {
       if (car?.smoke) WD.smoke.emit({ x: car.x, y: WD.land.height(car.x, car.z) + 2.4, z: car.z, vx: rnd(-.3, .3), vy: 2, vz: rnd(-.3, .3), life: 3, size: 1.4, grow: 2, col: [.15, .14, .13], a: .7 });
       boom.update(dt);
       for (const p of tower?.pieces || []) { const u = p.userData.v; if (!u) continue; u.y -= 15 * dt; p.position.x += u.x * dt; p.position.y += u.y * dt; p.position.z += u.z * dt; p.rotation.x += u.r * dt; const g = WD.land.height(p.position.x, p.position.z); if (p.position.y < g) { p.position.y = g; u.x *= .5; u.z *= .5; u.y = Math.abs(u.y) * .2; u.r *= .5; if (Math.abs(u.y) < .5) p.userData.v = null; } }
-      for (const h of WD.helmets) if (h.life > 0) { h.life -= dt; h.vy -= 12 * dt; h.m.position.x += h.vx * dt; h.m.position.y += h.vy * dt; h.m.position.z += h.vz * dt; h.m.rotation.x += h.spin * dt; const g = WD.land.height(h.m.position.x, h.m.position.z); if (h.m.position.y < g) { h.m.position.y = g; h.vy = Math.abs(h.vy) * .35; h.vx *= .5; h.vz *= .5; h.spin *= .5; } if (h.life <= 0) h.m.visible = false; }
+      for (const h of WD.helmets) if (h.life > 0) { h.life -= dt; h.vy -= 12 * dt; h.m.position.x += h.vx * dt; h.m.position.y += h.vy * dt; h.m.position.z += h.vz * dt; h.m.rotation.x += h.spin * dt; const g = WD.land.height(h.m.position.x, h.m.position.z); if (h.m.position.y < g + .07) { h.m.position.y = g + .07; h.vy = Math.abs(h.vy) * .35; h.vx *= .5; h.vz *= .5; h.spin *= .5; } if (h.life <= 0) h.m.visible = false; }
       WD.dust.update(dt); WD.sparks.update(dt); WD.smoke.update(dt); WD.trail.update(dt);
       // tagging with the glasses
       if (glass) {
@@ -2505,7 +2544,7 @@ function make(api) {
           const f = tripAt(move).fig, w = WD.wren; w.visible = true; w.position.set(f.x, f.y, f.z); w.rotation.order = 'YXZ'; w.rotation.y = f.yaw; w.rotation.x = f.sw || 0; w.rotation.z = f.roll || 0;
           if (f.sw) { const s_ = Math.sin(f.sw), c_ = Math.cos(f.sw); w.position.x -= 2.02 * s_ * Math.sin(f.yaw); w.position.y += 2.02 * (1 - c_); w.position.z -= 2.02 * s_ * Math.cos(f.yaw); }   // she swings from her hands, not her feet
           WD.trolley.visible = move.kind === 'zip' && move.t >= .6; if (move.kind === 'zip') { const h = zip.hands; WD.trolley.position.set(h.x, h.y + .05, h.z); WD.trolley.rotation.y = f.yaw; }
-          w.rig.play(f.pose, { fade: .15 }); w.rig.update(dt, { speed: f.speed }); w.face?.update(dtReal);
+          w.rig.play(f.pose, { fade: .15 }); w.rig.update(dt, { speed: f.speed }); w.see(WD.v.cam, 1000);
           for (const m of WD.wrenMats) m.emissiveIntensity = mid === 'm2' ? .1 : 0;   // a little warm light on her at dusk, or she's lost against the dark stone
           // footsteps on the run, rungs on the ladder
           if (f.speed > 0 && Math.floor(move.t * (f.pose === 'ladder' ? 3 : 3.4)) !== move.step) { move.step = Math.floor(move.t * (f.pose === 'ladder' ? 3 : 3.4)); if (f.pose === 'ladder') tone(220, { len: .04, wave: 'triangle', vol: .02 }); else noise(.07, { vol: .025, from: 700, to: 200 }); }
@@ -2553,7 +2592,7 @@ function make(api) {
         cam.lookAt(e.x + d.x, y + d.y, e.z + d.z);
         gunVis = !scoped && !glass && state === 'play';
       }
-      WD.gun.visible = gunVis; if (gunVis) { WD.gun.position.y = -.15 - (boltT > 0 ? Math.sin(boltT * 3) * .02 : 0); WD.bolt.position.z = .05 + (boltT > .2 && boltT < .9 ? .06 : 0); }
+      WD.gun.visible = gunVis; if (gunVis) { WD.gun.position.y = -.3 - (boltT > 0 ? Math.sin(boltT * 3) * .03 : 0); WD.bolt.position.z = .05 + (boltT > .2 && boltT < .9 ? .06 : 0); }
       const f = (state === 'play' && !move && !bulletCam) ? fovNow() : move ? tripAt(move).cam.fov ?? 62 : 62;
       if (Math.abs(cam.fov - f) > .01) { cam.fov = f; cam.updateProjectionMatrix(); }
       // trees keep their leaves further out through the scope
@@ -2660,7 +2699,7 @@ function make(api) {
   function rideTrain(dt) {
     const w = WD.wren; w.visible = true; w.rotation.order = 'YXZ'; w.rotation.x = 0; w.rotation.z = Math.sin(t * 7) * .02;
     w.position.set(train.x - 13.8, RAILH + 3.82, RAILZ + .3); w.rotation.y = Math.PI / 2;
-    w.rig.play('crouch', { fade: .2 }); w.rig.update(dt, { speed: 0 }); w.face?.update(dt);
+    w.rig.play('crouch', { fade: .2 }); w.rig.update(dt, { speed: 0 }); w.see(WD.v.cam, 1000);
   }
   function trainUpdate(dt) {
     if (!train.on) { train.next -= dt; if (train.next <= 0 && mid === 'm1') { train.on = true; train.x = -420; train.speed = 30; tone(520, { len: .9, wave: 'triangle', vol: .05 }); tone(620, { len: .9, wave: 'triangle', vol: .04, at: .1 }); } WD.train.visible = false; return; }
@@ -2695,7 +2734,7 @@ function make(api) {
     // listening for your habit: always said out loud first, so you know to change it
     if (guard && !/listen|waits/i.test(hello || '')) { const l = marr.line('habit'); if (l) soon(7.5, () => say(l, MARR, 3.2, true)); }
   }
-  function go() { begin(sel); haptic('medium'); sounds.click?.(); }
+  function go() { begin(sel); audioUp(); haptic('medium'); sounds.click?.(); }   // (the valley's sound beds are made on the tap, not in the first frame of the mission)
   function briefTap(x, y) {
     if (briefT < .3) return;
     for (const r of briefRows) if (y >= r.y && y <= r.y + r.h && x >= r.x && x <= r.x + r.w) { if (r.id && r.id !== sel && camp.open(r.id)) { sel = r.id; begin(sel); state = 'brief'; haptic('tick'); } return; }
