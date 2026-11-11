@@ -2476,6 +2476,104 @@ console.log('physics ok');
   console.log('gs.vision: the 80 things, barcode kinds, seeds, the cut, in view, finds and reads ok');
 }
 
+// gs.ar phase 2: the room maths (ar-room.js): the phone's depth picture as a mesh that hides virtual things,
+// and the room's light as a sun direction and reflections
+{
+  const R = await import('../src/kit/ar-room.js');
+  const b64 = bytes => Buffer.from(bytes).toString('base64');
+  // a depth picture is 16-bit millimetres, low byte first
+  assert.deepEqual([...R.depthOf(b64([0x34, 0x12, 0xff, 0xff, 0, 0]), 4)], [0x1234, 65535, 0, 0], 'depth pictures decode (and a short one is padded with "not known")');
+
+  // a pretend room seen by a camera 1.3 m up, looking 52 degrees down (so the whole picture is within reach): a floor, and a box 1 m ahead
+  const pitch = -.9, cp = Math.cos(pitch), sp = Math.sin(pitch), pose = [1, 0, 0, 0, 0, cp, sp, 0, 0, -sp, cp, 0, .1, 0, 0, 1];
+  const f = 1 / Math.tan(Math.PI / 6), asp = .5, proj = [f / asp, 0, 0, 0, 0, f, 0, 0, 0, 0, -1.001, -1, 0, 0, -.1, 0];
+  const W = 24, H = 48, FLOORY = -1.3, box = { x0: -.4, x1: .4, y1: -.6, z0: -1.2, z1: -.9 };
+  const ray = (i, j) => { const cx = (2 * i / (W - 1) - 1) / proj[0], cy = (1 - 2 * j / (H - 1)) / proj[5]; return [pose[0] * cx + pose[4] * cy - pose[8], pose[1] * cx + pose[5] * cy - pose[9], pose[2] * cx + pose[6] * cy - pose[10]]; };   // (one metre along the camera's view)
+  const cast = (d, o = [pose[12], pose[13], pose[14]]) => {
+    let best = d[1] < 0 ? (FLOORY - o[1]) / d[1] : Infinity;
+    const lo = [box.x0, FLOORY, box.z0], hi = [box.x1, box.y1, box.z1]; let t0 = 0, t1 = best;
+    for (let k = 0; k < 3; k++) { const a = (lo[k] - o[k]) / d[k], c = (hi[k] - o[k]) / d[k]; t0 = Math.max(t0, Math.min(a, c)); t1 = Math.min(t1, Math.max(a, c)); }
+    return t0 <= t1 && t0 > 0 ? { t: t0, box: true } : { t: best, box: false };
+  };
+  const mm = new Uint16Array(W * H), what = [];
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) { const h = cast(ray(i, j)); mm[j * W + i] = h.t < 60 ? Math.round(h.t * 1000) : 0; what.push(h); }   // (t is along a ray of depth 1: it is the depth)
+  const pos = new Float32Array(W * H * 3), idx = new Uint16Array((W - 1) * (H - 1) * 6);
+  // with no mapped surfaces every spot is set back a little along its line of sight, and no further
+  let n = R.depthMesh(mm, W, H, pose, proj, pos, idx);
+  assert.equal(n, (W - 1) * (H - 1) * 6, 'a whole depth picture makes a whole mesh');
+  let worst = 0, behind = 0;
+  for (let k = 0; k < W * H; k++) {
+    const d = ray(k % W, k / W | 0), t = mm[k] / 1000, px = pose[12] + d[0] * t, py = pose[13] + d[1] * t, pz = pose[14] + d[2] * t;
+    const off = Math.hypot(pos[k * 3] - px, pos[k * 3 + 1] - py, pos[k * 3 + 2] - pz), far = Math.hypot(pos[k * 3] - pose[12], pos[k * 3 + 1] - pose[13], pos[k * 3 + 2] - pose[14]) - Math.hypot(d[0], d[1], d[2]) * t;
+    worst = Math.max(worst, off / (.02 + .02 * t * Math.hypot(d[0], d[1], d[2]) + .002)); if (far > 0) behind++;
+  }
+  assert.ok(worst < 1.6 && behind === W * H, `every spot sits just behind where the phone measured it (${worst.toFixed(2)}, ${behind})`);
+  // with the floor mapped, the floor's spots go 3 cm under it (so things standing on it and their shadows show), the box's stay
+  n = R.depthMesh(mm, W, H, pose, proj, pos, idx, { flats: [R.floorFlat(FLOORY)] });
+  let lowF = Infinity, highF = -Infinity, boxTop = 0, boxN = 0;
+  for (let k = 0; k < W * H; k++) { const y = pos[k * 3 + 1]; if (what[k].box) { if (Math.abs(y - box.y1) < .08) boxTop++; boxN++; } else if (mm[k] < 4000) { lowF = Math.min(lowF, y); highF = Math.max(highF, y); } }
+  assert.ok(Math.abs(lowF - (FLOORY - .03)) < 1e-3 && Math.abs(highF - (FLOORY - .03)) < 1e-3, `floor spots lie 3 cm under the mapped floor (${lowF.toFixed(3)} to ${highF.toFixed(3)})`);
+  assert.ok(boxN > 40 && boxTop > 10, `the box still stands above it (${boxN} spots, ${boxTop} on its top)`);
+  // depth that is 2.5 cm out here and there still never cuts into the floor
+  const rnd = (s => () => ((s = Math.imul(s ^ s >>> 15, 2246822507) ^ Math.imul(s ^ s >>> 13, 3266489909), (s ^= s >>> 16) >>> 0) / 4294967296))(7);
+  const noisy = mm.map(v => Math.max(1, Math.round(v + (rnd() - .5) * 50)));
+  R.depthMesh(noisy, W, H, pose, proj, pos, idx, { flats: [R.floorFlat(FLOORY)] });
+  let above = 0; for (let k = 0; k < W * H; k++) if (!what[k].box && mm[k] < 4000 && pos[k * 3 + 1] > FLOORY - .02) above++;
+  assert.equal(above, 0, 'noisy depth: no floor spot comes up through the floor');
+  // an estimated floor that is 15 cm too low still has the real floor's spots moved under it
+  R.depthMesh(mm, W, H, pose, proj, pos, idx, { flats: [R.floorFlat(FLOORY - .15, .25)] });
+  above = 0; for (let k = 0; k < W * H; k++) if (!what[k].box && mm[k] < 4000 && pos[k * 3 + 1] > FLOORY - .15 - .02) above++;
+  assert.equal(above, 0, 'an estimated floor is given more room');
+  // spots the phone knows nothing about, or too near or too far to trust, leave holes
+  const holes = Uint16Array.from(mm); holes[5 * W + 5] = 0; holes[20 * W + 10] = 100; holes[30 * W + 3] = 9000;
+  n = R.depthMesh(holes, W, H, pose, proj, pos, idx);
+  assert.equal(n, ((W - 1) * (H - 1) * 2 - 18) * 3, 'three unknown spots take six triangles each out of the mesh');
+  const gone = new Set([5 * W + 5, 20 * W + 10, 30 * W + 3]); let used = 0; for (let k = 0; k < n; k++) if (gone.has(idx[k])) used++;
+  assert.equal(used, 0, 'no triangle uses an unknown spot'); assert.ok(pos.every(v => v === v), 'every number is a number for the graphics chip');
+  // a mapped wall: spots on it go 3 cm behind it, inside its edges only
+  const wallPose = [1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, -2, 1];   // y axis (0, 0, 1): it faces the camera
+  const flatW = R.flatOf(wallPose, 1, 1), level = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], wd = new Uint16Array(9).fill(2000), wp = new Float32Array(27), wi = new Uint16Array(24);
+  R.depthMesh(wd, 3, 3, level, proj, wp, wi, { flats: [flatW] });
+  assert.ok(Math.abs(wp[4 * 3 + 2] - -2.03) < 1e-3, `a spot on the wall goes 3 cm behind it (${wp[4 * 3 + 2].toFixed(3)})`);
+  assert.ok(Math.abs(wp[2] - -2.03) > .02, 'a spot beyond the wall\'s edge is left to the usual set-back');
+
+  // the room's light: packed as the phone sends it and opened again
+  const N = 16, env = { size: N, rgb: new Float32Array(6 * N * N * 3) }, sun = [-.6, .7, .39], sl = Math.hypot(...sun);
+  const face = (fc, a, b) => fc === 0 ? [1, -b, -a] : fc === 1 ? [-1, -b, a] : fc === 2 ? [a, 1, b] : fc === 3 ? [a, -1, -b] : fc === 4 ? [a, -b, 1] : [-a, -b, -1];
+  const fill = (e, lamp) => { let at = 0; for (let fc = 0; fc < 6; fc++) for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) { const v = face(fc, (c + .5) / N * 2 - 1, (r + .5) / N * 2 - 1), l = Math.hypot(...v); let x = v[1] > 0 ? .5 : .2; if (lamp && (v[0] * lamp[0] + v[1] * lamp[1] + v[2] * lamp[2]) / l / Math.hypot(...lamp) > .93) x = 14; e.rgb[at++] = x; e.rgb[at++] = x * .9; e.rgb[at++] = x * .7; } return e; };
+  fill(env, sun);
+  const back = R.envOf(R.envPack(env)); let err = 0; for (let i = 0; i < env.rgb.length; i++) err = Math.max(err, Math.abs(back.rgb[i] - env.rgb[i]) / (env.rgb[i] + .05));
+  assert.ok(back.size === N && err < .08, `the room's picture survives the trip from the phone (${err.toFixed(3)})`);
+  // looking the picture up by direction lands on the dot that direction came from
+  const c3 = [0, 0, 0]; let wrong = 0;
+  for (let fc = 0; fc < 6; fc++) for (const [c, r] of [[0, 0], [15, 0], [7, 8], [3, 12], [15, 15]]) { const v = face(fc, (c + .5) / N * 2 - 1, (r + .5) / N * 2 - 1); R.envAt(env, v[0] * 3, v[1] * 3, v[2] * 3, c3); if (c3[0] !== env.rgb[((fc * N + r) * N + c) * 3]) wrong++; }
+  assert.equal(wrong, 0, 'a direction finds its own dot on every face');
+  // where the light is: the lamp's direction, and how much of the light it is
+  const L = R.envLight(back), ang = Math.acos((L.x * sun[0] + L.y * sun[1] + L.z * sun[2]) / sl) * 180 / Math.PI;
+  assert.ok(ang < 6 && L.sharp > .3, `the lamp is found (${ang.toFixed(1)} degrees off, sharp ${L.sharp.toFixed(2)})`);
+  const even = R.envLight(fill({ size: N, rgb: new Float32Array(env.rgb.length) }, null));
+  assert.ok(even.sharp === 0 && Math.abs(even.mean - (.5 + .2) / 2 * (.2126 + .7152 * .9 + .0722 * .7)) < .01, `an evenly lit room has no "where the light is" (mean ${even.mean.toFixed(3)})`);
+  // two lamps on opposite sides: bright, but not from any one place
+  const two = fill({ size: N, rgb: new Float32Array(env.rgb.length) }, [1, .3, 0]); { const o = fill({ size: N, rgb: new Float32Array(env.rgb.length) }, [-1, .3, 0]); for (let i = 0; i < two.rgb.length; i++) two.rgb[i] = Math.max(two.rgb[i], o.rgb[i]); }
+  assert.ok(R.envLight(two).sharp < .5 * L.sharp, 'two lamps on opposite sides are a weaker "where" than one');
+  // painting it on the ball of reflections: turned into game space, levelled, and capped
+  const out = new Float32Array(6), gz = R.turnY(sun[0], sun[2], -.7);   // the lamp's direction in a game whose "ahead" is .7 radians round
+  R.envPaint(back, [gz[0], sun[1], gz[1], -gz[0], -sun[1], -gz[1]], .7, out, { level: 1.8, cap: 24 });
+  assert.ok(out[0] > 20 && out[0] <= 1.8 * 24 + 1e-3 && out[3] < 1.8, `the lamp is where it should be after the turn (${out[0].toFixed(1)} against ${out[3].toFixed(2)} opposite)`);
+  const flat = fill({ size: N, rgb: new Float32Array(env.rgb.length) }, null); flat.rgb.fill(.37); R.envPaint(flat, [0, 1, 0, 1, 0, 0], 2, out, { level: 1.8 });
+  assert.ok(Math.abs(out[0] - 1.8) < 1e-3 && Math.abs(out[3] - 1.8) < 1e-3, 'an even room is painted at the level asked for, however bright the room');
+  // has the light changed? only where it is counts, not how bright the room is
+  const dim = { size: N, rgb: back.rgb.map(v => v * .4) }, moved = R.envOf(R.envPack(fill({ size: N, rgb: new Float32Array(env.rgb.length) }, [.7, .6, -.2])));
+  assert.ok(R.envChange(back, L.mean, back, L.mean) === 0 && R.envChange(back, L.mean, dim, L.mean * .4) < .01 && R.envChange(back, L.mean, moved, R.envLight(moved).mean) > .12, 'a dimmer room is the same light, a lamp moved is not');
+  // the sun for a real light: never lower than 25 degrees, the same way round the room
+  const s3 = [0, 0, 0];
+  R.sunDir(-1, 1, .2, s3); assert.ok(Math.abs(Math.hypot(...s3) - 1) < 1e-9 && s3[1] > .69 && s3[0] < -.69, 'a high light is used as it is');
+  R.sunDir(0, .05, 1, s3); assert.ok(Math.abs(s3[1] - .42) < 1e-9 && s3[2] > .9 && Math.abs(Math.hypot(...s3) - 1) < 1e-9, 'a low light is lifted');
+  R.sunDir(.5, -.8, 0, s3); assert.ok(Math.abs(s3[1] - .42) < 1e-9 && s3[0] > .9, 'a light from below (a lamp on the floor) too');
+  R.sunDir(0, -1, 0, s3); assert.deepEqual(s3, [0, 1, 0], 'and with nothing to go on, the sun is overhead');
+  console.log('gs.ar phase 2: depth pictures to a mesh (floors, walls, holes, noise), the room\'s light (packed, looked up, the lamp found, painted, changed) and the sun for it ok');
+}
+
 // gs.outdoors: the meadow (grass tufts that keep around the camera)
 {
   globalThis.HTMLCanvasElement ??= class {}; globalThis.Image ??= class {};

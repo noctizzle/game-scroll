@@ -1209,7 +1209,13 @@ export interface HdAir {
 export interface HdGrade { saturation?: number; contrast?: number; shadows?: Loose; highlights?: Loose }
 /** What sun().fit(view, o) covered, in metres. */
 export interface HdShadowFit { width: number; height: number; texel: number }
-export interface ArPart { ARView: new (...a: Loose[]) => Loose; FLOOR: Loose; arNote: Loose; THREE: Loose }
+/**
+ * AR (docs/ar-3d.md). new ARView({ occlude: true, walls: true, light: 'real' }) turns on AR phase 2 with native AR:
+ * real things hide virtual ones, walls are mapped (surfaces() and hit() give them), and the sun and
+ * reflections follow the room's real light. v.anchor(p, q) holds a real spot; v.marker(picture, { width })
+ * finds a picture in the room (markerArt(seed) draws one phones find easily).
+ */
+export interface ArPart { ARView: new (...a: Loose[]) => Loose; FLOOR: Loose; arNote: Loose; markerArt: (seed?: number, size?: number) => HTMLCanvasElement; THREE: Loose }
 export interface BricksPart { BRICK: Loose; BRICK_KEYS: Loose; STUD: Loose; brick: Loose; brick3d: Loose; stud: Loose; stud3d: Loose }
 /** Rapier 3D (lazy). */
 export interface Physics3dPart { World3D: new (o?: Loose) => Loose; loadPhysics3D(): Promise<Loose>; physics3DReady(): boolean }

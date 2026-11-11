@@ -308,7 +308,9 @@ never create your own. Run `npm run sweep` on Next Gen games too. These appear u
 gyro turns the view, so objects stay put while the player turns and tilts the phone to find them
 (look-around AR; walking isn't tracked). They use `gs.ar` (`src/kit/ar3d.js`) on top of the Next Gen
 renderer, with real-time shadows cast onto the real floor. Every AR game must also play with no
-camera (a virtual room is drawn instead) and with no gyro (drag to look). Read
+camera (a virtual room is drawn instead) and with no gyro (drag to look). In the phone app the
+player can walk around, and a game can ask for more of the real room (real things hiding virtual
+ones, walls, the room's light, anchors, picture markers). Read
 [`docs/ar-3d.md`](docs/ar-3d.md) for the kit, sizes and testing. These appear under **AR · 3D**.
 
 ### Board
