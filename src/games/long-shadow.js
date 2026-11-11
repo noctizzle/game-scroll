@@ -33,7 +33,7 @@ const { Zipline } = gs.gadgets;
 const { Campaign } = gs.campaign;
 const { shatter } = gs.destruction;
 const { human } = gs.models;
-const { Group, Mesh, InstancedMesh, Object3D, Vector3, BoxGeometry, CylinderGeometry, ConeGeometry, PlaneGeometry, SphereGeometry, CapsuleGeometry, TorusGeometry, Color } = THREE;
+const { Group, Mesh, InstancedMesh, Object3D, Vector3, BoxGeometry, CylinderGeometry, ConeGeometry, PlaneGeometry, SphereGeometry, TorusGeometry, Color } = THREE;
 
 let W = 300, H = 420;
 const TAU = Math.PI * 2;
@@ -132,7 +132,7 @@ function dataTex(data, w, h = w, { srgb = false, clampEdge = false } = {}) {
 const ROADSEGS = ROADS.flatMap(r => r.slice(0, -1).map((p, i) => [p[0], p[1], r[i + 1][0], r[i + 1][1]]));
 function groundMat(tex) {
   const normal = tex.normal.clone(); normal.repeat.set(170, 170); normal.needsUpdate = true;
-  const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: .95, normalMap: normal, normalScale: new THREE.Vector2(.9, .9) });
+  const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: .95, normalMap: normal, normalScale: new THREE.Vector2(.5, .5) });
   looks.ground(m, { detail: tex.detail, roads: ROADSEGS, wet: GU.uWet });
   return m;
 }
@@ -140,7 +140,7 @@ const groundMasks = (x, z, y, sl) => {
   const town = Math.hypot(x + 15, z + 108), river = Math.abs(z - RIVER(x));
   let farm = sm(.2, .08, sl) * sm(70, 95, town) * sm(16, 26, river) * sm(8, 16, Math.abs(z - RAILZ)) * sm(30, 22, y) * sm(-170, -150, z) * sm(18, 30, Math.hypot(x - MILL.x, z - MILL.z));
   let trod = Math.max(1 - sm(30, 62, town), 1 - sm(9, 20, Math.hypot(x - MILL.x, z - MILL.z)));
-  for (const nn of Object.values(NESTS)) { const d = Math.hypot(x - nn.x, z - nn.z); farm *= sm(10, 22, d); trod = Math.max(trod, 1 - sm(3, 8, d)); }
+  for (const nn of Object.values(NESTS)) { const d = Math.hypot(x - nn.x, z - nn.z); farm *= sm(10, 22, d); trod = Math.max(trod, 1 - sm(1.4, 4, d)); }
   return [farm, sm(-140, -175, z) * (1 - farm), clamp(sm(.28, .5, sl) + sm(40, 60, y), 0, 1), trod];
 };
 // a weathered boulder: a squashed ball pushed in and out by noise, flat underneath, smooth shading
@@ -174,7 +174,7 @@ function treeAtlas() {
     for (let i = 0; i < n; i++) {
       const a = R() * TAU, r = Math.sqrt(R()), x = cx + Math.cos(a) * r * rx, y = cy + Math.sin(a) * r * ry;
       const lit = clamp(.55 - (x - lx) / lr * .3 - (y - ly) / lr * .45 + (r - .6) * .25, 0, 1);
-      leaf(x, y, size * (.7 + R() * .6), R() * TAU, hsl(hue + R() * 18 - 9, 28 + R() * 24, 11 + lit * 30 + R() * 6));
+      leaf(x, y, size * (.7 + R() * .6), R() * TAU, hsl(hue + R() * 18 - 9, 32 + R() * 24, 10 + lit * 26 + R() * 6));
     }
   };
   const trunk = (x, y0, y1, w0, w1, col) => { g.fillStyle = col; g.beginPath(); g.moveTo(x - w0 / 2, y0); g.lineTo(x - w1 / 2, y1); g.lineTo(x + w1 / 2, y1); g.lineTo(x + w0 / 2, y0); g.fill(); };
@@ -321,8 +321,9 @@ function firGeo(lod, seed = 7) {
 // leaves (gs.outdoors looks.leaves): cut out of the atlas, sway with the wind, light up when you look
 // towards the sun through them
 function leafMat(atlas) {
-  const m = new THREE.MeshStandardMaterial({ map: atlas, vertexColors: true, roughness: .82, alphaTest: .5, side: THREE.DoubleSide });
-  looks.leaves(m, { time: GU.uTime, wind: AIR, sun: GU.uSun, atlas: [1024, 512] });
+  // (hardly any shine: a leaf card edge-on to the eye glints white against the low sun otherwise)
+  const m = new THREE.MeshPhysicalMaterial({ map: atlas, vertexColors: true, roughness: .82, alphaTest: .5, side: THREE.DoubleSide, specularIntensity: .1 });
+  looks.leaves(m, { time: GU.uTime, wind: AIR, sun: GU.uSun, atlas: [1024, 512], glow: .45 });
   return m;
 }
 
@@ -419,7 +420,7 @@ function world() {
   const v = new HDView({ bg: '#c9c3b2', env: .55, sky: '#c8d2e0', ground: '#4a4434', amb: .42, fov: 62 });
   v.cam.near = .3; v.cam.far = 1600; v.cam.updateProjectionMatrix();
   v.exposure = 1; v.bloom = .3;
-  const sl = sun('#fff0d8', 2.8, 34, [.9, .35, -.3]); v.scene.add(sl, sl.target); v.onTier(T => sl.setTier(T));
+  const sl = sun('#fff0d8', 2.8, 34, [.9, .35, -.3]); v.scene.add(sl, sl.target); v.onTier(T => { sl.setTier(T); WD?.meadow?.(T); });
   v.sun = sl;
   sl.softShadows(1.4);   // shadows sharp where they touch and soft further out (WebGPU)
   // the eye adapts a little: dazzled facing the low sun, opening up into the dark of the woods
@@ -436,8 +437,7 @@ function world() {
   land.masks(groundMasks);
   v.scene.add(land.object);
   land.wind = AIR;
-  land.grass({ count: 9000, colour: '#6c8638', tint: ['#4f6a2a', '#9a9850'], above: 14, steep: .35, far: 42, height: .8, wind: .6 });
-  v.scene.add(horizon(land, { inner: 300, outer: 1300, lower: (x, z) => z > 0 && Math.abs(x) < 400 ? .55 : 0 }));   // far hills, lower to the south
+  v.scene.add(horizon(land, { inner: 300, outer: 1300, segments: 144, rings: 20, lower: (x, z) => z > 0 && Math.abs(x) < 400 ? .55 : 0 }));   // far hills, lower to the south
 
   // the river and the lake: dark water with ripples that catch the sky
   const waterMat = (col, rep) => {
@@ -456,7 +456,7 @@ function world() {
   // the stone stands out from its mortar as you look across it (parallax occlusion, WebGPU)
   const M = {
     wall: pbr('#ffffff', { tex: plaster, rep: [2, 2], rough: .92 }), roof: pbr('#ffffff', { tex: tiles, rep: [3, 2], rough: .8 }),
-    stone: pbr('#d8d2c6', { tex: stone, rep: [2, 2], rough: .9, depth: .035 }), wood: pbr('#ffffff', { tex: wood, rough: .85 }),
+    stone: pbr('#d8d2c6', { tex: stone, rough: .9, depth: .035 }), wood: pbr('#ffffff', { tex: wood, rough: .85 }),
     // the village's own: the textures tinted by each part's colour
     wallV: pbr('#ffffff', { tex: plaster, rough: .93, vertexColors: true }), roofV: pbr('#ffffff', { tex: tiles, rough: .78, vertexColors: true }),
     stoneV: pbr('#ffffff', { tex: stone, rough: .9, vertexColors: true, depth: .035 }), woodV: pbr('#ffffff', { tex: VT.boards, rough: .82, vertexColors: true }),
@@ -471,7 +471,13 @@ function world() {
   WD = { v, sl, land, river, lake, M, ripples, lodK: 1, ground: (x, z) => land.height(x, z), chims: [], deckY: bridgeDeck(land) };
   const solids = WD.solids = [];   // boxes that stop bullets: { x0, y0, z0, x1, y1, z1, kind }
   const box = (x, y, z, w, h, d, kind = 'wall') => solids.push({ x0: x - w / 2, x1: x + w / 2, y0: y, y1: y + h, z0: z - d / 2, z1: z + d / 2, kind });
-  const mesh = (geo, mat, x, y, z, ry = 0) => { const m = new Mesh(geo, mat); m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = m.receiveShadow = true; v.scene.add(m); return m; };
+  // stone keeps its size on a tower and on a kerb: each face of a block is mapped in metres along its own plane
+  const metres = (g, k = .5) => {
+    const q = g.attributes.position, nn = g.attributes.normal, uv = g.attributes.uv;
+    for (let i = 0; i < q.count; i++) { const ax = Math.abs(nn.getX(i)), ay = Math.abs(nn.getY(i)), az = Math.abs(nn.getZ(i)); if (ay >= ax && ay >= az) uv.setXY(i, q.getX(i) * k, q.getZ(i) * k); else if (ax >= az) uv.setXY(i, q.getZ(i) * k, q.getY(i) * k); else uv.setXY(i, q.getX(i) * k, q.getY(i) * k); }
+    uv.needsUpdate = true; return g;
+  };
+  const mesh = (geo, mat, x, y, z, ry = 0) => { const m = new Mesh(mat === M.stone ? metres(geo) : geo, mat); m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = m.receiveShadow = true; v.scene.add(m); return m; };
   const ground = (x, z) => land.height(x, z);
 
   // ---- the village: plastered houses on stone plinths, tile roofs with deep eaves, shutters, chimneys,
@@ -704,7 +710,7 @@ function world() {
 
   // ---- field walls along the south road and north bank: cover for advancing squads
   WD.lowCells = new Set();
-  const wallStones = new InstancedMesh(rbox(3.8, 1, .8, .2), M.stone, 160); let wsi = 0;
+  const wallStones = new InstancedMesh(metres(rbox(3.8, 1, .8, .2)), M.stone, 160); let wsi = 0;
   const fieldWall = (ax, az, bx, bz) => {
     const L = Math.hypot(bx - ax, bz - az), n = Math.floor(L / 4);
     for (let i = 0; i <= n; i++) {
@@ -758,7 +764,17 @@ function world() {
   WD.sparks = new Particles(v, { max: 300, additive: true });
   WD.trail = new Particles(v, { max: 260, additive: false, wind: AIR, blow: .4 });
   WD.smoke = new Particles(v, { max: 200, additive: false, wind: AIR, blow: .6 });
-  const bullet = new Mesh(new CapsuleGeometry(.05, .22, 4, 8), M.brass); bullet.rotation.order = 'YXZ'; bullet.visible = false; v.scene.add(bullet); WD.bullet = bullet;
+  // the round, for its own camera: a pointed bullet with a boat tail and a crimp groove in a copper jacket, the
+  // rifling's marks down its sides (so its spin shows), four times life size so it reads on a phone
+  const bullet = (() => {
+    const R_ = .016, L_ = .14, pts = [[0, 0], [.78, 0], [1, .12], [1, .28], [.93, .29], [.93, .31], [1, .32], [1, .44]];
+    for (const u of [.15, .3, .45, .6, .74, .86, .95, 1]) pts.push([Math.max(0, 1 - Math.pow(u, 1.9)), .44 + .56 * u]);
+    const g = new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r * R_, (y - .5) * L_)), 16), q = g.attributes.position, col = [];
+    for (let i = 0; i < q.count; i++) { const y = q.getY(i) / L_ + .5, a = Math.atan2(q.getZ(i), q.getX(i)), land_ = y > .13 && y < .44 && Math.cos(a * 4) > .55 ? .72 : 1, k = land_ * (y < .01 ? .6 : 1); col.push(k, k, k); }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals();
+    const m = new Mesh(g, pbr('#c07a48', { rough: .24, metal: 1, vertexColors: true })); m.rotation.order = 'YXZ'; m.visible = false; return m;
+  })();
+  v.scene.add(bullet); WD.bullet = bullet;
   // tracers from enemy fire (pooled)
   const trMat = pbr('#ffd890', { glow: 3.2 }), trGeo = new BoxGeometry(.028, .028, 1);
   WD.tracers = Array.from({ length: 10 }, () => { const m = new Mesh(trGeo, trMat); m.visible = false; m.castShadow = false; v.scene.add(m); return m; });
@@ -801,6 +817,32 @@ function world() {
   }
   // ---- paths and cover
   const coverAt = (c, r) => { if (WD.lowCells.has(c + ',' + r)) return true; const x = GX0 + (c + .5) * CELL, z = GZ0 + (r + .5) * CELL; return solidAt(x, z, solids); };
+  // ---- the meadow: real grass round the camera wherever it comes down to the ground (the ridge nest, the
+  // bullet camera, Wren on the move). It grows on open ground: not on lanes, yards, the rail bed, rock, the
+  // forest floor, ploughed fields, river mud, or under a roof. Thinner on slower phones, none on the slowest.
+  {
+    const built = new Uint8Array(640 * 640);   // a metre a cell: 1 under anything built
+    for (const b of solids) if (b.y0 < land.height((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) + 1.5) for (let z = Math.floor(b.z0 + 319.6); z <= Math.floor(b.z1 + 320.4); z++) for (let x = Math.floor(b.x0 + 319.6); x <= Math.floor(b.x1 + 320.4); x++) if (x >= 0 && z >= 0 && x < 640 && z < 640) built[z * 640 + x] = 1;
+    const grows0 = (x, z) => {
+      if (built[Math.floor(z + 320) * 640 + Math.floor(x + 320)]) return 0;
+      const y = land.height(x, z); if (y < 1) return 0;
+      const m = groundMasks(x, z, y, land.slope(x, z)), yard = Math.max(1 - sm(26, 52, Math.hypot(x + 15, z + 108)), 1 - sm(7, 14, Math.hypot(x - MILL.x, z - MILL.z)));   // (tufts come up through the worn earth at a yard's edge)
+      let lie = 1; for (const nn of Object.values(NESTS)) lie = Math.min(lie, sm(1.3, 3.2, Math.hypot(x - nn.x, z - nn.z)));   // pressed flat where she lies up; it grows back through the worn patch round it
+      return clamp((1 - 1.4 * m[0]) * (1 - .8 * m[1]) * (1 - 1.5 * m[2]) * (1 - 1.15 * yard) * lie * sm(2.7, 4.4, roadD(x, z)) * sm(4.5, 7.5, Math.abs(z - RAILZ)) * sm(1, 2.2, y), 0, 1);
+    };
+    // (worked out once for each metre of ground, the first time grass is planted there: ten tufts share a metre)
+    const grown = new Uint8Array(640 * 640);
+    const grows = (x, z) => { const cx = Math.floor(x + 320), cz = Math.floor(z + 320); if (cx < 0 || cz < 0 || cx > 639 || cz > 639) return 0; const i = cz * 640 + cx; return ((grown[i] ||= 1 + Math.round(254 * grows0(cx - 319.5, cz - 319.5))) - 1) / 254; };
+    // cropped short in front of where she lies up, so no blade crosses the sights
+    const short = (x, z) => { let k = 1; for (const nn of Object.values(NESTS)) k = Math.min(k, .5 + .5 * sm(3, 8, Math.hypot(x - nn.x, z - nn.z))); return k; };
+    // fine tufts close by, coarse ones out to the distance (none on the low tier)
+    const RINGS = {
+      medium: [{ reach: 10, gap: .45, blades: 7, bends: 2, width: .04, spread: .26 }],
+      high: [{ reach: 8, gap: .32, blades: 9, width: .024, spread: .2, stalks: 1 }, { reach: 24, gap: .8, blades: 7, bends: 2, width: .07 }],
+      ultra: [{ reach: 10, gap: .28, blades: 10, width: .022, spread: .19, stalks: 1 }, { reach: 28, gap: .7, blades: 7, bends: 2, width: .065 }],
+    };
+    WD.meadow = T => { const d = RINGS[T?.name]; if (d === WD.meadowD) return; WD.meadowD = d; land.meadow(false); for (const r of d || []) land.meadow({ ...r, height: .5, colours: ['#587a2b', '#7d8e35', '#a39a54'], where: grows, tall: short }); };
+  }
   WD.cover = new CoverMap(GC, GR, coverAt, { size: CELL, x0: GX0, y0: GZ0, low: (c, r) => WD.lowCells.has(c + ',' + r) });
   WD.nav = new NavGrid(GC, GR, CELL, (c, r) => {
     const x = GX0 + (c + .5) * CELL, z = GZ0 + (r + .5) * CELL;
@@ -1016,9 +1058,9 @@ const OAKE = 'CAPT. OAKE', HALE = 'SGT. HALE';
 const NIGHT = [[0, { top: '#06080f', horizon: '#161a28', sun: '#7088c0', sunI: .12, amb: .35 }], [5, { top: '#10162a', horizon: '#3a3a4a', sun: '#8090c0', sunI: .15, amb: .4 }]];
 const DAY_CLEAR = [...NIGHT,
   [6.3, { top: '#50648c', horizon: '#d8b494', sun: '#ffaa66', sunI: .5, amb: .45 }],
-  [7.6, { top: '#5f86c0', horizon: '#d6d6d0', sun: '#ffd8a4', sunI: 1, amb: .62 }],
-  [10, { top: '#6a90c4', horizon: '#d2dad6', sun: '#fff0d8', sunI: 1.05, amb: .75 }],
-  [16, { top: '#6a90c4', horizon: '#d2dad6', sun: '#fff0d8', sunI: 1.05, amb: .75 }],
+  [7.6, { top: '#5f86c0', horizon: '#d6d6d0', sun: '#ffd8a4', sunI: 1.4, amb: .42 }],   // (a strong low sun over a dim sky: long shadows with some depth to them)
+  [10, { top: '#6a90c4', horizon: '#d2dad6', sun: '#fff0d8', sunI: 1.45, amb: .48 }],
+  [16, { top: '#6a90c4', horizon: '#d2dad6', sun: '#fff0d8', sunI: 1.45, amb: .48 }],
   [20, { top: '#121a30', horizon: '#3a3448', sun: '#8090c0', sunI: .15, amb: .4 }],
   [24, { top: '#06080f', horizon: '#161a28', sun: '#7088c0', sunI: .12, amb: .35 }],
 ];
@@ -1031,9 +1073,9 @@ const DAY_STORM = [...NIGHT,
 ];
 const MOODS = {
   m1: {   // 8:24: the sun sits just above the view when you face it from the water tower
-    time: 8.4, tilt: -.3, day: DAY_CLEAR, physical: { haze: 3.2, bright: .6 }, clouds: .3, gap: .55, cloudLight: null, cloudDark: null,
-    air: { haze: .00062, mist: .0035, mistFall: .13, mistY: -1.5, patchy: .9, cloudShade: .38, wind: [5, -1.5], wet: 0, colour: '#b4c0cc', sunColour: '#f2d4a4' },
-    grade: { saturation: 1.12, contrast: 1.16, shadows: '#e2e8f4', highlights: '#fff4e4' }, glare: .6, shafts: .6, exposure: 1.08, bloom: .3, env: .6, windows: 0,
+    time: 8.4, tilt: -.3, day: DAY_CLEAR, physical: { haze: 2.2, bright: .52 }, clouds: .3, gap: .55, cloudLight: null, cloudDark: null,
+    air: { haze: .00038, mist: .0016, mistFall: .24, mistY: -1.5, patchy: .9, cloudShade: .38, wind: [5, -1.5], wet: 0, colour: '#b9c3ca', sunColour: '#e9e0d2' },   // (clear air: the mist keeps to the river; pale toward the sun, so far ridges fade into the sky)
+    grade: { saturation: 1.2, contrast: 1.28, shadows: '#dae2f4', highlights: '#fff0d6' }, glare: .6, shafts: .6, exposure: .98, bloom: .22, env: .6, windows: 0,
     // a colour slide of the period: warm, rich greens, blacks lifted a touch as on an old print
     lut: (r, g, b) => { const l = .3 * r + .59 * g + .11 * b, k = 1.06; return [r, g, b].map((x, i) => { const v = l + (x - l) * k; return .025 + .965 * clamp(v + [.012, .004, -.016][i] * (1 - l) + [.01, .003, -.012][i] * l, 0, 1); }); },
     lutAmount: .8, flare: { strength: .45, threshold: .5, dirt: .35, tint: [1, .9, .78] },
@@ -1136,6 +1178,7 @@ function make(api) {
   let cut, qte, qteKind, zip, move, mortar, bell, storm, sky, rain, tower, drums, car, op, cs, mgNest, sel, favour, saveNest, tagT, hits, ptr, pinch, lastShotT, firstShotHit, opTime, coverMsg, lineFx, slowmo, keys, endT, outroDone, briefT, quietT, mortarCool;
 
   const tmpV = new Vector3(), tmpA = new Vector3(), tmpB = new Vector3();
+  const HOLD = 1.25;   // seconds the camera holds on a hit
   const nestEye = n => { const y = WD.land.height(n.x, n.z) + n.up + .5; return { x: n.x + (n.ex || 0), y, z: n.z + (n.ez || 0) }; };
   const groundAt = (x, z) => (Math.abs(x - BRIDGE.x) < 3 && z > BRIDGE.z0 && z < BRIDGE.z1) ? WD.deckY(z) : WD.land.height(x, z);
   const dirOf = (yaw, pitch, out = tmpV) => out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
@@ -1237,7 +1280,10 @@ function make(api) {
     if (!gs.prefs.reduceMotion) {
       const p = predict(b);
       if (p && (p.d > 150 || (p.head && p.d > 90))) { b.cam = p; WD.sparks.list = WD.sparks.list.filter(q => q.size < .5);   // a far muzzle flash is drawn big to show from the nest: up close in slow motion it would be a huge blob
-        bulletCam = { b, t: 0, target: p.s, scale: clamp(p.time / 1.9, .02, .4), hold: 0, from: { x: eye.x, y: eye.y, z: eye.z } }; WD.bullet.visible = true; tone(880, { len: .5, wave: 'sine', vol: .04, slide: -500 }); }
+        bulletCam = { b, t: 0, target: p.s, scale: clamp(p.time / 1.9, .02, .4), hold: 0, from: { x: eye.x, y: eye.y, z: eye.z } }; WD.bullet.visible = true;
+        // where its camera will stand at the hit: the grass is planted there while the round flies
+        bulletCam.pre = holdCam({ at: { x: p.s.x, y: p.s.gy + 1.15, z: p.s.y }, from: bulletCam.from }, p.s);
+        tone(880, { len: .5, wave: 'sine', vol: .04, slide: -500 }); }
     }
     boltT = 1.1;
   }
@@ -1340,14 +1386,42 @@ function make(api) {
         if (h) { b.dead = true; const hx = x0 + (b.x - x0) * h.t, hy = y0 + (b.y - y0) * h.t, hz = z0 + (b.z - z0) * h.t; impact(b, h, hx, hy, hz); }
         else if (b.life <= 0) b.dead = true;
       }
-      if (!b.dead && Math.random() < .9) WD.trail.emit({ x: b.x, y: b.y, z: b.z, life: .5, size: .07, col: [.85, .85, .8], a: .5, grow: 2 });
+      if (!b.dead && !(bulletCam && bulletCam.b === b) && Math.random() < .9) WD.trail.emit({ x: b.x, y: b.y, z: b.z, life: .5, size: .07, col: [.85, .85, .8], a: .5, grow: 2 });   // (not for the round its own camera rides just behind)
     }
     shots = shots.filter(s => !s.dead);
   }
+  // nothing built between two points (the boxes that stop bullets)
+  function clearTo(x0, y0, z0, x1, y1, z1) {
+    const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+    for (const b of WD.solids) {
+      let t0 = 0, t1 = 1;
+      for (const [o, d, lo, hi] of [[x0, dx, b.x0, b.x1], [y0, dy, b.y0, b.y1], [z0, dz, b.z0, b.z1]]) {
+        if (Math.abs(d) < 1e-9) { if (o < lo || o > hi) { t0 = 2; break; } continue; }
+        const a = (lo - o) / d, c = (hi - o) / d; t0 = Math.max(t0, Math.min(a, c)); t1 = Math.min(t1, Math.max(a, c)); if (t0 > t1) break;
+      }
+      if (t0 <= t1) return false;
+    }
+    return true;
+  }
+  // where the camera stands for the hold on a hit: close and low, off to the side of the shot's line, wherever
+  // the view of him is clear (nearer or further if a wall is in the way)
+  function holdCam(bc, s) {
+    const a = bc.at, f = bc.from, dx = a.x - f.x, dz = a.z - f.z, l = Math.hypot(dx, dz) || 1, ux = dx / l, uz = dz / l;
+    const tx = s ? s.x : a.x, tz = s ? s.y : a.z, ty = s ? s.gy + 1.15 : a.y;
+    let best = null;
+    for (const [back, side] of [[2.3, 1.9], [2.3, -1.9], [3.2, .8], [3.2, -.8], [1.6, 1.2], [1.6, -1.2]]) {
+      const x = tx - ux * back + uz * side, z = tz - uz * back - ux * side, y = Math.max(ty - .2, WD.land.height(x, z) + .6);
+      best ||= { x, y, z }; if (clearTo(x, y, z, tx, ty, tz)) { best = { x, y, z }; break; }
+    }
+    return { ...best, tx, ty, tz };
+  }
+  // the meadow planted round a place the camera is about to cut to (so the grass is there in its first frame)
+  const grassEye = { position: new Vector3() };
+  function grassAt(x, y, z) { grassEye.position.set(x, y, z); WD.land.update(0, grassEye); }
   function impact(b, h, x, y, z) {
     const viaCam = bulletCam && bulletCam.b === b;
     impactSound(h, { x, y, z }, viaCam);
-    if (viaCam) { bulletCam.hold = .65; bulletCam.at = { x, y, z }; }
+    if (viaCam) { bulletCam.hold = HOLD; bulletCam.at = { x, y, z }; bulletCam.cam = holdCam(bulletCam, h.s); grassAt(bulletCam.cam.x, bulletCam.cam.y, bulletCam.cam.z); }
     if (h.s) {
       { const sc = (h.d || 0) * (h.head ? 1.3 : 1) * (b.masked ? 1.1 : 1);   // the round's best shot, for the replay at the end
         if (!bestShot || sc > bestShot.sc) { const rel = Math.atan2(wind.z, wind.x) + Math.atan2(-(x - b.x0), -(z - b.z0)); bestShot = { sc, s: h.s, head: h.head, d: Math.round(h.d || 0), from: { x: b.x0, y: b.y0, z: b.z0 }, to: { x, y, z }, wind: Math.cos(rel) * Math.hypot(wind.x, wind.z), covered: b.masked }; } }
@@ -2012,6 +2086,8 @@ function make(api) {
   }
   function updateMen(dt) {
     const eye = WD.v.cam.position; pathBudget = 1; thinkBudget = 1; let plantN = 6;
+    // what the camera can see: a cone round its view (a scope's is narrow), and anyone a few metres from it
+    const cf = WD.v.cam.getWorldDirection(tmpV), cfx = cf.x, cfy = cf.y, cfz = cf.z, coneCos = Math.cos(Math.min(1.4, Math.atan(Math.tan(WD.v.cam.fov * Math.PI / 360) * Math.hypot(1, WD.v.cam.aspect)) + .14));
     // Wren as the soldiers' senses see her: at her nest, harder to make out at dusk, easier just after
     // a shot (the flash and the dust) and through her lenses (a glint)
     if (nest && !move && state === 'play') { const e = nestEye(nest); wrenT ||= {}; wrenT.x = e.x; wrenT.y = e.z; wrenT.hidden = false; } else wrenT = null;
@@ -2121,8 +2197,10 @@ function make(api) {
       m.position.set(s.x, s.gy, s.y); m.rotation.y = s.yaw;
       // indoors (through the mill's balcony door): out of sight and out of reach
       s.inside = (s.kind === 'radio' && WD.millDoor && s.y < WD.millDoor.z - .05) || (s.kind === 'cs' && s.hideT > 0); m.visible = !s.inside;
-      // far soldiers animate less often
-      const far = Math.hypot(s.x - eye.x, s.y - eye.z) > 160 && !scoped;
+      // far soldiers animate less often, and so do those the camera is not looking at (through the scope that is
+      // nearly all of them: every pose every frame was most of a frame's work on a slower phone)
+      const ex = s.x - eye.x, ey = s.gy + 1 - eye.y, ez = s.y - eye.z, ed = Math.hypot(ex, ey, ez);
+      const far = (ed > 160 && !scoped) || (ed > 5 && ex * cfx + ey * cfy + ez * cfz < ed * coneCos);
       // a rifleman shoulders his rifle to aim (the gunners and the officer keep the plain pose: hands out to what they hold)
       const armed = IN_HANDS[s.kind] && m.userData.gun; if (armed && m.rig.topOn && m.rig.top === 'aim') m.rig.top = 'shoulder';
       if (!far || (frame + (s.x | 0)) % 3 === 0) {
@@ -2284,7 +2362,6 @@ function make(api) {
     mission.nests = def.nests;
     noises = new Noises(); guard = null; metMarr = false;
     cut = new Cutscene(def.intro(), { bars: .14 }); state = 'intro';
-    { const cam = WD.v.cam, keep = cam.position.clone(), e = nestEye(nest); cam.position.set(e.x, e.y, e.z); cam.updateMatrixWorld(); WD.land.update(0, cam); grassAt.copy(cam.position); cam.position.copy(keep); cam.updateMatrixWorld(); }
     for (const s of men) { s.m.updateMatrixWorld(true); s.m.rig.update(0, { speed: 0 }); }
     train = { on: id === 'm1', x: -420, speed: 30, next: 26, final: false };
     WD.train.visible = false;
@@ -2369,7 +2446,6 @@ function make(api) {
   let briefRows = [], briefGo = null, failMsg = '', pathBudget = 0, thinkBudget = 0;
   let theme = null;
   let beatT = 0, beat = 0, tiltBtn = null, ptrZoom = false, envDirty = false, envBaked = null;
-  const grassAt = new Vector3(1e9, 0, 0);
   const later = [];
   function soon(sec, fn) { later.push({ in: sec, fn }); }
   function runLater(dt) { let ran = false; for (let i = 0; i < later.length; i++) { const j = later[i]; j.in -= dt; if (j.in <= 0 && !ran) { ran = true; later.splice(i--, 1); j.fn(); } } }
@@ -2429,7 +2505,7 @@ function make(api) {
       theme?.stop();
       // slow motion: bullet cam, quick-time moments
       let ts = 1;
-      if (bulletCam) ts = bulletCam.hold > 0 ? .06 : bulletCam.scale;
+      if (bulletCam) ts = bulletCam.hold > 0 ? (bulletCam.hold > .85 ? .05 : .05 + (1 - bulletCam.hold / .85) * .95) : bulletCam.scale;   // (nearly stopped at the hit, then it runs on: he is seen to drop)
       qte.update(dtReal); if (qte.active) ts *= qte.timeScale;
       const dt = Math.min(dtReal, 1 / 20) * ts;
       t += dt;
@@ -2438,9 +2514,9 @@ function make(api) {
       timers = timers.filter(tm => !tm.done);
       sky.update(dtReal); rain.update(dtReal); storm = Math.max(0, storm - dtReal);
       sky.flash = rain.flashLeft > .25 || (rain.flashLeft > .08 && rain.flashLeft < .16) ? rain.flashI : 0;
-      // the grass sways every frame; which tufts show (near the camera) is worked out again only when the
-      // camera has moved a few metres in play (not while a cutscene camera flies about)
-      { const c = WD.v.cam.position, lod = state === 'play' && c.distanceToSquared(grassAt) > 16; if (lod) grassAt.copy(c); WD.land.update(dt, lod ? WD.v.cam : null); }
+      // the meadow sways, and follows the camera wherever it comes down to the ground (planted a few tufts a
+      // frame after a cut). While a round flies with its camera, it is planted ahead where that camera will stop
+      { const q = bulletCam && !(bulletCam.hold > 0) && bulletCam.t > .2 && bulletCam.pre; if (q) grassEye.position.set(q.x, q.y, q.z); WD.land.update(dt, q ? grassEye : WD.v.cam); }
       WD.wheel.rotation.x += dt * .5; WD.sails.rotation.z += dt * .35;
       // wind gusts
       wind.x = wind.base + Math.sin(t * .23) * 1.2 + Math.sin(t * .71 + 2) * .5;
@@ -2577,11 +2653,13 @@ function make(api) {
         const c_ = tripAt(move).cam; cam.position.set(...c_.p); cam.lookAt(...c_.l);
       } else if (bulletCam && bulletCam.hold <= 0 && !bulletCam.b.dead) {
         const b = bulletCam.b, l = Math.hypot(b.vx, b.vy, b.vz), dx = b.vx / l, dy = b.vy / l, dz = b.vz / l;
-        cam.position.set(b.x - dx * 2.2 + dz * .45, b.y - dy * 2.2 + .3, b.z - dz * 2.2 - dx * .45); cam.lookAt(b.x + dx * 4, b.y + dy * 4, b.z + dz * 4);
-        WD.bullet.position.set(b.x, b.y, b.z); WD.bullet.rotation.set(0, 0, 0); WD.bullet.lookAt(b.x + dx, b.y + dy, b.z + dz); WD.bullet.rotateX(Math.PI / 2);
-      } else if (bulletCam && bulletCam.hold > 0 && bulletCam.at) {
-        const a = bulletCam.at, f = bulletCam.from, dx = a.x - f.x, dz = a.z - f.z, l = Math.hypot(dx, dz);
-        cam.position.set(a.x - dx / l * 4 + dz / l * 2.5, a.y + 1, a.z - dz / l * 4 - dx / l * 2.5); cam.lookAt(a.x, a.y, a.z);
+        // just behind and above the round: it sits low in a tall screen, where it is headed above it
+        cam.position.set(b.x - dx * .34 + dz * .04, b.y - dy * .34 + .2, b.z - dz * .34 - dx * .04); cam.lookAt(b.x + dx * .6, b.y + dy * .6, b.z + dz * .6);
+        WD.bullet.position.set(b.x, b.y, b.z); WD.bullet.rotation.set(0, 0, 0); WD.bullet.lookAt(b.x + dx, b.y + dy, b.z + dz); WD.bullet.rotateX(Math.PI / 2); WD.bullet.rotateY(bulletCam.t * 9);
+      } else if (bulletCam && bulletCam.hold > 0 && bulletCam.cam) {
+        // the hold: beside him and low, drifting in, following him down as he drops
+        const q = bulletCam.cam, k = 1 - bulletCam.hold / HOLD, near = 1 - .12 * k;
+        cam.position.set(q.tx + (q.x - q.tx) * near, q.y, q.tz + (q.z - q.tz) * near); cam.lookAt(q.tx, q.ty - .7 * k * k, q.tz);
         WD.bullet.visible = false;
       } else if (nest) {
         const e = nestEye(nest);
@@ -2593,7 +2671,7 @@ function make(api) {
         gunVis = !scoped && !glass && state === 'play';
       }
       WD.gun.visible = gunVis; if (gunVis) { WD.gun.position.y = -.3 - (boltT > 0 ? Math.sin(boltT * 3) * .03 : 0); WD.bolt.position.z = .05 + (boltT > .2 && boltT < .9 ? .06 : 0); }
-      const f = (state === 'play' && !move && !bulletCam) ? fovNow() : move ? tripAt(move).cam.fov ?? 62 : 62;
+      const f = (state === 'play' && !move && !bulletCam) ? fovNow() : move ? tripAt(move).cam.fov ?? 62 : bulletCam && bulletCam.hold > 0 ? 46 : 62;
       if (Math.abs(cam.fov - f) > .01) { cam.fov = f; cam.updateProjectionMatrix(); }
       // trees keep their leaves further out through the scope
       const lk = clamp(62 / cam.fov, 1, 12);
@@ -3016,7 +3094,7 @@ function make(api) {
   function koPops(c) {
     for (const s of men) {
       const k = s.koFx; if (!k || k.t > 2.2) continue;
-      const [x, y, z] = WD.v.toScreen(s.x, s.gy + 1.6, s.y); if (z > 1) continue;
+      const [x, y, z] = WD.v.toScreen(s.x, s.gy + 2, s.y); if (z > 1) continue;
       const a = clamp(2.2 - k.t, 0, 1), yy = y - 20 - k.t * 10;
       c.save(); c.globalAlpha = a; c.textAlign = 'center';
       c.font = '800 16px Rubik, sans-serif'; c.fillStyle = '#ffe9a8'; c.strokeStyle = '#000a'; c.lineWidth = 3; c.strokeText('KO +' + k.pts, x, yy); c.fillText('KO +' + k.pts, x, yy);
