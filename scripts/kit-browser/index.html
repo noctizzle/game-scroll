@@ -387,5 +387,52 @@ try {
     g.dispose(); ok(!g.gpu, 'swarm: dispose');
   }
 }
+// loading without holding the feed still (src/kit/slices.js, jobs.js): the number work a loading card
+// leaves with background workers gives the same pixels and meshes as doing it here
+{
+  const slices = await import('/src/kit/slices.js'), jobs = await import('/src/kit/jobs.js'), { surfaceMath } = await import('/src/kit/surface-math.js');
+  const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+  const pix = cv => cv.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, cv.width, cv.height).data;
+  ok(jobs.canRun(), 'workers: this browser has them');
+  // a surface's bumps: the worker job against the same numbers made here
+  const S = 64, hd = new Uint8ClampedArray(S * S * 4), rd = new Uint8ClampedArray(S * S * 4);
+  for (let i = 0; i < S * S; i++) { hd[i * 4] = (Math.sin(i * .37) * .5 + .5) * 255; rd[i * 4 + 1] = (i * 7) % 256; hd[i * 4 + 3] = rd[i * 4 + 3] = 255; }
+  const here = surfaceMath(hd, rd, S, 2.5), there = await jobs.run('surface', { hd: hd.slice(), rd: rd.slice(), size: S, strength: 2.5 });
+  ok(same(here.out, there.out) && same(here.nf, there.nf) && here.mips.length === 6 && here.mips.every((m, i) => same(m, there.mips[i])), 'workers: a surface made in a worker is the same, number for number');
+  // a whole surface: made while a card loads (the card waits for the worker), against made on the spot
+  const paint = g => { g.col.fillStyle = '#a63'; g.col.fillRect(0, 0, g.size, g.size); g.h.fillStyle = '#fff'; g.h.fillRect(8, 8, 24, 40); g.r.fillStyle = '#222'; g.r.fillRect(0, 20, g.size, 9); };
+  const plain = gs.hd.surface(64, paint), card = {};
+  slices.begin(card); const lazy = gs.hd.surface(64, paint), copy = lazy.repeat(2, 3); const blank = pix(lazy.normal.image).every(v => v === 0); const wait = slices.end(card, true);
+  ok(blank && wait instanceof Promise && plain.core.nf && !lazy.core.nf, 'loading: a surface comes back at once, its bumps still with the worker, and the card is told to wait');
+  const v0 = copy.normal.version; await wait;
+  ok(same(pix(plain.normal.image), pix(lazy.normal.image)) && same(plain.core.nf, lazy.core.nf), 'loading: the bumps that arrive are the ones made on the spot');
+  ok(lazy.rough.mipmaps.length === 7 && copy.rough.mipmaps.length === 7 && lazy.rough.mipmaps.every((m, i) => same(pix(m), pix(plain.rough.mipmaps[i]))) && copy.normal.version > v0, 'loading: and every copy made meanwhile gets them (rougher small copies too)');
+  const det = gs.hd.detail(plain, lazy, { times: 2 }); ok(det.normal.isTexture && det.core.nf.length === 64 * 64 * 3, 'detail() of two surfaces');
+  // a recipe material: painted in the worker while loading, the same pixels as painted here
+  const c2 = {}; slices.begin(c2); const mLazy = gs.models.material('brick', { size: 64, seed: 5 }); const w2 = slices.end(c2, true); await w2;
+  const { paintRecipe } = await import('/src/kit/models/recipe-paint.js'), { JS } = await import('/src/kit/models/ops.js'), { RECIPES } = await import('/src/kit/models/recipes.js');
+  const K = {}; for (const k in RECIPES.brick.look) K[k] = JS.rgb(RECIPES.brick.look[k]); const L = paintRecipe('brick', K, 64, 5);
+  // (the colour layer goes through a canvas and back, which may round a channel by one)
+  const near = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 1);
+  ok(w2 instanceof Promise && near(pix(mLazy.map.image), L.col) && same(pix(mLazy.userData.recipeHeight.image), L.h), 'loading: a recipe material painted in a worker is the recipe');
+  // a sculpted mesh: the card waits for the worker, the next pass has the mesh
+  const shapes = [{ ball: .4 }, { box: [.3, .3, .3], at: [.35, 0, 0], colour: '#f00' }], { sculptArrays } = await import('/src/kit/models/sculpt-arrays.js');
+  const c3 = {}; let hold = null; slices.begin(c3); try { gs.models.sculpt(shapes, { res: 20 }); } catch (x) { hold = x; } slices.end(c3, false);
+  ok(hold?.kitLoading && hold.what === 'Models', 'loading: a sculpt waits for its worker'); await hold.kitLoading;
+  slices.begin(c3); const geo = gs.models.sculpt(shapes, { res: 20 }); slices.end(c3, true); const ref = sculptArrays(shapes, { res: 20 });
+  ok(geo.isBufferGeometry && same(geo.attributes.position.array, ref.P) && same(geo.index.array, ref.I) && gs.models.sculpt(shapes, { res: 20 }) === geo, 'loading: and the mesh that comes back is the one made here, kept for next time');
+  // a path map: built in its own worker and read back in
+  { const { THREE: T } = gs, fl = new T.Mesh(new T.BoxGeometry(12, .2, 12)); fl.position.y = -.1; fl.updateMatrixWorld();
+    const c4 = {}; let h4 = null; slices.begin(c4); try { new gs.nav3d.NavMesh3D([fl], { radius: .35 }); } catch (x) { h4 = x; } slices.end(c4, false);
+    ok(h4?.kitLoading && h4.what === 'Path map', 'loading: a path map waits for its worker'); await h4.kitLoading;
+    slices.begin(c4); const nav = new gs.nav3d.NavMesh3D([fl], { radius: .35 }); slices.end(c4, true);
+    ok(jobs.navStats.done === 1 && nav.path({ x: -4, y: 0, z: -4 }, { x: 4, y: 0, z: 4 }).length >= 2, 'loading: and the map read back in finds a path');
+    // a level that is different every pass must not wait for ever: the second answer nobody asked for ends the waiting
+    const c5 = {}, lvl = k => { const m = new T.Mesh(new T.BoxGeometry(10 + k, .2, 10)); m.position.y = -.1; m.updateMatrixWorld(); return [m]; }; let h5 = null;
+    slices.begin(c5); try { new gs.nav3d.NavMesh3D(lvl(1)); } catch (x) { h5 = x; } slices.end(c5, false); await h5.kitLoading;
+    slices.begin(c5); const n5 = new gs.nav3d.NavMesh3D(lvl(2)); slices.end(c5, true);
+    ok(h5?.kitLoading && n5.path({ x: -3, y: 0, z: 0 }, { x: 3, y: 0, z: 0 }).length >= 2, 'loading: a level that changes every pass is built here on the second pass, not waited for again');
+  }
+}
 window.result = out;
 </script>

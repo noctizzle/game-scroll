@@ -37,6 +37,7 @@ How to check a change without waiting longer than you need to. Written for peopl
 | Frame generation | `node scripts/framegen-test.cjs --check` (13 suites against `scripts/framegen-test/baseline.json`; `--save` after a change meant to move the numbers), `node scripts/framegen-games.cjs [--jobs n]` | about 3 min, then 1 to 4 min |
 | The upscalers (SGSR 1 and 2, `hd3d-gpu.js` `sgsr2Gpu`, `sgsr2.js`) | `node scripts/upscale-compare.cjs [--webgpu] [--scale 1.8] [--tier 2] [--warm 80]`: error and flicker against the scene drawn at twice the size; fails if SGSR 2 is worse than a plain stretch, our changes to it worse than Qualcomm's shader as it was, or (WebGPU, on its textured scene) the sharper textures under SGSR 2 not clearly closer than without. `--scenes textured` runs only those; the PR check runs it with `--webgpu`, and without for the WebGL shader in `sgsr2.js` | about 5 min, 2 min |
 | Engine speed (CPU per frame) | `node scripts/perf-bench.cjs [id ...] --json before.json` before, `--vs before.json` after (see below) | about 15 s a game per backend |
+| Loading (how long a game's making holds the main thread; `src/kit/slices.js`, `jobs.js`, the builders that pause) | `npm run kit-test` and `npm run kit-browser` (the workers' answers against the same work done on the spot), then `node scripts/load-time.cjs [id ...] --json before.json` before, `--vs before.json` after (see below) | about 5 s a game |
 | The frame lab (`src/framelab.js`) | `node scripts/framelab-test.cjs [2d-id] [3d-id] [--shots dir] [--report file.html]` | about 3 min |
 | How a game really runs (pacing, hitch causes, upscaler, frame gen) | the frame lab on a phone: QA panel › Frame lab, Rec, Report ([frame-lab.md](frame-lab.md)) | |
 | Every 3D game and every native plugin on a real phone | the phone test tour: QA panel › Phone test tour (see below) | about 25 min for the 56 3D games |
@@ -189,6 +190,29 @@ bigger changes, or run it twice.
 To see whether WebGPU builds shaders during play (a hitch each time), hook
 `renderer.debug.onNodeBuilderCreated` on `webgpu().r` (from `src/kit/gpu.js`, importable in the dev
 server) and count the calls per second.
+
+## Measuring loading: load-time
+
+```bash
+npm run build:bundled
+node scripts/load-time.cjs --json /tmp/before.json           # every 3D game, a fresh page each
+# ...change the engine, build again...
+node scripts/load-time.cjs --vs /tmp/before.json             # prints "(was N)" beside each number
+node scripts/load-time.cjs gloomwick-hall --passes           # each pass of one game's making
+CPU=4 node scripts/load-time.cjs living-chess                # on a 4 times slower processor
+OUT=/tmp/dist-before node scripts/load-time.cjs              # another build (vite build --outDir)
+```
+
+A game is made a little each frame while its card says "Loading…" (`src/kit/slices.js`), each pass
+on a fresh copy of the game's file, with the heavy number work in background workers
+(`src/kit/jobs.js`). For each game this prints `worst` (the longest single run of `make()` +
+`reset()` on the main thread: what a player scrolling past feels), `total` (all passes added up),
+the number of passes, the jobs the workers did and when the card became playable. It times one card
+on a fresh page: the first time a player meets the game. `--passes` shows, for each pass, how much
+of it was the game's own code (and kit work nobody keeps, such as a texture the game painted): that
+part is run again every pass, so a game with more than 30 ms of it is "made in one go" from there.
+The numbers move 10 to 20% between runs, and first-frame costs (shader builds, texture uploads,
+drawing) are not in them: `perf-bench.cjs` and `shader-hold.cjs` measure those.
 
 ## Pictures: proving a change doesn't change the look
 

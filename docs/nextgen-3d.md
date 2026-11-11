@@ -21,7 +21,10 @@ ceilings), `neon-drift.js` (drift racer on a wet neon street circuit), `storm-ho
   On WebGPU the colour, normal, height and metal maps are packed into the phone's own compressed
   formats (ASTC or ETC2; BC on desktops) on the graphics chip by spark.js, so they take about a quarter
   of the memory; each draws plain for its first few frames until its packed copy is ready.
-  `speckle()` adds grime and noise.
+  `speckle()` adds grime and noise. While a card is loading, the bumps (the normal map and the
+  rougher small copies) are worked out in a background worker: `surface()` hands the textures back at
+  once and the card stays "Loading…" until they are filled in, so twenty textures no longer hold the
+  feed still.
 - **Bevelled boxes** (`rbox(w, h, d, r)`): rounded edges catch highlights, which reads as
   "modern" far more than sharp boxes.
 - **Real-time shadows** (`spot(...)`): a shadow-casting spotlight whose shadow map size follows
@@ -669,7 +672,9 @@ wear(wall, { moss: .7 });                                                    // 
   `blend` (how softly it melts in, metres), `cut: true` (carved away) and `colour` (vertex colours: give the
   mesh a material with `vertexColors: true`). Or pass a distance function `(x, y, z) => d` with `bounds`.
   Options `blend` (.08), `res` (cells along the longest side, 48, up to 128). About 0.1 s each, so make them
-  in `make()` or `reset()`; the same shapes again give back the same geometry.
+  in `make()` or `reset()`; the same shapes again give back the same geometry. While a card is loading,
+  a sculpt given as a list of shapes is made in a background worker and the card waits for it (one
+  given as a distance function is made on the spot: a function can't be sent to a worker).
 
 ```js
 const snowman = gs.models.sculpt([

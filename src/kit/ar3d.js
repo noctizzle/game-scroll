@@ -29,6 +29,7 @@
 // phone can't track the room at all (too dark, nothing to see) the player can carry on in
 // look-around mode. Everything else works the same.
 import { HDView, HD, pbr, surface, speckle, sun, THREE } from './hd3d.js';
+import { pause, built, later } from './slices.js';
 import { startCamera, stopCamera, orientation, haptic } from './device.js';
 import { store } from '../util.js';
 import { prefs } from './prefs.js';
@@ -61,7 +62,8 @@ const LONG_FOV = 64;
 
 let ROOM = null;
 function roomLooks() {
-  if (ROOM) return ROOM;
+  if (ROOM) { for (const s of ROOM.sets) if (s.core.wait) later(s.core.wait); return ROOM; }   // (still with a worker: this card waits for it too)
+  pause('Textures');   // (while a card loads, a frame may go by first: slices.js)
   const wood = surface(256, ({ col, h, r, size: S }) => {
     for (let y = 0; y < S; y += 32) {
       const v = 120 + Math.random() * 30 | 0; col.fillStyle = `rgb(${v + 40},${v},${v - 40})`; col.fillRect(0, y, S, 32);
@@ -72,7 +74,8 @@ function roomLooks() {
     speckle(col, S, 900, '#3a2210', 2, .25);
   }, { strength: 2 });
   const paint = surface(128, ({ col, size: S }) => { col.fillStyle = '#d9d4ca'; col.fillRect(0, 0, S, S); speckle(col, S, 600, '#a09888', 1.2, .25); });
-  ROOM = { floor: pbr('#ffffff', { tex: wood.repeat(6, 6), rough: .7 }), wall: pbr('#bdb6aa', { tex: paint.repeat(4, 2), rough: .95, side: BackSide }) };
+  ROOM = { floor: pbr('#ffffff', { tex: wood.repeat(6, 6), rough: .7 }), wall: pbr('#bdb6aa', { tex: paint.repeat(4, 2), rough: .95, side: BackSide }), sets: [wood, paint] };
+  built();
   return ROOM;
 }
 

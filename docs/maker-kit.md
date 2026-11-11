@@ -131,6 +131,33 @@ few MB, so the app loads them the first time a game needs them. Create those thi
 `reset()`: if the library isn't in yet, the app shows "Loading…" on the card and makes your game
 again once it is. Don't create them later (in `update()` or a tap), or the game will stop with an error.
 
+**Loading doesn't hold the feed still.** A big 3D game (a board game's room, a level with twenty
+textures made in code) used to stop the feed for a third of a second or more while it was made. Now
+its card says "Loading…" with a bar, and the feed and the game being played keep moving. You don't
+write anything for it:
+
+- The heavy number work goes to background workers: a `surface()` texture's bumps, a recipe
+  material's pixels, a sculpted mesh, a 3D path map. The game is made straight away with what it
+  asked for, and the card waits until the workers have filled it in.
+- The kit's builders that keep what they make (props, trees, buildings, recipe materials, sculpts,
+  `rbox()` rounded boxes, a city's textures and street furniture) build a little each frame: when a pass of `make()` has used its share of the frame, the builder
+  stops it, and the app makes the game again on the next frame, when everything already built
+  comes straight back.
+- Each of those passes runs on a fresh copy of your game's file, and the copy that gets to the end
+  is the game. So a world kept at the top of the file (`let view; ... if (!view) setup()`, as the
+  templates do) is never left half built by a pass that was stopped.
+- A game whose own code is the slow part (more than about 30 ms of its own maths and painting in a
+  pass) is made in one go, as before: running that again every frame would cost more than it saves.
+  The workers still take the number work.
+
+What it means for a game: `make()` and `reset()` may run more than once before the first round, so
+keep things that must happen once (a save written, a sound played) out of them. That was already
+the rule for the big parts above. Build the world in `make()` or the first `reset()`; a builder
+called later (in `update()`, or in a new round) just builds on the spot.
+
+`node scripts/load-time.cjs <id> --passes` shows how long a game's making holds the main thread,
+in how many passes, and how much of that is the game's own code ([testing.md](testing.md)).
+
 **Your game leads, the kit helps.** The kits work out the fiddly parts (what hit what, when to
 spawn, where a guard looks, where the camera goes) and hand you the answers. How things look, the
 HUD, and the rules stay in your game: nothing on `gs` draws a screen for you unless you call it.
@@ -1067,6 +1094,8 @@ update(dt) { g.agent.goto(hero.position); crowd.update(dt); g.mesh.position.copy
 - `path(a, b)` → corners `[Vector3]` (or `[]`), `reachable(a, b)`, `closest(p)`, `random(p, radius)`.
 - Agents: `goto(p)`, `stop()`, `place(p)`, `arrived()`, `position`, `velocity`, `speed`, `remove()`.
 - Set `mesh.userData.noNav = true` on things that shouldn't count (decorations, the player).
+- While a card is loading, the map is made in a background worker and the card waits for it, so a big
+  level doesn't hold the feed still. A new round's map (a level that changes) is made on the spot.
 
 ## Living characters and ragdolls
 
