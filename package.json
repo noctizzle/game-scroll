@@ -12,6 +12,7 @@
     "preview": "vite preview --host",
     "smoke": "vite build --mode bundled && node scripts/smoke.cjs",
     "stream-smoke": "node scripts/stream-smoke.mjs",
+    "share-link": "node scripts/share-link.mjs",
     "qa": "vite build --mode bundled && node scripts/qa.cjs",
     "ios": "vite build && cap sync ios && cap open ios",
     "android": "vite build && cap sync android && cap open android",
