@@ -80,7 +80,7 @@ Every stutter during play is checked for what happened since the picture before 
 | **● Rec** | Records up to 60 s of every refresh, hitch and phone reading. Tap again to stop. |
 | **Freeze** | Stops the game's clock but keeps drawing: the picture settles and nothing moves. |
 | **Tint** | Tints the card magenta on every made frame, so you see frame generation working. |
-| **A/B** | On a frozen frame, two pictures with one setting changed: SGSR off vs on, SGSR 1 vs 2, SGSR 2 as Qualcomm has it vs with our changes, WebGL vs WebGPU, half vs full resolution, low vs ultra tier. Settings go back afterwards. |
+| **A/B** | On a frozen frame, two pictures with one setting changed: SGSR off vs on, SGSR 1 vs 2, SGSR 2 as Qualcomm has it vs with our changes, textures as drawn vs sharpened under SGSR 2 (WebGPU), WebGL vs WebGPU, half vs full resolution, low vs ultra tier. Settings go back afterwards. |
 | **Shimmer** | On a frozen frame, 16 pictures in a row and a heat map of pixels that still change while nothing moves: shimmering edges, upscaler or anti-aliasing jitter. With SGSR 2 it then measures the same frame again as Qualcomm's shader has it, and the notes give both numbers. |
 | **FG check** | While you play a WebGPU game: grabs real, made, real frames and flags made pixels that match neither real frame nearby (ghosting, smears, holes behind moving things). Turns frame generation on for the check if it's off. |
 | **Report** | Shares a self-contained HTML report (Android and iPhone share sheet; a download on the web). |

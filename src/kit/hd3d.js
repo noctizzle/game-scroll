@@ -201,6 +201,8 @@ export const HD = {
   grain: null,
   /** Tests and the frame lab's A/B: false draws SGSR 2 as Qualcomm's shader has it, without our changes (hd3d-gpu.js sgsr2Gpu, sgsr2.js), and on WebGPU with the tier's MSAA under it. */
   sgsrTune: true,
+  /** Tests and the frame lab's A/B: how textures are read under SGSR 2 on WebGPU. null: the usual, as the screen's size would read them (hd3d-gpu.js sharpMips); false: as drawn, the small picture's mip level; a number: that many mip levels on top of the usual (negative: sharper). */
+  mipBias: null,
   /** Tests: draw the 3D at this fraction of the screen's size (null: the tier and frame rate decide). */
   scale: null,
   /** Tests: frame generation on ('blend' | 'ahead') whatever the screen and settings, or null (speed.js decides). Needs WebGPU and direct. */
@@ -1964,7 +1966,9 @@ export class HDView {
     ch.aim = live && fg && HD.aim !== false && (this.aimFn || this.freshAim) ? () => this.aimPose() : null;
     this._aimJit = s2 && fg ? fg.jit : null;   // the real frame is shown while SGSR 2's jitter is still on the camera
     let shown = false;
-    try { shown = ch.render(o) || false; } finally { for (const e of empty) e.visible = true; if (s2) o.s2.end(this.cam); this._aimJit = null; }
+    // sharper textures while SGSR 2 upscales (hd3d-gpu.js sharpMips): read as the screen's size would read them
+    G.fx.mipScale(s2 && HD.mipBias !== false ? Math.min(1, pw / o.fw * 2 ** (HD.mipBias ?? 0)) : 1);
+    try { shown = ch.render(o) || false; } finally { G.fx.mipScale(1); for (const e of empty) e.visible = true; if (s2) o.s2.end(this.cam); this._aimJit = null; }
     if (this.eye && !baking && !off && ch.sp) this.eyeRead(() => (ch.eyeM ||= G.fx.eyeMeter(r)).read(ch.sp.getTexture('output')));
     const made = !!fg && !!shown;
     if (made) HD.fgTap?.(shown, r.domElement, 'frame');

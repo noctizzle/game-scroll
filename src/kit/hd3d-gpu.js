@@ -78,7 +78,7 @@ export const gpuMaterials = {
     const H = texture(P.height), rp = P.height.repeat, depth = float(P.depth);
     const base = uv().mul(vec2(rp.x, rp.y)).add(vec2(P.height.offset.x, P.height.offset.y));
     const puv = Fn(() => {
-      const gx = dFdx(base), gy = dFdy(base), h = q => H.sample(q).grad(gx, gy).r;
+      const gx = dFdx(base).mul(MIP_K), gy = dFdy(base).mul(MIP_K), h = q => H.sample(q).grad(gx, gy).r;
       const V = parallaxDirection.normalize(), N = 16, step = float(1 / N);
       const d = V.xy.div(max(V.z, .25)).mul(depth).mul(step);   // (flat angles capped, or the march runs off sideways)
       const cur = base.toVar(), lay = float(0).toVar(), mapD = float(1).sub(h(base)).toVar();
@@ -86,7 +86,7 @@ export const gpuMaterials = {
       const prev = cur.add(d), after = mapD.sub(lay), before = float(1).sub(h(prev)).sub(lay).add(step);
       return mix(cur, prev, after.div(after.sub(before)).clamp(0, 1));
     })().toVar('pomUV');
-    const at = (t, q) => texture(t, q).grad(dFdx(base), dFdy(base));
+    const at = (t, q) => texture(t, q).grad(dFdx(base).mul(MIP_K), dFdy(base).mul(MIP_K));   // (MIP_K: sharper under SGSR 2, see sharpMips)
     if (gm.map) m.colorNode = at(gm.map, puv).mul(materialColor);
     if (gm.normalMap) m.normalNode = normalMap(at(gm.normalMap, puv), uniform(gm.normalScale));
     if (gm.roughnessMap) m.roughnessNode = at(gm.roughnessMap, puv).g.mul(materialRoughness);
@@ -425,6 +425,49 @@ export function pcss(light) {
   });
 }
 export function manyLights(r) { r.lighting = new ClusteredLighting(256, 32, 24, 32); r.gsClustered = true; }
+/* ---------- sharper textures under SGSR 2 ---------- */
+// A scene drawn smaller than the screen reads its textures for the small picture: a mip level too soft
+// for the screen SGSR 2 builds it up to. The usual answer (FSR 2 and DLSS ask for it too) is a mip bias
+// of log2(drawn width / screen width): textures are read at the level the full-size picture would read,
+// and the jitter and the history settle the finer detail. WebGPU samplers have no bias and no shader is
+// patched for it: three asks the renderer's context about every texture a material reads at the mesh's
+// own uv (TextureNode setup, getTextureGradient), and there the texture's node is given MIP_B as its
+// bias (three's own texture().bias(), textureSampleBias in the shader), which costs nothing to sample.
+// It reaches colour, normal, roughness, metalness, glow and alpha maps (surface() and the gs.models
+// recipes); the kit's materials that read their main textures somewhere else already pass their own
+// gradients and scale them by MIP_K, which is the same bias (parallax, recipes laid on by position or
+// scattered). The faint detail layers the land and rock looks read by world position are left as they
+// are. It is on the renderer's context from the start, so a material keeps one shader wherever it is
+// drawn (play, a card picture, a probe), and the bias is 0 whenever SGSR 2 is not upscaling (hd3d.js
+// drawGPU sets it per picture).
+// Measured on scripts/upscale-compare.cjs's textured scene: 8 to 9% closer to the true picture at 1.5x
+// and 10 to 11% at 1.8x, with a little more flicker when nothing moves; half a mip level sharper again
+// was closer still with more shimmer, so it stops at the usual value.
+// Two things to know. The hook is three's place for handing a texture its uv gradients, and scaling
+// those instead was tried first: it was closer still (11 to 13% at 1.5x), because under anisotropic
+// filtering it also narrows the footprint, but every texture read then carries explicit gradients, a
+// slower kind of read (15 to 20% of a frame in the software renderer on a fully textured scene; Arm's
+// advice for Mali phones is to avoid it; not measured on a phone), so the plain bias it is. And three
+// has no hook for a bias, so it is handed over for one read: three asks, then reads the node's biasNode
+// into this one shader's properties, and that read puts the node back as it was. Nothing stays on the
+// node (three shares one node per map name between all materials, and a copy of a node copies its bias),
+// and a texture three reads without a sampler is left alone. If a three.js update changes that order no
+// bias is read and textures are as drawn, and the comparison's textured runs fail (sharper must stay
+// clearly closer), which is the tripwire for it.
+// (in three's per-render group: a plain material that hasn't changed only has its shared uniforms sent again)
+const MIP_K = uniform(1).setGroup(TSL.renderGroup), MIP_B = uniform(0).setGroup(TSL.renderGroup);
+/** The mip bias for what is drawn next, as a scale: drawn width / screen width under SGSR 2, else 1. */
+export const mipScale = k => { MIP_K.value = k; MIP_B.value = Math.log2(k); };
+export function sharpMips(r) {
+  const put = (node, value) => Object.defineProperty(node, 'biasNode', { value, writable: true, enumerable: true, configurable: true });
+  const once = { configurable: true, enumerable: true, get() { put(this, null); return MIP_B; }, set(v) { put(this, v); } };
+  r.contextNode.value.getTextureGradient = (node, builder) => {
+    const t = node.value;
+    // (builder.isUnfilterable: textures three reads without a sampler, nearest-filtered ones among them, can't take a bias)
+    if (builder.shaderStage === 'fragment' && node.type === 'TextureNode' && t?.isTexture && !t.isRenderTargetTexture && !t.isDepthTexture && builder.isUnfilterable?.(t) === false) Object.defineProperty(node, 'biasNode', once);
+    return null;   // (no gradients of ours: three samples with its own)
+  };
+}
 // Auto exposure's light meter (hd3d.js Eye): the scene's brightness as 16 x 16 log values (each from a
 // 4 x 4 grid of taps), packed into bytes so any phone can read them back without stalling.
 export function eyeMeter(r) {
@@ -484,7 +527,8 @@ function recipeTwin(gm) {
   const tileAt = solidK ? select(useX, PW.zy, select(useY, PW.xz, PW.xy)).div(solidK) : uv().mul(vec2(rp.x, rp.y));
   // far: the baked textures; scatter: four neighbouring tiles each moved by a random amount, blended
   const far = copy(), q = tileAt;
-  const read = (t, qq) => texture(t, qq);
+  // (read with the tile place's own gradients, times MIP_K: sharper under SGSR 2 like the plain maps, see sharpMips)
+  const gx = dFdx(q).mul(MIP_K), gy = dFdy(q).mul(MIP_K), read = (t, qq) => texture(t, qq).grad(gx, gy);
   const look = t => {
     if (!R.scatter) return read(t, q);
     const c = floor(q.sub(.5)), f = q.sub(.5).sub(c), w = f.mul(f).mul(f.mul(-2).add(3));

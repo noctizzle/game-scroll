@@ -80,9 +80,14 @@ const SIZES = { cover: { width: 374, height: 591 }, inner: { width: 549, height:
   await ab('sgsr');
   await ab('res');
   await ab('sgsrTune');   // SGSR 2 as Qualcomm has it against ours
+  if (gpu) {   // textures as drawn against sharpened under SGSR 2 (WebGPU): only while it upscales, so draw smaller for it
+    await p.evaluate(() => { __hd.scale = .67; }); await play(1500);
+    await ab('mip');
+    await p.evaluate(() => { __hd.scale = null; }); await play(600);
+  }
   if (gpu) await ab('backend');
-  const restored = await p.evaluate(() => ({ up: __hd.upscale, sc: __hd.scale, f: __hd.force, tune: __hd.sgsrTune }));
-  check(restored.up === true && restored.sc == null && restored.f == null && restored.tune === true, 'A/B puts the settings back');
+  const restored = await p.evaluate(() => ({ up: __hd.upscale, sc: __hd.scale, f: __hd.force, tune: __hd.sgsrTune, mip: __hd.mipBias }));
+  check(restored.up === true && restored.sc == null && restored.f == null && restored.tune === true && restored.mip == null, 'A/B puts the settings back');
 
   await p.evaluate(async () => (await __gs.lab(true)).shimmer());
   const sh = await p.evaluate(async () => { const L = await __gs.lab(true); const s = L.shots[L.shots.length - 1]; return s && s.kind === 'shimmer' ? s.notes.slice(0, -1).join('; ') : ''; });
