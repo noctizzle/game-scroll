@@ -44,7 +44,7 @@ function make(api) {
     if (dmg <= 0) return; b.hp -= dmg; b.awake = true;
     if (b.hp <= 0 && !b.dead) {
       b.dead = true; const col = b.mat === 'grump' ? '#68d048' : MAT[b.mat].col;
-      feel.juice.burst(b.x + b.w / 2, b.y + b.h / 2, { n: 8, speed: 80, spread: Math.PI, angle: -Math.PI / 2, life: .7, size: 2, gravity: G, color: [col] });
+      feel.juice.burst(b.x + b.w / 2, b.y + b.h / 2, { n: 8, speed: 80, arc: Math.PI, angle: -Math.PI / 2, life: .7, size: 2, gravity: G, color: [col] });
       if (b.mat === 'grump') { score += 1; api.score(score); haptic('medium'); sfx(880, .12, 'square', .05, 300); feel.juice.pop(b.x + 4, b.y - 2, '+1', { color: '#f8d838', size: 8 }); }
       else { haptic('light'); sfx(b.mat === 'glass' ? 1400 : b.mat === 'stone' ? 160 : 320, .08, 'square', .04, -100); }
     }

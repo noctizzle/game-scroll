@@ -30,7 +30,7 @@ function make(api) {
   }
   function explode(x, y) {
     boom = { x, y, l: .5 }; sfx(80, .4, 'square', .06, -30); haptic('heavy');
-    feel.juice.shake(3).burst(x, y, { n: 10, speed: 60, spread: Math.PI, angle: -Math.PI / 2, life: .5, size: 2, gravity: 160, color: [P[1], P[0]] });
+    feel.juice.shake(3).burst(x, y, { n: 10, speed: 60, arc: Math.PI, angle: -Math.PI / 2, life: .5, size: 2, gravity: 160, color: [P[1], P[0]] });
     for (let i = -7; i <= 7; i++) { const xx = Math.round(x) + i; if (xx < 0 || xx >= W) continue; const d = Math.sqrt(49 - i * i); if (ground[xx] < y + d) ground[xx] = Math.min(150, Math.max(ground[xx], y + d)); }
     const hitFoe = Math.hypot(foe.x - x, gy(foe.x) - 3 - y) < 9, hitMe = Math.hypot(me.x - x, gy(me.x) - 3 - y) < 9;
     if (hitFoe) { score++; api.score(score); haptic('success'); wait = 1.2; turn = 'next'; feel.juice.burst(foe.x, y - 3, { n: 14, speed: 70, life: .6, size: 2, gravity: 120, color: [P[0], P[1]] }).pop(foe.x - 10, y - 16, 'HIT', { color: P[0], size: 8 }); return; }
