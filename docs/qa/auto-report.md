@@ -5,247 +5,238 @@ These are signals for a human, not verdicts. A puzzle that "never ends" under ra
 
 | game | idle ends (ms) | tapper rounds | median round (ms) | tapper best | flags |
 |---|---|---|---|---|---|
-| agent-zero | never | 0 | - | 0 | no-score-no-end |
+| agent-zero | never | 0 | - | 1 |  |
 | ant-trail | never | 0 | - | 0 | no-score-no-end |
-| ar-lab | never | 0 | - | 1 |  |
-| archery-wind | never | 1 | 8883 | 0 |  |
+| ar-lab | never | 0 | - | 2 |  |
+| archery-wind | never | 1 | 8612 | 0 |  |
 | arrow-maze | never | 0 | - | 0 | no-score-no-end |
 | auction-snipe | never | 0 | - | 0 | no-score-no-end |
 | balance-scale | never | 0 | - | 0 | no-score-no-end |
 | ball-sort | never | 0 | - | 0 | no-score-no-end |
-| balloon-archer | never | 0 | - | 1 |  |
-| balloon-pump | never | 0 | - | 83 |  |
-| balloon-rise | never | 2 | 2944 | 3 |  |
+| balloon-archer | never | 1 | 8829 | 0 |  |
+| balloon-pump | never | 0 | - | 97 |  |
+| balloon-rise | never | 0 | - | 13 |  |
 | bee-keeper | never | 0 | - | 0 | no-score-no-end |
-| belt-sorter | never | 0 | - | 0 | no-score-no-end |
+| belt-sorter | never | 0 | - | 1 |  |
 | bin-flick | never | 0 | - | 0 | no-score-no-end |
-| blitz-bits | never | 0 | - | 2 |  |
-| blitz-sense | never | 0 | - | 0 | no-score-no-end |
+| blitz-bits | never | 0 | - | 0 | no-score-no-end |
+| blitz-sense | never | 0 | - | 1 |  |
 | blob-ball | never | 0 | - | 0 | no-score-no-end |
-| blob-pairs | never | 0 | - | 0 | no-score-no-end |
 | block-fit | never | 0 | - | 0 | no-score-no-end, static-screen |
 | blow-candles | never | 0 | - | 0 | no-score-no-end |
 | blow-sail | never | 0 | - | 12 |  |
 | blueprint-stack | never | 0 | - | 0 | no-score-no-end |
-| bomb-maze | never | 3 | 2255 | 10 | very-short-rounds |
-| bomb-sweeper | never | 4 | 2017 | 45 | very-short-rounds |
+| bomb-maze | never | 3 | 2493 | 10 | very-short-rounds |
+| bomb-sweeper | never | 3 | 1063 | 52 | very-short-rounds |
+| bookends | never | 0 | - | 0 | no-score-no-end |
+| boomerang-fox | never | 0 | - | 5 |  |
 | boss-brickfall | never | 0 | - | 0 | no-score-no-end |
-| bottle-flip | never | 1 | 707 | 1 |  |
-| bowling-swipe | never | 0 | - | 23 |  |
-| bricks | never | 0 | - | 2 |  |
+| bottle-flip | never | 3 | 2357 | 0 | very-short-rounds |
+| bowling-swipe | never | 0 | - | 30 |  |
+| bricks | never | 0 | - | 7 |  |
+| broadside | never | 0 | - | 0 | no-score-no-end |
 | bubble-garden | never | 0 | - | 0 | no-score-no-end |
-| bubble-level | never | 0 | - | 2 | scores-without-input |
-| bubble-pop | never | 1 | 6614 | 0 |  |
+| bubble-pop | never | 0 | - | 460 |  |
 | build-rush | never | 0 | - | 0 | no-score-no-end |
 | bumper-bowl | never | 0 | - | 0 | no-score-no-end |
 | bunker-breakout | never | 0 | - | 0 | no-score-no-end |
-| buzz-wire | never | 3 | 2391 | 1 | very-short-rounds |
-| canal-dig | never | 0 | - | 0 | no-score-no-end |
+| buzz-wire | never | 2 | 2886 | 2 |  |
+| canal-dig | never | 0 | - | 1 |  |
 | candy-swing | never | 0 | - | 0 | no-score-no-end |
-| canyon-ace | never | 0 | - | 8 |  |
-| castle-lanes | never | 0 | - | 1 |  |
-| cave | never | 3 | 1494 | 15 | very-short-rounds |
+| canopy-run | never | 0 | - | 0 | no-score-no-end |
+| canyon-ace | never | 0 | - | 5 |  |
+| castle-lanes | never | 0 | - | 0 | no-score-no-end |
+| cave | never | 2 | 6305 | 35 |  |
 | chef-orders | never | 0 | - | 0 | no-score-no-end |
-| clap-beat | never | 0 | - | 0 | no-score-no-end |
+| clap-beat | never | 0 | - | 3 |  |
 | clock-set | never | 0 | - | 0 | no-score-no-end |
-| code-breaker | never | 0 | - | 0 | no-score-no-end, static-screen |
-| color-hunt | never | 0 | - | 3 |  |
-| colour-flood | never | 0 | - | 9 |  |
-| colour-word | never | 3 | 2105 | 1 | very-short-rounds |
-| compass-hunt | never | 0 | - | 0 | no-score-no-end |
-| copy-puff | never | 0 | - | 52 | scores-without-input |
-| crate-dash | never | 0 | - | 12 | scores-without-input |
+| code-breaker | never | 0 | - | 0 | no-score-no-end |
+| colour-flood | never | 0 | - | 7 | static-screen |
+| colour-word | never | 2 | 5301 | 2 |  |
 | crate-pusher | never | 0 | - | 0 | no-score-no-end |
 | critter-quest | never | 0 | - | 0 | no-score-no-end |
-| cube-tide | never | 0 | - | 0 | no-score-no-end |
 | cup-shuffle | never | 0 | - | 0 | no-score-no-end |
-| dart-wheel | never | 1 | 5877 | 57 |  |
+| dart-wheel | never | 2 | 4697 | 37 |  |
 | deep-pressure | never | 0 | - | 4 |  |
 | domino-chain | never | 0 | - | 0 | no-score-no-end, static-screen |
 | domino-run | never | 0 | - | 0 | no-score-no-end |
 | door-committee | never | 0 | - | 0 | no-score-no-end |
-| dummy-tumble | 2 | 1 | 0 | 20 | dies-instantly-idle |
-| dungeon-door | never | 0 | - | 37 |  |
+| dummy-tumble | never | 0 | - | 12 |  |
+| dungeon-door | never | 0 | - | 47 |  |
 | echo-drums | never | 0 | - | 0 | no-score-no-end |
-| egg-catcher | never | 1 | 7486 | 0 |  |
-| fast-maths | never | 4 | 1500 | 3 | very-short-rounds |
+| egg-box | never | 1 | 7854 | 2 |  |
+| fast-maths | never | 3 | 2835 | 5 |  |
 | ferry-crossing | never | 0 | - | 0 | no-score-no-end |
 | fire-brigade | never | 0 | - | 0 | no-score-no-end |
 | fishing-line | never | 0 | - | 0 | no-score-no-end |
 | floor-golf | never | 0 | - | 0 | no-score-no-end |
 | fly-swatter | never | 0 | - | 3 |  |
 | fossil-dig | never | 0 | - | 0 | no-score-no-end |
-| freeze-rex | never | 0 | - | 59 |  |
+| freeze-rex | never | 0 | - | 130 |  |
 | frog-tongue | never | 0 | - | 1 |  |
 | front-line | never | 0 | - | 0 | no-score-no-end |
-| frost-line | never | 0 | - | 2 |  |
-| fuse-pass | never | 0 | - | 0 | no-score-no-end |
-| gap-drop | never | 0 | - | 2 |  |
-| garden-guard | never | 0 | - | 0 | no-score-no-end |
+| frost-line | never | 0 | - | 3 |  |
+| fuse-pass | never | 0 | - | 4 |  |
+| gap-drop | never | 1 | 8355 | 2 |  |
 | gear-train | never | 0 | - | 0 | no-score-no-end |
-| gem-slide | never | 0 | - | 15 |  |
-| germ-buster | never | 1 | 5731 | 0 |  |
+| gem-slide | never | 0 | - | 0 | no-score-no-end |
 | ghost-torch | never | 0 | - | 0 | no-score-no-end |
-| gold-digger | never | 0 | - | 1 |  |
+| gold-digger | never | 1 | 4013 | 1 |  |
 | gravity-grip | never | 0 | - | 0 | no-score-no-end |
-| grid-duel | never | 0 | - | 4 |  |
-| hammer-bell | never | 1 | 4433 | 0 |  |
+| hammer-bell | never | 1 | 4453 | 0 |  |
 | hand-sort | never | 0 | - | 0 | no-score-no-end |
 | haptic-morse | never | 0 | - | 2 |  |
-| hex-merge | never | 0 | - | 0 | no-score-no-end |
-| hide-peek | never | 2 | 3224 | 0 |  |
+| hex-merge | never | 0 | - | 6 |  |
+| hide-peek | never | 2 | 3402 | 0 |  |
 | higher-lower | never | 0 | - | 0 | no-score-no-end |
-| hoop-drone | never | 0 | - | 0 | no-score-no-end |
-| hoop-flick | never | 0 | - | 2 |  |
+| hoop-drone | never | 0 | - | 1 |  |
+| hoop-flick | never | 1 | 8936 | 0 |  |
 | hop-quest | never | 0 | - | 0 | no-score-no-end |
-| ice-slide | never | 0 | - | 1 |  |
-| ink-ward | never | 0 | - | 0 | no-score-no-end |
+| ice-slide | never | 0 | - | 0 | no-score-no-end |
+| ink-ward | 8 | 0 | - | 0 | dies-instantly-idle, no-score-no-end |
 | island-bridges | never | 0 | - | 0 | no-score-no-end |
-| jelly-bounce | never | 0 | - | 2 |  |
+| jelly-bounce | never | 0 | - | 1 |  |
 | jigsaw-six | never | 0 | - | 0 | no-score-no-end |
 | jug-pour | never | 0 | - | 0 | no-score-no-end |
-| juggle-kick | never | 1 | 8662 | 1 |  |
-| kit-hunt | never | 0 | - | 15 |  |
-| kit-racer | never | 0 | - | 11 |  |
+| juggle-kick | never | 0 | - | 0 | no-score-no-end |
+| key-drop | never | 0 | - | 80 |  |
+| kit-hunt | never | 0 | - | 11 |  |
+| kit-racer | never | 0 | - | 21 |  |
 | kitchen-steps | never | 0 | - | 0 | no-score-no-end |
-| kite-flyer | never | 0 | - | 2 |  |
+| kite-flyer | never | 0 | - | 5 |  |
 | knight-path | never | 0 | - | 0 | no-score-no-end |
-| ladder-climber | never | 1 | 6678 | 5 |  |
-| lamp-flip | never | 0 | - | 0 | no-score-no-end |
-| lane-racer | never | 2 | 4696 | 0 | scores-without-input |
+| ladder-climber | never | 1 | 8016 | 6 |  |
 | lantern-maze | never | 0 | - | 0 | no-score-no-end |
 | laser-dodge | never | 0 | - | 0 | no-score-no-end |
-| laser-lock | never | 0 | - | 5 |  |
+| laser-lock | never | 0 | - | 0 | no-score-no-end |
 | laser-mirrors | never | 0 | - | 0 | no-score-no-end |
-| lasso-loop | never | 1 | 7005 | 0 |  |
-| lemonade-stand | never | 0 | - | 2 |  |
-| lift-operator | never | 0 | - | 1 |  |
+| lasso-loop | never | 2 | 4466 | 0 |  |
+| lemonade-stand | never | 0 | - | 0 | no-score-no-end |
+| lift-operator | never | 0 | - | 0 | no-score-no-end |
 | lighthouse-watch | never | 0 | - | 0 | no-score-no-end |
-| link-pairs | never | 0 | - | 2 |  |
-| liquid-mixer | never | 1 | 5486 | 0 |  |
+| link-pairs | never | 0 | - | 0 | no-score-no-end |
+| liquid-mixer | never | 1 | 7309 | 0 |  |
 | long-shadow | never | 0 | - | 0 | no-score-no-end |
 | magnet-pull | never | 0 | - | 0 | no-score-no-end |
-| mansion-night | never | 0 | - | 0 | no-score-no-end |
-| maraca-beat | never | 3 | 2369 | 1 | very-short-rounds |
+| maraca-beat | never | 2 | 3992 | 5 |  |
 | marble-trio | never | 0 | - | 0 | no-score-no-end |
-| mech-brawl | never | 0 | - | 40 |  |
-| merge-drop | never | 0 | - | 102 |  |
-| merge-ten | never | 0 | - | 249 |  |
-| mind-gym | never | 0 | - | 1 |  |
-| mine-cart | never | 1 | 6215 | 5 |  |
+| mech-brawl | never | 0 | - | 0 | no-score-no-end |
+| merge-drop | never | 0 | - | 46 |  |
+| merge-ten | never | 0 | - | 89 |  |
+| mind-gym | never | 0 | - | 0 | no-score-no-end |
+| mine-cart | never | 1 | 8199 | 7 |  |
 | mini-golf | never | 0 | - | 0 | no-score-no-end |
 | mini-sudoku | never | 0 | - | 0 | no-score-no-end |
-| mirror-beam | never | 0 | - | 0 | no-score-no-end |
-| mirror-draw | never | 1 | 7756 | 0 |  |
-| mole-mallet | never | 0 | - | 5 |  |
+| mirror-beam | never | 0 | - | 0 | no-score-no-end, static-screen |
+| mirror-draw | never | 0 | - | 0 | no-score-no-end |
+| mole-mallet | never | 0 | - | 2 |  |
 | moto-hills | never | 0 | - | 18 |  |
 | neon-drift | never | 0 | - | 0 | no-score-no-end |
 | net-catch | never | 0 | - | 0 | no-score-no-end |
-| ninja-wall | never | 1 | 4436 | 16 |  |
-| odd-one-out | never | 1 | 6214 | 2 |  |
+| ninja-wall | never | 1 | 5808 | 22 |  |
+| odd-one-out | never | 2 | 5074 | 2 |  |
 | one-line | never | 0 | - | 0 | no-score-no-end |
-| orbit-jump | never | 6 | 909 | 0 | very-short-rounds |
-| panel-rise | never | 0 | - | 3 |  |
-| paper-plane | never | 0 | - | 10 |  |
+| orbit-jump | never | 6 | 862 | 0 | very-short-rounds |
+| paint-run | never | 0 | - | 12 |  |
+| pantry-patrol | never | 0 | - | 0 | no-score-no-end |
+| paper-plane | never | 0 | - | 14 |  |
 | parcel-dash | never | 0 | - | 0 | no-score-no-end |
 | parking-out | never | 0 | - | 0 | no-score-no-end, static-screen |
-| path-doodle | never | 2 | 3955 | 3 |  |
-| path-memory | never | 2 | 3002 | 0 |  |
+| path-doodle | 8 | 3 | 3531 | 2 | dies-instantly-idle |
+| path-memory | never | 3 | 2547 | 0 |  |
 | penalty-keeper | never | 0 | - | 1 |  |
-| penalty-striker | never | 1 | 8937 | 0 |  |
-| penguin-slide | never | 1 | 8507 | 4 |  |
+| penalty-striker | never | 0 | - | 0 | no-score-no-end |
+| penguin-slide | never | 0 | - | 11 |  |
 | pet-pocket | never | 0 | - | 3 |  |
+| picnic-panic | never | 0 | - | 0 | no-score-no-end |
 | picture-logic | never | 0 | - | 0 | no-score-no-end |
 | pile-builder | never | 0 | - | 0 | no-score-no-end |
 | pin-pull | never | 0 | - | 3 |  |
-| ping-pong-rally | never | 1 | 8344 | 1 |  |
+| ping-pong-rally | never | 1 | 7423 | 0 |  |
 | pipe-plumber | never | 0 | - | 0 | no-score-no-end |
-| plate-spinner | never | 0 | - | 6 |  |
+| plate-spinner | never | 0 | - | 7 |  |
 | pocket-farm | never | 0 | - | 0 | no-score-no-end |
 | pocket-kart | never | 0 | - | 0 | no-score-no-end |
-| pocket-pinball | never | 0 | - | 600 |  |
+| pocket-pinball | never | 0 | - | 1600 |  |
 | pocket-tactics | never | 0 | - | 0 | no-score-no-end |
 | popcorn-pan | never | 0 | - | 0 | no-score-no-end |
 | pulse-count | never | 0 | - | 0 | no-score-no-end |
 | puzzle-detective | never | 0 | - | 0 | no-score-no-end |
 | quiet-ninja | never | 0 | - | 0 | no-score-no-end |
 | rail-connect | never | 0 | - | 0 | no-score-no-end |
-| ramp-combo | never | 0 | - | 0 | no-score-no-end |
-| rex-rampage | never | 0 | - | 4 |  |
-| rhythm-drums | never | 1 | 5826 | 4 |  |
+| ramp-combo | never | 0 | - | 80 |  |
+| rex-rampage | never | 0 | - | 8 |  |
+| rhythm-drums | never | 1 | 6883 | 6 |  |
 | rift-keeper | never | 0 | - | 0 | no-score-no-end |
-| road-hopper | never | 1 | 1982 | 7 |  |
-| rock-blaster | never | 0 | - | 3 |  |
-| rock-paper | never | 0 | - | 1 |  |
-| rope-swing | never | 0 | - | 392 |  |
-| rubber-band | never | 1 | 5174 | 0 |  |
-| saber-knight | never | 0 | - | 3 |  |
-| safe-cracker | never | 2 | 3712 | 0 |  |
-| saucer-swarm | never | 0 | - | 0 | no-score-no-end |
+| riposte | never | 0 | - | 0 | no-score-no-end |
+| road-hopper | never | 3 | 1472 | 6 | very-short-rounds |
+| rock-blaster | never | 0 | - | 6 |  |
+| rock-paper | never | 0 | - | 3 |  |
+| rope-swing | never | 0 | - | 380 |  |
+| row-call | never | 0 | - | 0 | no-score-no-end |
+| rubber-band | never | 0 | - | 0 | no-score-no-end |
+| safe-cracker | never | 2 | 3413 | 0 |  |
+| saucer-swarm | never | 0 | - | 1 |  |
 | sevens-cards | never | 0 | - | 0 | no-score-no-end |
 | shadow-ops | never | 0 | - | 0 | no-score-no-end |
-| shake-dice | never | 0 | - | 5 |  |
-| shake-soda | 4570 | 1 | 4800 | 0 |  |
-| shake-tree | never | 0 | - | 17 |  |
+| shake-tree | never | 0 | - | 7 |  |
 | shape-fit | never | 0 | - | 0 | no-score-no-end |
-| shape-turn | never | 1 | 5083 | 1 |  |
+| shape-turn | never | 1 | 4560 | 0 |  |
 | sheep-herder | never | 0 | - | 0 | no-score-no-end |
 | shell-duel | never | 0 | - | 0 | no-score-no-end |
-| shout-rocket | never | 1 | 7507 | 0 |  |
-| skate-ollie | never | 0 | - | 27 |  |
-| ski-slalom | never | 2 | 4027 | 1 |  |
-| skip-stone | never | 0 | - | 11 |  |
-| sky-defense | never | 2 | 5024 | 20 |  |
-| slice | never | 1 | 5015 | 1 |  |
+| shout-rocket | never | 1 | 8500 | 0 |  |
+| skate-ollie | never | 1 | 8562 | 37 |  |
+| ski-slalom | never | 1 | 3995 | 1 |  |
+| skip-stone | never | 0 | - | 0 | no-score-no-end |
+| sky-defense | never | 1 | 5856 | 50 |  |
+| slice | never | 1 | 5269 | 1 |  |
 | slide-picture | never | 0 | - | 0 | no-score-no-end |
-| slide-ten | never | 0 | - | 2 |  |
-| sling-smash | never | 1 | 5335 | 0 |  |
-| snowball-roll | never | 2 | 2781 | 6 |  |
-| space-dock | never | 1 | 4332 | 0 |  |
-| space-mining | never | 0 | - | 1 |  |
+| slide-ten | never | 0 | - | 0 | no-score-no-end |
+| sling-smash | never | 1 | 4180 | 2 |  |
+| snow-swat | never | 0 | - | 2 |  |
+| snowball-roll | never | 2 | 4731 | 10 |  |
+| space-dock | never | 1 | 5183 | 0 |  |
+| space-mining | never | 0 | - | 0 | no-score-no-end |
 | spell-school | never | 0 | - | 1 |  |
-| spike-runner | never | 1 | 4271 | 13 |  |
+| spike-runner | never | 1 | 4223 | 13 |  |
 | spinner-keep | never | 0 | - | 0 | no-score-no-end |
-| spot-difference | never | 1 | 6342 | 2 |  |
-| spring-jumper | never | 3 | 1612 | 3 | very-short-rounds |
+| spot-difference | never | 1 | 6157 | 3 |  |
+| spring-jumper | never | 3 | 2027 | 2 | very-short-rounds |
 | sprint-feet | never | 0 | - | 0 | no-score-no-end |
-| stack | never | 8 | 550 | 1 | very-short-rounds |
-| star-bloom | never | 1 | 7782 | 3 |  |
+| stack | never | 8 | 574 | 1 | very-short-rounds |
+| star-bloom | never | 0 | - | 4 |  |
 | star-join | never | 0 | - | 0 | no-score-no-end |
-| steady-hand | never | 2 | 3399 | 19 |  |
-| stop-clock | never | 1 | 5166 | 0 |  |
-| storm-hook | never | 0 | - | 5 |  |
+| steady-hand | never | 2 | 4369 | 27 |  |
+| stop-clock | never | 1 | 5215 | 0 |  |
+| storm-hook | never | 1 | 8521 | 3 |  |
 | street-lamps | never | 0 | - | 0 | no-score-no-end |
-| stud-smash | never | 0 | - | 0 | no-score-no-end |
+| stud-smash | never | 0 | - | 15 |  |
 | stylus-rally | never | 0 | - | 2 |  |
-| suit-ops | never | 0 | - | 0 | no-score-no-end |
 | swing-pump | never | 0 | - | 0 | no-score-no-end |
-| swipe-arrow | 2043 | 5 | 1090 | 3 | very-short-rounds |
 | swipe-fighter | never | 0 | - | 0 | no-score-no-end |
 | sword-rooms | never | 0 | - | 1 |  |
-| table-siege | never | 0 | - | 10 |  |
-| tag-team | never | 0 | - | 26 |  |
-| tally-count | never | 0 | - | 0 | no-score-no-end |
-| tank-duel | never | 1 | 1312 | 0 |  |
-| tap-green | 2793 | 10 | 274 | 0 | very-short-rounds |
-| territory-claim | never | 0 | - | 0 | no-score-no-end |
+| table-siege | never | 0 | - | 0 | no-score-no-end |
+| tag-team | never | 0 | - | 79 |  |
+| tally-count | never | 0 | - | 1 |  |
+| tank-duel | never | 3 | 1341 | 0 | very-short-rounds |
+| territory-claim | never | 1 | 6396 | 0 |  |
 | thumb-duel | never | 0 | - | 0 | no-score-no-end |
-| tile-tap | never | 10 | 313 | 1 | very-short-rounds |
+| tide-turn | never | 2 | 4145 | 37 |  |
+| tile-tap | never | 10 | 327 | 2 | very-short-rounds |
 | till-rush | never | 0 | - | 0 | no-score-no-end |
 | tilt-maze | never | 0 | - | 0 | no-score-no-end |
 | tilt-pour | never | 0 | - | 0 | no-score-no-end |
-| timing-brawl | never | 0 | - | 0 | no-score-no-end |
 | tiny-tower | never | 0 | - | 0 | no-score-no-end |
-| town-mayor | never | 2 | 3031 | 4 |  |
+| town-mayor | never | 1 | 8123 | 8 |  |
 | traffic-light | never | 0 | - | 0 | no-score-no-end |
-| trampoline-tricks | never | 2 | 3708 | 0 |  |
+| trampoline-tricks | never | 2 | 3825 | 0 |  |
 | treasure-drop | never | 0 | - | 0 | no-score-no-end |
 | twin-mine | never | 0 | - | 0 | no-score-no-end |
-| untangle | never | 0 | - | 0 | no-score-no-end, static-screen |
-| water-rocket | never | 0 | - | 92 |  |
-| whistle-bird | never | 1 | 7279 | 4 |  |
+| untangle | never | 0 | - | 0 | no-score-no-end |
+| water-rocket | never | 0 | - | 35 |  |
+| whistle-bird | never | 1 | 5992 | 2 |  |
 | word-ladder | never | 0 | - | 0 | no-score-no-end |
-| word-wheel | never | 0 | - | 0 | no-score-no-end |
+| word-wheel | never | 0 | - | 0 | no-score-no-end, static-screen |
 | worm | never | 0 | - | 0 | no-score-no-end |
 | wrecking-ball | never | 0 | - | 7 |  |
 | yoyo-tricks | never | 0 | - | 0 | no-score-no-end |

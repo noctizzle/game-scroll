@@ -91,7 +91,7 @@ The app supports folding and unfolding mid-game (tested at Galaxy Z Fold 8 and i
 
 ## Testing
 
-`npm run smoke` builds the app and plays every game with random input on a phone-sized screen, failing if any game throws. Pass ids to test only some: `node scripts/smoke.cjs lane-racer worm`. Needs Playwright (`npm i -D playwright && npx playwright install chromium`).
+`npm run smoke` builds the app and plays every game with random input on a phone-sized screen, failing if any game throws. Pass ids to test only some: `node scripts/smoke.cjs worm bricks`. Needs Playwright (`npm i -D playwright && npx playwright install chromium`).
 
 ## QA: finding and removing weak games
 

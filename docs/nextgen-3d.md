@@ -6,7 +6,7 @@ must look clearly a generation ahead of them. Stylised and cartoony characters a
 rendering is what makes it Next Gen.
 
 The kit is `src/kit/hd3d.js`. Games built on it: `bunker-breakout.js` (corridor shooter),
-`suit-ops.js` (top-down jungle twin-stick), `gravity-grip.js` (tube racer that drives on walls and
+`canopy-run.js` (top-down jungle twin-stick with a helper drone), `gravity-grip.js` (tube racer that drives on walls and
 ceilings), `neon-drift.js` (drift racer on a wet neon street circuit), `storm-hook.js` (grapple swinging),
 `deep-pressure.js` (sonar sub; its walls glow with the sonar ring through `gs.hd.pulse`),
 `mech-brawl.js` (boxing), `frost-line.js` (snowboarding, tilt to carve) and `canyon-ace.js` (tilt-to-fly jet).

@@ -81,7 +81,7 @@ else. Results print as each game finishes, so they can come out in a different o
 | --- | --- | --- |
 | `smoke.cjs`, all 162 games | 12 min 3 s | 3 min 18 s |
 | `stream-smoke.mjs`, all 162 games | 5 min 14 s | 1 min 38 s |
-| `sweep.cjs` Bunker Breakout, Parcel Dash, Suit Ops, Long Shadow | 12 min 37 s | 2 min 51 s |
+| `sweep.cjs` Bunker Breakout, Parcel Dash, Suit Ops (now Canopy Run), Long Shadow | 12 min 37 s | 2 min 51 s |
 | `npm run kit-test` | 63 s | 3 s |
 
 `budget.cjs` stays one game at a time on purpose: it measures time, and games running beside it
