@@ -157,7 +157,7 @@ function make(api) {
       }
       // battle: GBA-style layout with boxed name plates, clear HP numbers and a 2x2 move menu
       const me = lead(), sx = shake > 0 ? Math.round(Math.sin(t * 80) * 2) : 0, L = layout();
-      c.fillStyle = flash > 0 && (t * 20 | 0) % 2 ? '#f8f8f0' : '#f0e8c8'; c.fillRect(0, 0, W, H);
+      c.fillStyle = flash > 0 && !gs.prefs.reduceMotion && (t * 10 | 0) % 2 ? '#f8f8f0' : '#f0e8c8'; c.fillRect(0, 0, W, H);   // no strobe with Reduce motion on
       c.fillStyle = '#e4dab4'; for (let y = 16; y < L.menu; y += 8) c.fillRect(0, y, W, 1);
       const S = 12 * L.k;
       c.fillStyle = '#b8d090'; c.beginPath(); c.ellipse(L.fx + S / 2, L.fy + S - 1, S * .75, S * .16 + 2, 0, 0, 7); c.fill(); c.beginPath(); c.ellipse(L.mx + S / 2, L.my + S - 1, S * .8, S * .16 + 2, 0, 0, 7); c.fill();

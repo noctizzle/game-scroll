@@ -3,6 +3,7 @@ const { sfx } = gs.sound;
 const { startMic, stopMic, haptic } = gs.device;
 const { clamp, rnd } = gs.util;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
 
 // Sneak through the castle. Hold to creep forward; the longer you hold, the faster and noisier
 // your footsteps. Guards wake if the noise gets too loud near them, and that includes the real
@@ -10,6 +11,7 @@ const { PAL } = gs.palettes;
 const P = PAL.mono, W = 160, H = 160, FLOOR = 120;
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
   let x, speed, holding, guards, noise, halls, t, mic, asked, roomNoise, spotted, len, steps;
   function hall() {
     len = 360 + halls * 60; x = 10; speed = 0; guards = [];
@@ -17,9 +19,9 @@ function make(api) {
     for (let i = 0; i < n; i++) guards.push({ x: 70 + (i + .5) * (len - 110) / n + rnd(-15, 15), sleep: rnd(.2, .6), wake: 0, ear: rnd(.55, .75) });
   }
   return {
-    reset() { stopMic(); mic = null; asked = false; halls = 0; t = 0; noise = 0; roomNoise = 0; spotted = 0; steps = 0; holding = false; hall(); },
+    reset() { stopMic(); mic = null; asked = false; halls = 0; t = 0; noise = 0; roomNoise = 0; spotted = 0; steps = 0; holding = false; feel.clear(); hall(); },
     update(dt) {
-      t += dt;
+      feel.update(dt); t += dt;
       if (!asked) { asked = true; startMic().then(m => { mic = m; }); }
       if (spotted) { spotted += dt; if (spotted > .8) { stopMic(); return api.over(); } return; }
       speed = holding ? Math.min(75, speed + dt * 45) : Math.max(0, speed - dt * 150);
@@ -31,14 +33,14 @@ function make(api) {
       for (const g of guards) {
         const near = Math.abs(g.x - x) < 46, heard = near ? noise * (1 - Math.abs(g.x - x) / 60) : 0;
         if (heard > g.ear * .6) { g.wake += dt * (heard - g.ear * .6) * 10; if (g.wake > .3 && Math.random() < dt * 3) haptic('tick'); } else g.wake = Math.max(0, g.wake - dt * .5);
-        if (g.wake >= 1) { spotted = .001; haptic('error'); sfx(220, .4, 'square', .06, 300); return; }
+        if (g.wake >= 1) { spotted = .001; haptic('error'); sfx(220, .4, 'square', .06, 300); feel.juice.shake(5); return; }
       }
-      if (x >= len - 14) { halls++; api.score(halls); haptic('success'); sfx(990, .2, 'square', .05, 300); hall(); }
+      if (x >= len - 14) { halls++; api.score(halls); haptic('success'); sfx(990, .2, 'square', .05, 300); feel.juice.burst(60, FLOOR - 10, { n: 14, speed: 60, life: .5, size: 2, color: [P[3], P[0]] }); hall(); }
     },
-    fx(dt) { spotted && (spotted += dt); },
+    fx(dt) { spotted && (spotted += dt); feel.update(dt); },
     draw(c) {
       const cam = clamp(x - 50, 0, len - W);
-      c.fillStyle = P[2]; c.fillRect(0, 0, W, H); c.fillStyle = P[1]; c.fillRect(0, FLOOR, W, H - FLOOR);
+      c.fillStyle = P[2]; c.fillRect(0, 0, W, H); feel.begin(c); c.fillStyle = P[1]; c.fillRect(0, FLOOR, W, H - FLOOR);
       c.save(); c.translate(-Math.round(cam), 0);
       c.fillStyle = P[1]; for (let bx = 0; bx < len; bx += 40) { c.fillRect(bx + 10, 30, 14, 24); c.fillStyle = P[3]; c.fillRect(bx + 12, 32, 10, 20); c.fillStyle = P[1]; }
       c.fillStyle = P[3]; c.fillRect(len - 18, FLOOR - 14, 10, 14); c.fillStyle = P[0]; c.fillRect(len - 18, FLOOR - 14, 10, 2); c.fillRect(len - 18, FLOOR - 2, 10, 2);
@@ -54,6 +56,7 @@ function make(api) {
       c.fillStyle = P[0]; c.fillRect(nx - 3, FLOOR - 14 + Math.abs(step) * .5, 7, 9); c.fillRect(nx - 2, FLOOR - 19, 6, 5); c.fillStyle = P[3]; c.fillRect(nx, FLOOR - 17, 3, 1);
       c.fillStyle = P[0]; c.fillRect(nx - 3 + step, FLOOR - 5, 2, 5); c.fillRect(nx + 2 - step, FLOOR - 5, 2, 5);
       c.restore();
+      feel.end(c, W, H);
       // noise meter
       c.fillStyle = P[0]; c.fillRect(4, 146, 60, 6); c.fillStyle = noise > .6 ? P[3] : P[2]; c.fillRect(5, 147, 58 * noise, 4);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = P[3]; c.fillText(mic ? 'NOISE+MIC' : 'NOISE', 68, 152);

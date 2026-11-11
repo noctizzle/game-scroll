@@ -3,7 +3,8 @@ const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
 const { backdrop, glow } = gs.gfx;
-const { brick, stud, BRICK_KEYS } = gs.bricks;
+const { brick, BRICK_KEYS } = gs.bricks;
+const { Ready } = gs.rounds;
 
 // A little builder walks right toward the flag, stopping at anything in the way. Press and hold a
 // pile of bouncing bricks to build what's needed: a bridge over a gap, steps up a ledge, a lever
@@ -12,6 +13,7 @@ const { brick, stud, BRICK_KEYS } = gs.bricks;
 let W = 192, H = 144;
 
 function make(api) {
+  const ready = new Ready({ eat: false });   // the builder and the clock wait for the first touch
   let obs, hero, stage, time, t, hold, parts, msg, dead, score, flying, done;
   const g = () => H - 22;
   const SLOT = ['gap', 'step', 'gate', 'wall'];
@@ -32,9 +34,10 @@ function make(api) {
   function pileY(o) { return g() - o.base; }
   function burst(x, y, col) { for (let i = 0; i < 10; i++) parts.push({ x, y, vx: rnd(-50, 50), vy: rnd(-80, 0), l: .5, col }); }
   const self = {
-    reset() { stage = 1; time = 0; t = 0; hold = null; parts = []; dead = 0; score = 0; build(); },
+    reset() { stage = 1; time = 0; t = 0; hold = null; parts = []; dead = 0; score = 0; ready.reset(); build(); },
     resize(w, h) { if (w === W && h === H) return; W = w; H = h; if (obs) build(); },
     update(dt) {
+      if (!ready.update(dt)) return;
       t += dt; for (const p of parts) { p.l -= dt; if (p.vx != null) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 250 * dt; } else p.y -= 14 * dt; } parts = parts.filter(p => p.l > 0);
       if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
       if (dead) { dead += dt; if (dead > 1.3) api.over(); return; }
@@ -97,15 +100,16 @@ function make(api) {
       c.textAlign = 'right'; c.fillText(`STAGE ${stage}`, W - 4, 9);
       if (msg) { c.textAlign = 'center'; c.fillStyle = '#000a'; c.fillRect(0, H * .42 - 9, W, 13); c.fillStyle = dead ? '#f86060' : '#f0c020'; c.fillText(msg.txt, W / 2, H * .42); }
       if (t < 7 && !msg && stage === 1) { c.textAlign = 'center'; c.fillStyle = '#183048'; c.fillText('HOLD THE BOUNCING BRICKS', W / 2, H * .38); }
+      ready.draw(c, W, H, { pixel: true, color: '#183048', y: Math.round(H * .26), text: 'HOLD THE BOUNCING BRICKS' });
     },
     down(x, y) {
-      if (dead || done) return;
+      ready.go(); if (dead || done) return;
       for (const o of obs) if (!o.built && o.pile.crate && Math.abs(x - o.pile.x) < 14 && Math.abs(y - (pileY(o) - 7)) < 16) { o.pile.hits++; haptic('medium'); sfx(260, .06, 'square', .05, -60); if (o.pile.hits >= 2) { o.pile.crate = false; burst(o.pile.x, pileY(o) - 8, '#d0b078'); sfx(200, .12, 'square', .05, -80); } return; }
       hold = { x, y };
     },
     move(x, y, p) { if (p && hold) { hold.x = x; hold.y = y; } },
     up() { hold = null; },
-    key(k, d) { if (k !== ' ') return; if (!d) { hold = null; return; } const o = obs.find(o => !o.built); if (!o) return; if (o.pile.crate) self.down(o.pile.x, pileY(o) - 7); else hold = { x: o.pile.x, y: pileY(o) - 6 }; },
+    key(k, d) { if (k !== ' ') return; if (!d) { hold = null; return; } ready.go(); const o = obs.find(o => !o.built); if (!o) return; if (o.pile.crate) self.down(o.pile.x, pileY(o) - 7); else hold = { x: o.pile.x, y: pileY(o) - 6 }; },
   };
   return self;
 }

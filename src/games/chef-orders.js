@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects;
 
 // Customers line up with burger orders. Tap the ingredients to stack them in the order on the ticket,
 // then tap SERVE. Quick service earns tips. A wrong burger goes in the bin; three walk-outs and you're closed.
@@ -13,6 +14,7 @@ const ING = [
 const FACES = ['#f2c79a', '#c68a5a', '#8d5a3b', '#ffd9b0'];
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
   let queue, stack, served, walked, t, spawn, msg, coins;
   function order() {
     const n = clamp(2 + Math.floor(served / 3), 2, 6), mid = [];
@@ -26,24 +28,27 @@ function make(api) {
     const cu = queue[0], ok = stack.length === cu.ord.length && stack.every((k, i) => k === cu.ord[i]);
     if (ok) {
       const tip = Math.max(0, Math.round((1 - cu.wait / cu.pat) * 5)); served++; coins += 3 + tip; api.score(coins);
-      msg = { txt: tip >= 4 ? `PERFECT +${3 + tip}` : `+${3 + tip}`, l: 1, good: true }; haptic('success'); sfx(880, .15, 'triangle', .05, 300);
+      msg = { txt: tip >= 4 ? `PERFECT +${3 + tip}` : `+${3 + tip}`, l: 1, good: true }; haptic('success');
+      feel.juice.burst(W / 2, 400, { n: 10 + tip * 4, speed: 170, life: .6, size: 3.5, color: ['#ffd34a', '#ffffff'], angle: -Math.PI / 2, arc: 2.2, gravity: 420 }); sfx(880, .15, 'triangle', .05, 300);
       queue.shift(); if (queue.length < 2) addCustomer();
-    } else { msg = { txt: 'WRONG ORDER', l: 1, good: false }; haptic('error'); sfx(150, .3, 'triangle', .05, -40); cu.wait += 3; }
+    } else { feel.juice.shake(5); msg = { txt: 'WRONG ORDER', l: 1, good: false }; haptic('error'); sfx(150, .3, 'triangle', .05, -40); cu.wait += 3; }
     stack = [];
   }
   return {
-    reset() { queue = []; stack = []; served = 0; walked = 0; t = 0; spawn = 6; msg = null; coins = 0; addCustomer(); },
+    reset() { queue = []; stack = []; served = 0; walked = 0; t = 0; spawn = 6; msg = null; coins = 0; feel.clear(); addCustomer(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
-      t += dt; if (msg) msg.l -= dt; spawn -= dt;
+      feel.update(dt); t += dt; if (msg) msg.l -= dt; spawn -= dt;
       if (spawn <= 0) { spawn = Math.max(5, 12 - served * .3); if (queue.length < 3) addCustomer(); }
       queue.forEach((cu, i) => { cu.x += ((60 + i * 110) - cu.x) * Math.min(1, dt * 4); cu.wait += dt * (i === 0 ? 1 : .5); });
       const gone = queue.filter(cu => cu.wait > cu.pat);
-      for (const cu of gone) { queue.splice(queue.indexOf(cu), 1); walked++; haptic('error'); sfx(200, .3, 'square', .04, -60); msg = { txt: 'WALKED OUT', l: 1 }; if (walked >= 3) return api.over(); }
+      for (const cu of gone) { queue.splice(queue.indexOf(cu), 1); walked++; feel.juice.shake(6).flash('#ff4040', .2); haptic('error'); sfx(200, .3, 'square', .04, -60); msg = { txt: 'WALKED OUT', l: 1 }; if (walked >= 3) return api.over(); }
       if (!queue.length) addCustomer();
     },
     draw(c) {
       c.fillStyle = '#ffe8c8'; c.fillRect(0, 0, W, H); c.fillStyle = '#c84a3a'; for (let x = 0; x < W; x += 40) { c.fillRect(x, 0, 20, 30); }
       c.fillStyle = '#8a5a3a'; c.fillRect(0, 250, W, 20);
+      feel.begin(c);
       // customers with order tickets
       queue.forEach((cu, i) => {
         const x = cu.x, k = cu.wait / cu.pat;
@@ -71,6 +76,7 @@ function make(api) {
       });
       c.fillStyle = '#ff6b6b'; c.beginPath(); c.roundRect(14, 598, 100, 36, 10); c.fill(); c.fillStyle = '#5ac85a'; c.beginPath(); c.roundRect(126, 598, 220, 36, 10); c.fill();
       c.fillStyle = '#fff'; c.font = '400 10px "Press Start 2P", monospace'; c.fillText('BIN', 64, 621); c.fillText('SERVE', 236, 621);
+      feel.end(c, W, H);
       c.textAlign = 'left'; c.fillStyle = '#5a3a22'; c.fillText(`$${coins}`, 12, 290);
       for (let i = 0; i < 3; i++) { c.fillStyle = i < walked ? '#ff4040' : '#00000020'; c.fillRect(W - 50 + i * 14, 282, 10, 10); }
       if (msg && msg.l > 0) { c.globalAlpha = clamp(msg.l * 2, 0, 1); c.fillStyle = msg.good ? '#2e8a4a' : '#d03a3a'; c.font = '400 14px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(msg.txt, W / 2, 320); c.globalAlpha = 1; }

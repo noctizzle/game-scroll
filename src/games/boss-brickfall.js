@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Ready } = gs.rounds;
 const { ball, glow, backdrop } = gs.gfx;
 const { brick, stud, brick3d, BRICK, BRICK_KEYS } = gs.bricks;
 const { View, G, part, grp, blob, toon, THREE } = gs.toon;
@@ -16,6 +17,7 @@ let W = 176, H = 192;
 
 function make(api) {
   let px, tx, boss, drops, piles, launchers, shots, hp, inv, beaten, score, t, parts, msg, dead, tapStart, between;
+  const ready = new Ready({ eat: false });                              // the robot waits for the first touch
   const fy = () => H - 14, bossY = () => 30;
   function newBoss() { const n = beaten; boss = { x: W / 2, dir: 1, sp: 30 + n * 8, hp: 3 + Math.min(3, n), max: 3 + Math.min(3, n), core: 0, coreT: 2.5, dropT: 1.2, hit: 0, slam: 0, col: BRICK_KEYS[n % BRICK_KEYS.length] }; drops = []; shots = []; between = 1.4; msg = { txt: `ROBOT ${beaten + 1}`, l: 1.4 }; }
   let v3;
@@ -53,9 +55,10 @@ function make(api) {
   function burst(x, y, col, n = 10) { for (let i = 0; i < n; i++) parts.push({ x, y, vx: rnd(-70, 70), vy: rnd(-90, 20), l: .5, col }); }
   function hurt() { if (inv > 0) return; hp--; inv = 1.3; haptic('heavy'); sfx(130, .3, 'sawtooth', .05, -60); if (hp <= 0) { dead = .01; msg = { txt: 'FLATTENED!', l: 9 }; sfx(90, .8, 'square', .05, -40); } }
   const self = {
-    reset() { px = tx = W / 2; piles = []; launchers = []; hp = 3; inv = 0; beaten = 0; score = 0; t = 0; parts = []; dead = 0; newBoss(); },
+    reset() { px = tx = W / 2; piles = []; launchers = []; hp = 3; inv = 0; beaten = 0; score = 0; t = 0; parts = []; dead = 0; newBoss(); ready.reset(); },
     resize(w, h) { const s = w / W; W = w; H = h; if (boss) { px *= s; tx *= s; boss.x *= s; for (const a of [piles, launchers]) for (const o of a) o.x *= s; } },
     update(dt) {
+      if (!ready.update(dt)) return;
       t += dt; for (const p of parts) { p.l -= dt; if (p.vx != null) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 240 * dt; } else p.y -= 16 * dt; } parts = parts.filter(p => p.l > 0);
       if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
       if (dead) { dead += dt; if (dead > 1.5) api.over(); return; }
@@ -104,12 +107,13 @@ function make(api) {
       c.textAlign = 'right'; c.fillStyle = '#f8f8f0'; c.fillText(String(score), W - 4, 9);
       if (msg) { c.textAlign = 'center'; c.fillStyle = '#000b'; c.fillRect(0, H * .45 - 9, W, 13); c.fillStyle = dead ? '#f86060' : '#f0c020'; c.fillText(msg.txt, W / 2, H * .45); }
       if (t < 8 && !msg) { c.textAlign = 'center'; c.fillStyle = '#f8f8f0'; c.fillText('DRAG · STAND ON PILES', W / 2, H * .45); c.fillText('TAP TO FIRE AT THE CORE', W / 2, H * .45 + 10); }
+      ready.draw(c, W, H, { text: 'TAP TO START', pixel: true, color: '#f8f8f0', shadow: '#101018', y: Math.round(H * .7) });
     },
-    down(x, y) { tapStart = { x, y, t: performance.now() }; },
+    down(x, y) { ready.go(); tapStart = { x, y, t: performance.now() }; },
     move(x, y, p) { if (p) tx = x; },
     up() { if (tapStart && performance.now() - tapStart.t < 200) self.fire(); tapStart = null; },
     fire() { if (dead || !launchers.length) { sfx(200, .03, 'square', .02); return; } for (const l of launchers) shots.push({ x: l.x, y: fy() - 18 }); launchers = []; haptic('medium'); sfx(500, .15, 'square', .05, 600); },
-    key(k, d) { if (!d) return; if (k === 'ArrowLeft') tx = px - 24; if (k === 'ArrowRight') tx = px + 24; if (k === ' ') self.fire(); },
+    key(k, d) { if (!d) return; ready.go(); if (k === 'ArrowLeft') tx = px - 24; if (k === 'ArrowRight') tx = px + 24; if (k === ' ') self.fire(); },
   };
   return self;
 }

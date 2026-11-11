@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 
 // A hungry tyrant lizard stomps through the valley. Tap to snap your jaws at whatever is in front;
 // swipe up to leap. Small grazers and darting lizards fill your belly and make you grow. Don't
@@ -17,6 +18,8 @@ const PREY = {
 let W = 192, H = 144;
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready({ eat: false });                              // the hunt (and the hunger) starts on the first touch
   let rex, things, cam, spawnX, hunger, eaten, score, t, parts, msg, dead, sw, bite;
   const gy = () => H - 16;
   const size = () => 1 + Math.min(1.2, eaten * .025);
@@ -26,11 +29,13 @@ function make(api) {
     const P = PREY[k]; things.push({ k, ...P, x, y: P.fly ? gy() - rnd(26, 40) : gy(), vx: -P.sp * (k === 'rock' ? 1 + lvl : rnd(.6, 1)), ph: rnd(0, 6), fled: false });
   }
   function burst(x, y, col, n = 8) { for (let i = 0; i < n; i++) parts.push({ x, y, vx: rnd(-60, 60), vy: rnd(-80, 0), l: .45, col }); }
-  function hurt(n, txt) { hunger -= n; rex.inv = 1; haptic('heavy'); sfx(140, .3, 'sawtooth', .05, -60); parts.push({ txt, x: rex.x, y: gy() - 40, l: 1, col: '#f86060' }); }
+  function hurt(n, txt) { hunger -= n; rex.inv = 1; feel.juice.shake(3); haptic('heavy'); sfx(140, .3, 'sawtooth', .05, -60); parts.push({ txt, x: rex.x, y: gy() - 40, l: 1, col: '#f86060' }); }
   const self = {
-    reset() { rex = { x: 40, y: gy(), vy: 0, air: false, inv: 0 }; things = []; cam = 0; spawnX = 0; hunger = 100; eaten = 0; score = 0; t = 0; parts = []; msg = { txt: 'TAP TO SNAP · SWIPE UP TO LEAP', l: 2.2 }; dead = 0; sw = null; bite = 0; },
+    reset() { rex = { x: 40, y: gy(), vy: 0, air: false, inv: 0 }; things = []; cam = 0; spawnX = 0; hunger = 100; eaten = 0; score = 0; t = 0; parts = []; msg = { txt: 'TAP TO SNAP · SWIPE UP TO LEAP', l: 2.2 }; dead = 0; sw = null; bite = 0; feel.clear(); ready.reset(); },
+    fx(dt) { feel.update(dt); },
     resize(w, h) { const dy = h - H; W = w; H = h; if (rex && dy) { rex.y += dy; for (const o of things) o.y += dy; } },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; bite = Math.max(0, bite - dt); for (const p of parts) { p.l -= dt; if (p.vx != null) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 220 * dt; } else p.y -= 14 * dt; } parts = parts.filter(p => p.l > 0);
       if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
       if (dead) { dead += dt; if (dead > 1.6) api.over(); return; }
@@ -53,6 +58,7 @@ function make(api) {
     draw(c) {
       const ox = -Math.round(cam), g = gy(), s = size();
       const sky = c.createLinearGradient(0, 0, 0, H); sky.addColorStop(0, '#f8c070'); sky.addColorStop(1, '#f8e8b0'); c.fillStyle = sky; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = '#d07040'; for (let i = 0; i < 4; i++) { const x = ((i * 90 - cam * .15) % (W + 90) + W + 90) % (W + 90) - 45; c.beginPath(); c.moveTo(x - 40, g); c.lineTo(x, g - 50 - (i % 2) * 14); c.lineTo(x + 40, g); c.fill(); if (i % 2) { c.fillStyle = '#f8f0e0a0'; c.beginPath(); c.arc(x, g - 70 - (t * 8 % 20), 5 + (t * 8 % 20) / 4, 0, 7); c.fill(); c.fillStyle = '#d07040'; } }
       c.fillStyle = '#48803c'; for (let i = 0; i < 6; i++) { const x = ((i * 53 - cam * .5) % (W + 53) + W + 53) % (W + 53) - 26; c.fillRect(x, g - 30, 3, 30); c.beginPath(); c.arc(x + 1, g - 32, 10, Math.PI, 0); c.fill(); }
       c.fillStyle = '#987040'; c.fillRect(0, g, W, H - g); c.fillStyle = '#78a040'; c.fillRect(0, g, W, 3);
@@ -78,12 +84,14 @@ function make(api) {
       }
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
       for (const p of parts) { if (p.txt) { c.fillStyle = '#000'; c.fillText(p.txt, p.x + ox + 1, p.y + 1); c.fillStyle = p.col; c.fillText(p.txt, p.x + ox, p.y); } else { c.fillStyle = p.col; c.fillRect(p.x + ox, p.y, 2, 2); } }
+      feel.end(c, W, H);
       c.fillStyle = '#00000060'; c.fillRect(0, 0, W, 12); c.textAlign = 'left'; c.fillStyle = '#f8f8f0'; c.fillText('BELLY', 4, 9);
-      c.fillStyle = '#402818'; c.fillRect(42, 3, 60, 6); c.fillStyle = hunger < 25 && (t * 4 | 0) % 2 ? '#f84040' : '#f8a040'; c.fillRect(42, 3, 60 * hunger / 100, 6);
+      const bw = Math.max(20, Math.min(60, api.scoreArea().x - 46));   // the belly bar stops short of the app's score badge
+      c.fillStyle = '#402818'; c.fillRect(42, 3, bw, 6); c.fillStyle = hunger < 25 && (t * 4 | 0) % 2 ? '#f84040' : '#f8a040'; c.fillRect(42, 3, bw * hunger / 100, 6);
       c.textAlign = 'right'; c.fillStyle = '#f8f8f0'; c.fillText(String(score), W - 4, 9);
       if (msg) { c.textAlign = 'center'; c.fillStyle = '#000a'; c.fillRect(0, H * .35 - 9, W, 13); c.fillStyle = dead ? '#f86060' : '#f8e040'; c.fillText(msg.txt, W / 2, H * .35); }
     },
-    down(x, y) { sw = { x, y, used: false }; },
+    down(x, y) { ready.go(); sw = { x, y, used: false }; },
     move(x, y, p) { if (p && sw && !sw.used && sw.y - y > 18) { sw.used = true; self.leap(); } },
     up() { if (sw && !sw.used) self.snap(); sw = null; },
     leap() { if (dead || rex.air) return; rex.vy = -205; rex.air = true; sfx(300, .1, 'square', .04, 200); haptic('light'); },
@@ -96,7 +104,7 @@ function make(api) {
         o.gone = true; eaten++; hunger = Math.min(100, hunger + o.food); score += o.pts; api.score(score); burst(o.x, o.y - 4, o.col); parts.push({ txt: `+${o.pts}`, x: o.x, y: o.y - 14, l: .7, col: '#f8e040' }); haptic('medium'); sfx(500, .08, 'square', .05, 200); if (eaten % 10 === 0) { msg = { txt: 'BIGGER!', l: 1 }; haptic('success'); } break;
       }
     },
-    key(k, d) { if (!d) return; if (k === ' ') self.snap(); if (k === 'ArrowUp') self.leap(); },
+    key(k, d) { if (!d) return; ready.go(); if (k === ' ') self.snap(); if (k === 'ArrowUp') self.leap(); },
   };
   return self;
 }

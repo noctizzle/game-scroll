@@ -2,12 +2,14 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects;
 
 // Draw a line of dominoes from the start tile with one stroke, passing close to the bells, then
 // watch them topple. You only have so many dominoes, and they can't stand on the rocks.
 const W = 360, H = 640, GAP = 18, RING = 22, TOP = 70;
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
   let start, bells, rocks, line, budget, phase, fallI, fallT, score, level, t, drawing, msg;
   function layout() {
     start = { x: rnd(50, 310), y: rnd(520, 580) }; bells = []; rocks = [];
@@ -30,25 +32,27 @@ function make(api) {
     }
   }
   return {
-    reset() { score = 0; level = 0; t = 0; msg = null; layout(); },
+    reset() { score = 0; level = 0; t = 0; msg = null; feel.clear(); layout(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
-      t += dt; if (msg) msg.l -= dt;
+      feel.update(dt); t += dt; if (msg) msg.l -= dt;
       if (phase === 'fall') {
         fallT += dt;
         while (fallT > .07 && fallI < line.length) {
           fallT -= .07; const d = line[fallI]; d.fall = 1; sfx(500 + (fallI % 8) * 40, .02, 'square', .02);
-          for (const b of bells) if (!b.rung && Math.hypot(b.x - d.x, b.y - d.y) < RING) { b.rung = true; score++; api.score(score); haptic('success'); sfx(1300, .3, 'triangle', .05); }
+          for (const b of bells) if (!b.rung && Math.hypot(b.x - d.x, b.y - d.y) < RING) { b.rung = true; score++; api.score(score); feel.juice.burst(b.x, b.y, { n: 16, speed: 170, life: .5, size: 3.5, color: ['#ffd34a', '#7dff9a', '#ffffff'] }).pop(b.x, b.y - 22, '+1', { color: '#7dff9a' }).shake(2); haptic('success'); sfx(1300, .3, 'triangle', .05); }
           fallI++;
         }
         if (fallI >= line.length && fallT > .5) {
           const all = bells.every(b => b.rung);
-          if (all) { level++; msg = { txt: 'ALL RUNG!', l: 1.2 }; layout(); }
-          else { msg = { txt: 'MISSED A BELL', l: 1.2 }; phase = 'done'; fallT = 0; haptic('error'); }
+          if (all) { level++; msg = { txt: 'ALL RUNG!', l: 1.2 }; feel.win(W / 2, 300); layout(); }
+          else { msg = { txt: 'MISSED A BELL', l: 1.2 }; phase = 'done'; fallT = 0; feel.juice.shake(6); haptic('error'); }
         }
       } else if (phase === 'done') { fallT += dt; if (fallT > 1.2) return api.over(); }
     },
     draw(c) {
       c.fillStyle = '#2e2a24'; c.fillRect(0, 0, W, H); c.fillStyle = '#3a342c'; for (let y = 0; y < H; y += 40) c.fillRect(0, y, W, 20);
+      feel.begin(c);
       for (const r of rocks) { c.fillStyle = '#7a7268'; c.beginPath(); c.arc(r.x, r.y, r.r, 0, 7); c.fill(); c.fillStyle = '#958c80'; c.beginPath(); c.arc(r.x - r.r * .3, r.y - r.r * .3, r.r * .4, 0, 7); c.fill(); }
       for (const b of bells) {
         c.strokeStyle = b.rung ? '#7dff9a60' : '#ffd34a40'; c.lineWidth = 2; c.setLineDash([3, 4]); c.beginPath(); c.arc(b.x, b.y, RING, 0, 7); c.stroke(); c.setLineDash([]);
@@ -59,6 +63,7 @@ function make(api) {
         if (d.fall) { c.fillStyle = '#d8d0c0'; c.fillRect(-7, -16, 14, 18); } else { c.fillStyle = i === 0 ? '#ff6b6b' : '#f6f0e4'; c.fillRect(-7, -3, 14, 6); c.fillStyle = '#222'; c.fillRect(-1, -3, 2, 6); }
         c.restore();
       });
+      feel.end(c, W, H);
       c.fillStyle = '#ffffffcc'; c.font = '400 9px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillText(`DOMINOES ${budget - line.length}`, 12, 22); c.fillText(`LEVEL ${level + 1}`, 12, 40);
       if (phase === 'draw') {
         c.fillStyle = line.length > 1 ? '#ff6b6b' : '#ffffff30'; c.beginPath(); c.roundRect(W - 112, 18, 100, 36, 10); c.fill(); c.fillStyle = '#fff'; c.textAlign = 'center'; c.fillText('PUSH', W - 62, 41);

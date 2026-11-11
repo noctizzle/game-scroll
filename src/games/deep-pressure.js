@@ -3,6 +3,7 @@ const { Timers } = gs.math;
 const { sounds, tone, noise } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Ready } = gs.rounds;
 const { HDView, Particles, pbr, rbox, surface, speckle, spot, pulse, THREE } = gs.hd;
 const { Group, Mesh, InstancedMesh, Object3D, Vector3, CatmullRomCurve3, TubeGeometry, CylinderGeometry, SphereGeometry, CapsuleGeometry, ConeGeometry, IcosahedronGeometry, BoxGeometry, BackSide, Color } = THREE;
 
@@ -63,6 +64,8 @@ function make(api) {
   const timers = new Timers(), later = (fn, ms) => timers.after(ms / 1000, fn);   // game-time delays: they pause with the game
   let v, sub, lurker, lamp, bubbles, snow, spark, curve, LEN, PT, TN, NN, BN, world, spikes, mines, pearls, pearlIM, built;
   let d, ox, oy, vx, vy, speed, hull, hurtT, pingT, noiseLvl, lurkGap, lurkT, score, pearlsGot, t, msg, fingers, keys, stick, best, beatT;
+  const ready = new Ready({ eat: false, text: 'Tap to dive' });         // the sub holds still until the first touch
+  let fdt = 1 / 60;
   const mx = new Object3D(), pos = new Vector3(), tmp = new Vector3(), camPos = new Vector3(), look = new Vector3(), camOff = { x: 0, y: 0 };
 
   function frame(dd) { const f = ((dd % LEN) + LEN) % LEN / LEN * NF, i = Math.floor(f) % NF; return i; }
@@ -124,6 +127,7 @@ function make(api) {
     for (let i = 0; i < 30; i++) bubbles.emit({ x: sub.position.x, y: sub.position.y, z: sub.position.z, vx: rnd(-2, 2), vy: rnd(.5, 3), vz: rnd(-2, 2), life: rnd(1, 2), size: rnd(.05, .15), col: [.7, .85, 1], a: .7, drag: 1.5, grav: -1.5 });
   }
   function update(dt) { timers.update(dt);
+    fdt = dt; if (!ready.update(dt)) return fx(dt);
     t += dt; pingT += dt; hurtT = Math.max(0, hurtT - dt); if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
     PING.r.value = pingT * 22; PING.a.value = Math.max(0, 1 - pingT / 1.6);
     // steering
@@ -159,8 +163,8 @@ function make(api) {
     basis(d);
     at(d, ox, oy); sub.position.copy(pos);
     look.copy(pos).addScaledVector(dT, 4).addScaledVector(dB, vx * .06).addScaledVector(dN, vy * .06); sub.lookAt(look); sub.rotateZ(-vx * .05);
-    sub.userData.prop.rotation.z += speed * .05;
-    camOff.x += (ox * .7 - camOff.x) * .15; camOff.y += (oy * .7 - camOff.y) * .15; at(d - 6, camOff.x, camOff.y + 1.6, camPos);   // forward motion is followed exactly, only sideways moves are eased
+    sub.userData.prop.rotation.z += speed * 3 * fdt;
+    const ease = 1 - Math.pow(.85, fdt * 60); camOff.x += (ox * .7 - camOff.x) * ease; camOff.y += (oy * .7 - camOff.y) * ease; at(d - 6, camOff.x, camOff.y + 1.6, camPos);   // forward motion is followed exactly, only sideways moves are eased
     v.cam.position.copy(camPos); v.cam.up.copy(dN); at(d + 8, ox * .5, oy * .5, look); v.cam.lookAt(look);
     lamp.position.copy(sub.position).addScaledVector(dT, 1); lamp.target.position.copy(sub.position).addScaledVector(dT, 20).addScaledVector(dB, vx * .3).addScaledVector(dN, vy * .3); lamp.target.updateMatrixWorld();
     // the Lurker trails behind (its lure glows in the dark when it's close)
@@ -187,29 +191,31 @@ function make(api) {
     c.fillStyle = pr >= 1 ? '#7affd0' : '#ffffff60'; c.font = `800 ${7 * u}px Rubik, sans-serif`; c.fillText('PING', W - 30 * u, H - 30 * u);
     if (stick.on) { c.strokeStyle = '#ffffff35'; c.lineWidth = 2 * u; c.beginPath(); c.arc(stick.ax, stick.ay, 34 * u, 0, 7); c.stroke(); c.fillStyle = '#ffffff50'; c.beginPath(); c.arc(stick.ax + stick.x * 34 * u, stick.ay + stick.y * 34 * u, 10 * u, 0, 7); c.fill(); }
     if (msg) { c.globalAlpha = clamp(msg.l * 2, 0, 1); c.fillStyle = msg.col; c.font = `800 ${15 * u}px Rubik, sans-serif`; c.fillText(msg.txt, W / 2, H * .28); if (msg.sub) { c.fillStyle = '#fff'; c.font = `600 ${8 * u}px Rubik, sans-serif`; c.fillText(msg.sub, W / 2, H * .28 + 15 * u); } c.globalAlpha = 1; }
-    if (t < 4) { c.fillStyle = '#ffffffd8'; c.font = `600 ${8.5 * u}px Rubik, sans-serif`; c.fillText('Drag to steer · tap to PING the dark · pings wake the Lurker', W / 2, H * .62); }
+    if (ready.playing && t < 4) { c.fillStyle = '#ffffffd8'; c.font = `600 ${8.5 * u}px Rubik, sans-serif`; c.fillText('Drag to steer · tap to PING the dark · pings wake the Lurker', W / 2, H * .62); }
     c.restore();
+    ready.draw(c, W, H, { size: 13 * u, y: H * .62 });
   }
   const self = {
     reset() { timers.clear();
       buildWorld();
       d = 8; ox = 0; oy = 0; vx = 0; vy = 0; speed = 6.5; hull = HULL; hurtT = 0; pingT = 1; noiseLvl = 0; lurkGap = 46; score = 0; pearlsGot = 0; t = 0; msg = null; fingers = {}; keys = new Set(); beatT = 0;
-      stick = { on: false, x: 0, y: 0, ax: 0, ay: 0, id: null }; camPos.set(0, 0, 0); camOff.x = camOff.y = 0; bubbles.clear(); snow.clear(); spark.clear(); PING.a.value = 0;
+      stick = { on: false, x: 0, y: 0, ax: 0, ay: 0, id: null }; camPos.set(0, 0, 0); camOff.x = camOff.y = 0; bubbles.clear(); snow.clear(); spark.clear(); PING.a.value = 0; ready.reset();
     },
     resize(w, h) { W = w; H = h; },
     update, draw,
     fx(dt) { if (v) { bubbles.update(dt); spark.update(dt); } },
     down(x, y, id = 0) {
-      const f = { id, x, y, t0: performance.now(), moved: 0 }; fingers[id] = f;
+      ready.go();
+      const f = { id, x, y, t0: t, moved: 0 }; fingers[id] = f;
       if (stick.id == null && (x < W * .6 || Object.keys(fingers).length === 1)) { stick.id = id; stick.on = true; stick.ax = x; stick.ay = y; stick.x = stick.y = 0; }
       else ping();
     },
     move(x, y, p, id = 0) { const f = fingers[id]; if (!f || !p) return; f.moved = Math.max(f.moved, Math.hypot(x - f.x, y - f.y)); if (stick.id === id) { const R0 = Math.min(W, H) * .12, dx = x - stick.ax, dy = y - stick.ay, l = Math.hypot(dx, dy), k = l > R0 ? R0 / l : 1; stick.x = dx * k / R0; stick.y = dy * k / R0; } },
     up(x, y, id = 0) {
       const f = fingers[id]; delete fingers[id]; if (!f) return;
-      if (stick.id === id) { stick.id = null; stick.on = false; stick.x = stick.y = 0; if (performance.now() - f.t0 < 250 && f.moved < 10) ping(); }
+      if (stick.id === id) { stick.id = null; stick.on = false; stick.x = stick.y = 0; if (t - f.t0 < .25 && f.moved < 10) ping(); }
     },
-    key(k, dn) { if (dn) keys.add(k); else keys.delete(k); if (dn && k === ' ') ping(); },
+    key(k, dn) { if (dn) { ready.go(); keys.add(k); } else keys.delete(k); if (dn && k === ' ') ping(); },
   };
   return self;
 }

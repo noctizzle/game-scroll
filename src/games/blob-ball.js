@@ -1,7 +1,8 @@
 import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
-const { clamp, rnd } = gs.util;
+const { clamp } = gs.util;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 
 // One-on-one football between two jelly blobs. Hold and slide to move your blob, tap or flick up
 // to jump. Head the ball into the other net. First to five wins the match, and every match the
@@ -9,7 +10,9 @@ const { clamp, rnd } = gs.util;
 let W = 220, H = 150;
 
 function make(api) {
-  let me, ai, ball, sc, match, goals, t, phase, pt, finger, tapStart, msg, parts, clock;
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready({ eat: false });                              // kick-off waits for the first touch
+  let me, ai, ball, sc, match, goals, t, phase, pt, finger, tapStart, msg, clock;
   const R = 17, BR = 5, G = 520, GOALH = 38, GOALW = 14;
   const floor = () => H - 14;
   function kickoff(towards) {
@@ -35,16 +38,17 @@ function make(api) {
   function jump(s) { if (s.y >= floor() - .5) { s.vy = -250; if (s === me) sfx(500, .05, 'triangle', .04, 300); } }
   function scored(side) {
     sc[side]++; phase = 'goal'; pt = 0;
-    for (let i = 0; i < 18; i++) parts.push({ x: ball.x, y: ball.y, vx: rnd(-90, 90), vy: rnd(-140, -20), l: .8, col: side ? '#f85858' : '#58c8f8' });
+    feel.juice.burst(ball.x, ball.y, { n: 18, speed: 120, spread: Math.PI, angle: -Math.PI / 2, life: .8, size: 2, gravity: 300, color: [side ? '#f85858' : '#58c8f8', '#f8f8f0'] });
     if (side === 0) { goals++; api.score(goals); haptic('success'); sfx(880, .3, 'square', .05, 400); msg = { txt: 'GOAL!', l: 1.2 }; }
-    else { haptic('error'); sfx(160, .3, 'sawtooth', .05, -50); msg = { txt: 'CONCEDED', l: 1.2 }; }
+    else { haptic('error'); sfx(160, .3, 'sawtooth', .05, -50); msg = { txt: 'CONCEDED', l: 1.2 }; feel.juice.shake(3); }
   }
   const self = {
-    reset() { match = 0; goals = 0; t = 0; parts = []; finger = null; startMatch(); },
+    reset() { match = 0; goals = 0; t = 0; finger = null; tapStart = null; feel.clear(); ready.reset(); startMatch(); },
+    fx(dt) { feel.update(dt); },
     resize(w, h) { if (w === W && h === H) return; W = w; H = h; if (me) kickoff(0); },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; pt += dt;
-      for (const p of parts) { p.l -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 300 * dt; } parts = parts.filter(p => p.l > 0);
       if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
       if (phase === 'over') { if (pt > 2) api.over(); return; }
       if (phase === 'won') { if (pt > 2) { match++; startMatch(); } return; }
@@ -80,7 +84,7 @@ function make(api) {
       slimeHit(me); slimeHit(ai);
     },
     draw(c) {
-      c.fillStyle = '#284860'; c.fillRect(0, 0, W, H); c.fillStyle = '#386080'; for (let i = 0; i < 8; i++) c.fillRect((i * 53 + 20) % W, 18 + (i * 29) % 40, 2, 2);
+      c.fillStyle = '#284860'; c.fillRect(0, 0, W, H); feel.begin(c); c.fillStyle = '#386080'; for (let i = 0; i < 8; i++) c.fillRect((i * 53 + 20) % W, 18 + (i * 29) % 40, 2, 2);
       c.fillStyle = '#3c9a48'; c.fillRect(0, floor(), W, H - floor()); c.fillStyle = '#48b058'; for (let x = 0; x < W; x += 20) c.fillRect(x, floor(), 10, H - floor());
       c.fillStyle = '#f8f8f040'; c.fillRect(W / 2 - 1, floor(), 2, H - floor());
       // nets
@@ -89,17 +93,17 @@ function make(api) {
       blob(me, '#48b8f8', 1); blob(ai, '#f85868', -1);
       c.fillStyle = '#f8e848'; c.beginPath(); c.arc(ball.x, ball.y, BR, 0, 7); c.fill(); c.fillStyle = '#c8a828'; c.fillRect(ball.x - 1, ball.y - 3, 2, 2);
       if (ball.y < 14) { c.fillStyle = '#f8e848'; c.fillRect(ball.x - 2, 14, 4, 2); }
-      for (const p of parts) { c.fillStyle = p.col; c.fillRect(p.x, p.y, 2, 2); }
+      feel.end(c, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.fillStyle = '#10182880'; c.fillRect(0, 0, W, 12);
       c.textAlign = 'left'; c.fillStyle = '#48b8f8'; c.fillText(`YOU ${sc[0]}`, 4, 9); c.textAlign = 'right'; c.fillStyle = '#f85868'; c.fillText(`${sc[1]} RIVAL`, W - 4, 9);
       c.textAlign = 'center'; c.fillStyle = clock < 10 ? '#f8a040' : '#f8f8f0'; c.fillText(`${Math.ceil(clock)}s`, W * .3, 9);
       if (msg) { c.fillStyle = '#000a'; c.fillRect(0, H * .38 - 9, W, 13); c.fillStyle = phase === 'over' ? '#f86060' : '#f8e848'; c.fillText(msg.txt, W / 2, H * .38); }
       if (t < 6 && match === 0 && sc[0] + sc[1] === 0) { c.fillStyle = '#f8f8f0b0'; c.fillText('HOLD + SLIDE TO MOVE', W / 2, H * .55); c.fillText('TAP OR FLICK UP: JUMP', W / 2, H * .55 + 10); }
     },
-    down(x, y) { finger = { x, y }; tapStart = { x, y, t: performance.now() }; },
+    down(x, y) { ready.go(); finger = { x, y }; tapStart = { x, y, t }; },
     move(x, y, p) { if (!p || !finger) return; if (finger.y - y > 14) { jump(me); finger.y = y; } else if (y > finger.y) finger.y = y; finger.x = x; },
-    up(x, y) { if (tapStart && performance.now() - tapStart.t < 220 && Math.hypot((x ?? tapStart.x) - tapStart.x, (y ?? tapStart.y) - tapStart.y) < 8) jump(me); finger = null; },
-    key(k, d) { if (!d) { if (k === 'ArrowLeft' || k === 'ArrowRight') finger = null; return; } if (k === 'ArrowLeft') finger = { x: 0, y: 0 }; else if (k === 'ArrowRight') finger = { x: W, y: 0 }; else if (k === 'ArrowUp' || k === ' ') jump(me); },
+    up(x, y) { if (tapStart && t - tapStart.t < .22 && Math.hypot((x ?? tapStart.x) - tapStart.x, (y ?? tapStart.y) - tapStart.y) < 8) jump(me); finger = null; },
+    key(k, d) { if (!d) { if (k === 'ArrowLeft' || k === 'ArrowRight') finger = null; return; } ready.go(); if (k === 'ArrowLeft') finger = { x: 0, y: 0 }; else if (k === 'ArrowRight') finger = { x: W, y: 0 }; else if (k === 'ArrowUp' || k === ' ') jump(me); },
   };
   return self;
 }

@@ -2,6 +2,8 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { tilt, calibrateTilt, want, haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
 
 // Ski downhill through the gates. Drag left and right to carve (or tilt the phone).
 // Every gate cleared speeds you up. Miss three gates or hit a tree and the run ends.
@@ -9,13 +11,17 @@ const W = 360, H = 640, SY = 170;
 
 function make(api) {
   want('motion');
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready({ eat: false, text: 'Touch to push off' });   // stands at the top until the first touch
   let sk, gates, trees, speed, dist, nextGate, nextTree, score, missed, t, drag, track, snow, crash, gateN;
   return {
     reset() {
-      calibrateTilt(); sk = { x: W / 2, vx: 0, ang: 0 }; gates = []; trees = []; speed = 230; dist = 0; nextGate = 300; nextTree = 100; score = 0; missed = 0; t = 0; drag = null; track = []; crash = null; gateN = 0;
+      calibrateTilt(); sk = { x: W / 2, vx: 0, ang: 0 }; gates = []; trees = []; speed = 230; dist = 0; nextGate = 300; nextTree = 100; score = 0; missed = 0; t = 0; drag = null; track = []; crash = null; gateN = 0; feel.clear(); ready.reset();
       snow = [...Array(40)].map(() => ({ x: rnd(0, W), y: rnd(0, H) }));
     },
+    fx(dt) { feel.update(dt); },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; const dy = speed * dt; dist += dy;
       // steering target
       let target = sk.x; const tl = tilt();
@@ -38,15 +44,16 @@ function make(api) {
         g.y -= dy;
         if (!g.done && g.y < SY) {
           g.done = true;
-          if (Math.abs(sk.x - g.x) < g.gap / 2) { score++; api.score(score); speed = Math.min(520, speed + 9); g.ok = true; haptic('light'); sfx(g.red ? 700 : 880, .08, 'triangle', .05, 120); }
-          else { missed++; g.ok = false; haptic('warning'); sfx(200, .2, 'square', .04, -60); if (missed >= 3) { crash = 'gates'; return api.over(); } }
+          if (Math.abs(sk.x - g.x) < g.gap / 2) { score++; api.score(score); speed = Math.min(520, speed + 9); g.ok = true; haptic('light'); sfx(g.red ? 700 : 880, .08, 'triangle', .05, 120); feel.juice.burst(sk.x, SY, { n: 8, speed: 130, life: .35, size: 3, color: [g.red ? '#ff4060' : '#3d6bff', '#ffffff'] }); }
+          else { missed++; g.ok = false; haptic('warning'); sfx(200, .2, 'square', .04, -60); feel.juice.shake(5); if (missed >= 3) { crash = 'gates'; return api.over(); } }
         }
       }
-      for (const tr of trees) { tr.y -= dy; if (Math.abs(tr.x - sk.x) < tr.r * .6 + 6 && Math.abs(tr.y - SY) < 10) { crash = 'tree'; haptic('heavy'); sfx(90, .4, 'square', .06, -30); return api.over(); } }
+      for (const tr of trees) { tr.y -= dy; if (Math.abs(tr.x - sk.x) < tr.r * .6 + 6 && Math.abs(tr.y - SY) < 10) { crash = 'tree'; haptic('heavy'); sfx(90, .4, 'square', .06, -30); feel.juice.shake(10).burst(sk.x, SY, { n: 22, speed: 220, life: .5, size: 4, color: ['#ffffff', '#dfe9f7', '#2f7a4c'] }); return api.over(); } }
       gates = gates.filter(g => g.y > -40); trees = trees.filter(tr => tr.y > -40);
     },
     draw(c) {
       c.fillStyle = '#f4f8ff'; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = '#dfe9f7'; for (const s of snow) c.fillRect(s.x, s.y, 3, 2);
       c.strokeStyle = '#c4d4ea'; c.lineWidth = 3; c.beginPath(); for (const [i, p] of track.entries()) { if (i) c.lineTo(p.x - 4, p.y); else c.moveTo(p.x - 4, p.y); } c.stroke();
       c.beginPath(); for (const [i, p] of track.entries()) { if (i) c.lineTo(p.x + 4, p.y); else c.moveTo(p.x + 4, p.y); } c.stroke();
@@ -63,14 +70,16 @@ function make(api) {
       c.fillStyle = crash ? '#999' : '#ff7a3d'; c.beginPath(); c.roundRect(-8, -14, 16, 18, 5); c.fill();
       c.fillStyle = '#ffd34a'; c.beginPath(); c.arc(0, -16, 6, 0, 7); c.fill();
       c.restore();
+      feel.end(c, W, H);
+      ready.draw(c, W, H, { y: 330, color: '#3d5a88', shadow: null });
       c.font = '400 9px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = '#7a8aa8'; c.fillText('MISSED', 12, 20);
       for (let i = 0; i < 3; i++) { c.fillStyle = i < missed ? '#ff4060' : '#d6e0ef'; c.fillRect(14 + i * 14, 28, 10, 10); }
       if (t < 3) { c.fillStyle = '#5a6a88'; c.font = '600 14px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText(tilt() ? 'tilt or drag to steer through the gates' : 'drag to steer through the gates', W / 2, H - 30); }
     },
-    down(x) { drag = { x }; },
+    down(x) { ready.go(); drag = { x }; },
     move(x, y, p) { if (drag) drag.x = x; },
     up() { drag = null; },
-    key(k, d) { if (k === 'ArrowLeft' || k === 'ArrowRight') drag = d ? { x: k === 'ArrowLeft' ? 0 : W } : null; },
+    key(k, d) { if (d) ready.go(); if (k === 'ArrowLeft' || k === 'ArrowRight') drag = d ? { x: k === 'ArrowLeft' ? 0 : W } : null; },
   };
 }
 

@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
 
 // A daily switch puzzle generated from your neighbourhood: everyone within a few kilometres gets the same boards today.
 // Tapping a lamp flips it and its four neighbours. Turn every lamp off. Solve as many boards as you can in 90 seconds.
@@ -15,7 +16,9 @@ function seedFor(loc, n) {
 }
 
 function make(api) {
-  let grid, board, moves, time, score, t, area, state, dead, flash;
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  let grid, board, moves, time, score, t, area, state, dead, started, asked = false, askT = 0;
+  function begin(l) { if (state !== 'locating') return; area = l && l.real ? l : null; state = 'play'; build(); }
   function build() {
     const r = rng(seedFor(area, board)); grid = Array(N * N).fill(0);
     const presses = 4 + Math.min(10, board * 2);
@@ -25,20 +28,23 @@ function make(api) {
   }
   function flip(x, y) { for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < N && ny < N) grid[ny * N + nx] ^= 1; } }
   return {
-    reset() { time = 90; score = 0; t = 0; board = 0; dead = 0; flash = 0; state = area === undefined ? 'locating' : 'play'; grid = Array(N * N).fill(0); if (state === 'play') build(); },
+    reset() { time = 90; score = 0; t = 0; board = 0; dead = 0; started = false; feel.clear(); state = area === undefined ? 'locating' : 'play'; grid = Array(N * N).fill(0); if (state === 'play') build(); },
     update(dt) {
-      t += dt; flash = Math.max(0, flash - dt);
+      feel.update(dt); t += dt;
       if (state === 'locating') {
-        if (!this._asked) { this._asked = true; Promise.race([api.location(), new Promise(r => setTimeout(() => r(null), 5000))]).then(l => { area = l && l.real ? l : null; state = 'play'; build(); }); }
+        if (!asked) { asked = true; Promise.resolve(api.location()).then(begin, () => begin(null)); }
+        askT += dt; if (askT > 5) begin(null);   // give up after five seconds and use today's board for everyone
         return;
       }
-      time -= dt; if (time <= 0) { time = 0; haptic('warning'); return api.over(); }
+      if (started) time -= dt;                    // the clock waits for the first tap
+      if (time <= 0) { time = 0; haptic('warning'); return api.over(); }
     },
-    fx(dt) { dead += dt; },
+    fx(dt) { dead += dt; feel.update(dt); },
     draw(c) {
       c.fillStyle = R[3]; c.fillRect(0, 0, W, H);
       c.fillStyle = R[0]; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center';
       if (state === 'locating') { c.fillText('FINDING YOUR AREA', W / 2, 76); c.fillText('.'.repeat(1 + (t * 3 | 0) % 3), W / 2, 90); return; }
+      feel.begin(c);
       c.textAlign = 'left'; c.fillText(area ? 'LOCAL' : 'TODAY', 4, 10); c.textAlign = 'right'; c.fillText(`B${board + 1}`, W - 4, 10); c.textAlign = 'center';
       for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
         const on = grid[y * N + x], px = OX + x * CS, py = OY + y * CS;
@@ -48,13 +54,14 @@ function make(api) {
       }
       c.fillStyle = R[1]; c.fillRect(OX, 155, N * CS, 3); c.fillStyle = R[0]; c.fillRect(OX, 155, N * CS * time / 90, 3);
       c.fillStyle = R[1]; c.fillText(`MOVES ${moves}`, W / 2, 152);
-      if (flash > 0) { c.fillStyle = R[0]; c.globalAlpha = flash; c.fillRect(0, 0, W, H); c.globalAlpha = 1; }
+      feel.end(c, W, H);
     },
     down(x, y) {
       if (state !== 'play') return;
       const cx = Math.floor((x - OX) / CS), cy = Math.floor((y - OY) / CS); if (cx < 0 || cy < 0 || cx >= N || cy >= N) return;
-      flip(cx, cy); moves++; haptic('tick'); sfx(grid[cy * N + cx] ? 520 : 330, .05, 'square', .03);
-      if (grid.every(v => !v)) { score++; api.score(score); board++; flash = .5; time += 10; haptic('success'); sfx(784, .3, 'square', .05, 400); build(); }
+      flip(cx, cy); moves++; started = true; haptic('tick'); sfx(grid[cy * N + cx] ? 520 : 330, .05, 'square', .03);
+      if (grid.every(v => !v)) { score++; api.score(score); board++; time += 10; haptic('success'); sfx(784, .3, 'square', .05, 400);
+        feel.juice.burst(W / 2, OY + N * CS / 2, { n: 18, speed: 80, life: .5, size: 2, color: [R[0], R[1]] }).pop(W / 2, OY + N * CS / 2, '+10S', { color: R[0], size: 8 }); build(); }
     },
   };
 }

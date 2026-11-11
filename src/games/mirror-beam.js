@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
 
 // Tap mirrors to flip them and bounce the laser into the receiver.
 const R = PAL.rose, W = 160, H = 160, N = 7, CS = 18, OX = (W - N * CS) / 2 + 4, OY = 20;
@@ -9,7 +10,8 @@ const DIRS = { E: [1, 0], W: [-1, 0], N: [0, -1], S: [0, 1] };
 const BOUNCE = { '/': { E: 'N', N: 'E', W: 'S', S: 'W' }, '\\': { E: 'S', S: 'E', W: 'N', N: 'W' } };
 
 function make(api) {
-  let m, srcRow, target, beam, hit, time, score, t, dead, win;
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  let m, srcRow, target, beam, hit, time, score, t, dead, win, started;
   function build() {
     for (;;) {
       m = new Map(); srcRow = Math.random() * N | 0; let x = 0, y = srcRow, d = 'E'; const seen = new Set(); let turns = 0, len = 0, ok = true;
@@ -38,22 +40,25 @@ function make(api) {
     }
   }
   return {
-    reset() { time = 60; score = 0; t = 0; dead = 0; build(); },
-    update(dt) { t += dt; time -= dt; if (time <= 0) { haptic('warning'); return api.over(); } if (win) { win += dt; if (win > .6) { score++; api.score(score); time += 12; build(); } } },
-    fx(dt) { dead += dt; },
+    reset() { time = 60; score = 0; t = 0; dead = 0; started = false; feel.clear(); build(); },
+    update(dt) { feel.update(dt); t += dt; if (started) time -= dt;   // the clock waits for the first flip
+      if (time <= 0) { haptic('warning'); feel.juice.shake(4); return api.over(); } if (win) { win += dt; if (win > .6) { score++; api.score(score); time += 12; build(); } } },
+    fx(dt) { dead += dt; feel.update(dt); },
     draw(c) {
       c.fillStyle = R[0]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { c.fillStyle = R[1]; c.fillRect(OX + x * CS + 8, OY + y * CS + 8, 2, 2); }
       c.fillStyle = R[2]; c.fillRect(OX - 12, OY + srcRow * CS + 4, 8, 10);
       const TX = OX + target.x * CS, TY = OY + target.y * CS; c.strokeStyle = hit ? R[3] : R[2]; c.lineWidth = 2; c.strokeRect(TX + 3, TY + 3, CS - 6, CS - 6); c.fillStyle = hit && (t * 10 | 0) % 2 ? R[3] : R[1]; c.fillRect(TX + 7, TY + 7, 4, 4);
       c.strokeStyle = R[3]; c.lineWidth = (t * 12 | 0) % 2 ? 2 : 1; c.beginPath(); beam.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.stroke();
       c.lineWidth = 3; c.strokeStyle = R[2]; for (const [k, v] of m) { const X = OX + (k % N) * CS, Y = OY + (k / N | 0) * CS; c.beginPath(); if (v === '/') { c.moveTo(X + 3, Y + CS - 3); c.lineTo(X + CS - 3, Y + 3); } else { c.moveTo(X + 3, Y + 3); c.lineTo(X + CS - 3, Y + CS - 3); } c.stroke(); }
+      feel.end(c, W, H);
       c.fillStyle = R[3]; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillText(`${Math.ceil(time)}s`, 4, 10);
     },
     down(x, y) {
       if (win) return; const cx = Math.floor((x - OX) / CS), cy = Math.floor((y - OY) / CS), k = cy * N + cx; if (cx < 0 || cy < 0 || cx >= N || cy >= N || !m.has(k)) return;
-      m.set(k, m.get(k) === '/' ? '\\' : '/'); haptic('tick'); sfx(700, .03, 'square', .02); trace();
-      if (hit) { win = .001; haptic('success'); sfx(990, .3, 'square', .05, 300); }
+      m.set(k, m.get(k) === '/' ? '\\' : '/'); started = true; haptic('tick'); sfx(700, .03, 'square', .02); trace();
+      if (hit) { win = .001; haptic('success'); sfx(990, .3, 'square', .05, 300); feel.juice.burst(OX + target.x * CS + 9, OY + target.y * CS + 9, { n: 14, speed: 60, life: .5, size: 2, color: [R[3], R[2]] }); }
     },
   };
 }

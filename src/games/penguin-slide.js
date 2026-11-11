@@ -2,7 +2,7 @@
 // gain speed going down. Let go at the top of a rise and you fly. Crevasses split the ice, so build
 // speed to jump them, and grab the fish in the air.
 import gs from '../gamescroll.js';
-const { Feel } = gs.effects;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 const { PAL } = gs.palettes;
 const { text } = gs.pixel;
 const { haptic } = gs.device;
@@ -15,6 +15,7 @@ const G = 260;
 
 function make(api) {
   const feel = new Feel({ pixel: true });
+  const ready = new Ready({ eat: false });                              // the slide waits for the first touch
   let p, gaps, fish, nextGap, score, best, t, dive, dead, camY, trail, fishN;
   const base = () => H * .62;
   const ground = x => {
@@ -35,10 +36,10 @@ function make(api) {
   }
 
   return {
-    reset() { gaps = []; fish = []; nextGap = 400; p = { x: 20, y: 0, vx: 70, vy: 0, air: false, a: 0 }; p.y = ground(p.x); score = 0; fishN = 0; best = 0; t = 0; dive = false; dead = 0; camY = 0; trail = []; more(); feel.clear(); },
+    reset() { gaps = []; fish = []; nextGap = 400; p = { x: 20, y: 0, vx: 70, vy: 0, air: false, a: 0 }; p.y = ground(p.x); score = 0; fishN = 0; best = 0; t = 0; dive = false; dead = 0; camY = 0; trail = []; more(); feel.clear(); ready.reset(); },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      feel.update(dt); if (feel.frozen) return;
+      feel.update(dt); if (!ready.update(dt) || feel.frozen) return;
       t += dt;
       if (dead) { dead += dt; p.vy += G * dt; p.y += p.vy * dt; if (dead > 1.2) api.over(); return; }
       const g = G * (dive ? 2.6 : 1);
@@ -100,10 +101,12 @@ function make(api) {
       text(c, `${fishN} FISH`, 4, 4, { color: R[0] });
       text(c, `${Math.round(p.vx / 3)}KMH`, W - 4, 4, { color: R[0], align: 'right' });
       if (t < 4) { text(c, 'HOLD TO DIVE DOWNHILL', W / 2, 26, { align: 'center', color: R[0] }); text(c, 'LET GO TO FLY', W / 2, 34, { align: 'center', color: R[0] }); }
+      ready.draw(c, W, H, { text: 'HOLD TO START', pixel: true, color: R[0], y: 48 });
     },
-    down() { dive = true; },
+    fx(dt) { feel.update(dt); },
+    down() { ready.go(); dive = true; },
     up() { dive = false; },
-    key(k, d) { if (k === ' ' || k === 'ArrowDown') dive = d; },
+    key(k, d) { if (k === ' ' || k === 'ArrowDown') { if (d) ready.go(); dive = d; } },
   };
   function camX() { return Math.round(p.x - W * .3); }
 }

@@ -3,7 +3,7 @@
 import gs from '../gamescroll.js';
 const { Physics } = gs.physics;
 const { Stroke } = gs.strokes;
-const { Feel } = gs.effects;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 const { haptic } = gs.device;
 const { sfx, sounds } = gs.sound;
 const { rng } = gs.math;
@@ -13,6 +13,7 @@ const BR = 9, COLS = ['#ff5d8f', '#ffb547', '#5ad1ff', '#8ee05a', '#b48cff'];
 
 function make(api) {
   const feel = new Feel();
+  const ready = new Ready({ eat: false, text: 'Draw a line to start' });   // the spout waits for the first line
   let phys, level, lines, stroke, ink, inkMax, blobs, left, jar, inJar, need, spout, pour, spikes, score, t, banner, ended, erasing;
 
   function segDist(px, py, a, b) {
@@ -59,10 +60,10 @@ function make(api) {
   }
 
   return {
-    reset() { level = 1; score = 0; t = 0; erasing = null; build(); feel.clear(); },
+    reset() { level = 1; score = 0; t = 0; erasing = null; build(); feel.clear(); ready.reset(); },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      feel.update(dt); if (feel.frozen) return;
+      feel.update(dt); if (!ready.update(dt) || feel.frozen) return;
       t += dt; if (banner) { banner.l -= dt; if (banner.l <= 0) banner = null; }
       if (ended) { ended -= dt; if (ended <= 0) { if (inJar >= need) { level++; build(); } else api.over(); } return; }
       pour += dt;
@@ -129,8 +130,9 @@ function make(api) {
       c.textAlign = 'right'; c.fillText(`${left} blobs to come · level ${level}`, W - 16, H - 44);
       if (banner) { c.fillStyle = '#1d3557'; c.textAlign = 'center'; c.font = '800 34px Rubik, sans-serif'; c.fillText(banner.txt, W / 2, H / 2 - 40); c.font = '600 18px Rubik, sans-serif'; c.fillText(banner.sub, W / 2, H / 2 - 12); }
       if (t < 4 && level === 1) { c.fillStyle = '#457b9d'; c.font = '600 15px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('Draw lines to bounce blobs into the jar', W / 2, H / 2 + 20); c.fillText('Tap a line to rub it out', W / 2, H / 2 + 42); }
+      ready.draw(c, W, H, { color: '#1d3557', shadow: null, y: H / 2 + 78 });
     },
-    down(x, y) { if (ended) return; erasing = lineNear(x, y); stroke = new Stroke().add(x, y); },
+    down(x, y) { ready.go(); if (ended) return; erasing = lineNear(x, y); stroke = new Stroke().add(x, y); },
     move(x, y, p) {
       if (!p || !stroke || ended) return;
       const before = stroke.length; stroke.add(x, y);

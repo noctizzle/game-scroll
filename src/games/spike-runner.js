@@ -3,16 +3,22 @@ const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { rnd } = gs.util;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
 
 // You run along the floor or the ceiling of a tunnel. Tap to flip gravity and fall to the other side.
 // Spikes line both surfaces, so flip at the right moment. You can only flip while touching a surface.
 const P = PAL.ice, W = 160, H = 160, TOPY = 24, BOTY = 136, PX = 36, G = 900;
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready({ eat: false });                             // the run starts with the first flip
   let y, vy, grav, onSurf, spikes, dist, speed, t, nextAt, score, trail;
   const self = {
-    reset() { y = BOTY - 8; vy = 0; grav = 1; onSurf = true; spikes = []; dist = 0; speed = 60; t = 0; nextAt = 120; score = 0; trail = []; },
+    reset() { y = BOTY - 8; vy = 0; grav = 1; onSurf = true; spikes = []; dist = 0; speed = 60; t = 0; nextAt = 120; score = 0; trail = []; feel.clear(); ready.reset(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; speed = Math.min(130, 60 + dist / 40); const dx = speed * dt; dist += dx;
       const s = Math.floor(dist / 20); if (s !== score) { score = s; api.score(score); }
       if (dist > nextAt) {
@@ -31,11 +37,12 @@ function make(api) {
       trail.push(y); if (trail.length > 8) trail.shift();
       for (const sp of spikes) {
         if (PX + 5 < sp.x || PX > sp.x + sp.len) continue;
-        if ((sp.side === 'bot' && y + 8 > BOTY - 6) || (sp.side === 'top' && y < TOPY + 6)) { haptic('error'); sfx(110, .4, 'square', .05, -40); return api.over(); }
+        if ((sp.side === 'bot' && y + 8 > BOTY - 6) || (sp.side === 'top' && y < TOPY + 6)) { haptic('error'); sfx(110, .4, 'square', .05, -40); feel.juice.shake(6).burst(PX + 3, y + 4, { n: 10, speed: 55, life: .45, size: 2, color: [P[0], P[1]] }); return api.over(); }
       }
     },
     draw(c) {
       c.fillStyle = P[3]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = P[1]; c.fillRect(0, 0, W, TOPY); c.fillRect(0, BOTY, W, H - BOTY);
       c.fillStyle = P[2]; for (let x = -(dist % 16); x < W; x += 16) { c.fillRect(x, TOPY - 3, 8, 1); c.fillRect(x + 8, BOTY + 2, 8, 1); }
       c.fillStyle = P[0];
@@ -49,9 +56,10 @@ function make(api) {
       c.fillStyle = P[0]; c.fillRect(PX, yy, 6, 8);
       c.fillStyle = P[3]; c.fillRect(PX + 3, grav > 0 ? yy + 2 : yy + 4, 2, 2);
       c.fillStyle = P[0]; if (grav > 0) { c.fillRect(PX + legs, yy + 8, 2, 1); c.fillRect(PX + 4 - legs, yy + 8, 2, 1); } else { c.fillRect(PX + legs, yy - 1, 2, 1); c.fillRect(PX + 4 - legs, yy - 1, 2, 1); }
+      feel.end(c, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = P[3]; if (t < 4) c.fillText('TAP TO FLIP', 4, 150);
     },
-    down() { if (!onSurf) return; grav = -grav; onSurf = false; vy = 0; haptic('tick'); sfx(grav > 0 ? 400 : 600, .05, 'square', .03, grav > 0 ? -200 : 200); },
+    down() { ready.go(); if (!onSurf) return; grav = -grav; onSurf = false; vy = 0; haptic('tick'); sfx(grav > 0 ? 400 : 600, .05, 'square', .03, grav > 0 ? -200 : 200); },
     key(k, d) { if (d && k === ' ') self.down(); },
   };
   return self;

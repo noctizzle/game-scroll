@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp } = gs.util;
+const { Feel } = gs.effects;
 
 // A match-three with no swapping: drag a whole row or column and it slides round like a loop.
 // Line up three or more of a kind to clear them. A slide that makes no match springs back for free. 20 slides.
@@ -9,6 +10,7 @@ const W = 360, H = 640, N = 6, CS = 56, OX = (W - N * CS) / 2, OY = 190, KINDS =
 const COLS = ['#ff5a7a', '#ffd34a', '#4ad3ff', '#7dff9a', '#c18bff'];
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
   let g, off, drag, moves, score, chain, busy, pops, t, msg, fall, lastAxis = null;
   const at = (x, y) => g[y * N + x];
   function rnd() { return Math.random() * KINDS | 0; }
@@ -32,7 +34,8 @@ function make(api) {
     const hit = findMatches();
     if (!hit.size) { busy = 0; chain = 0; if (moves <= 0) return api.over(); if (!bestSlide()) { fresh(); msg = { txt: 'SHUFFLE', l: 1 }; } return; }
     chain++; const pts = hit.size * chain; score += pts; api.score(score);
-    for (const i of hit) pops.push({ x: OX + (i % N + .5) * CS, y: OY + ((i / N | 0) + .5) * CS, k: g[i], l: .35 });
+    for (const i of hit) { pops.push({ x: OX + (i % N + .5) * CS, y: OY + ((i / N | 0) + .5) * CS, k: g[i], l: .35 }); feel.juice.burst(OX + (i % N + .5) * CS, OY + ((i / N | 0) + .5) * CS, { n: 5, speed: 130, life: .4, size: 3.5, color: [COLS[g[i]], '#ffffff'] }); }
+    { const i = [...hit][0]; feel.juice.pop(OX + (i % N + .5) * CS, OY + ((i / N | 0) + .5) * CS - 16, `+${pts}`, { color: chain > 1 ? '#ffd34a' : '#ffffff', size: 16 + Math.min(12, chain * 3) }); if (chain > 1) feel.juice.shake(1 + chain * 1.5); }
     if (chain > 1) msg = { txt: `CHAIN x${chain}`, l: 1 };
     haptic(chain > 1 ? 'success' : 'medium'); sfx(500 + chain * 120, .1, 'triangle', .05, 200);
     for (const i of hit) g[i] = -1;
@@ -43,15 +46,17 @@ function make(api) {
     busy = .35;
   }
   return {
-    reset() { fresh(); off = 0; drag = null; moves = MOVES; score = 0; chain = 0; busy = 0; pops = []; t = 0; msg = null; },
+    reset() { fresh(); off = 0; drag = null; moves = MOVES; score = 0; chain = 0; busy = 0; pops = []; t = 0; msg = null; lastAxis = null; feel.clear(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
-      t += dt; for (let i = 0; i < N * N; i++) fall[i] = Math.max(0, fall[i] - dt * 900);
+      feel.update(dt); t += dt; for (let i = 0; i < N * N; i++) fall[i] = Math.max(0, fall[i] - dt * 900);
       for (const p of pops) p.l -= dt; pops = pops.filter(p => p.l > 0); if (msg) msg.l -= dt;
       if (busy > 0) { busy -= dt; if (busy <= 0) resolve(); }
       if (!drag && off) { off *= Math.pow(.0001, dt); if (Math.abs(off) < .5) off = 0; }
     },
     draw(c) {
       c.fillStyle = '#1a1430'; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = '#ffffff0c'; c.beginPath(); c.roundRect(OX - 8, OY - 8, N * CS + 16, N * CS + 16, 14); c.fill();
       c.save(); c.beginPath(); c.rect(OX, OY, N * CS, N * CS); c.clip();
       for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
@@ -66,6 +71,7 @@ function make(api) {
       }
       c.restore();
       for (const p of pops) gem(c, p.x, p.y, p.k, 1 + (.35 - p.l) * 2, p.l / .35);
+      feel.end(c, W, H);
       c.font = '400 10px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = '#ffffffaa'; c.fillText('SLIDES', 14, 24); c.fillStyle = moves <= 3 ? '#ff6060' : '#fff'; c.font = '400 18px "Press Start 2P", monospace'; c.fillText(String(moves), 14, 50);
       if (t < 4 && moves === MOVES) { c.fillStyle = '#ffffffaa'; c.font = '600 14px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('drag a row or column to slide it', W / 2, OY + N * CS + 50); }
       if (msg && msg.l > 0) { c.globalAlpha = clamp(msg.l * 2, 0, 1); c.fillStyle = '#ffd34a'; c.font = '400 16px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(msg.txt, W / 2, OY - 30); c.globalAlpha = 1; }

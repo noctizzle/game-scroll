@@ -124,7 +124,7 @@ function make(api) {
     let moving = false;
     for (const u of units) {
       if (u.dead) continue; const gy = ground(u.x);
-      if (u.vx) { u.x = clamp(u.x + u.vx * dt, 2, W - 2); u.vx *= .9; if (Math.abs(u.vx) < 2) u.vx = 0; else moving = true; }
+      if (u.vx) { u.x = clamp(u.x + u.vx * dt, 2, W - 2); u.vx *= Math.pow(.9, dt * 60); if (Math.abs(u.vx) < 2) u.vx = 0; else moving = true; }
       if (u.y < gy || u.vy < 0) { u.vy += G * 1.6 * dt; u.y += u.vy * dt; moving = true; if (u.y >= ground(u.x) && u.vy > 0) { if (u.vy > 140) { const d = Math.round((u.vy - 140) / 6); u.hp -= d; parts.push({ txt: `-${d}`, x: u.x, y: u.y - 16, l: 1, col: '#f8f8f0' }); } u.y = ground(u.x); u.vy = 0; } }
       else u.y = gy;
       if (u.y > sea() || u.hp <= 0) { u.dead = true; u.hp = 0; for (let i = 0; i < 10; i++) parts.push({ x: u.x, y: Math.min(u.y, sea()), vx: rnd(-40, 40), vy: rnd(-80, -20), l: .6, col: u.team ? '#e05848' : '#4880e0' }); sfx(200, .3, 'square', .05, -100); }

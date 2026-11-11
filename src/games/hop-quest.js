@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects;
 
 // A side-scrolling platformer. Floating ledges can be jumped through from below. Drag left or right to run, flick up (or tap) to jump. Grab coins,
 // bounce on bugs, hop the gaps and spikes, and reach the flag at the end of each stage.
@@ -9,6 +10,7 @@ const G = 640, JUMP = 250, RUN = 82;
 let W = 160, H = 160;
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
   let solids, coins, bugs, spikes, flagX, p, cam, stage, score, t, ctl, msg, dead, parts;
   const gy = () => H - 16;
   function build() {
@@ -31,12 +33,12 @@ function make(api) {
   }
   const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   function jump() { if (!p.ground || dead) return; p.vy = -JUMP; p.ground = false; haptic('light'); sfx(420, .08, 'square', .04, 400); }
-  function die() { if (dead) return; dead = .9; p.vy = -200; haptic('error'); sfx(300, .5, 'square', .05, -250); }
+  function die() { if (dead) return; dead = .9; p.vy = -200; feel.juice.shake(4); haptic('error'); sfx(300, .5, 'square', .05, -250); }
   const self = {
-    reset() { stage = 1; score = 0; t = 0; ctl = null; msg = null; dead = 0; parts = []; build(); },
+    reset() { stage = 1; score = 0; t = 0; ctl = null; msg = null; dead = 0; parts = []; self.kdir = 0; self.khold = false; feel.clear(); build(); },
     resize(w, h) { const d = h - H; W = w; H = h; if (solids) { for (const s of solids) s.y += d; for (const o of [...coins, ...bugs, ...spikes]) o.y += d; p.y += d; } },
     update(dt) {
-      t += dt; if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
+      feel.update(dt); t += dt; if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
       for (const q of parts) { q.y += q.vy * dt; q.vy += 200 * dt; q.l -= dt; } parts = parts.filter(q => q.l > 0);
       if (dead) { p.vy += G * dt; p.y += p.vy * dt; dead -= dt; if (dead <= 0) return api.over(); return; }
       const dir = ctl ? ctl.dir : self.kdir || 0; const target = dir * RUN;
@@ -49,7 +51,7 @@ function make(api) {
       p.y = box.y;
       if (p.y > H + 10) return die();
       const me = { x: p.x, y: p.y, w: 8, h: 11 };
-      for (const c of coins) if (!c.got && Math.abs(c.x - p.x - 4) < 7 && Math.abs(c.y - p.y - 5) < 8) { c.got = true; score++; api.score(score); sfx(1300, .06, 'square', .03, 300); haptic('tick'); }
+      for (const c of coins) if (!c.got && Math.abs(c.x - p.x - 4) < 7 && Math.abs(c.y - p.y - 5) < 8) { c.got = true; score++; api.score(score); sfx(1300, .06, 'square', .03, 300); haptic('tick'); feel.juice.burst(c.x - cam, c.y, { n: 4, speed: 40, life: .25, size: 1, color: ['#f8c838', '#fff0a0'] }); }
       for (const s of spikes) if (hit(me, { x: s.x + 2, y: s.y + 1, w: s.w - 4, h: 4 })) return die();
       for (const b of bugs) {
         if (!b.alive) continue; b.x += b.vx * dt; if (b.x < b.lo || b.x > b.hi) { b.vx *= -1; b.x = clamp(b.x, b.lo, b.hi); }
@@ -58,12 +60,13 @@ function make(api) {
           else return die();
         }
       }
-      if (p.x > flagX - 4) { stage++; score += 5; api.score(score); msg = { txt: `STAGE ${stage}`, l: 1.5 }; haptic('success'); sfx(880, .4, 'square', .05, 600); build(); return; }
+      if (p.x > flagX - 4) { stage++; score += 5; api.score(score); msg = { txt: `STAGE ${stage}`, l: 1.5 }; haptic('success'); sfx(880, .4, 'square', .05, 600); feel.juice.burst(W / 2, H * .4, { n: 22, speed: 90, life: .7, size: 2, color: ['#f8d838', '#e04040', '#f8f8f0'] }); build(); return; }
       cam = Math.max(cam, Math.min(p.x - W * .4, flagX + 60 - W));
     },
-    fx(dt) { for (const q of parts) { q.y += q.vy * dt; q.l -= dt; } },
+    fx(dt) { feel.update(dt); for (const q of parts) { q.y += q.vy * dt; q.l -= dt; } },
     draw(c) {
       const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#78c8f8'); g.addColorStop(1, '#d8f0f8'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = '#ffffff'; for (let i = 0; i < 5; i++) { const x = ((i * 90 - cam * .2) % (W + 90) + W + 90) % (W + 90) - 40, y = 16 + (i % 3) * 14; c.fillRect(x, y, 26, 6); c.fillRect(x + 6, y - 4, 13, 4); }
       for (let x = 0; x < W; x += 2) { const wx = x + cam * .4, hh = 26 + Math.sin(wx * .03) * 12 + Math.sin(wx * .011) * 8; c.fillStyle = '#88c870'; c.fillRect(x, gy() - hh, 2, hh); }
       c.save(); c.translate(-Math.round(cam), 0);
@@ -84,10 +87,11 @@ function make(api) {
       c.fillStyle = '#3858d8'; c.fillRect(x + 1 + run, y + 9, 2, 2); c.fillRect(x + 5 - run, y + 9, 2, 2);
       for (const q of parts) { c.fillStyle = '#b078f0'; c.fillRect(q.x | 0, q.y | 0, 2, 2); }
       c.restore();
+      feel.end(c, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = '#101018'; c.fillText(`ST${stage}`, 3, 9);
       const prog = clamp(p.x / flagX, 0, 1); c.fillStyle = '#ffffff80'; c.fillRect(W - 44, 4, 40, 3); c.fillStyle = '#e04040'; c.fillRect(W - 44 + 38 * prog, 3, 2, 5);
       if (msg) { c.textAlign = 'center'; c.fillStyle = '#101018'; c.fillText(msg.txt, W / 2, H * .35); }
-      if (t < 5 && stage === 1) { c.textAlign = 'center'; c.fillStyle = '#101018'; c.fillText('DRAG: RUN  FLICK UP: JUMP', W / 2, 22); }
+      if (t < 5 && stage === 1) { c.textAlign = 'center'; c.fillStyle = '#101018'; c.fillText('DRAG: RUN  FLICK UP: JUMP', W / 2, Math.round(api.scoreArea().bottom + 10)); }   // below the app's score badge
     },
     down(x, y) { ctl = { sx: x, ay: y, dir: 0, hold: true, t: t, moved: false }; },
     move(x, y, pr) {

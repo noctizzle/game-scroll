@@ -2,12 +2,14 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp } = gs.util;
+const { Feel } = gs.effects;
 
 // Aim and fire bubbles into the cluster. Three or more of a colour pop, and anything left hanging drops too.
 const W = 360, H = 640, R = 18, D = R * 2, COLS_N = 9, ROW_H = D * .866, TOPY = 70, SX = W / 2, SY = H - 70, LIMIT = 15;
 const COLS = ['#ff5d73', '#ffb020', '#3ddc97', '#5aa8ff', '#b28cff'];
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
   let grid, shot, cur, nxt, aim, aiming, score, shots, t, falls, dead, ncol;
   const ox = r => (r % 2 ? R * 2 : R) + (W - COLS_N * D - R) / 2;
   const pos = (r, c) => ({ x: ox(r) + c * D, y: TOPY + R + r * ROW_H });
@@ -16,9 +18,9 @@ function make(api) {
   const randCol = () => { const present = [...new Set([...grid.values()])]; return present.length ? present[Math.random() * present.length | 0] : Math.random() * ncol | 0; };
   function addRowTop() { const g = new Map(); for (const [k, v] of grid) { const r = k / 20 | 0, c = k % 20; g.set(key(r + 2, c), v); } grid = g; for (let r = 0; r < 2; r++) for (let c = 0; c < COLS_N - (r % 2); c++) grid.set(key(r, c), Math.random() * ncol | 0); }
   return {
-    reset() { grid = new Map(); ncol = 4; for (let r = 0; r < 5; r++) for (let c = 0; c < COLS_N - (r % 2); c++) grid.set(key(r, c), Math.random() * ncol | 0); cur = randCol(); nxt = randCol(); shot = null; aim = -Math.PI / 2; aiming = false; score = 0; shots = 0; t = 0; falls = []; dead = 0; },
+    reset() { grid = new Map(); ncol = 4; for (let r = 0; r < 5; r++) for (let c = 0; c < COLS_N - (r % 2); c++) grid.set(key(r, c), Math.random() * ncol | 0); cur = randCol(); nxt = randCol(); shot = null; aim = -Math.PI / 2; aiming = false; score = 0; shots = 0; t = 0; falls = []; dead = 0; feel.clear(); },
     update(dt) {
-      t += dt;
+      feel.update(dt); t += dt;
       for (const f of falls) { f.vy += 1400 * dt; f.y += f.vy * dt; f.x += f.vx * dt; } falls = falls.filter(f => f.y < H + 40);
       if (!shot) return;
       for (let s = 0; s < 6; s++) {
@@ -36,20 +38,22 @@ function make(api) {
       const same = new Set([key(r, c)]), st = [[r, c]];
       while (st.length) { const [a, b] = st.pop(); for (const [x, y] of nbrs(a, b)) { const k = key(x, y); if (!same.has(k) && grid.get(k) === grid.get(key(r, c))) { same.add(k); st.push([x, y]); } } }
       if (same.size >= 3) {
-        for (const k of same) { const p = pos(k / 20 | 0, k % 20); falls.push({ ...p, vx: (Math.random() - .5) * 120, vy: -200, col: grid.get(k) }); grid.delete(k); }
+        for (const k of same) { const p = pos(k / 20 | 0, k % 20); feel.juice.burst(p.x, p.y, { n: 6, speed: 130, life: .35, size: 3.5, color: [COLS[grid.get(k)], '#ffffff'] }); falls.push({ ...p, vx: (Math.random() - .5) * 120, vy: -200, col: grid.get(k) }); grid.delete(k); }
         const keep = new Set(), q = [...grid.keys()].filter(k => (k / 20 | 0) === 0); q.forEach(k => keep.add(k));
         while (q.length) { const k = q.pop(); for (const [x, y] of nbrs(k / 20 | 0, k % 20)) { const kk = key(x, y); if (grid.has(kk) && !keep.has(kk)) { keep.add(kk); q.push(kk); } } }
         let drop = 0; for (const k of [...grid.keys()]) if (!keep.has(k)) { const p = pos(k / 20 | 0, k % 20); falls.push({ ...p, vx: 0, vy: 0, col: grid.get(k) }); grid.delete(k); drop++; }
+        { const p = pos(r, c); feel.juice.pop(p.x, p.y - 12, `+${same.size * 10 + drop * 20}`, { color: drop ? '#ffd34a' : '#ffffff', size: drop ? 20 : 15 }); if (drop) feel.juice.shake(Math.min(8, 2 + drop)); }
         score += same.size * 10 + drop * 20; api.score(score); haptic(drop ? 'medium' : 'light'); sfx(600 + same.size * 40, .12, 'triangle', .05, 200);
       } else sfx(320, .05, 'triangle', .03);
-      if (!grid.size) { score += 200; api.score(score); ncol = Math.min(COLS.length, ncol + 1); for (let r = 0; r < 5; r++) for (let c = 0; c < COLS_N - (r % 2); c++) grid.set(key(r, c), Math.random() * ncol | 0); haptic('success'); }
+      if (!grid.size) { feel.win(W / 2, 220); feel.juice.pop(W / 2, 260, 'CLEARED +200', { color: '#ffd34a', size: 22 }); score += 200; api.score(score); ncol = Math.min(COLS.length, ncol + 1); for (let r = 0; r < 5; r++) for (let c = 0; c < COLS_N - (r % 2); c++) grid.set(key(r, c), Math.random() * ncol | 0); haptic('success'); }
       if (shots % 6 === 0) addRowTop();
       cur = nxt; nxt = randCol();
-      if ([...grid.keys()].some(k => (k / 20 | 0) >= LIMIT - 1)) { haptic('error'); sfx(140, .5, 'sawtooth', .05, -60); api.over(); }
+      if ([...grid.keys()].some(k => (k / 20 | 0) >= LIMIT - 1)) { feel.juice.shake(8); haptic('error'); sfx(140, .5, 'sawtooth', .05, -60); api.over(); }
     },
-    fx(dt) { dead += dt; for (const f of falls) { f.vy += 1400 * dt; f.y += f.vy * dt; } },
+    fx(dt) { dead += dt; feel.update(dt); for (const f of falls) { f.vy += 1400 * dt; f.y += f.vy * dt; } },
     draw(c) {
       c.fillStyle = '#1b1530'; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       const lim = TOPY + (LIMIT - 1) * ROW_H; c.strokeStyle = '#ff5d7355'; c.setLineDash([6, 6]); c.beginPath(); c.moveTo(0, lim); c.lineTo(W, lim); c.stroke(); c.setLineDash([]);
       const bub = (x, y, col) => { c.fillStyle = COLS[col]; c.beginPath(); c.arc(x, y, R - 1, 0, 7); c.fill(); c.fillStyle = '#ffffff55'; c.beginPath(); c.arc(x - 6, y - 6, 5, 0, 7); c.fill(); };
       for (const [k, v] of grid) { const p = pos(k / 20 | 0, k % 20); bub(p.x, p.y, v); }
@@ -57,6 +61,7 @@ function make(api) {
       if (aiming && !shot) { c.strokeStyle = '#ffffff55'; c.setLineDash([4, 8]); c.lineWidth = 2; c.beginPath(); let x = SX, y = SY, vx = Math.cos(aim), vy = Math.sin(aim); c.moveTo(x, y);
         for (let i = 0; i < 60 && y > TOPY; i++) { x += vx * 10; y += vy * 10; if (x < R || x > W - R) { vx = -vx; c.lineTo(x, y); } } c.lineTo(x, y); c.stroke(); c.setLineDash([]); }
       if (shot) bub(shot.x, shot.y, shot.col); else bub(SX, SY, cur);
+      feel.end(c, W, H);
       bub(SX + 60, SY + 22, nxt); c.fillStyle = '#ffffff66'; c.font = '600 11px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('next', SX + 60, SY + 54);
       c.fillText(`new row in ${6 - shots % 6}`, 60, SY + 22);
     },

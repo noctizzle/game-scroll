@@ -2,6 +2,8 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { tilt, calibrateTilt, want, haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
 
 // Balance a marble on a round tray while gusts of wind shove it about. Tilt to fight back and keep it
 // near the middle: the inner rings score faster. The tray slowly shrinks. Roll off and it's over.
@@ -9,10 +11,13 @@ const W = 360, H = 640, CX = W / 2, CY = 340;
 
 function make(api) {
   want('motion');
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready({ eat: false });                // no wind and no points until the first touch
   let b, R, gust, gt, score, t, drag, mult, trail;
   return {
-    reset() { calibrateTilt(); b = { x: CX, y: CY, vx: 0, vy: 0 }; R = 150; gust = { x: 0, y: 0 }; gt = 1.5; score = 0; t = 0; drag = null; mult = 1; trail = []; },
+    reset() { calibrateTilt(); b = { x: CX, y: CY, vx: 0, vy: 0 }; R = 150; gust = { x: 0, y: 0 }; gt = 1.5; score = 0; t = 0; drag = null; mult = 1; trail = []; feel.clear(); ready.reset(); },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; R = Math.max(80, 150 - t * 1.2); gt -= dt;
       if (gt <= 0) { gt = rnd(.8, 2.2); const a = rnd(0, 6.28), f = Math.min(320, 100 + t * 5); gust = { x: Math.cos(a) * f, y: Math.sin(a) * f }; haptic('tick'); sfx(160, .3, 'sine', .015, 60); }
       const tl = tilt(); let ax = 0, ay = 0;
@@ -24,11 +29,12 @@ function make(api) {
       mult = d < R * .25 ? 4 : d < R * .55 ? 2 : 1;
       score += mult * dt * 3; api.score(Math.floor(score));
       trail.push({ x: b.x, y: b.y }); if (trail.length > 14) trail.shift();
-      if (d > R) { haptic('error'); sfx(120, .4, 'triangle', .06, -50); return api.over(); }
+      if (d > R) { haptic('error'); sfx(120, .4, 'triangle', .06, -50); feel.juice.shake(8); return api.over(); }
     },
-    fx(dt) { b.x += b.vx * dt; b.y += b.vy * dt; },
+    fx(dt) { feel.update(dt); b.x += b.vx * dt; b.y += b.vy * dt; },
     draw(c) {
       c.fillStyle = '#132a2a'; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = '#00000040'; c.beginPath(); c.arc(CX + 6, CY + 10, R + 10, 0, 7); c.fill();
       c.fillStyle = '#c99a5b'; c.beginPath(); c.arc(CX, CY, R + 8, 0, 7); c.fill();
       for (const [k, col] of [[1, '#e8c890'], [.55, '#f2d9a8'], [.25, '#ffefc8']]) { c.fillStyle = col; c.beginPath(); c.arc(CX, CY, R * k, 0, 7); c.fill(); }
@@ -37,10 +43,13 @@ function make(api) {
       if (gl > 1) { for (let i = 0; i < 5; i++) { const off = ((t * 300 + i * 70) % 360) - 180; c.beginPath(); c.moveTo(CX + gust.x / gl * off - gust.y / gl * (i - 2) * 60, CY + gust.y / gl * off + gust.x / gl * (i - 2) * 60); c.lineTo(CX + gust.x / gl * (off + 40) - gust.y / gl * (i - 2) * 60, CY + gust.y / gl * (off + 40) + gust.x / gl * (i - 2) * 60); c.stroke(); } }
       trail.forEach((p, i) => { c.fillStyle = `rgba(80,120,255,${i / trail.length * .25})`; c.beginPath(); c.arc(p.x, p.y, 10, 0, 7); c.fill(); });
       const g = c.createRadialGradient(b.x - 5, b.y - 6, 2, b.x, b.y, 16); g.addColorStop(0, '#cfe0ff'); g.addColorStop(1, '#3d5bd6'); c.fillStyle = g; c.beginPath(); c.arc(b.x, b.y, 14, 0, 7); c.fill();
+      feel.end(c, W, H);
+      ready.draw(c, W, H, { y: 550 });
       c.fillStyle = mult === 4 ? '#ffd34a' : '#ffffffaa'; c.font = '400 12px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillText(`x${mult}`, 14, 30);
       if (t < 5) { c.fillStyle = '#ffffffaa'; c.font = '600 14px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText(tilt() ? 'tilt to keep the marble in the middle' : 'drag to tilt the tray', W / 2, 600); }
     },
-    down(x, y) { drag = { x, y, cur: { x, y } }; },
+    down(x, y) { ready.go(); drag = { x, y, cur: { x, y } }; },
+    key(k, d) { if (d) ready.go(); },
     move(x, y) { if (drag) drag.cur = { x, y }; },
     up() { drag = null; },
   };

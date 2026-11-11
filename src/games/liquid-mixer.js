@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects;
 
 // Hold the paint taps to pour red, yellow, blue and white into the glass, then serve when it
 // matches the sample. Paint mixes like paint (blue + yellow makes green). Score under 75% and you're done.
@@ -29,6 +30,7 @@ function mix(v) {
 const css = c => `rgb(${c.map(x => Math.round(clamp(x, 0, 1) * 255)).join(',')})`;
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
   let vol, target, pour, time, score, glasses, t, msg, judge, drips;
   function newTarget() {
     let v; do { v = { r: rnd(0, 4) | 0, y: rnd(0, 4) | 0, b: rnd(0, 4) | 0, w: Math.random() < .4 ? rnd(1, 3) | 0 : 0 }; } while (v.r + v.y + v.b === 0 || v.r + v.y + v.b + v.w > CAP);
@@ -38,13 +40,14 @@ function make(api) {
     const c = mix(vol); if (!c) return;
     const d = Math.hypot(c[0] - target[0], c[1] - target[1], c[2] - target[2]), acc = clamp(1 - d / .55, 0, 1), pct = Math.round(acc * 100);
     judge = { pct, l: 1.4, c };
-    if (pct >= 75) { glasses++; score += Math.round(pct / 10) + (pct >= 95 ? 5 : 0); api.score(score); haptic('success'); sfx(700 + pct * 3, .2, 'triangle', .06, 200); msg = pct >= 95 ? 'PERFECT +5' : 'SERVED'; }
-    else { haptic('error'); sfx(150, .3, 'triangle', .06, -50); msg = 'NOT QUITE'; }
+    if (pct >= 75) { glasses++; score += Math.round(pct / 10) + (pct >= 95 ? 5 : 0); api.score(score); feel.juice.burst(W / 2, 400, { n: pct >= 95 ? 36 : 16, speed: 240, life: .8, size: 4, color: [css(c), '#ffffff', '#7dff9a'], gravity: 320 }); haptic('success'); sfx(700 + pct * 3, .2, 'triangle', .06, 200); msg = pct >= 95 ? 'PERFECT +5' : 'SERVED'; }
+    else { feel.juice.shake(7); haptic('error'); sfx(150, .3, 'triangle', .06, -50); msg = 'NOT QUITE'; }
   }
   return {
-    reset() { score = 0; glasses = 0; t = 0; pour = null; msg = null; drips = []; newTarget(); },
+    reset() { score = 0; glasses = 0; t = 0; pour = null; msg = null; drips = []; feel.clear(); newTarget(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
-      t += dt;
+      feel.update(dt); t += dt;
       if (judge) { judge.l -= dt; if (judge.l <= 0) { if (judge.pct < 75) return api.over(); newTarget(); } return; }
       time -= dt; if (time <= 0) { time = 0; if (vol.r + vol.y + vol.b + vol.w) serve(); else { judge = { pct: 0, l: .8, c: [1, 1, 1] }; msg = 'TOO SLOW'; haptic('error'); } return; }
       if (pour) {
@@ -80,10 +83,12 @@ function make(api) {
       c.fillStyle = '#ffffffaa'; c.font = '400 10px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText('EMPTY', 89, 553);
       c.fillStyle = tot ? '#7dff9a' : '#ffffff40'; c.fillText('SERVE', 271, 553);
       if (t < 4 && glasses === 0) { c.fillStyle = '#ffffff88'; c.font = '600 13px Rubik, sans-serif'; c.fillText('hold a paint tap to pour', W / 2, 610); }
+      feel.begin(c);
       if (judge) {
         c.fillStyle = '#000000a0'; c.fillRect(0, 310, W, 150); c.fillStyle = judge.pct >= 75 ? '#7dff9a' : '#ff6060'; c.font = '400 30px "Press Start 2P", monospace'; c.textAlign = 'center';
         c.fillText(`${judge.pct}%`, W / 2, 385); c.font = '400 11px "Press Start 2P", monospace'; c.fillText(msg, W / 2, 420);
       }
+      feel.end(c, W, H);
     },
     down(x, y) {
       if (judge) return;

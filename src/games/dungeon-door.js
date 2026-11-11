@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
 
 // Three doors per room. Each door's sign hints at what's behind it, but signs only tell the odds.
 // Skulls hide monsters guarding big hoards, chests can be mimics, hearts heal. Go as deep as you dare.
@@ -9,6 +10,7 @@ const P = PAL.rose, W = 160, H = 160;
 const SIGNS = ['skull', 'chest', 'heart', 'mystery'];
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
   let doors, hp, gold, depth, t, pick, result, wait, maxHp;
   function room() {
     doors = [0, 1, 2].map(() => { const r = Math.random(); return SIGNS[r < .3 ? 0 : r < .62 ? 1 : r < .8 ? 2 : 3]; });
@@ -24,13 +26,16 @@ function make(api) {
     else { dh = Math.random() < .25 ? 2 : 1; txt = 'HEAL'; }
     hp = Math.min(maxHp, hp + dh); gold += dg; depth++; api.score(gold + depth);
     result = { txt, dg, dh }; wait = 1.1;
-    if (dh < 0) { haptic('error'); sfx(140, .25, 'square', .05, -40); } else if (dg) { haptic('success'); sfx(880, .12, 'square', .04, 200); } else { haptic('light'); sfx(600, .15, 'square', .03, 100); }
+    if (dg) feel.juice.burst(30 + i * 50, 84, { n: Math.min(20, 6 + dg), speed: 50, life: .5, size: 2, color: [P[3], P[2]], gravity: 90 });
+    if (dh < 0) { haptic('error'); sfx(140, .25, 'square', .05, -40); feel.juice.shake(hp <= 0 ? 6 : 4); } else if (dg) { haptic('success'); sfx(880, .12, 'square', .04, 200); } else { haptic('light'); sfx(600, .15, 'square', .03, 100); }
   }
   return {
-    reset() { hp = 5; maxHp = 5; gold = 0; depth = 0; t = 0; wait = 0; room(); },
-    update(dt) { t += dt; if (wait > 0) { wait -= dt; if (wait <= 0) { if (hp <= 0) return api.over(); room(); } } },
+    reset() { hp = 5; maxHp = 5; gold = 0; depth = 0; t = 0; wait = 0; feel.clear(); room(); },
+    fx(dt) { feel.update(dt); },
+    update(dt) { feel.update(dt); t += dt; if (wait > 0) { wait -= dt; if (wait <= 0) { if (hp <= 0) return api.over(); room(); } } },
     draw(c) {
       c.fillStyle = P[3]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = P[2]; for (let y = 16; y < 120; y += 10) for (let x = (y / 10 % 2) * 10; x < W; x += 20) c.fillRect(x, y, 18, 8);
       c.fillStyle = P[1]; c.fillRect(0, 118, W, 42);
       doors.forEach((s, i) => {
@@ -51,6 +56,7 @@ function make(api) {
           if (result.dh) c.fillText(`${result.dh > 0 ? '+' : ''}${result.dh}HP`, x + 18, y + 58);
         }
       });
+      feel.end(c, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = P[0]; c.fillText(`F${depth + 1}`, 4, 10);
       c.textAlign = 'right'; c.fillText(`$${gold}`, W - 4, 10);
       for (let i = 0; i < maxHp; i++) { c.fillStyle = i < hp ? P[3] : P[0]; c.fillRect(6 + i * 9, 132, 6, 6); }

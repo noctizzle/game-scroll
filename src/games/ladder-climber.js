@@ -2,7 +2,7 @@
 // other. Tap the side with the next good rung to grab it. Grab a gap and you slip down. Crows perch
 // on rungs too: don't grab where a crow sits. The flood below rises faster and faster.
 import gs from '../gamescroll.js';
-const { Feel } = gs.effects;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 const { PAL } = gs.palettes;
 const { text } = gs.pixel;
 const { haptic } = gs.device;
@@ -16,6 +16,7 @@ const GAP = 14;
 function make(api) {
   const feel = new Feel({ pixel: true });
   const keys = new Keys();
+  const ready = new Ready({ eat: false });                              // the flood waits for the first grab
   let rungs, height, flood, climbY, score, t, side, slip, dead, tune, started, combo, beat;
 
   // rung i: which side is solid (0 left, 1 right, 2 both) and whether a crow sits on it
@@ -46,10 +47,10 @@ function make(api) {
   }
 
   return {
-    reset() { rungs = []; height = 0; flood = -3; score = 0; t = 0; side = 0; slip = 0; dead = 0; combo = 0; started = false; beat = 0; keys.clear(); feel.clear(); climbY = 0; },
+    reset() { rungs = []; height = 0; flood = -3; score = 0; t = 0; side = 0; slip = 0; dead = 0; combo = 0; started = false; beat = 0; keys.clear(); feel.clear(); climbY = 0; ready.reset(); },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      feel.update(dt); if (feel.frozen) return;
+      feel.update(dt); if (!ready.update(dt) || feel.frozen) return;
       if (!started) { started = true; tune = music({ tempo: 140, lead: 'C5 . E5 . G5 . E5 . D5 . F5 . A5 . F5 .', bass: 'C3 . . . G2 . . . D3 . . . G2 . . .', drums: 'k . h . s . h .' }); tune.start(); }
       t += dt;
       if (dead) { dead += dt; if (dead > 1) { tune?.stop(); api.over(); } return; }
@@ -90,9 +91,11 @@ function make(api) {
       text(c, `${height}M`, 4, 4, { color: R[0] });
       if (combo >= 10) text(c, `x${combo}`, W - 4, 4, { color: R[0], align: 'right' });
       if (t < 3) { text(c, 'TAP LEFT OR RIGHT', W / 2, 30, { align: 'center', color: R[0] }); text(c, 'GRAB THE GOOD RUNG', W / 2, 38, { align: 'center', color: R[0] }); }
+      ready.draw(c, W, H, { text: 'TAP TO CLIMB', pixel: true, color: R[0], y: 52 });
     },
-    down(x) { grab(x < W / 2 ? 0 : 1); },
-    key(k, d) { if (!d) return; if (k === 'ArrowLeft' || k === 'a') grab(0); if (k === 'ArrowRight' || k === 'd') grab(1); },
+    fx(dt) { feel.update(dt); },
+    down(x) { ready.go(); grab(x < W / 2 ? 0 : 1); },
+    key(k, d) { if (!d) return; if (k === 'ArrowLeft' || k === 'a') { ready.go(); grab(0); } if (k === 'ArrowRight' || k === 'd') { ready.go(); grab(1); } },
   };
 }
 

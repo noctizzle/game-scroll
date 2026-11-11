@@ -1,7 +1,8 @@
 import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
-const { clamp, rnd } = gs.util;
+const { clamp } = gs.util;
+const { Feel } = gs.effects;
 
 // Pull back the slingshot and fling stones at the grumpy blobs hiding in wood, glass and stone
 // forts. Blocks break on hard hits and crush whatever they land on. Clear every blob to move on.
@@ -15,7 +16,8 @@ const G = 210, PULL = 34, POWER = 6.4;
 let W = 160, H = 160;
 
 function make(api) {
-  let bodies, ball, drag, shots, level, score, t, parts, msg, settle, still;
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  let bodies, ball, drag, shots, level, score, t, msg, settle, still;
   const ground = () => H - 14, sling = () => ({ x: 24, y: H - 42 });
 
   function body(x, y, w, h, mat) { const m = MAT[mat]; return { x, y, w, h, vx: 0, vy: 0, m: w * h * m.d, hp: m.hp, mat, awake: false, rest: 0 }; }
@@ -42,8 +44,8 @@ function make(api) {
     if (dmg <= 0) return; b.hp -= dmg; b.awake = true;
     if (b.hp <= 0 && !b.dead) {
       b.dead = true; const col = b.mat === 'grump' ? '#68d048' : MAT[b.mat].col;
-      for (let i = 0; i < 8; i++) parts.push({ x: b.x + rnd(0, b.w), y: b.y + rnd(0, b.h), vx: rnd(-60, 60), vy: rnd(-90, -10), l: rnd(.4, .9), col });
-      if (b.mat === 'grump') { score += 1; api.score(score); haptic('medium'); sfx(880, .12, 'square', .05, 300); msg = { txt: '+1', x: b.x + 4, y: b.y, l: .8 }; }
+      feel.juice.burst(b.x + b.w / 2, b.y + b.h / 2, { n: 8, speed: 80, spread: Math.PI, angle: -Math.PI / 2, life: .7, size: 2, gravity: G, color: [col] });
+      if (b.mat === 'grump') { score += 1; api.score(score); haptic('medium'); sfx(880, .12, 'square', .05, 300); feel.juice.pop(b.x + 4, b.y - 2, '+1', { color: '#f8d838', size: 8 }); }
       else { haptic('light'); sfx(b.mat === 'glass' ? 1400 : b.mat === 'stone' ? 160 : 320, .08, 'square', .04, -100); }
     }
   }
@@ -85,7 +87,7 @@ function make(api) {
         const rv = (ball.vx - b.vx) * dx + (ball.vy - b.vy) * dy; if (rv >= 0) continue;
         b.awake = true; const BM = 70, j = -1.25 * rv / (1 / BM + 1 / b.m);
         ball.vx += j * dx / BM; ball.vy += j * dy / BM; b.vx -= j * dx / b.m; b.vy -= j * dy / b.m;
-        hurt(b, (-rv - 25) * 1.1); if (-rv > 60) { haptic('heavy'); sfx(120, .1, 'square', .05, -40); }
+        hurt(b, (-rv - 25) * 1.1); if (-rv > 60) { haptic('heavy'); sfx(120, .1, 'square', .05, -40); feel.juice.shake(2); }
       }
       ball.t += h;
     }
@@ -94,11 +96,10 @@ function make(api) {
   }
   function aim() { if (!drag) return null; let dx = drag.x - drag.cx, dy = drag.y - drag.cy; const l = Math.hypot(dx, dy); if (l > PULL) { dx *= PULL / l; dy *= PULL / l; } return { dx, dy, l: Math.min(l, PULL) }; }
   const self = {
-    reset() { level = 1; score = 0; t = 0; parts = []; msg = null; drag = null; still = 0; build(); },
+    reset() { level = 1; score = 0; t = 0; msg = null; drag = null; still = 0; feel.clear(); build(); },
     resize(w, h) { const old = H; W = w; H = h; if (bodies) for (const b of bodies) b.y += h - old; },
     update(dt) {
-      t += dt; const n = 4; for (let i = 0; i < n; i++) step(dt / n);
-      for (const p of parts) { p.vy += G * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.l -= dt; } parts = parts.filter(p => p.l > 0);
+      feel.update(dt); t += dt; const n = 4; for (let i = 0; i < n; i++) step(dt / n);
       if (msg) { msg.l -= dt; msg.y -= 12 * dt; if (msg.l <= 0) msg = null; }
       if (ball) {
         still = Math.hypot(ball.vx, ball.vy) < 10 ? still + dt : 0;
@@ -112,11 +113,12 @@ function make(api) {
         }
       }
     },
-    fx(dt) { for (const p of parts) { p.vy += G * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.l -= dt; } parts = parts.filter(p => p.l > 0); },
+    fx(dt) { feel.update(dt); },
     draw(c) {
       const gy = ground(), s = sling();
       const g = c.createLinearGradient(0, 0, 0, gy); g.addColorStop(0, '#58b8f8'); g.addColorStop(1, '#c8f0ff'); c.fillStyle = g; c.fillRect(0, 0, W, H);
       c.fillStyle = '#f8f8f0'; for (let i = 0; i < 4; i++) { const x = ((i * 70 + t * 4) % (W + 60)) - 30, y = 18 + (i % 2) * 14; c.fillRect(x, y, 22, 5); c.fillRect(x + 5, y - 3, 12, 3); }
+      feel.begin(c);
       c.fillStyle = '#78c860'; for (let x = 0; x < W; x += 2) { const hh = 10 + Math.sin(x * .05) * 5 + Math.sin(x * .13) * 3; c.fillRect(x, gy - hh, 2, hh); }
       c.fillStyle = '#48a838'; c.fillRect(0, gy, W, 3); c.fillStyle = '#a06838'; c.fillRect(0, gy + 3, W, H - gy); c.fillStyle = '#804820'; for (let x = 3; x < W; x += 9) c.fillRect(x, gy + 7 + (x % 4), 2, 2);
       // slingshot back arm, bands, stone, front arm
@@ -143,7 +145,7 @@ function make(api) {
       if (ball) { c.fillStyle = '#585868'; c.beginPath(); c.arc(ball.x, ball.y, 3, 0, 7); c.fill(); c.fillStyle = '#9898a8'; c.fillRect(ball.x - 2 | 0, ball.y - 2 | 0, 1, 1); }
       // front arm
       c.fillStyle = '#904c20'; c.fillRect(s.x + 4, s.y - 4, 2, 9);
-      for (const p of parts) { c.fillStyle = p.col; c.fillRect(p.x | 0, p.y | 0, 2, 2); }
+      feel.end(c, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left';
       for (let i = 0; i < shots - (rest ? 1 : 0); i++) { c.fillStyle = '#585868'; c.fillRect(4 + i * 7, gy + 5, 5, 5); }
       c.fillStyle = '#101018'; c.fillText(`L${level}`, 4, 9); c.textAlign = 'right'; c.fillStyle = '#208858'; c.fillText(`${grumps()}`, W - 12, 9); c.fillStyle = '#58c040'; c.fillRect(W - 10, 3, 6, 6);

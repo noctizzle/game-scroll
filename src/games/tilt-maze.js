@@ -2,6 +2,8 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { tilt, calibrateTilt, want, haptic } = gs.device;
 const { clamp } = gs.util;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
 
 // Tilt the phone to roll a marble through a fresh maze to the hole. Each maze adds time. No tilt sensor? Drag instead.
 const W = 360, H = 640, C = 7, Rw = 11, CS = 46, OX = (W - C * CS) / 2, OY = 92, BR = 11;
@@ -20,12 +22,15 @@ function maze() {
 
 function make(api) {
   want('motion');
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready({ eat: false });                // the clock waits for the first touch
   let m, ball, hole, time, score, t, drag, dead, lastWall;
   function next() { m = maze(); ball = { x: OX + CS / 2, y: OY + CS / 2, vx: 0, vy: 0 }; hole = { x: OX + (C - .5) * CS, y: OY + (Rw - .5) * CS }; }
   return {
-    reset() { calibrateTilt(); score = 0; time = 30; t = 0; drag = null; dead = 0; lastWall = 0; next(); },
+    reset() { calibrateTilt(); score = 0; time = 30; t = 0; drag = null; dead = 0; lastWall = 0; feel.clear(); ready.reset(); next(); },
     update(dt) {
-      t += dt; time -= dt; if (time <= 0) { time = 0; haptic('error'); return api.over(); }
+      feel.update(dt); if (!ready.update(dt)) return;
+      t += dt; time -= dt; if (time <= 0) { time = 0; haptic('error'); sfx(140, .4, 'triangle', .05, -50); feel.juice.shake(6); return api.over(); }
       const tl = tilt(); let ax = 0, ay = 0;
       if (drag && drag.cur) { ax = clamp((drag.cur.x - drag.x) / 50, -1, 1); ay = clamp((drag.cur.y - drag.y) / 50, -1, 1); }
       else if (tl) { ax = tl.x; ay = tl.y; }
@@ -45,11 +50,12 @@ function make(api) {
         }
         if (hit > 120 && t - lastWall > .12) { lastWall = t; haptic(hit > 300 ? 'medium' : 'light'); sfx(160 + hit * .2, .03, 'triangle', .03); }
       }
-      if (Math.hypot(ball.x - hole.x, ball.y - hole.y) < 14) { score++; api.score(score); time += 12; haptic('success'); sfx(660, .2, 'triangle', .06, 500); next(); }
+      if (Math.hypot(ball.x - hole.x, ball.y - hole.y) < 14) { score++; api.score(score); time += 12; haptic('success'); sfx(660, .2, 'triangle', .06, 500); feel.juice.burst(hole.x, hole.y, { n: 20, speed: 210, life: .5, size: 4, color: ['#ffd34a', '#ffffff', '#8aa0b8'] }).pop(hole.x - 20, hole.y - 30, '+12s', { color: '#3d2c18', size: 18 }); next(); }
     },
-    fx(dt) { dead += dt; },
+    fx(dt) { dead += dt; feel.update(dt); },
     draw(c) {
       c.fillStyle = '#1c2a24'; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = '#e9dcc0'; c.fillRect(OX - 6, OY - 6, C * CS + 12, Rw * CS + 12);
       c.fillStyle = '#d6c6a3'; for (let i = 0; i < 40; i++) c.fillRect(OX + (i * 97) % (C * CS), OY + (i * 59) % (Rw * CS), 22, 1);
       const g = c.createRadialGradient(hole.x, hole.y, 2, hole.x, hole.y, 16); g.addColorStop(0, '#000'); g.addColorStop(1, '#3d2c18'); c.fillStyle = g; c.beginPath(); c.arc(hole.x, hole.y, 15, 0, 7); c.fill();
@@ -62,10 +68,13 @@ function make(api) {
       c.stroke();
       c.fillStyle = '#0006'; c.beginPath(); c.arc(ball.x + 3, ball.y + 4, BR, 0, 7); c.fill();
       const bg = c.createRadialGradient(ball.x - 4, ball.y - 4, 1, ball.x, ball.y, BR); bg.addColorStop(0, '#fff'); bg.addColorStop(1, '#8aa0b8'); c.fillStyle = bg; c.beginPath(); c.arc(ball.x, ball.y, BR, 0, 7); c.fill();
+      feel.end(c, W, H);
+      ready.draw(c, W, H, { y: 345, color: '#3b2a1a', shadow: '#fff6e0d0' });
       c.fillStyle = time < 6 && (t * 4 | 0) % 2 ? '#ff6b6b' : '#e9dcc0'; c.font = '400 14px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillText(`${Math.ceil(time)}s`, OX, OY - 22);
       if (!tilt()) { c.textAlign = 'right'; c.fillStyle = '#e9dcc099'; c.font = '500 12px Rubik, sans-serif'; c.fillText('drag to roll', W - OX, OY - 24); }
     },
-    down(x, y) { drag = { x, y, cur: null }; },
+    down(x, y) { ready.go(); drag = { x, y, cur: null }; },
+    key(k, d) { if (d) ready.go(); },
     move(x, y, p) { if (p && drag) drag.cur = { x, y }; },
     up() { drag = null; },
   };

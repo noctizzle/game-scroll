@@ -3,13 +3,15 @@ const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
 
 // Turn-based artillery on a hill. Drag back from your tank to aim and set power, then let go.
 // Mind the wind. Each enemy tank you hit brings a sharper one. Get hit once and it's over.
 const P = PAL.moss, W = 160, H = 160, G = 90, MAXP = 120;
 
 function make(api) {
-  let ground, me, foe, shell, turn, wind, score, aim, boom, wait, foeErr, t, shake;
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  let ground, me, foe, shell, turn, wind, score, aim, boom, wait, foeErr, t;
   function terrain() {
     ground = new Float32Array(W); const a = rnd(0, 6), b = rnd(0, 6), hill = rnd(20, 50);
     for (let x = 0; x < W; x++) ground[x] = 128 - Math.sin(x / W * Math.PI) * hill - Math.sin(x / 13 + a) * 4 - Math.sin(x / 29 + b) * 7;
@@ -27,17 +29,19 @@ function make(api) {
     return x;
   }
   function explode(x, y) {
-    boom = { x, y, l: .5 }; shake = .3; sfx(80, .4, 'square', .06, -30); haptic('heavy');
+    boom = { x, y, l: .5 }; sfx(80, .4, 'square', .06, -30); haptic('heavy');
+    feel.juice.shake(3).burst(x, y, { n: 10, speed: 60, spread: Math.PI, angle: -Math.PI / 2, life: .5, size: 2, gravity: 160, color: [P[1], P[0]] });
     for (let i = -7; i <= 7; i++) { const xx = Math.round(x) + i; if (xx < 0 || xx >= W) continue; const d = Math.sqrt(49 - i * i); if (ground[xx] < y + d) ground[xx] = Math.min(150, Math.max(ground[xx], y + d)); }
     const hitFoe = Math.hypot(foe.x - x, gy(foe.x) - 3 - y) < 9, hitMe = Math.hypot(me.x - x, gy(me.x) - 3 - y) < 9;
-    if (hitFoe) { score++; api.score(score); haptic('success'); wait = 1.2; turn = 'next'; return; }
-    if (hitMe) { haptic('error'); turn = 'dead'; wait = .6; return; }
+    if (hitFoe) { score++; api.score(score); haptic('success'); wait = 1.2; turn = 'next'; feel.juice.burst(foe.x, y - 3, { n: 14, speed: 70, life: .6, size: 2, gravity: 120, color: [P[0], P[1]] }).pop(foe.x - 10, y - 16, 'HIT', { color: P[0], size: 8 }); return; }
+    if (hitMe) { haptic('error'); turn = 'dead'; wait = .6; feel.juice.shake(5).burst(me.x, y - 3, { n: 14, speed: 70, life: .6, size: 2, gravity: 120, color: [P[0], P[1]] }); return; }
     turn = shell.who === 'me' ? 'foe' : 'me'; wait = turn === 'foe' ? .9 : 0;
   }
   return {
-    reset() { score = 0; t = 0; aim = null; shake = 0; newRound(); },
+    reset() { score = 0; t = 0; aim = null; feel.clear(); newRound(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
-      t += dt; shake = Math.max(0, shake - dt); if (boom) { boom.l -= dt; if (boom.l <= 0) boom = null; }
+      feel.update(dt); t += dt; if (boom) { boom.l -= dt; if (boom.l <= 0) boom = null; }
       if (shell) {
         for (let s = 0; s < 3; s++) {
           const h = dt / 3; shell.vx += wind * h; shell.vy += G * h; shell.x += shell.vx * h; shell.y += shell.vy * h;
@@ -58,8 +62,8 @@ function make(api) {
       }
     },
     draw(c) {
-      c.save(); if (shake) c.translate(rnd(-1, 1) * shake * 6, 0);
-      c.fillStyle = P[3]; c.fillRect(-4, 0, W + 8, H);
+      c.fillStyle = P[3]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = P[2]; for (let x = 0; x < W; x++) c.fillRect(x, Math.round(ground[x]), 1, H - Math.round(ground[x]));
       c.fillStyle = P[1]; for (let x = 0; x < W; x++) c.fillRect(x, Math.round(ground[x]), 1, 2);
       const tank = (x, col, dir, ang) => {
@@ -76,7 +80,7 @@ function make(api) {
       }
       if (shell) { c.fillStyle = P[0]; for (const [x, y] of shell.trail.slice(-12)) c.fillRect(Math.round(x), Math.round(y), 1, 1); c.fillRect(Math.round(shell.x) - 1, Math.round(shell.y) - 1, 3, 3); }
       if (boom) { c.fillStyle = P[0]; c.globalAlpha = boom.l * 2; c.beginPath(); c.arc(boom.x, boom.y, 9 * (1 - boom.l), 0, 7); c.fill(); c.globalAlpha = 1; }
-      c.restore();
+      feel.end(c, W, H);
       // wind gauge top-left, turn top-right
       c.fillStyle = P[0]; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillText('WIND', 4, 10);
       c.fillRect(32, 6, 1, 5); c.fillRect(32, 8, Math.round(wind / 2), 1); if (wind) c.fillRect(32 + Math.round(wind / 2) - (wind > 0 ? 1 : 0), 7, 1, 3);

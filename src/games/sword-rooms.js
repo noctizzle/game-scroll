@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 
 // Top-down dungeon crawl. Hold and drag to walk toward your finger; tap to swing your sword that way.
 // Clear every monster to open the door at the top, then step through to the next room.
@@ -9,7 +10,9 @@ const T = 16;
 let W = 160, H = 160;
 
 function make(api) {
-  let map, C, R, hero, foes, room, score, t, touch, swing, hearts, parts, drops, open, msg, shake;
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready({ eat: false });                              // the monsters wait for the first touch
+  let map, C, R, hero, foes, room, score, t, touch, swing, hearts, drops, open, msg;
   const oy = () => H - R * T;
   const solid = (x, y) => { const c = Math.floor(x / T), r = Math.floor((y - oy()) / T); if (c < 0 || c >= C || r < 0 || r >= R) return true; return map[r][c] === 1 || (map[r][c] === 2 && !open); };
   const hitsWall = (x, y, s) => solid(x - s, y - s) || solid(x + s, y - s) || solid(x - s, y + s) || solid(x + s, y + s);
@@ -28,7 +31,7 @@ function make(api) {
     for (let i = 0; i < n; i++) { let x, y, k = 0; do { x = rnd(T * 1.5, W - T * 1.5); y = rnd(oy() + T * 1.5, H - T * 4); k++; } while (k < 40 && hitsWall(x, y, 6)); const kind = kinds[Math.random() * kinds.length | 0]; foes.push({ kind, x, y, hp: kind === 'slime' ? 1 : 2, vx: 0, vy: 0, t: rnd(0, 2), hurt: 0 }); }
   }
   function hurtHero(fx, fy) {
-    if (hero.inv > 0) return; hearts--; hero.inv = 1.1; shake = .25; const d = Math.hypot(hero.x - fx, hero.y - fy) || 1; hero.kb = { x: (hero.x - fx) / d * 140, y: (hero.y - fy) / d * 140, t: .15 };
+    if (hero.inv > 0) return; hearts--; hero.inv = 1.1; feel.juice.shake(3); const d = Math.hypot(hero.x - fx, hero.y - fy) || 1; hero.kb = { x: (hero.x - fx) / d * 140, y: (hero.y - fy) / d * 140, t: .15 };
     haptic('heavy'); sfx(160, .2, 'square', .05, -80); if (hearts <= 0) { sfx(100, .5, 'square', .05, -40); haptic('error'); }
   }
   function attack(tx, ty) {
@@ -38,16 +41,18 @@ function make(api) {
       const ex = f.x - hero.x, ey = f.y - hero.y, dist = Math.hypot(ex, ey); if (dist > 20) continue;
       let da = Math.atan2(ey, ex) - swing.a; da = Math.atan2(Math.sin(da), Math.cos(da)); if (Math.abs(da) > 1.3 && dist > 7) continue;
       f.hp--; f.hurt = .25; f.vx = ex / (dist || 1) * 160; f.vy = ey / (dist || 1) * 160; f.kb = .12; sfx(500, .06, 'square', .05, -200);
-      if (f.hp <= 0) { f.dead = true; score += 1; api.score(score); haptic('medium'); for (let i = 0; i < 6; i++) parts.push({ x: f.x, y: f.y, vx: rnd(-50, 50), vy: rnd(-50, 50), l: .4 }); if (Math.random() < .18 && hearts < 3) drops.push({ x: f.x, y: f.y }); }
+      if (f.hp <= 0) { f.dead = true; score += 1; api.score(score); haptic('medium'); feel.juice.burst(f.x, f.y, { n: 7, speed: 60, life: .4, size: 2, color: ['#f8f8f0', f.kind === 'slime' ? '#48c048' : f.kind === 'bat' ? '#8848c8' : '#c04030'] }); if (Math.random() < .18 && hearts < 3) drops.push({ x: f.x, y: f.y }); }
     }
     foes = foes.filter(f => !f.dead);
     if (!foes.length && !open) { open = true; score += 2; api.score(score); msg = { txt: 'DOOR OPEN!', l: 1.2 }; haptic('success'); sfx(700, .3, 'square', .05, 400); }
   }
   const self = {
-    reset() { room = 0; score = 0; t = 0; touch = null; swing = null; hearts = 3; parts = []; msg = null; shake = 0; buildRoom(false); },
+    reset() { room = 0; score = 0; t = 0; touch = null; swing = null; hearts = 3; msg = null; self.keys = null; feel.clear(); ready.reset(); buildRoom(false); },
+    fx(dt) { feel.update(dt); },
     resize(w, h) { W = w; H = h; if (hero) { buildRoom(true); foes = foes.filter(f => !hitsWall(f.x, f.y, 5)); } },
     update(dt) {
-      t += dt; shake = Math.max(0, shake - dt); if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
+      feel.update(dt); if (!ready.update(dt)) return;
+      t += dt; if (msg) { msg.l -= dt; if (msg.l <= 0) msg = null; }
       if (hearts <= 0) return api.over();
       hero.inv = Math.max(0, hero.inv - dt); if (swing) { swing.t -= dt; if (swing.t <= 0) swing = null; }
       if (hero.kb) { moveBody(hero, hero.kb.x * dt, hero.kb.y * dt, 5); hero.kb.t -= dt; if (hero.kb.t <= 0) hero.kb = null; }
@@ -65,13 +70,12 @@ function make(api) {
         else { if (!f.dash && f.t > 1.6) { f.dash = { x: dx / d, y: dy / d, t: .5 }; f.t = 0; sfx(250, .05, 'square', .03); } if (f.dash) { moveBody(f, f.dash.x * 120 * dt, f.dash.y * 120 * dt, 5); f.dash.t -= dt; if (f.dash.t <= 0) f.dash = null; } }
         if (d < 9) hurtHero(f.x, f.y);
       }
-      for (const dr of drops) if (Math.hypot(dr.x - hero.x, dr.y - hero.y) < 9) { dr.got = true; hearts = Math.min(3, hearts + 1); haptic('success'); sfx(1000, .15, 'triangle', .05, 300); }
+      for (const dr of drops) if (Math.hypot(dr.x - hero.x, dr.y - hero.y) < 9) { dr.got = true; hearts = Math.min(3, hearts + 1); haptic('success'); sfx(1000, .15, 'triangle', .05, 300); feel.juice.pop(dr.x, dr.y - 8, '+1', { color: '#e04050', size: 6 }); }
       drops = drops.filter(d => !d.got);
-      for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.l -= dt; } parts = parts.filter(p => p.l > 0);
     },
     draw(c) {
-      const o = oy(), sx = shake > 0 ? Math.round(Math.sin(t * 90) * 2) : 0;
-      c.fillStyle = '#101018'; c.fillRect(0, 0, W, H); c.save(); c.translate(sx, 0);
+      const o = oy();
+      c.fillStyle = '#101018'; c.fillRect(0, 0, W, H); feel.begin(c);
       for (let r = 0; r < R; r++) for (let cc = 0; cc < C; cc++) {
         const v = map[r][cc], X = cc * T, Y = o + r * T;
         if (v === 0) { c.fillStyle = (r + cc) % 2 ? '#c8a878' : '#d0b080'; c.fillRect(X, Y, T, T); c.fillStyle = '#b89868'; c.fillRect(X, Y, T, 1); c.fillRect(X, Y, 1, T); }
@@ -88,24 +92,24 @@ function make(api) {
       // hero
       if (!(hero.inv > 0 && (t * 16 | 0) % 2)) {
         const x = Math.round(hero.x), y = Math.round(hero.y);
-        c.fillStyle = '#208858'; c.fillRect(x - 5, y - 7, 10, 4); c.fillStyle = '#f8d0a8'; c.fillRect(x - 4, y - 3, 8, 4); c.fillStyle = '#38b858'; c.fillRect(x - 5, y + 1, 10, 5); c.fillStyle = '#683820'; c.fillRect(x - 4, y + 6, 3, 2); c.fillRect(x + 1, y + 6, 3, 2);
+        c.fillStyle = '#2858b8'; c.fillRect(x - 5, y - 7, 10, 4); c.fillStyle = '#f8d0a8'; c.fillRect(x - 4, y - 3, 8, 4); c.fillStyle = '#4080e0'; c.fillRect(x - 5, y + 1, 10, 5); c.fillStyle = '#683820'; c.fillRect(x - 4, y + 6, 3, 2); c.fillRect(x + 1, y + 6, 3, 2);
         c.fillStyle = '#101018'; c.fillRect(x - 2 + Math.round(hero.face[0]), y - 2 + Math.max(0, Math.round(hero.face[1])), 1, 1); c.fillRect(x + 1 + Math.round(hero.face[0]), y - 2 + Math.max(0, Math.round(hero.face[1])), 1, 1);
       }
       if (swing) { const k = 1 - swing.t / .18, a = swing.a - 1.1 + k * 2.2; c.strokeStyle = '#f8f8f0'; c.lineWidth = 2; c.beginPath(); c.moveTo(hero.x + Math.cos(a) * 5, hero.y + Math.sin(a) * 5); c.lineTo(hero.x + Math.cos(a) * 17, hero.y + Math.sin(a) * 17); c.stroke(); c.strokeStyle = '#ffffff60'; c.beginPath(); c.arc(hero.x, hero.y, 15, swing.a - 1.1, a); c.stroke(); }
-      for (const p of parts) { c.fillStyle = '#f8f8f0'; c.fillRect(p.x | 0, p.y | 0, 2, 2); }
-      c.restore();
+      feel.end(c, W, H);
       c.fillStyle = '#101018'; c.fillRect(0, 0, W, o);
       for (let i = 0; i < 3; i++) { const x = 4 + i * 9, y = o - 7; c.fillStyle = i < hearts ? '#e04050' : '#404050'; c.fillRect(x, y, 3, 2); c.fillRect(x + 4, y, 3, 2); c.fillRect(x, y + 2, 7, 2); c.fillRect(x + 2, y + 4, 3, 1); }
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'right'; c.fillStyle = '#f8f8f0'; c.fillText(`RM${room + 1}`, W - 3, o - 2);
       if (msg) { c.textAlign = 'center'; c.fillStyle = '#101018'; c.fillText(msg.txt, W / 2 + 1, o + 31); c.fillStyle = '#f8d838'; c.fillText(msg.txt, W / 2, o + 30); }
-      if (t < 5 && room === 0) { c.textAlign = 'center'; c.fillStyle = '#101018'; c.fillText('HOLD: WALK  TAP: SWING', W / 2, H - 20); }
+      if (!ready.waiting && t < 5 && room === 0) { c.textAlign = 'center'; c.fillStyle = '#101018'; c.fillText('HOLD: WALK  TAP: SWING', W / 2, H - 20); }
+      ready.draw(c, W, H, { pixel: true, color: '#101018', y: H - 20, text: 'HOLD: WALK  TAP: SWING' });
     },
-    down(x, y) { touch = { x, y, sx: x, sy: y, t: 0, walk: false }; },
+    down(x, y) { ready.go(); touch = { x, y, sx: x, sy: y, t: 0, walk: false }; },
     move(x, y, p) { if (!p || !touch) return; touch.x = x; touch.y = y; if (Math.hypot(x - touch.sx, y - touch.sy) > 6) touch.walk = true; },
     up(x, y) { if (touch && !touch.walk) attack(touch.sx, touch.sy); touch = null; },
     key(k, d) {
       const m = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[k];
-      if (m) self.keys = d ? m : [0, 0];
+      if (d) ready.go(); if (m) self.keys = d ? m : [0, 0];
       if (d && k === ' ') { const f = foes[0]; attack(f ? f.x : hero.x + hero.face[0] * 10, f ? f.y : hero.y + hero.face[1] * 10); }
     },
   };

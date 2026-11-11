@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp } = gs.util;
+const { Feel } = gs.effects;
 
 // You're mayor of a little town. Townsfolk bring requests: swipe left or right to decide.
 // Keep Food, Gold, Mood and Safety balanced: if any runs out OR overflows, your term is over.
@@ -36,23 +37,26 @@ const CARDS = [
 ];
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
   let m, card, deck, days, drag, fly, t, flash, last;
   function nextCard() { if (!deck.length) deck = CARDS.map((_, i) => i).sort(() => Math.random() - .5); let i; do i = deck.pop(); while (i === last && deck.length); last = i; card = CARDS[i]; }
   function choose(right) {
     const ch = right ? card.R : card.L;
-    ch[1].forEach((d, i) => { m[i] = clamp(m[i] + d, 0, 10); });
+    ch[1].forEach((d, i) => { m[i] = clamp(m[i] + d, 0, 10); if (d) feel.juice.pop(51 + i * 80, 58, d > 0 ? `+${d}` : `${d}`, { color: d > 0 ? '#7dff9a' : '#ff8a8a', size: 15 }); });
     days++; api.score(days); fly = { dir: right ? 1 : -1, l: .3, card };
     flash = ch[1].map(d => d);
     haptic('light'); sfx(right ? 600 : 450, .06, 'triangle', .04, right ? 120 : -120);
     const bad = m.findIndex(v => v <= 0 || v >= 10);
-    if (bad >= 0) { haptic('error'); sfx(130, .4, 'triangle', .06, -40); return api.over(); }
+    if (bad >= 0) { haptic('error'); sfx(130, .4, 'triangle', .06, -40); feel.juice.shake(7); return api.over(); }
     nextCard();
   }
   return {
-    reset() { m = [5, 5, 5, 5]; deck = []; days = 0; drag = null; fly = null; t = 0; flash = null; last = -1; nextCard(); },
-    update(dt) { t += dt; if (fly) { fly.l -= dt; if (fly.l <= 0) fly = null; } },
+    reset() { m = [5, 5, 5, 5]; deck = []; days = 0; drag = null; fly = null; t = 0; flash = null; last = -1; feel.clear(); nextCard(); },
+    fx(dt) { feel.update(dt); },
+    update(dt) { feel.update(dt); t += dt; if (fly) { fly.l -= dt; if (fly.l <= 0) fly = null; } },
     draw(c) {
       c.fillStyle = '#2a2140'; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       // meters
       METERS.forEach(([name, col], i) => {
         const x = 26 + i * 80, v = m[i] / 10;
@@ -75,6 +79,7 @@ function make(api) {
       };
       if (fly) drawCard(fly.card, fly.dir * (1 - fly.l / .3) * 400, fly.dir * .4, fly.l / .3);
       drawCard(card, dx, rot, 1);
+      feel.end(c, W, H);
       c.fillStyle = '#ffffffaa'; c.font = '400 10px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(`DAY ${days + 1}`, W / 2, 590);
       c.font = '500 12px Rubik, sans-serif'; c.fillText(`← ${card.L[0]}     ${card.R[0]} →`, W / 2, 615);
     },

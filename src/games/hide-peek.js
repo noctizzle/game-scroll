@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { faceDown, want, haptic } = gs.device;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
 
 // Raid the cookie jar while the cook isn't looking. Keep the phone face up to grab cookies. When you
 // hear and feel the cook turning round, lay the phone face DOWN to hide. A double buzz means the coast
@@ -10,6 +11,7 @@ const P = PAL.amber, W = 160, H = 160;
 
 function make(api) {
   want('motion');
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
   let state, timer, score, t, grab, holding, caught, warned, jar, crumbs;
   const flipMode = () => faceDown() !== null;
   const grabbing = () => flipMode() ? !faceDown() : holding;
@@ -19,20 +21,21 @@ function make(api) {
     else { state = 'away'; timer = 1.2 + Math.random() * 3; haptic('success'); sfx(700, .06, 'square', .04); sfx(900, .06, 'square', .04); }
   }
   return {
-    reset() { state = 'away'; timer = 2; score = 0; t = 0; grab = 0; holding = false; caught = 0; warned = false; jar = 30; crumbs = []; },
+    reset() { state = 'away'; timer = 2; score = 0; t = 0; grab = 0; holding = false; caught = 0; warned = false; jar = 30; crumbs = []; feel.clear(); },
     update(dt) {
-      t += dt; timer -= dt; for (const c of crumbs) { c.l -= dt; c.y += dt * 30; } crumbs = crumbs.filter(c => c.l > 0);
+      feel.update(dt); t += dt; timer -= dt; for (const c of crumbs) { c.l -= dt; c.y += dt * 30; } crumbs = crumbs.filter(c => c.l > 0);
       if (caught) { caught += dt; return; }
       if (timer <= 0) next();
       if (grabbing()) {
-        if (state === 'looking') { caught = .001; haptic('error'); sfx(110, .5, 'square', .06, -30); return api.over(); }
+        if (state === 'looking') { caught = .001; haptic('error'); sfx(110, .5, 'square', .06, -30); feel.juice.shake(6); return api.over(); }
         grab += dt;
         if (grab >= .45) { grab = 0; score++; jar--; api.score(score); haptic('tick'); sfx(500 + (score % 5) * 60, .04, 'square', .03); crumbs.push({ x: 70 + Math.random() * 20, y: 110, l: .6 }); if (jar <= 0) { jar = 30; } }
       } else grab = 0;
     },
-    fx(dt) { caught += dt; },
+    fx(dt) { caught += dt; feel.update(dt); },
     draw(c) {
       c.fillStyle = P[3]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = P[2]; c.fillRect(0, 118, W, 42); c.fillStyle = P[1]; c.fillRect(0, 118, W, 2);
       // cook at the stove (top right)
       const look = state === 'looking' || caught, turn = state === 'turning';
@@ -48,6 +51,7 @@ function make(api) {
       c.fillStyle = P[0]; for (let i = 0; i < Math.min(12, Math.ceil(jar / 2.5)); i++) c.fillRect(63 + (i % 4) * 8, 110 - (i / 4 | 0) * 7, 6, 5);
       if (grabbing() && !caught) { c.fillStyle = P[2]; c.fillRect(70, 56 + Math.sin(t * 20) * 2, 12, 30); c.fillStyle = P[1]; c.fillRect(68, 54, 16, 6); }
       for (const cr of crumbs) { c.fillStyle = P[0]; c.fillRect(cr.x, cr.y, 2, 2); }
+      feel.end(c, W, H);
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = P[0];
       c.fillText(flipMode() ? 'UP:GRAB DOWN:HIDE' : 'HOLD:GRAB', 4, 10);
       if (state === 'turning') { c.fillText('HIDE!', 4, 148); }

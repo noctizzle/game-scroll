@@ -1,5 +1,171 @@
 # Game review
 
+## 2026-11-11: whole-catalogue review (244 games)
+
+Every game file was checked again: the code or its design notes, a mid-play screenshot, the idle and random-tap bots (`npm run qa`), a 20-second no-touch run and the goal-reaching bot (`scripts/playtest.cjs`). These are Claude's judgement, not player data; Rob's in-app ratings (👎 Meh / ♥) overrule them. Nothing has been deleted: removal waits for Rob.
+
+- **Keep:** 221 games (121 of them changed in this pass, see below).
+- **Recommended for removal:** 9 (eight weak games and one duplicate).
+- **Too close to one existing game:** 13. Good games, but each follows one well-known game's rules and look closely enough to break the "original, not a recreation" rule. Drop or re-theme.
+- **Hidden already:** ar-lab (the AR test scene, on the BENCHED list).
+
+### Recommended for removal (9)
+
+| Game | Why |
+|---|---|
+| Colour Hunt (`color-hunt`) | Needs the camera and a walk round the room, and a matching colour is easy to fake or impossible to find. The no-camera version is a different, weaker game. |
+| Shake Dice (`shake-dice`) | Dice luck against "the house" with one choice (roll or bank). Shake Tree does push-your-luck better and without the casino feel. |
+| Shake Soda (`shake-soda`) | One four-second gag: shake, then wait. Nothing to learn on a second go. |
+| Swipe the Arrow (`swipe-arrow`) | A bare reflex test. Random swipes end a round in half a second, and several other games use swipes with more to them. |
+| Tap on Green (`tap-green`) | A reaction-time test rather than a game. Thumb Duel is the same idea with fake-outs, a rival and two-player. |
+| Bubble Level (`bubble-level`) | The thinnest of the tilt games (Tilt Maze, Steady Hand, Marble Trio all do more), and it scored with no touch. |
+| Compass Hunt (`compass-hunt`) | You have to turn your whole body. Awkward on a sofa or a bus, and with no compass it is just dragging a dot to the middle. |
+| Lane Racer (`lane-racer`) | The most basic game in the app (2.7 KB): four lanes, dodge. Road Hopper, Ski Slalom, Kit Racer and Pocket Kart cover it. |
+| Lamp Flip (`lamp-flip`) | Same lights-out puzzle as Street Lamps, which has the daily shared-with-your-neighbourhood twist. Keep one. |
+
+On the 2026-11-06 shortlist but kept now: higher-lower, shout-rocket, safe-cracker, haptic-morse (Buzz Code) and penalty-keeper. Each was fixed or turned out to work without the sensor it leans on.
+
+### Too close to one existing game (13)
+
+The rule (AGENTS.md): genres and mechanics are fine; recreating a specific existing game (its characters, rules or look, even renamed) is not. Each of these has its own art and names, but the set of rules taken together points at one game. They were left unedited so the choice stays open, except blob-pairs and panel-rise, which got the same engine updates as everything else.
+
+| Game | Too close to | What gives it away |
+|---|---|---|
+| Copy Puff (`copy-puff`) | the pink puff platformers | A round puff that floats by flapping, sucks in enemies and copies their power (spark, blade, rock). |
+| Garden Guard (`garden-guard`) | the lawn defence game with plants | Collect falling dew, pick seed cards, plant in lanes: a resource flower, a pea shooter, a wall and a bomb against a marching column, with the house on the left. |
+| Crate Dash (`crate-dash`) | the orange marsupial crate platformers | Run into the screen down a jungle path, spin through wooden crates, red explosive crates, bouncy crates, 100 gems for a life. |
+| Cube Tide (`cube-tide`) | the 1997 rolling-cube puzzle game | Cubes roll down a floating floor, you mark a tile and trigger it to sink them, green cubes leave a 3x3 trap, never sink a black one, lost cubes shorten the floor. |
+| Saber Knight (`saber-knight`) | the space-knight film series | A robed knight with a glowing blade knocking blaster bolts back and a "push" power. |
+| Grid Duel (`grid-duel`) | the net-battler handheld RPG series | A 6x3 grid split blue and red, a buster down your row, battle chips (sword, cannon, bomb, wide slash) loading into a tray. |
+| Timing Brawl (`timing-brawl`) | the paper plumber RPG battles | Turn-based fights with JUMP (tap on landing) and BASH/hammer (hold and release), spiky foes you cannot jump on, flying foes you cannot bash. |
+| Suit Ops (`suit-ops`) | the nanosuit shooter | A power suit with ARMOR, CLOAK, SPEED and POWER modes on one energy bar, on a jungle island. |
+| Egg Catcher (`egg-catcher`) | the 1981 LCD egg handheld | Four hens, four ramps, a catcher moved between four corners, three broken eggs. The file itself says it is "a classic LCD handheld idea". |
+| Germ Buster (`germ-buster`) | the capsule-and-virus puzzle game | Two-tone capsules dropped onto germs in a bottle, four in a line clears. |
+| Blob Pairs (`blob-pairs`) | the falling-blob-pairs puzzle series | Pairs of blobs, four touching pop, chains, grey junk blobs that clear when a pop touches them. |
+| Panel Rise (`panel-rise`) | the rising-panel swap puzzle series | A rising stack, swap two side by side, clears of three, chain bonuses. |
+| Mansion Night (`mansion-night`) | the mansion survival-horror series | A dark mansion, a six-shot pistol, green herbs to heal, a knife when out of ammo, head shots. Also the grimmest game in a family app. |
+
+Genre-level only, fine to keep: shell-duel (turn-based artillery), sling-smash (slingshot physics), critter-quest (monster-collecting RPG), stud-smash, pile-builder and the other brick games (toy bricks), gap-drop (rotating floors), bricks (brick breaker), blob-ball, pocket-kart, bunker-breakout (corridor shooter), pin-pull. sword-rooms had a green cap and tunic on its hero; it is now blue.
+
+### Changes made in this pass (123 games)
+
+- **Shared effects (100 older games).** Games written before `gs.effects.Feel` each had their own particle list, or none. They now use Feel for bursts, pop-up numbers and shake (with the game's own sounds kept), so hits, clears and losses look and feel the same everywhere, follow the player's Reduce motion setting, and finish playing behind the game-over screen (`fx(dt)`).
+- **Wait for the first touch (60 games).** `gs.rounds.Ready`: nothing moves, scores or ends until the player touches the screen. Before this pass 17 games ended by themselves within six seconds of Play and 25 scored points with no touch. In a 20-second no-touch run of every game now, the only keepers that still end or score are ones where that is the design: races that start on a countdown (gravity-grip, neon-drift), bunker-breakout (auto-fire), freeze-rex (holding still is the game) and two puzzles whose timer is about 20 seconds (hand-sort, spinner-keep).
+- **Score badge.** fossil-dig, hop-quest, rex-rampage, star-bloom and hoop-drone size or place their HUD from `api.scoreArea()`; fast-maths and mole-mallet moved their lives out from under the badge.
+- **Game time, not the wall clock.** blitz-bits, blob-ball, blob-pairs, fossil-dig, deep-pressure and street-lamps used `performance.now()` or `setTimeout` for game timing, which keeps running while the game is paused. They use `dt` now. (Tap-versus-hold timing in the 3D games and the daily clock in treasure-drop are real time on purpose and were left.)
+- **Same speed on 60 and 120 Hz screens.** Per-frame damping (`v *= .98`) became `Math.pow(.98, dt * 60)` in blitz-sense, blow-sail, fly-swatter, gravity-grip, pet-pocket, shell-duel, stud-smash, stylus-rally and wrecking-ball; camera easing in canyon-ace, deep-pressure, frost-line and storm-hook.
+- **Goals the bot reached in seconds.** dart-wheel 25 to 60, merge-ten 150 to 500, mini-golf 12 to 25, moto-hills 120 to 350, rope-swing 200 to 1000, freeze-rex 500 to 1200 (plus a 1.5 s wind-on between photos).
+- **Bugs.** bricks: the ball could speed up without limit off the paddle. street-lamps: a failed location request could leave it waiting for ever. pocket-pinball: each finger now works its own flipper. fishing-line: a smooth gradient broke the four-shade Pocket rule. critter-quest: the battle strobe follows Reduce motion. spot-difference: the pictures stay covered until you start, so the clock is fair. Several games kept a little state from the last round (held keys, a drag in progress); all round state is set in `reset()` now.
+
+### Games added since the first review (102)
+
+| Game | Style · genre | Verdict | Notes |
+|---|---|---|---|
+| Ant Trail (`ant-trail`) | Color · Colony | Keep | Draw a scent trail for the ants. Fresh idea, reads at once. |
+| AR Lab (`ar-lab`) | AR · Test | Hidden | Not a game: the AR test scene. Already hidden from the feed (BENCHED). |
+| Archery Wind (`archery-wind`) | Casual · Aim | Keep | Wind and drop make every arrow a small decision. |
+| Arrow Maze (`arrow-maze`) | Pocket · Puzzle | Keep | Plan, press GO, watch. Good puzzle for short bursts. |
+| Auction Snipe (`auction-snipe`) | Casual · Trading | Keep | Bidding against three bots. Unlike anything else in the feed. |
+| Balance Scale (`balance-scale`) | Casual · Logic | Keep | Lever maths as a drag puzzle. Clear. |
+| Balloon Archer (`balloon-archer`) | Pocket · Aim | Keep | Line up two balloons per arrow to win arrows back. |
+| Bee Keeper (`bee-keeper`) | Pocket · Sim | Keep | Slow three-slider sim. The least feed-like of the batch, but it works. |
+| Belt Sorter (`belt-sorter`) | Pocket · Sorting | Keep, fixed | Three-belt sorting with labels that swap. Fixed: the belts wait for your first touch. |
+| Bin Flick (`bin-flick`) | AR · Sports | Keep | AR paper toss with wind. Drag works when there is no camera. |
+| Blow Sail (`blow-sail`) | Casual · Mic | Keep, fixed | Mic sailing with a hold fallback. Fixed: the storm waits for your first touch (an untouched round ended in 7 seconds), and a rock hit slowed the boat more on fast screens. |
+| Bubble Garden (`bubble-garden`) | AR · Gentle | Keep | Gentle AR mic game with a button fallback. |
+| Bumper Bowl (`bumper-bowl`) | Console · Party | Keep | Sumo bumper cars. Fun straight away. |
+| Bunker Breakout (`bunker-breakout`) | Next Gen · Shooter | Keep | The first Next Gen game and the biggest in the app. Made-up cartoon army. |
+| Buzz Wire (`buzz-wire`) | Casual · Skill | Keep | The steady-hand fairground game. Fair. |
+| Canal Dig (`canal-dig`) | Advance · Physics | Keep | Dig-and-flow water puzzle. One of the best of the newer games. |
+| Canyon Ace (`canyon-ace`) | Next Gen · Flying | Keep, fixed | Fixed: the jet waits for your first touch (it flew and scored by itself) and sets level tilt from how you are holding the phone then. Camera easing no longer depends on frame rate. |
+| Castle Lanes (`castle-lanes`) | Casual · Strategy | Keep | Three-lane rock-paper-scissors battler. |
+| Clock Set (`clock-set`) | Casual · Brain | Keep | Set the clock from words. Good brain game. |
+| Cup Shuffle (`cup-shuffle`) | Color · Eye | Keep | The shell game. Simple and honest. |
+| Deep Pressure (`deep-pressure`) | Next Gen · Survival | Keep, fixed | Sonar and haptic echoes: a standout. Fixed: waits for your first touch (it scored by itself); camera easing no longer depends on frame rate. |
+| Domino Run (`domino-run`) | AR · Puzzle | Keep | AR domino line drawing. |
+| Door Committee (`door-committee`) | Next Gen · Puzzle | Keep | Comedy puzzle walk. Long for the feed, by design. |
+| Dummy Tumble (`dummy-tumble`) | stairs | Keep | Ragdoll down the stairs, three flings. |
+| Echo Drums (`echo-drums`) | AR · Memory | Keep | AR memory rhythm on a ring of drums. |
+| Ferry Crossing (`ferry-crossing`) | Color · Logic | Keep | River-crossing riddles with a new rule each river. |
+| Fire Brigade (`fire-brigade`) | Advance · Strategy | Keep | Tap-to-send town strategy. |
+| Floor Golf (`floor-golf`) | AR · Sports | Keep | AR mini golf, six holes. |
+| Freeze Rex (`freeze-rex`) | AR · Stealth | Keep, fixed | Fixed: mashing the shutter reached the goal in 4 seconds. The camera now winds on for 1.5 s between photos (shown on the button) and the goal is 1200. |
+| Frost Line (`frost-line`) | Next Gen · Sports | Keep, fixed | Fixed: rider and avalanche wait for your first touch (it scored by itself), level tilt is set then; camera easing no longer depends on frame rate. |
+| Fuse Pass (`fuse-pass`) | Console · Party | Keep | Hot-potato party game. |
+| Gap Drop (`gap-drop`) | Casual · Drop | Keep | Turn the floors so the ball drops. A 2D take on a well-known hypercasual rule set (genre level, not a copy of its look). |
+| Gear Train (`gear-train`) | Casual · Puzzle | Keep | Which way does the last gear turn? Clever. |
+| Ghost Torch (`ghost-torch`) | AR · Spooky | Keep | AR torch sweep. |
+| Gravity Grip (`gravity-grip`) | Next Gen · Racing | Keep, fixed | Tube racer. Fixed: cars that touch slowed more on fast screens. |
+| Hammer Bell (`hammer-bell`) | Pocket · Timing | Keep | Strength tester with a target band. |
+| Hand Sort (`hand-sort`) | Casual · Cards | Keep | Card sorting against the sand timer. |
+| Hex Merge (`hex-merge`) | Casual · Merge | Keep | Hex merge-three with a held tile. |
+| Hoop Drone (`hoop-drone`) | AR · Flying | Keep, fixed | Fixed: the clock waits for your first touch (the drone drifted through the first hoop by itself), and the timer bar moved out from under the score badge. |
+| Ink Ward (`ink-ward`) | spike | Keep, fixed | Draw springy lines to bounce blobs into the jar. Fixed: the spout waits for your first line. |
+| Island Bridges (`island-bridges`) | Color · Logic | Keep | The bridges pencil puzzle. |
+| Jigsaw Six (`jigsaw-six`) | Casual · Puzzle | Keep | Jigsaws painted in code. |
+| Jug Pour (`jug-pour`) | Casual · Logic | Keep | Measure with unmarked jugs. |
+| Kitchen Steps (`kitchen-steps`) | Casual · Cooking | Keep | Cooking with five gestures. |
+| Kite Flyer (`kite-flyer`) | Pocket · Skill | Keep, fixed | Fixed: waits for your first hold (it scored by itself in the wind band). |
+| Knight Path (`knight-path`) | Pocket · Logic | Keep | Knight's-move puzzle. |
+| Ladder Climber (`ladder-climber`) | Pocket · Reflex | Keep, fixed | Fixed: the flood waits for your first grab (an untouched round ended in 5 seconds). |
+| Lamp Flip (`lamp-flip`) | Pocket · Logic | ✂ Remove | Same lights-out puzzle as Street Lamps, which has the daily shared-with-your-neighbourhood twist. Keep one. |
+| Lantern Maze (`lantern-maze`) | Pocket · Maze | Keep | Flare, remember, walk. |
+| Laser Dodge (`laser-dodge`) | Pocket · Dodge | Keep | Lasers warn before they fire. Fair. |
+| Laser Lock (`laser-lock`) | Advance · Puzzle | Keep | Geared rings puzzle. |
+| Laser Mirrors (`laser-mirrors`) | AR · Puzzle | Keep | AR mirror puzzle on the floor. |
+| Lasso Loop (`lasso-loop`) | Advance · Ranch | Keep | Circle faster for a wider loop: a new kind of touch control. |
+| Lighthouse Watch (`lighthouse-watch`) | Next Gen · Strategy | Keep | Sweep the beam so boats see the rocks. Calm strategy. |
+| Long Shadow (`long-shadow`) | Next Gen · Sniper | Keep | Belongs to the Long Shadow thread, which is still working on it. Not reviewed or edited here. |
+| Maraca Beat (`maraca-beat`) | Color · Rhythm | Keep | Shake rhythm with a tap fallback. |
+| Marble Trio (`marble-trio`) | Casual · Tilt | Keep | Three marbles, three holes. The best of the tilt games. |
+| Mech Brawl (`mech-brawl`) | Next Gen · Fighting | Keep | Readable tells and it looks great. |
+| Mini Sudoku (`mini-sudoku`) | Color · Logic | Keep | 4x4 sudoku sprints. |
+| Mirror Draw (`mirror-draw`) | Color · Brain | Keep | Mirrored tracing. Funny and hard. |
+| Neon Drift (`neon-drift`) | Next Gen · Racing | Keep | Drift for points, bank them cleanly. Strong. |
+| One Line (`one-line`) | Color · Puzzle | Keep | One-stroke line puzzles. |
+| Paper Plane (`paper-plane`) | Casual · Glide | Keep | Glide, dive, ride the warm air. |
+| Parcel Dash (`parcel-dash`) | Next Gen · Driving | Keep | City delivery with real traffic and people. |
+| Path Doodle (`path-doodle`) | rock | Keep | Draw the ground under a rolling ball. |
+| Penalty Striker (`penalty-striker`) | Casual · Sport | Keep | Swipe to aim and bend the shot. |
+| Penguin Slide (`penguin-slide`) | Pocket · Slide | Keep, fixed | Fixed: waits for your first touch (it scored by itself on distance). |
+| Pet Pocket (`pet-pocket`) | Color · Pet | Keep, fixed | Fixed: the needs only start dropping at your first touch (it earned hearts untouched); the ball and pet slow the same on fast screens. |
+| Pin Pull (`pin-pull`) | Casual · Puzzle | Keep | Pull the pins in the right order. A familiar puzzle type, own look. |
+| Ping Pong Rally (`ping-pong-rally`) | Casual · Sport | Keep | Top-down table tennis with slice. |
+| Plate Spinner (`plate-spinner`) | Casual · Juggle | Keep | Keep the plates spinning. |
+| Popcorn Pan (`popcorn-pan`) | Color · Cooking | Keep | Heat and shake without scorching. |
+| Pulse Count (`pulse-count`) | Pocket · Feel | Keep | Count the buzzes. Flashes instead where the phone cannot buzz. |
+| Puzzle Detective (`puzzle-detective`) | Color · Mystery | Keep | Find the clues, pick the suspect. |
+| Rail Connect (`rail-connect`) | Color · Trains | Keep | Lay track before the train leaves. |
+| Rift Keeper (`rift-keeper`) | AR · Arcade | Keep | See-through portals round your room. The best AR game. |
+| Saucer Swarm (`saucer-swarm`) | AR · Shooter | Keep | AR saucer shooter. |
+| Sevens (`sevens-cards`) | Casual · Cards | Keep | The card game Sevens against three bots. |
+| Shake Tree (`shake-tree`) | Advance · Luck | Keep | Push-your-luck with bees. The better shake game. |
+| Shape Fit (`shape-fit`) | Color · Puzzle | Keep | Fill the outline with the pieces. |
+| Shape Turn (`shape-turn`) | Pocket · Brain | Keep | Spot the turned (not mirrored) shape. |
+| Skip Stone (`skip-stone`) | Color · Throw | Keep | Swipe to skim stones. |
+| Slide Picture (`slide-picture`) | Color · Puzzle | Keep | Sliding picture puzzle. |
+| Slide Ten (`slide-ten`) | Pocket · Merge | Keep | Slide and add to ten. |
+| Space Mining (`space-mining`) | Casual · Strategy | Keep | Send drones, mind the fuel. |
+| Spinner Keep (`spinner-keep`) | Pocket · Touch | Keep | Keep the spinner inside the band. |
+| Sprint Feet (`sprint-feet`) | Advance · Sport | Keep | Left-right sprint, with real steps if the phone counts them. |
+| Star Join (`star-join`) | AR · Puzzle | Keep | AR dot-to-dot constellations. |
+| Storm Hook (`storm-hook`) | Next Gen · Action | Keep, fixed | Fixed: the hero waits for your first hold (it scored by itself); camera easing no longer depends on frame rate. |
+| Stylus Rally (`stylus-rally`) | Advance · Racing | Keep, fixed | Draw the racing line. Fixed: the car and the clock wait for your first line (it drove and scored by itself). |
+| Swing Pump (`swing-pump`) | Casual · Motion | Keep | Pump the swing at the right moment. |
+| Table Siege (`table-siege`) | AR · Strategy | Keep | AR castle defence on the table. |
+| Tally Count (`tally-count`) | Pocket · Brain | Keep | Count only the sheep the card asks for. |
+| Thumb Duel (`thumb-duel`) | Casual · Party | Keep | Quick draw for two on one phone, with fake-outs. |
+| Till Rush (`till-rush`) | Advance · Shop | Keep | Count out the change. |
+| Trampoline Tricks (`trampoline-tricks`) | Casual · Timing | Keep | Tuck to spin, open to land. |
+| Treasure Drop (`treasure-drop`) | AR · Explore · Local | Keep | A daily real-world treasure walk. |
+| Twin Mine (`twin-mine`) | Advance · Digging | Keep | Radar on top, digging below. |
+| Whistle Bird (`whistle-bird`) | Casual · Voice | Keep | Fly by the pitch of your voice. Drag fallback. |
+| Word Ladder (`word-ladder`) | Casual · Words | Keep | Change one letter at a time. |
+| Word Wheel (`word-wheel`) | Casual · Words | Keep | Spell words round a wheel. |
+| Yo-Yo Tricks (`yoyo-tricks`) | Pocket · Tricks | Keep | Throw, trick, catch before it runs down. |
+
+## First review: scores (2026-11-06)
+
 Every game scored 1-5 on five things, out of 25. Scored on 2026-11-06 from the code, a mid-play screenshot and the bot play test in [auto-report.md](auto-report.md). These are Claude's judgement, not player data. Rob's in-app ratings (👎 Meh / ♥, see the QA panel) should overrule them.
 
 - **Fun**: is it enjoyable for a few rounds?
@@ -8,7 +174,7 @@ Every game scored 1-5 on five things, out of 25. Scored on 2026-11-06 from the c
 - **Length**: does a round last a good feed-sized time (about 20s to 2 min)?
 - **Uniqueness**: is it unlike the other games in the app?
 
-Sorted weakest first. ✂ = on the removal shortlist.
+Sorted weakest first. Marks are as of 2026-11-11: ✂ = recommended for removal, ⚠ = too close to one existing game.
 
 | # | Game | Fun | Clarity | Controls | Length | Unique | Total | Notes |
 |---|---|---|---|---|---|---|---|---|
@@ -16,15 +182,15 @@ Sorted weakest first. ✂ = on the removal shortlist.
 | 2 | ✂ shake-soda | 2 | 3 | 3 | 2 | 3 | **13** | Shake then wait. Thin, and similar to Water Rocket's build-to-the-limit. |
 | 3 | ✂ color-hunt | 2 | 3 | 2 | 2 | 5 | **14** | Needs the camera and walking round the room. Breaks the scroll rhythm. |
 | 4 | ✂ compass-hunt | 2 | 3 | 2 | 3 | 4 | **14** | You have to turn your whole body. Awkward on a sofa or bus, and does nothing without a compass. |
-| 5 | ✂ safe-cracker | 2 | 3 | 3 | 2 | 4 | **14** | Only works with good haptics. Without them it's guessing. |
+| 5 | safe-cracker | 2 | 3 | 3 | 2 | 4 | **14** | Off the shortlist: the right number also glows on the dial, so it plays without haptics. |
 | 6 | ✂ shake-dice | 2 | 3 | 4 | 3 | 2 | **14** | Pig dice with a shake. Little choice, and a dupe of Balloon Pump's push-your-luck. |
-| 7 | ✂ shout-rocket | 2 | 4 | 2 | 3 | 3 | **14** | Shouting at your phone in public. Weakest of the five mic games. |
+| 7 | shout-rocket | 2 | 4 | 2 | 3 | 3 | **14** | Off the shortlist after this pass: waits for your first shout or hold. Still the weakest mic game. |
 | 8 | ✂ swipe-arrow | 2 | 4 | 4 | 2 | 2 | **14** | Generic hypercasual reflex test with little to learn. |
-| 9 | ✂ penalty-keeper | 2 | 3 | 4 | 3 | 3 | **15** | One dive per shot and the tell is hard to read, so it feels like a coin flip. |
+| 9 | penalty-keeper | 2 | 3 | 4 | 3 | 3 | **15** | Reworked 2026-11-06 at Rob's request; now waits for your first touch. |
 | 10 | blow-candles | 3 | 4 | 3 | 2 | 4 | **16** | Fun once, but needs the mic and runs short. |
 | 11 | clap-beat | 3 | 3 | 3 | 3 | 4 | **16** | Mic clapping is novel but unreliable in noisy rooms; tap fallback is fine. |
-| 12 | ✂ haptic-morse | 2 | 3 | 4 | 3 | 4 | **16** | Built around vibration. iPhones in the web preview can't buzz at all, so it reads as random. |
-| 13 | ✂ higher-lower | 2 | 4 | 5 | 3 | 2 | **16** | Same push-your-luck idea as Balloon Pump and Shake Dice, and the least interesting of them. |
+| 12 | haptic-morse | 2 | 3 | 4 | 3 | 4 | **16** | Off the shortlist: flashes the screen where the phone cannot buzz. |
+| 13 | higher-lower | 2 | 4 | 5 | 3 | 2 | **16** | Off the shortlist after this pass (shared effects, clearer feedback). Still the weakest push-your-luck game. |
 | 14 | hoop-flick | 3 | 4 | 4 | 2 | 3 | **16** | One miss ends it; short sessions. |
 | 15 | jelly-bounce | 3 | 3 | 3 | 3 | 4 | **16** | Timing window is hard to read. |
 | 16 | magnet-pull | 3 | 3 | 3 | 3 | 4 | **16** | Floaty; looks sparse on screen. |
@@ -46,9 +212,9 @@ Sorted weakest first. ✂ = on the removal shortlist.
 | 32 | code-breaker | 3 | 4 | 4 | 4 | 3 | **18** | Good logic puzzle but slow for a scroll feed. |
 | 33 | colour-flood | 3 | 4 | 5 | 3 | 3 | **18** | Fine, quiet puzzle. |
 | 34 | colour-word | 3 | 4 | 5 | 2 | 4 | **18** | Sharp brain teaser, but one wrong tap ends it in seconds. |
-| 35 | egg-catcher | 3 | 4 | 4 | 4 | 3 | **18** | Handheld classic, simple and fair. |
+| 35 | ⚠ egg-catcher | 3 | 4 | 4 | 4 | 3 | **18** | Handheld classic, simple and fair. Too close to one existing game: see the 2026-11-11 list. |
 | 36 | fast-maths | 3 | 5 | 5 | 2 | 3 | **18** | Quick and clear. Fine as feed filler. |
-| 37 | germ-buster | 4 | 4 | 3 | 4 | 3 | **18** | Falling-capsule puzzle; swipe controls take a minute. |
+| 37 | ⚠ germ-buster | 4 | 4 | 3 | 4 | 3 | **18** | Falling-capsule puzzle; swipe controls take a minute. Too close to one existing game: see the 2026-11-11 list. |
 | 38 | lemonade-stand | 3 | 4 | 4 | 3 | 4 | **18** | Light strategy; good change of pace. |
 | 39 | mirror-beam | 3 | 4 | 5 | 3 | 3 | **18** | Fine; overlaps a little with Pipe Plumber. |
 | 40 | moto-hills | 4 | 3 | 3 | 4 | 4 | **18** | Good, but lean-in-air is hard to learn. |
@@ -116,48 +282,48 @@ Sorted weakest first. ✂ = on the removal shortlist.
 
 ## Batches 13-17 (41 games), reviewed 2026-11-07
 
-Same scoring. Most of these are deeper "handheld era" games (RPGs, tactics, farming, racing), so they score lower on Length for a scroll feed and higher on Uniqueness. None crashed in the bot test. None are put forward for removal; the weakest are listed first.
+Same scoring. Most of these are deeper "handheld era" games (RPGs, tactics, farming, racing), so they score lower on Length for a scroll feed and higher on Uniqueness. None crashed in the bot test. The weakest are listed first.
 
 | # | Game | Fun | Clarity | Controls | Length | Unique | Total | Notes |
 |---|---|---|---|---|---|---|---|---|
 | 1 | blitz-sense | 3 | 3 | 2 | 4 | 4 | **16** | Fun idea, but half the micro games need the mic, tilt or shake, which a lot of players can't use on a bus. |
 | 2 | fossil-dig | 3 | 3 | 3 | 3 | 4 | **16** | Rub-to-brush is calm but slow; the brush/pick difference takes a try to learn. |
-| 3 | cube-tide | 3 | 2 | 3 | 3 | 4 | **15** | Three trap rules (grey, green, black) at once is a lot to read from the hint. |
+| 3 | ⚠ cube-tide | 3 | 2 | 3 | 3 | 4 | **15** | Three trap rules (grey, green, black) at once is a lot to read from the hint. Too close to one existing game: see the 2026-11-11 list. |
 | 4 | kit-hunt | 3 | 3 | 3 | 3 | 4 | **16** | Detector sweep is neat; swings run out fast. |
 | 5 | pocket-tactics | 3 | 3 | 4 | 2 | 4 | **16** | Proper tactics, but a battle is several minutes. Better as a "sit down" game. |
 | 6 | pocket-farm | 3 | 4 | 4 | 2 | 4 | **17** | Cosy; days take a while to pay off in a feed. |
 | 7 | critter-quest | 4 | 3 | 4 | 2 | 4 | **17** | Rob's monster-catching request. Lots of content; long for a scroll. |
-| 8 | mansion-night | 3 | 4 | 3 | 3 | 4 | **17** | Atmospheric; reload swipe is easy to miss. |
+| 8 | ⚠ mansion-night | 3 | 4 | 3 | 3 | 4 | **17** | Atmospheric; reload swipe is easy to miss. Too close to one existing game: see the 2026-11-11 list. |
 | 9 | shell-duel | 4 | 3 | 3 | 3 | 4 | **17** | Artillery turns are slow next to the rest of the feed. |
 | 10 | spell-school | 3 | 3 | 3 | 4 | 4 | **17** | Rune tracing is unique; the V and peak shapes get confused. |
 | 11 | blueprint-stack | 3 | 4 | 4 | 3 | 4 | **18** | Tidy drop puzzle. |
 | 12 | build-rush | 3 | 4 | 5 | 3 | 3 | **18** | Clear speed-match game. |
 | 13 | front-line | 3 | 4 | 4 | 3 | 4 | **18** | Timing the dash past the sweep reads well. |
-| 14 | grid-duel | 4 | 3 | 4 | 3 | 4 | **18** | Grid battler with chips; dense first screen. |
+| 14 | ⚠ grid-duel | 4 | 3 | 4 | 3 | 4 | **18** | Grid battler with chips; dense first screen. Too close to one existing game: see the 2026-11-11 list. |
 | 15 | kit-racer | 3 | 4 | 4 | 3 | 4 | **18** | Garage pick then race; fine. |
 | 16 | mind-gym | 3 | 5 | 5 | 3 | 2 | **18** | Overlaps Fast Maths, Path Memory and Odd One Out. |
 | 17 | pile-builder | 3 | 3 | 4 | 4 | 4 | **18** | Hold-to-build is a fresh idea. |
-| 18 | timing-brawl | 4 | 3 | 4 | 3 | 4 | **18** | Timed-hit RPG fights; good feel once learned. |
+| 18 | ⚠ timing-brawl | 4 | 3 | 4 | 3 | 4 | **18** | Timed-hit RPG fights; good feel once learned. Too close to one existing game: see the 2026-11-11 list. |
 | 19 | agent-zero | 4 | 4 | 4 | 3 | 4 | **19** | Cover shooter in one hold. Works well. |
-| 20 | blob-pairs | 4 | 4 | 4 | 4 | 3 | **19** | Solid falling-pairs puzzle. |
+| 20 | ⚠ blob-pairs | 4 | 4 | 4 | 4 | 3 | **19** | Solid falling-pairs puzzle. Too close to one existing game: see the 2026-11-11 list. |
 | 21 | boss-brickfall | 4 | 3 | 4 | 4 | 4 | **19** | Build launchers from the fallen bricks: clever. |
-| 22 | garden-guard | 4 | 4 | 4 | 4 | 3 | **19** | Rob's lane-defence request; reads clearly. |
+| 22 | ⚠ garden-guard | 4 | 4 | 4 | 4 | 3 | **19** | Rob's lane-defence request; reads clearly. Too close to one existing game: see the 2026-11-11 list. |
 | 23 | net-catch | 4 | 4 | 4 | 3 | 4 | **19** | Sneak-and-catch, nice and readable. |
-| 24 | panel-rise | 4 | 4 | 4 | 4 | 3 | **19** | Swap-and-raise puzzle, solid. |
+| 24 | ⚠ panel-rise | 4 | 4 | 4 | 4 | 3 | **19** | Swap-and-raise puzzle, solid. Too close to one existing game: see the 2026-11-11 list. |
 | 25 | pocket-kart | 4 | 4 | 4 | 3 | 4 | **19** | Mode-7 style racer looks great. |
 | 26 | rex-rampage | 4 | 5 | 5 | 3 | 3 | **20** | Simple, punchy. |
 | 27 | ramp-combo | 4 | 4 | 4 | 4 | 4 | **20** | Pump-and-trick loop is satisfying. |
-| 28 | saber-knight | 4 | 4 | 5 | 3 | 4 | **20** | Deflect timing feels great. |
+| 28 | ⚠ saber-knight | 4 | 4 | 5 | 3 | 4 | **20** | Deflect timing feels great. Too close to one existing game: see the 2026-11-11 list. |
 | 29 | shadow-ops | 4 | 4 | 4 | 4 | 4 | **20** | Best of the stealth games. |
 | 30 | sling-smash | 4 | 5 | 5 | 3 | 3 | **20** | Rob's slingshot-physics request; works. |
 | 31 | stud-smash | 4 | 4 | 4 | 4 | 4 | **20** | Smash-and-collect is very moreish. |
-| 32 | suit-ops | 4 | 4 | 4 | 4 | 4 | **20** | Mode-switch shooter with real choices. |
+| 32 | ⚠ suit-ops | 4 | 4 | 4 | 4 | 4 | **20** | Mode-switch shooter with real choices. Too close to one existing game: see the 2026-11-11 list. |
 | 33 | swipe-fighter | 4 | 3 | 4 | 4 | 5 | **20** | Swipe fighting with readable tells. |
 | 34 | sword-rooms | 4 | 5 | 4 | 4 | 3 | **20** | Classic top-down rooms, clear. |
 | 35 | blitz-bits | 4 | 4 | 4 | 5 | 4 | **21** | Micro-game rapid fire is perfect for a feed. |
 | 36 | blob-ball | 4 | 4 | 4 | 4 | 5 | **21** | Silly one-on-one football; very replayable. |
-| 37 | copy-puff | 4 | 4 | 4 | 4 | 4 | **21** | Copy-ability platformer with real variety. |
-| 38 | crate-dash | 4 | 5 | 4 | 4 | 4 | **21** | Lane runner with spin; polished. |
+| 37 | ⚠ copy-puff | 4 | 4 | 4 | 4 | 4 | **21** | Copy-ability platformer with real variety. Too close to one existing game: see the 2026-11-11 list. |
+| 38 | ⚠ crate-dash | 4 | 5 | 4 | 4 | 4 | **21** | Lane runner with spin; polished. Too close to one existing game: see the 2026-11-11 list. |
 | 39 | hop-quest | 4 | 5 | 4 | 4 | 3 | **20** | Classic platformer feel. |
 | 40 | star-bloom | 4 | 5 | 5 | 4 | 3 | **21** | Clean auto-fire shooter with power levels. |
 | 41 | tag-team | 4 | 4 | 4 | 4 | 5 | **21** | Hero-swap runner, the best of the brick games. |

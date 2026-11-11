@@ -2,12 +2,15 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
 
 // Your balloon floats up on its own and can't be touched. Your finger is a shield: push the falling
 // blocks, rolling balls and spinning bars out of its way. One touch of anything and it pops.
 const W = 360, H = 640, BX = 180, BY = 470, BR = 22, SR = 34;
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false }), ready = new Ready({ eat: false, text: 'Hold and drag to start' });
   let objs, dist, speed, spawn, shield, t, score, popped, bx, wind;
   function spawnSet() {
     const kind = Math.random(); const y = -40;
@@ -16,8 +19,9 @@ function make(api) {
     else objs.push({ k: 'bar', x: rnd(80, W - 80), y, vx: 0, vy: 0, len: rnd(110, 170), rot: rnd(0, 3), vr: rnd(-1.6, 1.6) });
   }
   return {
-    reset() { objs = []; dist = 0; speed = 70; spawn = 1; shield = null; t = 0; score = 0; popped = 0; bx = BX; wind = 0; },
+    reset() { objs = []; dist = 0; speed = 70; spawn = 1; shield = null; t = 0; score = 0; popped = 0; bx = BX; wind = 0; feel.clear(); ready.reset(); },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;   // nothing falls until the first touch
       t += dt; if (popped) return;
       speed = Math.min(170, 70 + dist / 60); dist += speed * dt; const s = Math.floor(dist / 50); if (s !== score) { score = s; api.score(score); }
       spawn -= dt; if (spawn <= 0) { spawn = Math.max(.9, 2.2 - dist / 3000); spawnSet(); }
@@ -33,20 +37,21 @@ function make(api) {
           const dx = px - shield.x, dy = py - shield.y, d = Math.hypot(dx, dy);
           if (d < SR + rad && d > 0) {
             const push = (SR + rad - d); o.x += dx / d * push; o.y += dy / d * push; o.vx += dx / d * 420 * dt * 10; o.vy += dy / d * 420 * dt * 10;
-            if (o.vr != null) o.vr += ((shield.x - o.x) * dy - (shield.y - o.y) * dx) * .0008;
+            if (o.vr != null) o.vr += ((shield.x - o.x) * dy - (shield.y - o.y) * dx) * .048 * dt;   // per second, so 60 and 120 Hz screens spin bars alike
           }
         }
         // hit the balloon?
         let hx = o.x, hy = o.y, rad = o.k === 'ball' ? o.r : o.k === 'box' ? Math.min(o.w, o.h) / 2 + 3 : 4;
         if (o.k === 'bar') { const ca = Math.cos(o.rot), sa = Math.sin(o.rot), u = clamp((bx - o.x) * ca + (BY - o.y) * sa, -o.len / 2, o.len / 2); hx = o.x + ca * u; hy = o.y + sa * u; }
-        if (Math.hypot(hx - bx, hy - BY) < BR + rad - 2) { popped = .001; haptic('error'); sfx(900, .05, 'square', .06, -800); sfx(120, .3, 'sawtooth', .04, -50); return api.over(); }
+        if (Math.hypot(hx - bx, hy - BY) < BR + rad - 2) { popped = .001; feel.juice.burst(bx, BY, { n: 20, speed: 240, life: .6, size: 5, color: ['#ff4d8a', '#ffffff'], gravity: 300 }).shake(9).flash('#ff4d8a', .3); haptic('error'); sfx(900, .05, 'square', .06, -800); sfx(120, .3, 'sawtooth', .04, -50); return api.over(); }
       }
       objs = objs.filter(o => o.y < H + 80 && o.x > -100 && o.x < W + 100);
     },
-    fx(dt) { popped += dt; },
+    fx(dt) { popped += dt; feel.update(dt); },
     draw(c) {
       const k = clamp(dist / 12000, 0, 1); const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, `rgb(${Math.round(120 - k * 100)},${Math.round(190 - k * 160)},${Math.round(255 - k * 160)})`); g.addColorStop(1, `rgb(${Math.round(200 - k * 150)},${Math.round(230 - k * 180)},255)`); c.fillStyle = g; c.fillRect(0, 0, W, H);
       c.fillStyle = '#ffffff50'; for (let i = 0; i < 6; i++) { const y = ((i * 160 + dist * .5) % (H + 100)) - 50; c.beginPath(); c.ellipse((i * 123) % W, y, 60, 18, 0, 0, 7); c.fill(); }
+      feel.begin(c);
       for (const o of objs) {
         c.save(); c.translate(o.x, o.y);
         if (o.k === 'box') { c.rotate(o.rot || 0); c.fillStyle = '#7a5aa8'; c.fillRect(-o.w / 2, -o.h / 2, o.w, o.h); c.fillStyle = '#9a7ac8'; c.fillRect(-o.w / 2, -o.h / 2, o.w, 5); }
@@ -60,12 +65,14 @@ function make(api) {
         c.fillStyle = '#ff4d8a'; c.beginPath(); c.ellipse(bx, BY, BR, BR * 1.15, 0, 0, 7); c.fill(); c.fillStyle = '#ffffff60'; c.beginPath(); c.ellipse(bx - 7, BY - 9, 5, 8, -.4, 0, 7); c.fill();
       } else { c.strokeStyle = '#ff4d8a'; c.lineWidth = 3; for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283, d = 20 + popped * 120; c.beginPath(); c.moveTo(bx + Math.cos(a) * d * .6, BY + Math.sin(a) * d * .6); c.lineTo(bx + Math.cos(a) * d, BY + Math.sin(a) * d); c.stroke(); } }
       if (shield) { c.fillStyle = '#ffffff30'; c.beginPath(); c.arc(shield.x, shield.y, SR, 0, 7); c.fill(); c.strokeStyle = '#ffffffcc'; c.lineWidth = 3; c.stroke(); }
+      feel.end(c, W, H);
+      ready.draw(c, W, H, { y: 330 });
       if (t < 5) { c.fillStyle = '#ffffffcc'; c.font = '600 14px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('drag your shield to clear the way', W / 2, 620); }
     },
-    down(x, y) { shield = { x, y }; },
+    down(x, y) { ready.go(); shield = { x, y }; },
     move(x, y) { if (shield) shield = { x, y }; },
     up() { shield = null; },
-    key(k, d) { if (k === ' ') shield = d ? { x: bx, y: BY - 80 } : null; },
+    key(k, d) { if (k === ' ') { if (d) ready.go(); shield = d ? { x: bx, y: BY - 80 } : null; } },
   };
 }
 

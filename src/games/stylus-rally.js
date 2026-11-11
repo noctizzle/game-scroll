@@ -2,7 +2,7 @@
 // and the car follows it, as fast as the bends allow. Grass slows it, barrels spin it out. Reach each
 // checkpoint before the clock runs down.
 import gs from '../gamescroll.js';
-const { Feel } = gs.effects;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 const { text } = gs.pixel;
 const { haptic } = gs.device;
 const { sfx, sounds } = gs.sound;
@@ -14,6 +14,7 @@ const ROAD = 34, CP = 1400;
 
 function make(api) {
   const feel = new Feel({ pixel: true });
+  const ready = new Ready({ eat: false });                              // the car and the clock wait for the first line
   let car, ink, drawing, cam, time, score, dist, nextCp, barrels, nextB, t, spin, dead, dust, tyre;
   const cx = y => W / 2 + Math.sin(y * .0042) * (W * .2) + Math.sin(y * .011 + 1) * (W * .07);
   const onRoad = (x, y) => Math.abs(x - cx(y)) < ROAD;
@@ -22,11 +23,12 @@ function make(api) {
     reset() {
       car = { x: cx(0), y: 0, a: -Math.PI / 2, v: 0 };
       ink = []; drawing = false; cam = -H * .75; time = 16; score = 0; dist = 0; nextCp = -CP; barrels = []; nextB = -300; t = 0; spin = 0; dead = 0; dust = []; tyre = [];
-      feel.clear();
+      feel.clear(); ready.reset();
     },
     resize(w, h) { W = w; H = h; },
+    fx(dt) { feel.update(dt); },
     update(dt) {
-      feel.update(dt); if (feel.frozen) return;
+      feel.update(dt); if (!ready.update(dt) || feel.frozen) return;
       t += dt;
       if (dead) { dead += dt; if (dead > 1.2) api.over(); return; }
       time -= dt;
@@ -36,7 +38,7 @@ function make(api) {
       let want = car.a;
       if (ink.length) want = Math.atan2(ink[0][1] - car.y, ink[0][0] - car.x);
       const road = onRoad(car.x, car.y);
-      if (spin > 0) { spin -= dt; car.a += 12 * dt; car.v *= .96; }
+      if (spin > 0) { spin -= dt; car.a += 12 * dt; car.v *= Math.pow(.96, dt * 60); }
       else {
         const d = angleDiff(car.a, want), turn = clamp(d, -3.2 * dt, 3.2 * dt); car.a += turn;
         // tight bends slow it: speed limit from how much it is turning
@@ -92,10 +94,11 @@ function make(api) {
       c.fillStyle = '#101018c0'; c.fillRect(0, H - 14, W, 14);
       text(c, `TIME ${Math.max(0, time).toFixed(1)}`, 4, H - 10, { color: time < 5 ? '#f84040' : '#f8f8f0' });
       text(c, `CP ${Math.floor(-nextCp / CP)}`, W - 4, H - 10, { color: '#f8e040', align: 'right' });
-      if (t < 3.5) text(c, 'DRAW THE RACING LINE', W / 2, H * .35, { align: 'center', color: '#f8f8f0', outline: '#101018' });
+      if (ready.playing && t < 3.5) text(c, 'DRAW THE RACING LINE', W / 2, Math.round(H * .35), { align: 'center', color: '#f8f8f0', outline: '#101018' });
+      ready.draw(c, W, H, { text: 'DRAW A LINE TO START', pixel: true, color: '#f8f8f0', shadow: '#101018', y: Math.round(H * .35) });
       if (dead) text(c, 'OUT OF TIME', W / 2, H * .4, { font: 'big', align: 'center', color: '#f84040', outline: '#101018' });
     },
-    down(x, y) { drawing = true; ink = [[x, y + cam]]; sfx(1200, .02, 'square', .02); },
+    down(x, y) { ready.go(); drawing = true; ink = [[x, y + cam]]; sfx(1200, .02, 'square', .02); },
     move(x, y, p) {
       if (!p || !drawing) return;
       const wy = y + cam, last = ink[ink.length - 1];

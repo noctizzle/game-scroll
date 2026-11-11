@@ -93,6 +93,10 @@ jobs:
           else
             all=$changed; SHARDS=1
           fi
+          # A PR with many games gets more jobs (about 45 games each, up to 6), so no job runs into its
+          # time limit: the playtester and the speed budget take about 20 seconds a changed game.
+          more=$(( ($(echo $all | wc -w) + 44) / 45 )); [ "$more" -gt 6 ] && more=6
+          [ "$more" -gt "$SHARDS" ] && SHARDS=$more
           if [ -z "$(echo $all)" ]; then echo "No games to play."; echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"; exit 0; fi
           # Deal the games out like cards, so each job gets a fair share of the slow 3D ones.
           json='{"include":['; sep=''

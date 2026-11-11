@@ -2,6 +2,8 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
 
 // You're in goal. The striker runs in from one side and shoots across to the other. Tap where the
 // ball is going: the keeper takes a moment to get there, so reading the run-up early is what saves it.
@@ -9,6 +11,8 @@ const { clamp, rnd } = gs.util;
 const W = 360, H = 640, GX = 30, GY = 400, GW = 300, GH = 150, REACH = 46, KEEPER_SPEED = 480;
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready();                              // the striker waits for the first tap
   let saves, conceded, shot, keeper, phase, wait, msg, t, striker, net;
   function nextShot() {
     const side = Math.random() < .5 ? -1 : 1, fake = saves >= 5 && Math.random() < .25;
@@ -21,8 +25,10 @@ function make(api) {
   }
   return {
     _st: () => ({ phase, k: shot.k, tx: shot.tx, ty: shot.ty, dived: keeper.dive, strikerStartX: striker.x0 }),
-    reset() { saves = 0; conceded = 0; msg = null; t = 0; net = 0; nextShot(); },
+    reset() { saves = 0; conceded = 0; msg = null; t = 0; net = 0; feel.clear(); ready.reset(); nextShot(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; if (msg) msg.life -= dt; net = Math.max(0, net - dt * 2);
       const k = keeper; const dx = k.tx - k.x, dy = k.ty - k.y, d = Math.hypot(dx, dy), step = KEEPER_SPEED * dt;
       if (d > step) { k.x += dx / d * step; k.y += dy / d * step; } else { k.x = k.tx; k.y = k.ty; }
@@ -35,8 +41,10 @@ function make(api) {
           const hands = Math.hypot(k.x - shot.tx, (k.y - 20) - shot.ty);
           if (hands < REACH || Math.hypot(k.x - shot.tx, k.y + 20 - shot.ty) < REACH - 10) {
             saves++; api.score(saves); msg = { txt: hands < 22 ? 'CAUGHT!' : 'SAVED', life: 1, good: true }; haptic('success'); sfx(500, .12, 'triangle', .06, 200);
+            feel.juice.burst(shot.tx, shot.ty, { n: hands < 22 ? 22 : 12, speed: 200, life: .45, size: 4, color: ['#ffd34a', '#ffffff', '#4ad3ff'] });
           } else {
             conceded++; net = 1; msg = { txt: 'GOAL', life: 1, good: false }; haptic('error'); sfx(150, .4, 'sawtooth', .04, -40);
+            feel.juice.shake(7).flash('#ff5050', .2);
           }
           phase = 'after'; wait = .9;
         }
@@ -44,6 +52,7 @@ function make(api) {
     },
     draw(c) {
       const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#1d5c34'); g.addColorStop(1, '#2f8a4c'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = '#ffffff12'; for (let i = 0; i < 8; i++) c.fillRect(0, i * 80, W, 40);
       c.strokeStyle = '#ffffffaa'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, 230); c.lineTo(W, 230); c.stroke(); c.beginPath(); c.arc(W / 2, 215, 3, 0, 7); c.fillStyle = '#fff'; c.fill();
       // striker (small, far away)
@@ -70,17 +79,19 @@ function make(api) {
       c.fillStyle = '#4ad3ff'; c.beginPath(); c.arc(-38, -56, 9, 0, 7); c.arc(38, -56, 9, 0, 7); c.fill(); c.lineCap = 'butt';
       c.restore();
       if (!ballBehind) drawBall();
+      feel.end(c, W, H);
       c.font = '400 10px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = '#ffffffcc'; c.fillText('LET IN', 12, 22);
       for (let i = 0; i < 3; i++) { c.fillStyle = i < conceded ? '#ff5050' : '#ffffff40'; c.beginPath(); c.arc(20 + i * 18, 38, 6, 0, 7); c.fill(); }
+      ready.draw(c, W, H, { y: 330 });
       if (t < 4 && saves === 0) { c.fillStyle = '#ffffffcc'; c.font = '600 14px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('striker runs in from one side, shoots to the other', W / 2, H - 40); }
       if (msg && msg.life > 0) { c.globalAlpha = clamp(msg.life * 2, 0, 1); c.fillStyle = msg.good ? '#ffd34a' : '#ff6060'; c.font = '400 22px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText(msg.txt, W / 2, 330); c.globalAlpha = 1; }
     },
     down(x, y) {
-      if (phase === 'after' || keeper.dive) return;
+      if (ready.go() || phase === 'after' || keeper.dive) return;
       keeper.dive = 1; keeper.tx = clamp(x, GX + 10, GX + GW - 10); keeper.ty = clamp(y + 40, GY + 50, GY + GH + 10);
       haptic('medium'); sfx(200, .08, 'triangle', .05, -60);
     },
-    key(k, d) { if (!d || keeper.dive) return; const dir = k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0; if (k === 'ArrowLeft' || k === 'ArrowRight' || k === ' ') { keeper.dive = 1; keeper.tx = W / 2 + dir * 110; keeper.ty = GY + GH - 40; } },
+    key(k, d) { if (!d || ready.go() || keeper.dive) return; const dir = k === 'ArrowLeft' ? -1 : k === 'ArrowRight' ? 1 : 0; if (k === 'ArrowLeft' || k === 'ArrowRight' || k === ' ') { keeper.dive = 1; keeper.tx = W / 2 + dir * 110; keeper.ty = GY + GH - 40; } },
   };
 }
 

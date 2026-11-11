@@ -235,7 +235,7 @@ function make(api) {
     // car-to-car bumps
     for (let i = 0; i < CARS; i++) for (let j = i + 1; j < CARS; j++) {
       const A = cars[i], Bc = cars[j], dd = A.d - Bc.d, da = ang(A.a, Bc.a);
-      if (Math.abs(dd) < 3.8 && Math.abs(da) * R < 1.9) { const push = (1.9 - Math.abs(da) * R) / R * .5 * Math.sign(da || 1); A.a += push; Bc.a -= push; const back = dd > 0 ? Bc : A; back.sp *= .985; if (A === me || Bc === me) { haptic('light'); if (Math.random() < .2) sfx(150, .05, 'square', .03); } }
+      if (Math.abs(dd) < 3.8 && Math.abs(da) * R < 1.9) { const push = (1.9 - Math.abs(da) * R) / R * .5 * Math.sign(da || 1); A.a += push; Bc.a -= push; const back = dd > 0 ? Bc : A; back.sp *= Math.pow(.985, dt * 60); if (A === me || Bc === me) { haptic('light'); if (Math.random() < .2) sfx(150, .05, 'square', .03); } }
     }
     // missiles home in on their target
     for (const ms of missiles) {

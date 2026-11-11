@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
 
 // Dig down through the dirt for gold. Tap left, right or below the miner to dig that way. Boulders
 // fall when you dig out what holds them up, so don't stand under one. Your lamp oil runs low as you go.
@@ -9,7 +10,8 @@ const P = PAL.amber, W = 160, CS = 10, COLS = 16;
 let H = 160, VIEW = 15;
 
 function make(api) {
-  let map, mx, my, cam, oil, gold, t, rocks, deepest, flash;
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  let map, mx, my, cam, oil, gold, t, rocks, deepest, flash, started;
   // 0 empty, 1 dirt, 2 gold, 3 boulder, 4 oil can
   function row(y) {
     if (y < 2) return Array(COLS).fill(0);
@@ -20,7 +22,8 @@ function make(api) {
   function dig(dx, dy) {
     const nx = mx + dx, ny = my + dy, cell = at(nx, ny);
     if (cell === 9 || cell === 3 || ny < 0) { haptic('tick'); return; }
-    if (cell === 2) { gold += 1; api.score(gold); haptic('success'); sfx(1000, .08, 'square', .04, 200); flash = .2; }
+    started = true;
+    if (cell === 2) { gold += 1; api.score(gold); haptic('success'); sfx(1000, .08, 'square', .04, 200); flash = .2; feel.juice.burst(nx * CS + 5, (ny - cam) * CS + 15, { n: 8, speed: 45, life: .4, size: 2, color: [P[3], P[2]] }); }
     if (cell === 4) { oil = Math.min(1, oil + .35); haptic('medium'); sfx(500, .1, 'square', .04, 200); }
     if (cell === 1) { haptic('light'); sfx(150, .03, 'square', .03); oil -= .004; }
     set(nx, ny, 0); mx = nx; my = ny;
@@ -30,14 +33,17 @@ function make(api) {
     for (let y = Math.max(0, my - 6); y <= my + 1; y++) for (let x = 0; x < COLS; x++) if (at(x, y) === 3 && at(x, y + 1) === 0 && !rocks.some(r => r.x === x && Math.round(r.y) === y)) rocks.push({ x, y, vy: 0, wait: .5 });
   }
   return {
-    reset() { map = []; mx = 8; my = 1; cam = 0; oil = 1; gold = 0; t = 0; rocks = []; deepest = 1; flash = 0; at(0, 30); },
+    reset() { map = []; mx = 8; my = 1; cam = 0; oil = 1; gold = 0; t = 0; rocks = []; deepest = 1; flash = 0; started = false; feel.clear(); at(0, 30); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
-      t += dt; flash = Math.max(0, flash - dt); oil -= dt * (.018 + Math.min(.02, my / 3000)); if (oil <= 0) { haptic('error'); return api.over(); }
+      feel.update(dt); t += dt; flash = Math.max(0, flash - dt);
+      if (started) oil -= dt * (.018 + Math.min(.02, my / 3000));   // the lamp only burns once you start digging
+      if (oil <= 0) { haptic('error'); sfx(120, .4, 'square', .05, -40); return api.over(); }
       for (const r of rocks) {
         if (r.wait > 0) { r.wait -= dt; continue; }
         const cy = Math.round(r.y); if (map[cy]?.[r.x] === 3) map[cy][r.x] = 0;
         r.vy += 60 * dt; r.y += r.vy * dt; const ny = Math.floor(r.y);
-        if (r.x === mx && Math.abs(r.y - my) < .8) { haptic('heavy'); sfx(70, .5, 'square', .06, -20); return api.over(); }
+        if (r.x === mx && Math.abs(r.y - my) < .8) { haptic('heavy'); sfx(70, .5, 'square', .06, -20); feel.juice.shake(6); return api.over(); }
         if (at(r.x, ny + 1) !== 0 || (r.x === mx && ny + 1 === my && false)) { r.done = true; set(r.x, ny, 3); sfx(90, .15, 'square', .04); haptic('medium'); }
       }
       rocks = rocks.filter(r => !r.done);
@@ -45,6 +51,7 @@ function make(api) {
     },
     draw(c) {
       c.fillStyle = flash ? P[3] : P[2]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       const y0 = Math.floor(cam);
       for (let y = y0; y < y0 + VIEW + 2; y++) for (let x = 0; x < COLS; x++) {
         const v = at(x, y), px = x * CS, py = Math.round((y - cam) * CS) + 10; if (v === 0) continue;
@@ -56,6 +63,7 @@ function make(api) {
       for (const r of rocks) { const py = Math.round((r.y - cam) * CS) + 10; c.fillStyle = P[0]; c.beginPath(); c.arc(r.x * CS + 5 + (r.wait > 0 ? Math.sin(t * 60) : 0), py + 5, 5, 0, 7); c.fill(); }
       const px = mx * CS, py = Math.round((my - cam) * CS) + 10;
       c.fillStyle = P[0]; c.fillRect(px + 2, py + 2, 6, 8); c.fillStyle = P[3]; c.fillRect(px + 2, py, 6, 3); c.fillRect(px + 4, py - 1, 2, 1);
+      feel.end(c, W, H);
       // lamp glow: darken far away
       const g = c.createRadialGradient(px + 5, py + 5, 10, px + 5, py + 5, 30 + oil * 70); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, P[0]); c.fillStyle = g; c.fillRect(0, 0, W, H);
       c.fillStyle = P[0]; c.fillRect(0, 0, W, 10); c.font = '6px "Press Start 2P", monospace'; c.fillStyle = P[3]; c.textAlign = 'left'; c.fillText(`${my}m`, 3, 8);

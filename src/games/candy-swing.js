@@ -2,6 +2,7 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects;
 
 // A sweet hangs on one or two ropes. Swipe across a rope to cut it, timing the cut so the sweet
 // flies into the jar. Every level is checked to have a winning cut before you see it. Three drops and you're out.
@@ -20,6 +21,7 @@ const inJar = (s, j) => s.y - s.py > 0 && s.py < j.y && s.y >= j.y && Math.abs(s
 const lost = s => s.y > H + 40 || s.x < -60 || s.x > W + 60;
 
 function make(api) {
+  const feel = new Feel({ sound: false, buzz: false });   // the game has its own sounds and buzzes
   let sim, jar, level, lives, t, acc, swipe, state, wait, msg, cuts;
   // Can this level be won? Try cutting rope A (and then B) at every moment of the first few seconds.
   function solvable(base) {
@@ -61,19 +63,21 @@ function make(api) {
   }
   function start() { sim = build(); jar = sim.jar; state = 'play'; acc = 0; cuts = 0; }
   return {
-    reset() { level = 0; lives = 3; t = 0; swipe = null; msg = null; wait = 0; start(); },
+    reset() { level = 0; lives = 3; t = 0; swipe = null; msg = null; wait = 0; feel.clear(); start(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
-      t += dt; if (msg) msg.l -= dt;
+      feel.update(dt); t += dt; if (msg) msg.l -= dt;
       if (state === 'wait') { wait -= dt; if (wait <= 0) { if (lives <= 0) return api.over(); start(); } return; }
       acc += dt; while (acc >= STEP) {
         acc -= STEP; stepSim(sim);
-        if (cuts && inJar(sim, jar)) { level++; api.score(level); state = 'wait'; wait = .9; msg = { txt: 'SWEET!', l: 1, good: true }; haptic('success'); sfx(880, .2, 'triangle', .06, 300); return; }
-        if (lost(sim)) { lives--; state = 'wait'; wait = .7; msg = { txt: lives ? 'DROPPED' : 'OUT OF SWEETS', l: 1 }; haptic('error'); sfx(160, .3, 'triangle', .05, -60); return; }
+        if (cuts && inJar(sim, jar)) { feel.juice.burst(jar.x, jar.y + 8, { n: 26, speed: 220, life: .7, size: 4, color: ['#ff4f8b', '#ffffff', '#ffd34a'], angle: -Math.PI / 2, arc: 2, gravity: 500 }); level++; api.score(level); state = 'wait'; wait = .9; msg = { txt: 'SWEET!', l: 1, good: true }; haptic('success'); sfx(880, .2, 'triangle', .06, 300); return; }
+        if (lost(sim)) { feel.juice.shake(6); lives--; state = 'wait'; wait = .7; msg = { txt: lives ? 'DROPPED' : 'OUT OF SWEETS', l: 1 }; haptic('error'); sfx(160, .3, 'triangle', .05, -60); return; }
       }
     },
     draw(c) {
       const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#ffd9ec'); g.addColorStop(1, '#ffb3d1'); c.fillStyle = g; c.fillRect(0, 0, W, H);
       c.fillStyle = '#ffffff40'; for (let i = 0; i < 10; i++) c.fillRect(0, i * 64, W, 32);
+      feel.begin(c);
       // jar
       const j = jar; c.fillStyle = '#ffffff70'; c.beginPath(); c.roundRect(j.x - j.w / 2, j.y, j.w, 70, [4, 4, 18, 18]); c.fill();
       c.strokeStyle = '#ffffffdd'; c.lineWidth = 4; c.beginPath(); c.moveTo(j.x - j.w / 2, j.y - 6); c.lineTo(j.x - j.w / 2, j.y + 52); c.quadraticCurveTo(j.x - j.w / 2, j.y + 70, j.x - j.w / 2 + 18, j.y + 70); c.lineTo(j.x + j.w / 2 - 18, j.y + 70); c.quadraticCurveTo(j.x + j.w / 2, j.y + 70, j.x + j.w / 2, j.y + 52); c.lineTo(j.x + j.w / 2, j.y - 6); c.stroke();
@@ -89,6 +93,7 @@ function make(api) {
       c.fillStyle = '#ff7aa8'; c.beginPath(); c.arc(0, 0, CR, 0, 7); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, CR - 5, .5, 2.5); c.stroke();
       c.restore();
       if (swipe && swipe.pts.length > 1) { c.strokeStyle = '#ffffffcc'; c.lineWidth = 4; c.lineCap = 'round'; c.beginPath(); swipe.pts.slice(-8).forEach((p, i) => i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)); c.stroke(); c.lineCap = 'butt'; }
+      feel.end(c, W, H);
       c.font = '400 9px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = '#c0567f'; c.fillText('SWEETS', 12, 20);
       for (let i = 0; i < 3; i++) { c.fillStyle = i < lives ? '#ff4f8b' : '#ffffff80'; c.beginPath(); c.arc(18 + i * 16, 34, 6, 0, 7); c.fill(); }
       if (level === 0 && t < 5) { c.fillStyle = '#a0406a'; c.font = '600 14px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('swipe across the rope to cut it', W / 2, H - 20); }
@@ -99,7 +104,7 @@ function make(api) {
       if (!swipe || state !== 'play') return; const a = swipe.pts[swipe.pts.length - 1]; swipe.pts.push({ x, y });
       for (const r of sim.ropes) {
         if (r.cut) continue;
-        if (segX(a.x, a.y, x, y, r.ax, r.ay, sim.x, sim.y)) { r.cut = true; cuts++; haptic('medium'); sfx(1200, .05, 'sawtooth', .03, -800); }
+        if (segX(a.x, a.y, x, y, r.ax, r.ay, sim.x, sim.y)) { r.cut = true; cuts++; feel.juice.burst(x, y, { n: 7, speed: 150, life: .22, size: 2.5, color: ['#ffffff', '#8a5a3a'], shape: 'spark' }); haptic('medium'); sfx(1200, .05, 'sawtooth', .03, -800); }
       }
     },
     up() { swipe = null; },

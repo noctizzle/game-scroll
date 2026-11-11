@@ -2,10 +2,14 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
 
 function Slice(api){
   const W=360,H=640,G=900;
   const C=[['#ff5d73','#ffd1d8'],['#ffb020','#ffe9b8'],['#3ddc97','#cdf7e4'],['#9a8cff','#e1ddff'],['#29c5f6','#cbf2ff']];
+  const feel=new Feel({sound:false,buzz:false});   // only for the shake: the game draws its own juice and plays its own sounds
+  const ready=new Ready({eat:false,text:'Swipe to start'});   // nothing is thrown until the first touch
   let items,halves,parts,trail,score,lives,spawnT,t,isDown,last,stroke,flash,pops;
   function wave(){const n=1+(Math.random()*Math.min(4,1+t/10)|0);
     for(let i=0;i<n;i++){const bomb=t>4&&Math.random()<Math.min(.3,.12+t/200),x=rnd(60,W-60);
@@ -13,7 +17,7 @@ function Slice(api){
   function phys(dt,live){
     for(const it of items){if(it.delay>0){it.delay-=dt;continue}it.vy+=G*dt;it.x+=it.vx*dt;it.y+=it.vy*dt;it.rot+=it.vr*dt}
     const gone=items.filter(it=>it.vy>0&&it.y>H+50);items=items.filter(it=>!(it.vy>0&&it.y>H+50));
-    if(live)for(const it of gone)if(!it.bomb){lives--;sfx(110,.25,'triangle',.06);if(lives<=0){api.over();break}}
+    if(live)for(const it of gone)if(!it.bomb){lives--;sfx(110,.25,'triangle',.06);haptic(lives>0?'warning':'error');feel.juice.shake(5);if(lives<=0){api.over();break}}
     for(const h of halves){h.vy+=G*dt;h.x+=h.vx*dt;h.y+=h.vy*dt;h.rot+=h.vr*dt}halves=halves.filter(h=>h.y<H+60);
     for(const p of parts){p.vy+=G*.6*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt}parts=parts.filter(p=>p.life>0);
     for(const p of trail)p.age+=dt;trail=trail.filter(p=>p.age<.14);
@@ -26,20 +30,22 @@ function Slice(api){
       if(segDist(it.x,it.y,ax,ay,bx,by)<=it.r){
         items.splice(items.indexOf(it),1);
         if(it.bomb){flash=1;for(let i=0;i<30;i++){const a=rnd(0,7),s=rnd(100,500);parts.push({x:it.x,y:it.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:rnd(.4,.9),c:i%2?'#ffcf4a':'#ff4b3a',s:rnd(3,7)})}
-          sfx(90,.6,'sawtooth',.08,-60);haptic('heavy');return api.over()}
-        const a=Math.atan2(by-ay,bx-ax);stroke++;score+=stroke>=3?2:1;api.score(score);sfx(700+stroke*90,.07,'triangle',.05);
+          sfx(90,.6,'sawtooth',.08,-60);haptic('heavy');feel.juice.shake(14);return api.over()}
+        const a=Math.atan2(by-ay,bx-ax);stroke++;score+=stroke>=3?2:1;api.score(score);sfx(700+stroke*90,.07,'triangle',.05);haptic(stroke>=3?'medium':'light');
         for(const s of[1,-1])halves.push({x:it.x,y:it.y,vx:it.vx*.5+Math.cos(a+s*Math.PI/2)*110,vy:Math.min(it.vy,0)*.3+Math.sin(a+s*Math.PI/2)*110,r:it.r,c:it.c,ang:a,side:s,rot:0,vr:s*rnd(2,4)});
         for(let i=0;i<12;i++){const b=rnd(0,7),s=rnd(60,260);parts.push({x:it.x,y:it.y,vx:Math.cos(b)*s,vy:Math.sin(b)*s,life:rnd(.3,.6),c:it.c[0],s:rnd(2,5)})}
         if(stroke===3)pops.push({txt:'COMBO +',x:it.x,y:it.y-30,life:.8});
       }}
   }
   return{
-    reset(){items=[];halves=[];parts=[];trail=[];pops=[];score=0;lives=3;spawnT=.5;t=0;isDown=false;last=null;stroke=0;flash=0},
-    update(dt){t+=dt;spawnT-=dt;if(spawnT<=0){wave();spawnT=rnd(1.1,1.6)*Math.max(.6,1-t/90)}phys(dt,true)},
-    fx(dt){phys(dt,false)},
+    reset(){items=[];halves=[];parts=[];trail=[];pops=[];score=0;lives=3;spawnT=.5;t=0;isDown=false;last=null;stroke=0;flash=0;feel.clear();ready.reset()},
+    update(dt){feel.update(dt);if(!ready.update(dt)){phys(dt,false);return}
+      t+=dt;spawnT-=dt;if(spawnT<=0){wave();spawnT=rnd(1.1,1.6)*Math.max(.6,1-t/90)}phys(dt,true)},
+    fx(dt){feel.update(dt);phys(dt,false)},
     draw(c){
       const g=c.createRadialGradient(W/2,H*.4,40,W/2,H*.4,H*.8);g.addColorStop(0,'#21204a');g.addColorStop(1,'#08081a');c.fillStyle=g;c.fillRect(0,0,W,H);
       c.strokeStyle='#ffffff08';c.lineWidth=1;for(let i=-H;i<W;i+=28){c.beginPath();c.moveTo(i,H);c.lineTo(i+H,0);c.stroke()}
+      feel.begin(c);
       for(const h of halves){c.save();c.translate(h.x,h.y);c.rotate(h.ang+h.rot);c.beginPath();
         if(h.side>0)c.arc(0,0,h.r,0,Math.PI);else c.arc(0,0,h.r,Math.PI,Math.PI*2);c.closePath();c.fillStyle=h.c[0];c.fill();
         c.beginPath();if(h.side>0)c.arc(0,0,h.r*.8,0,Math.PI);else c.arc(0,0,h.r*.8,Math.PI,Math.PI*2);c.closePath();c.fillStyle=h.c[1];c.fill();c.restore()}
@@ -53,10 +59,11 @@ function Slice(api){
       for(const p of parts){c.globalAlpha=clamp(p.life*2,0,1);c.fillStyle=p.c;c.fillRect(p.x-p.s/2,p.y-p.s/2,p.s,p.s)}c.globalAlpha=1;
       if(trail.length>1){c.lineCap='round';c.lineJoin='round';for(let i=1;i<trail.length;i++){const a=trail[i-1],b=trail[i];c.strokeStyle=`rgba(255,255,255,${1-b.age/.14})`;c.lineWidth=2+i/trail.length*7;c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.stroke()}}
       c.textAlign='center';c.font='400 12px "Press Start 2P", monospace';for(const p of pops){c.globalAlpha=clamp(p.life*2,0,1);c.fillStyle='#ffd34a';c.fillText(p.txt,p.x,p.y)}c.globalAlpha=1;
+      feel.end(c,W,H);ready.draw(c,W,H);
       for(let i=0;i<3;i++){const x=W-24-i*26,y=26;c.lineWidth=3;if(i<lives){c.fillStyle='#ff5d73';c.beginPath();c.arc(x,y,8,0,7);c.fill()}else{c.strokeStyle='#ff5d7388';c.beginPath();c.moveTo(x-6,y-6);c.lineTo(x+6,y+6);c.moveTo(x+6,y-6);c.lineTo(x-6,y+6);c.stroke()}}
       if(flash>0){c.fillStyle=`rgba(255,240,220,${flash})`;c.fillRect(0,0,W,H)}
     },
-    down(x,y){isDown=true;last={x,y};stroke=0;trail=[{x,y,age:0}]},
+    down(x,y){ready.go();isDown=true;last={x,y};stroke=0;trail=[{x,y,age:0}]},
     move(x,y){if(!isDown)return;trail.push({x,y,age:0});cut(last.x,last.y,x,y);last={x,y}},
     up(){isDown=false;last=null}
   };

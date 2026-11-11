@@ -2,13 +2,16 @@ import gs from '../gamescroll.js';
 const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
 
 // Fence off the field. Drag to move; leaving claimed ground draws a line. Get back to claimed ground to fill the area
 // the spark is NOT in. If the spark touches your line, you're out. Claim 75% to clear the level.
 const R = PAL.rose, W = 160, H = 160, S = 2, GW = 76, GH = 70, OX = 4, OY = 16, TARGET = .75;
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
   let g, px, py, dir, drawing, sparks, level, claimed, score, t, dead, moveT, held;
+  function out() { haptic('error'); sfx(120, .5, 'sawtooth', .05, -60); feel.juice.shake(4).burst(OX + px * S, OY + py * S, { n: 12, speed: 60, life: .5, size: 2, color: [R[3], R[2]] }); return api.over(); }
   const at = (x, y) => (x < 0 || y < 0 || x >= GW || y >= GH) ? 1 : g[y * GW + x];
   function newLevel() {
     g = new Uint8Array(GW * GH);
@@ -22,19 +25,20 @@ function make(api) {
     while (st.length) { const k = st.pop(), x = k % GW, y = k / GW | 0; for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) { if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue; const kk = ny * GW + nx; if (!g[kk] && !seen[kk]) { seen[kk] = 1; st.push(kk); } } }
     let got = 0; for (let k = 0; k < g.length; k++) { if (g[k] === 2) g[k] = 1; else if (!g[k] && !seen[k]) { g[k] = 1; got++; } }
     let n = 0; for (const v of g) if (v === 1) n++; claimed = n / g.length;
-    score += Math.round(got / 10); api.score(score); haptic(got > 300 ? 'medium' : 'light'); sfx(400 + Math.min(600, got), .15, 'square', .04, 200);
-    if (claimed >= TARGET) { level++; score += 50; api.score(score); haptic('success'); sfx(880, .3, 'square', .05, 400); newLevel(); }
+    const pts = Math.round(got / 10); score += pts; api.score(score); haptic(got > 300 ? 'medium' : 'light'); sfx(400 + Math.min(600, got), .15, 'square', .04, 200);
+    if (pts) feel.juice.pop(Math.min(W - 24, Math.max(24, OX + px * S)), Math.max(30, OY + py * S - 6), `+${pts}`, { color: R[3], size: 6 });
+    if (claimed >= TARGET) { level++; score += 50; api.score(score); haptic('success'); sfx(880, .3, 'square', .05, 400); feel.juice.burst(W / 2, 86, { n: 20, speed: 80, life: .6, size: 2, color: [R[3], R[2]] }).pop(W / 2, 80, 'CLEAR +50', { color: R[3], size: 8 }); newLevel(); }
   }
   return {
-    reset() { level = 1; score = 0; t = 0; dead = 0; moveT = 0; held = false; newLevel(); },
+    reset() { level = 1; score = 0; t = 0; dead = 0; moveT = 0; held = false; feel.clear(); newLevel(); },
     update(dt) {
-      t += dt;
+      feel.update(dt); t += dt;
       for (const s of sparks) {
         let nx = s.x + s.vx * dt, ny = s.y + s.vy * dt;
         if (at(nx | 0, s.y | 0) === 1) { s.vx = -s.vx; nx = s.x; } if (at(s.x | 0, ny | 0) === 1) { s.vy = -s.vy; ny = s.y; }
         s.x = nx; s.y = ny;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (at((s.x | 0) + dx, (s.y | 0) + dy) === 2) { haptic('error'); sfx(120, .5, 'sawtooth', .05, -60); return api.over(); }
-        if (drawing && Math.abs(s.x - px) < 1.5 && Math.abs(s.y - py) < 1.5) { haptic('error'); return api.over(); }
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (at((s.x | 0) + dx, (s.y | 0) + dy) === 2) return out();
+        if (drawing && Math.abs(s.x - px) < 1.5 && Math.abs(s.y - py) < 1.5) return out();
       }
       moveT -= dt;
       if (held && dir && moveT <= 0) {
@@ -45,13 +49,15 @@ function make(api) {
         else { px = nx; py = ny; if (drawing) { drawing = false; close(); } }
       }
     },
-    fx(dt) { dead += dt; },
+    fx(dt) { dead += dt; feel.update(dt); },
     draw(c) {
       c.fillStyle = R[0]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) { const v = g[y * GW + x]; c.fillStyle = v === 1 ? R[2] : v === 2 ? R[3] : R[0]; c.fillRect(OX + x * S, OY + y * S, S, S); }
       c.fillStyle = R[1]; for (let i = 0; i < 30; i++) { const x = (i * 37) % GW, y = (i * 53) % GH; if (!g[y * GW + x]) c.fillRect(OX + x * S, OY + y * S, 1, 1); }
       for (const s of sparks) { c.fillStyle = (t * 10 | 0) % 2 ? R[3] : R[1]; c.fillRect(OX + (s.x | 0) * S - 2, OY + (s.y | 0) * S - 2, 5, 5); c.fillStyle = R[3]; c.fillRect(OX + (s.x | 0) * S, OY + (s.y | 0) * S - 4, 1, 9); c.fillRect(OX + (s.x | 0) * S - 4, OY + (s.y | 0) * S, 9, 1); }
       if (!dead || (dead * 10 | 0) % 2) { c.fillStyle = R[3]; c.fillRect(OX + px * S - 2, OY + py * S - 2, 6, 6); c.fillStyle = R[0]; c.fillRect(OX + px * S, OY + py * S, 2, 2); }
+      feel.end(c, W, H);
       c.fillStyle = R[1]; c.fillRect(OX, 4, 152, 4); c.fillStyle = R[3]; c.fillRect(OX, 4, 152 * claimed / TARGET > 152 ? 152 : 152 * claimed / TARGET, 4);
       c.fillStyle = R[3]; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'right'; c.fillText(`${Math.round(claimed * 100)}%`, W - 4, 15);
     },

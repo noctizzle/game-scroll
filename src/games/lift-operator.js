@@ -3,6 +3,8 @@ const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { clamp, rnd } = gs.util;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
 
 // Run the lift in a six-floor block. Tap a floor to send the lift there. Riders get off at their
 // floor and anyone waiting gets on (four at most). Leave someone waiting too long and they storm off.
@@ -10,10 +12,14 @@ const P = PAL.mint, W = 160, H = 160, FLOORS = 6, FH = 22, BASE = 150, SX = 62, 
 const fy = f => BASE - f * FH;   // floor line y
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready({ eat: false });                             // nobody turns up until the first tap
   let lift, waiting, riders, score, lives, t, spawn, dwell, storm, mood;
   return {
-    reset() { lift = { y: fy(0), to: 0, at: 0 }; waiting = []; riders = []; score = 0; lives = 3; t = 0; spawn = .5; dwell = 0; storm = []; },
+    reset() { lift = { y: fy(0), to: 0, at: 0 }; waiting = []; riders = []; score = 0; lives = 3; t = 0; spawn = .5; dwell = 0; storm = []; feel.clear(); ready.reset(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; spawn -= dt;
       if (spawn <= 0) {
         spawn = Math.max(1.1, 3 - t / 40) * rnd(.7, 1.3);
@@ -25,20 +31,21 @@ function make(api) {
       else if (lift.y !== ty) {
         lift.y = ty; lift.at = lift.to; dwell = .4; sfx(880, .05, 'square', .03); haptic('light');
         const out = riders.filter(r => r.to === lift.at); riders = riders.filter(r => r.to !== lift.at);
-        if (out.length) { score += out.length; api.score(score); haptic('success'); sfx(660, .1, 'square', .04, 200); }
+        if (out.length) { score += out.length; api.score(score); haptic('success'); sfx(660, .1, 'square', .04, 200); feel.juice.pop(SX + SW + 14, lift.y - 10, `+${out.length}`, { color: P[0], size: 6 }); }
         const here = waiting.filter(w => w.f === lift.at);
         for (const w of here) { if (riders.length >= CAP) break; riders.push(w); waiting.splice(waiting.indexOf(w), 1); }
       }
       if (dwell > 0) dwell -= dt;
       for (const w of waiting) w.wait += dt;
       for (const w of waiting.filter(w => w.wait > w.max)) {
-        waiting.splice(waiting.indexOf(w), 1); lives--; storm.push({ f: w.f, x: SX - 10, l: 1.2 }); haptic('error'); sfx(150, .25, 'square', .05, -40);
+        waiting.splice(waiting.indexOf(w), 1); lives--; storm.push({ f: w.f, x: SX - 10, l: 1.2 }); haptic('error'); sfx(150, .25, 'square', .05, -40); feel.juice.shake(4);
         if (lives <= 0) return api.over();
       }
       for (const s of storm) { s.l -= dt; s.x -= dt * 40; } storm = storm.filter(s => s.l > 0);
     },
     draw(c) {
       c.fillStyle = P[3]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = P[2]; c.fillRect(SX - 2, fy(FLOORS - 1) - FH + 2, SW + 4, BASE - fy(FLOORS - 1) + FH - 2);
       c.font = '6px "Press Start 2P", monospace';
       for (let f = 0; f < FLOORS; f++) {
@@ -58,11 +65,12 @@ function make(api) {
       // rider destinations on the right panel
       c.fillStyle = P[0]; c.textAlign = 'left'; c.fillText('TO', 100, 22); riders.forEach((r, i) => { c.fillText(String(r.to), 100 + i * 10, 32); });
       for (const s of storm) { c.globalAlpha = Math.min(1, s.l); c.fillStyle = P[0]; c.fillText('!', s.x, fy(s.f) - 6); c.globalAlpha = 1; }
+      feel.end(c, W, H);
       for (let i = 0; i < 3; i++) { c.fillStyle = i < lives ? P[0] : P[2]; c.fillRect(W - 10 - i * 8, 4, 5, 5); }
-      if (t < 4) { c.fillStyle = P[1]; c.textAlign = 'left'; c.fillText('TAP A FLOOR', 100, 50); }
+      if (t < 4) { c.fillStyle = P[1]; c.textAlign = 'right'; c.fillText('TAP A', W - 6, 50); c.fillText('FLOOR', W - 6, 59); }   // two lines: one ran off the edge
     },
-    down(x, y) { const f = clamp(Math.floor((BASE - y) / FH), 0, FLOORS - 1); if (f !== lift.to) { lift.to = f; haptic('tick'); sfx(400, .03, 'square', .03); } },
-    key(k, d) { if (!d) return; if (k === 'ArrowUp') lift.to = Math.min(FLOORS - 1, lift.to + 1); if (k === 'ArrowDown') lift.to = Math.max(0, lift.to - 1); },
+    down(x, y) { ready.go(); const f = clamp(Math.floor((BASE - y) / FH), 0, FLOORS - 1); if (f !== lift.to) { lift.to = f; haptic('tick'); sfx(400, .03, 'square', .03); } },
+    key(k, d) { if (!d) return; ready.go(); if (k === 'ArrowUp') lift.to = Math.min(FLOORS - 1, lift.to + 1); if (k === 'ArrowDown') lift.to = Math.max(0, lift.to - 1); },
   };
 }
 

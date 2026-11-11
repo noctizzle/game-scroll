@@ -3,6 +3,7 @@ const { sfx } = gs.sound;
 const { haptic } = gs.device;
 const { rnd } = gs.util;
 const { PAL } = gs.palettes;
+const { Feel } = gs.effects; const { Ready } = gs.rounds;
 
 // You run the lights at a crossroads. Tap to switch which road has green (there's a short amber
 // in between). Cars stuck at a red too long lose patience. Three angry drivers and you're fired.
@@ -16,12 +17,16 @@ const LANES = [
 ];
 
 function make(api) {
+  const feel = new Feel({ pixel: true, sound: false, buzz: false });   // the game has its own sounds and buzzes
+  const ready = new Ready();                                            // traffic starts on the first tap
   let cars, green, amber, score, angry, t, spawn, honks;
   const pos = c => c.lane.dx ? c.x : c.y;
   const ahead = (c, o) => (pos(o) - pos(c)) * (c.lane.dx || c.lane.dy);
   return {
-    reset() { cars = []; green = 'ew'; amber = 0; score = 0; angry = 0; t = 0; spawn = 1; honks = []; },
+    reset() { cars = []; green = 'ew'; amber = 0; score = 0; angry = 0; t = 0; spawn = 1; honks = []; feel.clear(); ready.reset(); },
+    fx(dt) { feel.update(dt); },
     update(dt) {
+      feel.update(dt); if (!ready.update(dt)) return;
       t += dt; spawn -= dt;
       if (amber > 0) { amber -= dt; if (amber <= 0) green = green === 'ew' ? 'ns' : 'ew'; }
       if (spawn <= 0) {
@@ -38,18 +43,19 @@ function make(api) {
         c.x += L.dx * c.v * dt; c.y += L.dy * c.v * dt;
         if (!go && red && toStop > -1) {
           c.wait += dt;
-          if (c.wait > 7 && !c.mad) { c.mad = true; angry++; haptic('error'); sfx(330, .3, 'square', .05); honks.push({ x: c.x, y: c.y, l: 1 }); if (angry >= 3) return api.over(); }
+          if (c.wait > 7 && !c.mad) { c.mad = true; angry++; haptic('error'); sfx(330, .3, 'square', .05); honks.push({ x: c.x, y: c.y, l: 1 }); feel.juice.shake(2); if (angry >= 3) return api.over(); }
         } else if (go) c.wait = Math.max(0, c.wait - dt * 2);
       }
       // crash check inside the junction (cars on crossing roads overlapping)
       const inJ = cars.filter(c => c.x > J0 - 4 && c.x < J1 + 4 && c.y > J0 - 4 && c.y < J1 + 4);
-      for (const a of inJ) for (const b of inJ) if (a.lane.axis === 'ew' && b.lane.axis === 'ns' && Math.abs(a.x - b.x) < 7 && Math.abs(a.y - b.y) < 7) { haptic('heavy'); sfx(80, .5, 'square', .06, -20); return api.over(); }
+      for (const a of inJ) for (const b of inJ) if (a.lane.axis === 'ew' && b.lane.axis === 'ns' && Math.abs(a.x - b.x) < 7 && Math.abs(a.y - b.y) < 7) { haptic('heavy'); sfx(80, .5, 'square', .06, -20); feel.juice.shake(5).burst((a.x + b.x) / 2, (a.y + b.y) / 2, { n: 14, speed: 70, life: .5, size: 2, color: [P[0], P[3]] }); return api.over(); }
       const before = cars.length; cars = cars.filter(c => c.x > -20 && c.x < W + 20 && c.y > -20 && c.y < H + 20);
       if (cars.length < before) { score += before - cars.length; api.score(score); haptic('tick'); }
       for (const h of honks) h.l -= dt; honks = honks.filter(h => h.l > 0);
     },
     draw(c) {
       c.fillStyle = P[2]; c.fillRect(0, 0, W, H);
+      feel.begin(c);
       c.fillStyle = P[1]; c.fillRect(0, 70, W, 20); c.fillRect(70, 0, 20, H);
       c.fillStyle = P[3]; for (let i = 0; i < W; i += 10) { if (i < 62 || i > 96) { c.fillRect(i, 79, 5, 1); c.fillRect(79, i, 1, 5); } }
       // stop lines + lights
@@ -61,12 +67,14 @@ function make(api) {
         if (car.wait > 4 && !car.mad && (t * 6 | 0) % 2) { c.fillStyle = P[3]; c.fillRect(Math.round(car.x) - 1, Math.round(car.y) - 1, 2, 2); }
       }
       for (const h of honks) { c.fillStyle = P[0]; c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'center'; c.fillText('HONK', h.x, h.y - 8 - (1 - h.l) * 6); }
+      feel.end(c, W, H);
+      ready.draw(c, W, H, { pixel: true, color: P[0], y: 40, text: 'TAP TO START' });
       c.font = '6px "Press Start 2P", monospace'; c.textAlign = 'left'; c.fillStyle = P[0]; c.fillText(amber > 0 ? 'AMBER' : green === 'ew' ? 'GO: <>' : 'GO: ^v', 4, 10);
       for (let i = 0; i < 3; i++) { c.fillStyle = i < angry ? P[3] : P[0]; c.fillRect(W - 10 - i * 8, 4, 5, 5); }
       if (t < 4) { c.fillStyle = P[0]; c.fillText('TAP TO SWITCH', 4, 154); }
     },
-    down() { if (amber > 0) return; amber = .9; haptic('medium'); sfx(520, .05, 'square', .03); },
-    key(k, d) { if (d && k === ' ' && amber <= 0) amber = .9; },
+    down() { if (ready.go() || amber > 0) return; amber = .9; haptic('medium'); sfx(520, .05, 'square', .03); },
+    key(k, d) { if (d && k === ' ') this.down(); },
   };
 }
 
