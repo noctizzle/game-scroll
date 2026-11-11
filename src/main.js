@@ -38,6 +38,7 @@ import { savesFor } from './saves.js';
 import { brainsFor, sendFun } from './brainstore.js';
 import { liveBrains, brainStats } from './kit/brains.js';
 import { ran as gameRan, awayFor } from './away.js';
+import { initBar, onBarMove, placeBar } from './topbar.js';
 import { geoFor, roundStarted, roundEnded } from './geo.js';
 import { makeDebug } from './debug.js';
 import { show as showTweaks } from './kit/tweak.js';
@@ -682,9 +683,11 @@ function onResize(){
 addEventListener('resize',()=>{resizeAt=performance.now();clearTimeout(rt);rt=setTimeout(onResize,80)});
 if(window.visualViewport)visualViewport.addEventListener('resize',()=>{resizeAt=performance.now();clearTimeout(rt);rt=setTimeout(onResize,80)});
 screen.orientation?.addEventListener?.('change',()=>setTimeout(onResize,150));
+// The top bar moves up into the camera strip where it can (src/topbar.js); when it moves, the cards refit to the room it leaves.
+onBarMove(()=>requestAnimationFrame(onResize));initBar();
 // Full screen on / off changes the layout without a window resize (and the system bars may resize it again later).
 // While it's on the feed stays locked, so a mouse wheel can't scroll the game away underneath.
-onFullChange((s,on)=>{if(on)feed.classList.add('locked');else if(s.state!=='playing')feed.classList.remove('locked');if(s.paused&&s.pauseWhy!=='info')pauseOv(s);requestAnimationFrame(onResize)});
+onFullChange((s,on)=>{if(!on)requestAnimationFrame(placeBar);if(on)feed.classList.add('locked');else if(s.state!=='playing')feed.classList.remove('locked');if(s.paused&&s.pauseWhy!=='info')pauseOv(s);requestAnimationFrame(onResize)});
 
 // Fresh heart counts from other players: repaint the ♥ number on every slide (keeping your own state).
 hearts.onChange(ids=>slides.forEach(x=>{if(!ids||ids.includes(x.def.id))x.setLike(x.el.querySelector('.like').getAttribute('aria-pressed')==='true')}));
