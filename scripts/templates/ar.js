@@ -1,11 +1,13 @@
 // __TITLE__: a starter AR · 3D game made with `npm run new`. Change anything you like.
 // 3D in the player's real room (src/kit/ar3d.js, see docs/ar-3d.md): the camera picture behind, the
-// gyro to look around, a virtual room and drag-to-look when either is missing. Shows gestures (tap
-// to pop, drag to look), sounds and 2D juice on the HUD.
+// gyro to look around, a virtual room and drag-to-look when either is missing. It starts the way a
+// finished game does: a fixed tick (the same game on every phone), Ready (nothing floats off until the
+// first tap), Feel (particles, shake, sound and a buzz in one call) on the HUD, gestures (tap to pop,
+// drag to look) and a soundtrack in one line.
 import gs from '../gamescroll.js';
-const { sounds } = gs.sound;
-const { haptic, want } = gs.device;
-const { Juice } = gs.juice;
+const { want } = gs.device;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
 const { Gestures } = gs.controls;
 const { Particles, pbr, THREE } = gs.hd;
 const { ARView, arNote, FLOOR } = gs.ar;
@@ -15,7 +17,7 @@ const COLS = ['#ff4d6d', '#ffd23f', '#3ddc97', '#4fc3ff', '#b388ff'];
 
 function make(api) {
   want('motion');                     // iPhones ask for motion access on the Play tap
-  const fx = new Juice();
+  const feel = new Feel(), ready = new Ready({ text: 'Tap to start' });
   let v, balloons, pops, score, t, spawn, escaped;
   const g = new Gestures({
     tap: (x, y) => tapAt(x, y),
@@ -40,10 +42,10 @@ function make(api) {
     let best = null, bd = 34;
     for (const b of balloons) { const [sx, sy, z] = v.toScreen(b.position.x, b.position.y, b.position.z); const d = Math.hypot(sx - x, sy - y); if (z < 1 && d < bd) { bd = d; best = b; } }
     if (!best) return;
-    score++; api.score(score); sounds.pop(1 + Math.random() * .3); haptic('medium');
+    score++; api.score(score);
     const c = new THREE.Color(best.userData.col);
     for (let i = 0; i < 40; i++) pops.emit({ x: best.position.x, y: best.position.y, z: best.position.z, vx: (Math.random() - .5) * 2.4, vy: Math.random() * 2, vz: (Math.random() - .5) * 2.4, life: 1.2, size: .03, col: [c.r, c.g, c.b], drag: 1.5, grav: 3, floor: FLOOR });
-    fx.pop(x, y - 20, '+1', { size: 20 });
+    feel.coin(x, y - 10, { color: best.userData.col, pitch: 1 + Math.random() * .3 });
     v.scene.remove(best); balloons.splice(balloons.indexOf(best), 1);
   }
 
@@ -52,28 +54,33 @@ function make(api) {
       if (!v) setup();
       v.off(); v.recenter();
       for (const b of balloons || []) v.scene.remove(b);
-      balloons = []; score = 0; t = 0; spawn = 0; escaped = 0; pops.clear(); fx.clear(); g.release();
+      balloons = []; score = 0; t = 0; spawn = 0; escaped = 0; pops.clear(); feel.clear(); ready.reset(); g.release();   // ALL round state here
     },
     resize(w, h) { W = w; H = h; },
-    update(dt) {
-      v.live(); fx.update(dt); t += dt; spawn -= dt;
+    update(dt) {                                  // tick: 60 below, so dt is exactly 1/60 on every phone
+      v.live(); feel.update(dt);
+      if (feel.frozen) return;                    // hit-stop
+      if (!ready.update(dt)) return;              // no balloons until the first tap
+      t += dt; spawn -= dt;
       if (spawn <= 0) { spawn = Math.max(.7, 2 - t / 30); addBalloon(); }
       for (const b of [...balloons]) {
         b.position.y += b.userData.rise * dt; b.position.x += Math.sin(t * 1.3 + b.id) * .1 * dt;
-        if (b.position.y > 2.2) { v.scene.remove(b); balloons.splice(balloons.indexOf(b), 1); escaped++; sounds.hurt(); haptic('warning'); fx.flash('#ff4060', .2); }
+        if (b.position.y > 2.2) { v.scene.remove(b); balloons.splice(balloons.indexOf(b), 1); escaped++; feel.hurt(); }
       }
       pops.update(dt);
-      if (escaped >= 5) { v.off(); sounds.lose(); api.over(); }
+      if (escaped >= 5) { v.off(); feel.lose(); api.over(); }
     },
     draw(c) {
       v.look();
       v.draw(c, W, H);                                   // camera picture (or virtual room) + 3D
       v.pointers(c, W, H, balloons.map(b => ({ p: b.position, col: b.userData.col })));   // arrows to balloons off screen
-      fx.begin(c); fx.end(c, W, H);
+      feel.begin(c); feel.end(c, W, H);
+      // The app draws the score top centre (api.scoreArea() says where): this HUD sits top left.
       c.fillStyle = '#fff'; c.font = '700 16px Rubik, sans-serif'; c.textAlign = 'left'; c.fillText('Escaped ' + escaped + '/5', 14, 26);
+      ready.draw(c, W, H);
       arNote(c, v, W, H);
     },
-    down: (x, y, id) => g.down(x, y, id),
+    down(x, y, id) { if (ready.go()) return; g.down(x, y, id); },   // the first tap only starts the round
     move: (x, y, p, id) => g.move(x, y, p, id),
     up: (x, y, id) => g.up(x, y, id),
   };
@@ -86,6 +93,8 @@ export default {
   tag: 'AR · Arcade',
   retro: true, era: 'ar', pal: 'grape',
   w: 300, h: 460, maxW: 600, maxH: 680,
+  tick: 60,                 // update(1/60) a whole number of times a frame: the same game at 30, 60 and 120 fps
+  music: 'silly',           // a soundtrack in one line: happy, calm, tense, spooky, heroic, sad, silly, chase, puzzle
   goal: 20,
   hint: 'Balloons float up around your room. Turn the phone to find them and tap to pop them before five escape. No camera? Drag to look around.',
   creator: '__CREATOR__',

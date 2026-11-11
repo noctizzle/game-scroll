@@ -53,7 +53,7 @@ function make(api) {
           rally++;
           const tx = x + off * 70 + vxBat * .25;
           shot({ x, y: youY() }, { x: tx, y: botY() });
-          haptic('light'); feel.hit(x, youY() - 8, { size: .5 });
+          haptic('light'); feel.hit(x, youY() - 8, { power: .5 });
           if (tx < tb.l || tx > tb.r) { ball.out = true; }
         } else { lose('MISSED'); }
       } else {

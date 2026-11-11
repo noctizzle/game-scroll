@@ -34,7 +34,7 @@ function make(api) {
           hits.push({ x: (x - TX()) / ringR(), y: (y - TY()) / ringR() });
           score += ring; api.score(score); msg = ring === 10 ? 'BULLSEYE!' : ring ? `${ring}` : 'Miss'; ml = 1.1;
           if (ring >= 9) { notes('C5 E5 G5 C6', { len: .05 }); feel.coin(x, y); haptic('success'); }
-          else if (ring) { sfx(300, .06, 'square', .04); haptic('medium'); feel.hit(x, y, { size: .4 }); }
+          else if (ring) { sfx(300, .06, 'square', .04); haptic('medium'); feel.hit(x, y, { power: .4 }); }
           else { haptic('warning'); }
           flight = null; arrows--;
           if (arrows <= 0) { api.over(); return; }

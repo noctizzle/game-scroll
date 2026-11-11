@@ -1,13 +1,14 @@
-# Checks pull requests. "check" runs the fast tests (game build, licences, types, kits, Tiny Brains,
-# feed ranking, website build). "plan" works out which games to play: the changed games, plus, when
+# Checks pull requests. "check" runs the fast tests (game build, licences, types, how every game uses
+# gs (TypeScript), the starter templates, kits, Tiny Brains, feed ranking, website build). "plan" works out which games to play: the changed games, plus, when
 # shared code changes (kits, gamescroll.js, the app, three.js and other packages, the test scripts,
 # this file), the 3 games from each style that use the most engine parts, split across 2 parallel
 # "play" jobs. Those play the games in a headless browser (smoke, streamed, fold, and sweep for
 # Console games and changed Next Gen games), plus the speed budget
 # and Tiny Brains check for changed games. "code-flags" flags game code that touches the network,
 # storage or native features (scripts/game-lint.mjs), and lists changed files outside src/games/ that
-# need a careful read. Three more jobs: a mutation check of the server and licence guards, a maths
-# probe across JavaScript engines, and a frame generation quality check (each only when those parts change). Runs with read-only
+# need a careful read, and gives kit hints (advice) on changed games. Four more jobs: a mutation check of
+# the server and licence guards, a maths probe across JavaScript engines, a frame generation quality
+# check, and the app and sound checks (each only when those parts change). Runs with read-only
 # permissions and no secrets, so it is safe for pull requests from forks. See CONTRIBUTING.md.
 name: Game PR check
 
@@ -45,6 +46,18 @@ jobs:
 
       - name: Types for gs cover every part
         run: npm run types-check
+
+      # TypeScript reads every line of every game against src/gamescroll.d.ts (about a second): a kit,
+      # method, option or definition field that doesn't exist. The self-test first makes sure it still sees them.
+      - name: Games use gs the way its types describe
+        run: npm run game-types -- --self-test && npm run game-types
+
+      - name: Starter templates make games that pass the lint and the types
+        run: |
+          ids=""
+          for s in phone pocket color advance console nextgen ar; do node scripts/new-game.mjs "zz-template-$s" --style "$s" --creator CI > /dev/null; ids="$ids zz-template-$s"; done
+          node scripts/game-lint.mjs $ids && node scripts/game-types.mjs $ids
+          for id in $ids; do rm "src/games/$id.js"; done
 
       - name: Kit tests (physics, AI, maths)
         run: npm run kit-test
@@ -304,6 +317,69 @@ jobs:
       - name: Made frames no worse than the baseline
         if: steps.changed.outputs.run
         run: node scripts/framegen-test.cjs --check
+
+  # The app around a game (screen kept on in a round, finer touch, even pixels and the LCD look, the
+  # one-line soundtrack, the phone-only save) and the sound itself (every ready-made sound is heard and
+  # none is too loud, the limiter holds, instrument sets are level, the music clock keeps the beat
+  # through a frozen frame), in a headless browser. Runs when the app shell, the sound or the checks change.
+  app:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Did the app shell or the sound change?
+        id: changed
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          if git diff --name-only "origin/$BASE...HEAD" | grep -qE '^(src/(main|saves|soundtrack|sfx|gamescroll|game-modules|util)\.js|src/kit/(sound|instruments|compose|awake|rhythm|lazy|cleanup|tick|progress)\.js|scripts/(app-test\.cjs|sound-test)|index\.html|vite\.config\.js|package(-lock)?\.json|\.github/workflows/game-pr-check\.yml)'; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "No app shell or sound changes."; fi
+
+      - uses: actions/setup-node@v7
+        if: steps.changed.outputs.run
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        if: steps.changed.outputs.run
+        run: npm ci
+
+      - name: Which Playwright
+        if: steps.changed.outputs.run
+        id: pw
+        run: echo "version=$(npm view playwright version)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the browser
+        if: steps.changed.outputs.run
+        id: pwcache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright
+        if: steps.changed.outputs.run
+        env:
+          PW: ${{ steps.pw.outputs.version }}
+        run: |
+          npm i --no-save "playwright@$PW"
+          if [ "${{ steps.pwcache.outputs.cache-hit }}" = "true" ]; then npx playwright install-deps chromium; else npx playwright install --with-deps chromium; fi
+
+      - name: Build the app with games inside
+        if: steps.changed.outputs.run
+        id: build
+        run: npm run build:bundled
+
+      - name: The app around a game (awake, touch, pixels, soundtrack, phone save)
+        if: steps.changed.outputs.run
+        run: node scripts/app-test.cjs
+
+      - name: Sound (ready-made sounds, limiter, instruments, music clock)
+        if: ${{ !cancelled() && steps.changed.outputs.run && steps.build.outcome == 'success' }}
+        run: node scripts/sound-test.cjs
 
   # Maths probe: do V8 (Android, the Worker) and JavaScriptCore (iPhone) give the same bits for
   # Math.sin, exp...? Informational (a warning, never red). Runs when the kits change.

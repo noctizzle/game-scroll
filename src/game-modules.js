@@ -37,7 +37,7 @@ export function hasAll(obj, names) {
 
 // Extra features on the `api` a game receives in make(api). A streamed game that uses one is only
 // offered to apps that have it (older apps skip the game instead of crashing).
-export const API_FEATURES = ['save', 'load', 'clearSave', 'location', 'watchLocation'];
+export const API_FEATURES = ['save', 'load', 'clearSave', 'location', 'watchLocation', 'ahead', 'saveLocal', 'loadLocal', 'clearLocal'];
 
 // How precisely a game may know where the player is. A game that calls api.location() or
 // api.watchLocation() must say which in its definition (location: 'coarse'), and the feed shows it.

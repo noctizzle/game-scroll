@@ -33,8 +33,10 @@ import { playstats } from './playstats.js';
 import { boards, rankHTML, openBoard } from './boards.js';
 import { perf } from './perf.js';
 import { speed, fpsFor, tick as tickHz, screenHz, frameLate, screenWish } from './kit/speed.js';
+import { keepAwake, awake } from './kit/awake.js';
 import { history } from './history.js';
-import { savesFor } from './saves.js';
+import { savesFor, localSavesFor } from './saves.js';
+import { soundtrack } from './soundtrack.js';
 import { brainsFor, sendFun } from './brainstore.js';
 import { liveBrains, brainStats } from './kit/brains.js';
 import { ran as gameRan, awayFor } from './away.js';
@@ -68,7 +70,8 @@ let slides=[],active=null,filter='all',lastId=null,io;
 const stubGame=(s,msg)=>({reset(){},update(){},draw(c){const w=s.w||s.def.w,h=s.h||s.def.h;c.fillStyle='#111';c.fillRect(0,0,w,h);c.fillStyle='#bbb';c.font=`${Math.round(Math.min(w,h)/14)}px sans-serif`;c.textAlign='center';c.textBaseline='middle';c.fillText(msg,w/2,h/2)}});
 function bootGame(s){
   s.failed=null;resetTicks(s);
-  try{ownedBy(s,()=>{s.game=s.def.make(s.api);s.game.reset()});s.loading=false}
+  // (a game made again after "Loading…" is a new game: tell it the size its card already has, as fit() told the first)
+  try{ownedBy(s,()=>{s.game=s.def.make(s.api);s.game.reset();if(s.w&&(s.w!==s.def.w||s.h!==s.def.h)&&s.game.resize)s.game.resize(s.w,s.h)});s.loading=false}
   catch(e){
     if(e&&e.kitLoading){
       s.loading=true;s.game=stubGame(s,'Loading…');
@@ -104,16 +107,20 @@ function makeSlide(def){
   const s={def,el,canvas:el.querySelector('canvas'),screen:el.querySelector('.screen'),overlay:el.querySelector('.overlay'),scoreEl:el.querySelector('.score'),
     state:'ready',score:0,overAt:0,dirty:true,w:def.w,h:def.h};
   s.ctx=s.canvas.getContext('2d');
+  // a pocket game draws on its own small canvas, one canvas pixel per game pixel; present() copies that up to the card
+  if(isPixel(def)){s.out=s.ctx;s.lcd=lcdOf(def);s.off=document.createElement('canvas');s.off.width=def.w;s.off.height=def.h;s.ctx=s.off.getContext('2d',s.lcd&&s.lcd.ghost?{willReadFrequently:true}:undefined)}
   s.api={
     score:n=>{s.score=n;s.scoreEl.textContent=n;if(def.goal&&n>=def.goal)win(s)},
     over:()=>gameOver(s),
     win:()=>win(s),                                     // for games with a natural win (cleared the board, etc.)
     has:id=>!!(s.run&&s.run.items.has(id)),             // is this shop item active for the current run?
     ...savesFor(def),                                     // save(data) / load(fallback) / clearSave(): this game's own save slot
+    ...localSavesFor(def),                                // saveLocal / loadLocal / clearLocal: a bigger slot that stays on this phone
     ...awayFor(def.id),                                 // away(): seconds since this game last ran (idle games)
     brains:brainsFor(def.id),                            // where this game's Tiny Brains keep what they learned (src/brainstore.js)
     ...geoFor(def),                                     // location() / watchLocation(cb): rounded, only during a round (src/geo.js)
     scoreArea:()=>scoreArea(s),                         // where the app's score badge sits, in game units, so HUDs can keep clear of it
+    ahead:id=>aheadOf(s,id),                            // where a finger that's down is heading by the next refresh ([x, y] in game units), or null
   };
   bootGame(s);
   // like
@@ -128,13 +135,31 @@ function makeSlide(def){
   el.querySelector('.sharebtn').onclick=async()=>{haptic('light');const r=await shareGame(def,best(def.id));if(r==='copied')toast(el,'Link copied','info')};
   s.overlay.onclick=e=>{if(Date.now()-s.overAt<550)return;startGame(s)};
   // pointer input
-  const pt=e=>{const r=s.canvas.getBoundingClientRect();return[(e.clientX-r.left)/r.width*s.w,(e.clientY-r.top)/r.height*s.h]};
+  const at=(e,r)=>[(e.clientX-r.left)/r.width*s.w,(e.clientY-r.top)/r.height*s.h],pt=e=>at(e,s.canvas.getBoundingClientRect());
   // Multi-touch: each finger is tracked by its pointer id, passed to the game as the last argument
   // (down(x, y, id), move(x, y, pressed, id), up(x, y, id)). One-finger games can ignore it.
-  const held=new Set();
-  s.canvas.addEventListener('pointerdown',e=>{if(s.state!=='playing')return;held.add(e.pointerId);lastGameInput=performance.now();try{s.canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();s.game.down&&s.game.down(...pt(e),e.pointerId)});
-  s.canvas.addEventListener('pointermove',e=>{if(s.state!=='playing')return;const pressed=held.has(e.pointerId);if(pressed)lastGameInput=performance.now();s.game.move&&s.game.move(...pt(e),pressed,e.pointerId)});
-  const up=e=>{if(!held.delete(e.pointerId))return;if(s.state==='playing'&&s.game.up)s.game.up(...pt(e),e.pointerId)};
+  const held=new Set();s.ahead=new Map();
+  s.canvas.addEventListener('pointerdown',e=>{if(s.state!=='playing')return;held.add(e.pointerId);lastGameInput=performance.now();soundtrack.tap();try{s.canvas.setPointerCapture(e.pointerId)}catch(_){}e.preventDefault();s.game.down&&s.game.down(...pt(e),e.pointerId)});
+  // Finer touch (touch: 'fine' in the definition): a screen reads a finger more often than it draws (often
+  // 240 times a second), and the browser hands over one move per refresh with the readings in between tucked
+  // inside it. A game that asks gets every one of them while a finger is down, oldest first, so drawn lines
+  // and flicks follow the real path instead of cutting corners (at most FINE per move, the newest ones). It's
+  // a choice because move() then runs several times a frame: right for drawing, wrong for a game that reads
+  // the last move's distance as a speed. Where the browser also guesses where the finger is heading, the
+  // guess for the next refresh is kept for api.ahead(id), to draw the tip of a line under the finger.
+  s.canvas.addEventListener('pointermove',e=>{
+    if(s.state!=='playing')return;const pressed=held.has(e.pointerId);if(pressed)lastGameInput=performance.now();
+    const r=s.canvas.getBoundingClientRect();
+    if(pressed){
+      let pr=null;try{pr=e.getPredictedEvents?.()}catch(_){}
+      if(pr&&pr.length){const lim=e.timeStamp+1000/screenHz()+2;let k=0;while(k+1<pr.length&&pr[k+1].timeStamp<=lim)k++;s.ahead.set(e.pointerId,{at:performance.now(),p:at(pr[k],r)})}else s.ahead.delete(e.pointerId);
+    }
+    if(!s.game.move)return;
+    let all=null;if(pressed&&s.def.touch==='fine')try{all=e.getCoalescedEvents?.()}catch(_){}
+    if(all&&all.length>1){for(let i=Math.max(0,all.length-FINE);i<all.length;i++){if(s.state!=='playing')break;s.game.move(...at(all[i],r),true,e.pointerId)}}
+    else s.game.move(...at(e,r),pressed,e.pointerId);
+  });
+  const up=e=>{s.ahead.delete(e.pointerId);if(!held.delete(e.pointerId))return;if(s.state==='playing'&&s.game.up)s.game.up(...pt(e),e.pointerId)};
   s.canvas.addEventListener('pointerup',up);s.canvas.addEventListener('pointercancel',up);
   s.canvas.addEventListener('contextmenu',e=>e.preventDefault());
   el._s=s;
@@ -163,6 +188,14 @@ function openInfo(s){
   infoDlg.querySelector('.info-x').onclick=()=>infoDlg.close();
   infoDlg.querySelector('.info-play').onclick=()=>{const was=s.state;infoDlg.close();if(was!=='playing'&&active===s&&Date.now()-s.overAt>550)startGame(s)};
   infoDlg.showModal();
+}
+// Finer touch (see makeSlide): the most readings handed to a game per move, and api.ahead(id): the browser's
+// guess for where that finger (or, with no id, the finger that moved last) will be at the next refresh.
+// Null when the browser doesn't guess, the finger is up, or it has stopped moving (a stale guess).
+const FINE=8;
+function aheadOf(s,id){
+  let a=null;if(id!=null)a=s.ahead.get(id);else for(const v of s.ahead.values())if(!a||v.at>a.at)a=v;
+  return a&&performance.now()-a.at<50?[a.p[0],a.p[1]]:null;
 }
 function best(id){return progress.best(id)}
 function updateBest(s){s.el.querySelector('.best').textContent=fmt(best(s.def.id))}
@@ -259,6 +292,7 @@ function startGame(s){
   progress.played(s.def.id);playstats.started(s.def.id);perf.started(s.def.id);s.score=0;s.scoreEl.textContent='0';s.state='playing';s.newBest=false;s.startAt=Date.now();
   s.el.classList.add('playing');s.el.classList.remove('over');feed.classList.add('locked');s.startPerf=performance.now();renderOverlay(s);
   sfx(660,.08,'square',.04,300);
+  soundtrack.start(s.def);   // music: '<mood>' in the definition (src/soundtrack.js)
 }
 // A run counts as a win the first time its score reaches the game's goal (or the game calls
 // api.win()). It pays credits once per run and the game carries on.
@@ -274,7 +308,7 @@ function awardTrophies(s){
 }
 function gameOver(s){
   if(s.state!=='playing')return;clearPause(s);if(isFull(s))leaveFull();
-  s.state='over';s.overAt=Date.now();s.funAt=s.overAt;s.funSent=false;stopKits();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
+  s.state='over';s.overAt=Date.now();s.funAt=s.overAt;s.funSent=false;soundtrack.stop();stopKits();roundEnded(s.def.id);logRound(s.def.id,s.overAt-s.startAt);playstats.round(s.def.id,s.overAt-s.startAt);perf.ended();s.el.classList.remove('playing');s.el.classList.add('over');feed.classList.remove('locked');
   if(progress.score(s.def.id,s.score))s.newBest=true;
   awardTrophies(s);services.reportRun(s.def);
   s.rank=null;const round=s.overAt;boards.submit(s.def.id,s.score,(s.overAt-s.startAt)/1000).then(r=>{if(r&&s.state==='over'&&s.overAt===round){s.rank=r;if(!s.overlay.hidden)renderOverlay(s)}});
@@ -283,7 +317,7 @@ function gameOver(s){
 }
 // later: the card is being swiped away, so its game resets (which can rebuild a whole 3D level) once
 // the swipe has settled, not in the frame the swipe starts (Play resets it anyway if it comes first)
-function resetSlide(s,later=false){if(isFull(s))leaveFull();stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.score=0;s.scoreEl.textContent='0';
+function resetSlide(s,later=false){if(isFull(s))leaveFull();if(s===active)soundtrack.stop();stopKits();clearPause(s);roundEnded(s.def.id);if(s.state==='playing'){logRound(s.def.id,Date.now()-s.startAt);playstats.round(s.def.id,Date.now()-s.startAt);perf.ended()}s.state='ready';s.run=null;s.el.classList.remove('playing','over');s.score=0;s.scoreEl.textContent='0';
   if(later){s.stale=true;renderOverlay(s);whenCalm(()=>{if(s.stale&&s.state==='ready'&&!s.dropped){s.stale=false;if(resetGame(s))renderOverlay(s);s.dirty=true}});return}
   s.stale=false;if(resetGame(s))renderOverlay(s);s.dirty=true}
 function goPrev(s){
@@ -329,21 +363,35 @@ function fit(s,again){
   const st=s.el.querySelector('.stage'),d=s.def,dev=s.el.querySelector('.device');let [cw,ch]=CHROME[d.retro?'retro':'modern'];
   // use the frame's real border/bezel size once it's laid out, so no space is reserved that the frame doesn't use
   if(dev&&s.screen.offsetWidth>40){const mw=dev.offsetWidth-s.screen.offsetWidth,mh=dev.offsetHeight-s.screen.offsetHeight;if(mw>=0&&mw<=80&&mh>=0&&mh<=160){cw=mw;ch=mh}}
-  const aw=st.clientWidth-cw,ah=st.clientHeight-ch;
+  // a pocket screen's bezel is a border inside its box: leave it out, so the picture's own box is exactly
+  // w x h game pixels at one scale (it was squeezed a little, and more one way than the other)
+  let bw=0,bh=0;if(s.off){const laid=s.screen.offsetWidth>0;bw=laid?s.screen.offsetWidth-s.screen.clientWidth:12;bh=laid?s.screen.offsetHeight-s.screen.clientHeight:12}
+  const aw=st.clientWidth-cw-bw,ah=st.clientHeight-ch-bh;
   if(aw<=0||ah<=0)return;
   let sc=Math.min(aw/d.w,ah/d.h);
-  if(d.retro){if(sc>=2)sc=Math.floor(sc*4)/4;sc=Math.max(1,sc)}else sc=Math.max(.3,sc);
+  // (3D styles keep their quarter steps: a bigger picture there is more pixels to render)
+  const dpr=window.devicePixelRatio||1;
+  if(s.off){sc=Math.max(1,sc);if(s.lcd&&s.lcd.grid&&sc*dpr>=3)sc=Math.floor(sc*dpr+.02)/dpr}   // the LCD grid wants whole screen pixels
+  else if(d.retro){if(sc>=2)sc=Math.floor(sc*4)/4;sc=Math.max(1,sc)}else sc=Math.max(.3,sc);
   const st2=d.step||1,grow=(b,m,a)=>b+Math.floor(Math.max(0,Math.min(m||b,Math.floor(a/sc))-b)/st2)*st2;
   // full screen (Next Gen): no maxW / maxH cap, so the whole display is filled; still no wider or taller than 2.4 : 1
   const full=isFull(s);let w=grow(d.w,full?9999:d.maxW,aw),h=grow(d.h,full?9999:d.maxH,ah);
   if(full){w=Math.min(w,Math.max(d.w,Math.round(h*2.4)));h=Math.min(h,Math.max(d.h,Math.round(w*2.4)))}
   if(w!==s.w||h!==s.h){s.w=w;s.h=h;s.game.resize&&s.game.resize(w,h)}
-  s.screen.style.width=Math.round(w*sc)+'px';s.screen.style.height=Math.round(h*sc)+'px';
+  const px=v=>s.lcd&&s.lcd.grid?Math.round(v*sc*dpr)/dpr:Math.round(v*sc);
+  s.screen.style.width=px(w)+bw+'px';s.screen.style.height=px(h)+bh+'px';
   // Pocket games draw chunky pixels; Console games render at full device resolution, smoothed and lit.
-  const pixel=d.retro&&d.era!=='console'&&d.era!=='nextgen'&&d.era!=='ar';
-  if(pixel){s.canvas.width=w;s.canvas.height=h;s.ctx.setTransform(1,0,0,1,0,0)}
-  else{let k=sc*Math.min(2.5,window.devicePixelRatio||1);if(s.lite&&w*h*k*k>LITE_PX)k=Math.sqrt(LITE_PX/(w*h));s.canvas.width=Math.round(w*k);s.canvas.height=Math.round(h*k);s.ctx.setTransform(k,0,0,k,0,0)}
-  s.ctx.imageSmoothingEnabled=!pixel;s.canvas.classList.toggle('hires',!pixel);s.dirty=true;
+  const pixel=!!s.off;
+  if(pixel){
+    // Even pixels: the card's canvas is the game's picture copied up a whole number of times (n: as many as the
+    // screen has room for, up to LITE_PX in all), and the page smooths the small step that's left. Every game
+    // pixel comes out the same size; stretching the small canvas straight to the screen made some of them wider.
+    s.off.width=w;s.off.height=h;s.ctx.setTransform(1,0,0,1,0,0);
+    s.n=Math.max(1,Math.min(Math.ceil(sc*dpr-.02),Math.floor(Math.sqrt(LITE_PX/(w*h)))));
+    s.canvas.width=w*s.n;s.canvas.height=h*s.n;s.ghostAt=0;
+  }
+  else{let k=sc*Math.min(2.5,dpr);if(s.lite&&w*h*k*k>LITE_PX)k=Math.sqrt(LITE_PX/(w*h));s.canvas.width=Math.round(w*k);s.canvas.height=Math.round(h*k);s.ctx.setTransform(k,0,0,k,0,0)}
+  s.ctx.imageSmoothingEnabled=!pixel;s.canvas.classList.add('hires');s.dirty=true;
   // first fit of a new slide guessed the frame size; now it's laid out, refit once with the real one
   if(!again&&dev&&dev.offsetHeight-s.screen.offsetHeight!==ch)fit(s,true);
 }
@@ -397,11 +445,46 @@ function scoreArea(s){
   box.x=Math.max(0,box.x);box.y=Math.max(0,box.y);box.bottom=box.y+box.h;
   s._scoreArea={at:now,W,H,box};return{...box};
 }
+// Pocket styles (dot matrix, Color, Advance) are the pixel games. Their picture goes up to the card in present():
+// each game pixel becomes n x n canvas pixels, exactly. A game that asks for the LCD look (lcd in its definition)
+// also gets the slow screen's ghosting (a little of the last frame lingers) and the fine grid between pixels.
+const isPixel=d=>!!d.retro&&d.era!=='console'&&d.era!=='nextgen'&&d.era!=='ar';
+function lcdOf(d){
+  if(!d.lcd)return null;
+  const o=d.lcd===true?{}:d.lcd,dm=!d.era,amt=(v,def,max)=>v===false?0:v===true||v==null?def:Math.max(0,Math.min(max,+v||0));
+  // a dot matrix screen's gaps show the unlit (lightest) shade; a backlit colour screen's are dark
+  return{grid:amt(o.grid,dm?.3:.16,.6),ghost:amt(o.ghost,dm?.45:.25,.85),color:dm?PAL[d.pal||'moss'][3]:'#000'};
+}
+const GRIDS=new Map();
+function gridOf(o,n,lcd){
+  const key=n+lcd.color+lcd.grid;let p=GRIDS.get(key);
+  if(!p){const t=document.createElement('canvas'),g=Math.max(1,Math.round(n*.12));t.width=t.height=n;const x=t.getContext('2d');x.globalAlpha=lcd.grid;x.fillStyle=lcd.color;x.fillRect(n-g,0,g,n);x.fillRect(0,n-g,n-g,g);GRIDS.set(key,p=o.createPattern(t,'repeat'))}
+  return p;
+}
+// plain: straight from the game's canvas (the debug hitboxes, drawn after the frame, are on it)
+function present(s,plain){
+  const o=s.out,n=s.n||1,w=s.off.width,h=s.off.height,lcd=s.lcd;let src=s.off;
+  if(lcd&&lcd.ghost&&!plain){
+    if(!s.ghost){s.ghost=document.createElement('canvas');s.gctx=s.ghost.getContext('2d')}
+    if(s.ghost.width!==w||s.ghost.height!==h){s.ghost.width=w;s.ghost.height=h;s.ghostAt=0}
+    // Each pixel drifts towards its new colour, as a slow screen's did: lcd.ghost of the difference is still there
+    // a 60th of a second later, whatever the phone's refresh rate. Kept in fractions (a canvas's whole numbers never
+    // quite arrive, which leaves faint marks). Only a round in play ghosts: a new or resized card shows at once.
+    const now=performance.now(),gap=now-s.ghostAt;s.ghostAt=now;
+    const img=s.ctx.getImageData(0,0,w,h),d=img.data,len=d.length,keep=s.state==='playing'&&!s.paused&&gap<200&&s.gbuf&&s.gbuf.length===len?Math.pow(lcd.ghost,gap/16.67):0;
+    let f=s.gbuf;if(!f||f.length!==len)f=s.gbuf=new Float32Array(len);
+    if(keep>0)for(let i=0;i<len;i++){const v=d[i]+(f[i]-d[i])*keep;f[i]=v;d[i]=v}else f.set(d);
+    s.gctx.putImageData(img,0,0);src=s.ghost;
+  }
+  o.setTransform(1,0,0,1,0,0);o.imageSmoothingEnabled=false;o.globalCompositeOperation='copy';o.drawImage(src,0,0,w*n,h*n);o.globalCompositeOperation='source-over';
+  if(lcd&&lcd.grid&&n>=3){o.fillStyle=gridOf(o,n,lcd);o.fillRect(0,0,w*n,h*n)}
+}
 function paint(s){
   // a game that throws while drawing shows its problem card instead (painting new cards for the feed
   // must never stop at one broken game)
-  const off=s!==active;speed.offscreen=off;try{s.game.draw(s.ctx,beforeDraw(s,tickRate(s.def)))}catch(e){speed.offscreen=false;gameFault(s,e);try{s.game.draw(s.ctx,1)}catch(_){}return}finally{speed.offscreen=false}
+  const off=s!==active;speed.offscreen=off;try{s.game.draw(s.ctx,beforeDraw(s,tickRate(s.def)))}catch(e){speed.offscreen=false;gameFault(s,e);try{s.game.draw(s.ctx,1)}catch(_){}if(s.off)present(s);return}finally{speed.offscreen=false}
   if(s.def.era==='console'){s.ctx.save();consolePost(s.ctx,s.w||s.def.w,s.h||s.def.h);s.ctx.restore()}
+  if(s.off)present(s);
   // (Next Gen and AR cards painted off screen draw no 3D then: hd3d.js paints their picture in once the feed is still)
 }
 // Always keep AHEAD games downloaded and ready below the one you're on, so swiping never waits.
@@ -511,7 +594,7 @@ function openShared(id){
 }
 function setActive(s){
   if(active===s)return;
-  stopKits();
+  soundtrack.stop();stopKits();
   // the card being left: a round in play ends now; a finished one (the game-over screen) is reset
   // once the swipe has settled, as resetting can rebuild a whole 3D level, which mid-swipe is a stutter
   const prev=active;
@@ -519,6 +602,7 @@ function setActive(s){
   if(prev&&prev.state==='playing')resetSlide(prev,true);
   else if(prev&&prev.state!=='ready')whenCalm(()=>{if(prev!==active&&prev.state!=='ready'&&!prev.dropped)resetSlide(prev)});
   finishCard(s);feed.classList.remove('locked');active=s;speed.game=s.def;s.dirty=true;if(STREAM)remote.touch(s.def.id);playstats.shown(s.def.id);perf.shown(s.def.id);showTweaks(s);
+  whenCalm(()=>{if(s===active)soundtrack.ready(s.def)});   // a soundtrack with instruments: have them in before Play
   // the last card (playNow, a short feed): top up now, else when the swipe has settled
   // (only a feed with nothing below at all builds now, in the middle of the swipe)
   if(!slides[slides.indexOf(s)+1])topUp();else topUpLater(slides.indexOf(s)>=slides.length-2?0:QUIET);schedulePrune();
@@ -613,6 +697,8 @@ function frame(now){
   const s=active;
   // the screen's rate for the game being played (src/kit/screenrate.js; the phone decides between rounds)
   screenWish(s&&s.state==='playing'&&!s.paused?s.def:null);
+  // the screen stays on while a round is in play, so tilt, voice and camera games don't dim and lock (src/kit/awake.js)
+  keepAwake(!!s&&s.state==='playing'&&!s.paused,s?Math.max(lastGameInput,s.startPerf||0):0,now);
   // Frame rate per game and phone (src/kit/speed.js): on a 120 Hz screen a 60 fps game skips every
   // other refresh, which saves battery and heat. Frames are due on a steady beat (nextAt), not a gap
   // since the last one, so a 60 fps game on a 90 Hz screen alternates 1 and 2 refreshes and still
@@ -635,7 +721,7 @@ function frame(now){
     try{
       let run=true;if(DBG&&DBG.on)({dt,run}=DBG.time(dt));if(LAB&&LAB.frozen)run=false;
       const timed=s.state==='playing'&&!s.paused,t0=timed?performance.now():0;
-      if(timed){if(run)runTicks(s,tickRate(s.def),dt,h=>{if(s.state==='playing'&&!s.paused)s.game.update(h)},DBG&&DBG.on?0:1/fps);gameRan(s.def.id)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
+      if(timed){if(run)runTicks(s,tickRate(s.def),dt,h=>{if(s.state==='playing'&&!s.paused)s.game.update(h)},DBG&&DBG.on?0:1/fps);gameRan(s.def.id);if(run)soundtrack.update(dt,s.score,s.def.goal)}else if(s.state==='over'&&s.game.fx)s.game.fx(dt);
       const t1=performance.now();
       // a Next Gen / AR card scrolling into place already shows its picture: its first live frame (which
       // moves the shared 3D canvas onto it) waits until the swipe has settled
@@ -643,7 +729,7 @@ function frame(now){
       // 3D frame each refresh, on the same graphics chip that's moving the feed)
       const hold=usesHD(s.def)&&(s.state==='ready'&&s.dirty&&settling()||s.state==='over'&&performance.now()-scrollAt<150);
       const painted=!hold&&(s.state!=='ready'||s.dirty||(DBG&&DBG.on));if(painted){paint(s);s.dirty=false}
-      if(DBG&&DBG.on)DBG.after(s,timed?t1-t0:0,performance.now()-t1,now);
+      if(DBG&&DBG.on){DBG.after(s,timed?t1-t0:0,performance.now()-t1,now);if(s.off&&DBG.boxes&&s.game.debug)present(s,true)}
       if(LAB)LAB.tick(now,s,painted?'frame':'idle',timed?t1-t0:0,performance.now()-t1);
       // frame timing for the anonymous stutter reports (src/perf.js)
       if(timed&&s.state==='playing'&&!usesHD(s.def))lite2d(s,now,step);
@@ -656,7 +742,7 @@ function frame(now){
 function keyInput(k,down){
   const s=active;if(!s)return false;
   if(down&&k==='Escape'&&s.state==='playing'){s.paused?resumeGame(s):pauseGame(s,'key');return true}
-  if(s.state==='playing'){if(s.paused){if(down&&(k===' '||k==='Enter'))resumeGame(s);return true}if(s.game.key)s.game.key(k,down);return[' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(k)}
+  if(s.state==='playing'){if(s.paused){if(down&&(k===' '||k==='Enter'))resumeGame(s);return true}lastGameInput=performance.now();if(s.game.key)s.game.key(k,down);return[' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(k)}
   if(!down)return false;
   if(k===' '||k==='Enter'){if(Date.now()-s.overAt>550)startGame(s);return true}
   if(k==='ArrowDown'||k==='PageDown'){goNext(s);return true}
@@ -741,4 +827,4 @@ if(STREAM)setInterval(()=>{if(document.visibilityState==='visible')remote.refres
 
 // Test hook used by scripts/smoke.cjs and the other browser tests: dev and test builds, and any build
 // driven by a test browser. Never in the store apps, where a game could use it to reach the wallet.
-if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),feed:()=>feedBrain.stats(),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',lab:v=>frameLab(v),only(id){filter='id:'+id;rebuild()},playtest:(id,o)=>import('./playtest.js').then(m=>m.playtest(GAMES.find(g=>g.id===id),active.api,o))};
+if(import.meta.env.MODE!=='production'||navigator.webdriver)window.__gs={GAMES,remote,progress,playstats,perf,awake,soundtrack,why:id=>{const g=GAMES.find(x=>x.id===id);return g&&explain(g,GAMES,live)},api:s=>s.api,get size(){return active&&[active.w,active.h]},get active(){return active},start:()=>startGame(active),brains:()=>liveBrains(active).map(brainStats),feed:()=>feedBrain.stats(),debug:v=>DBG?DBG.toggle(v):'debug overlay is only in dev builds',lab:v=>frameLab(v),only(id){filter='id:'+id;rebuild()},playtest:(id,o)=>import('./playtest.js').then(m=>m.playtest(GAMES.find(g=>g.id===id),active.api,o))};

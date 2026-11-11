@@ -9,11 +9,12 @@
 //
 // Everything respects the player's Sound & haptics settings (sound on/off, volume, music on/off). Music stops by itself when the round ends or the
 // player swipes to another game, but stop it in your own game-over code too if it should end sooner.
-import { sfx, sound, audio, setSfxOut } from '../sfx.js';
+import { sfx, sound, audio, setSfxOut, delay } from '../sfx.js';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { buildSamples, SAMPLE_RATE } from './zzfx.js';
 import { lazy } from './lazy.js';
-import { register } from './cleanup.js';
+import { register, own } from './cleanup.js';
+import { SETS, VOICES, KITS, voiceFor, makeVoice, makeKit } from './instruments.js';
 
 /* ---------- notes ---------- */
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -21,30 +22,39 @@ const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 export function freq(n) {
   if (typeof n === 'number') return n;
   const m = /^([A-Ga-g])([#b]?)(-?\d)$/.exec(String(n).trim());
-  if (!m) return 0;
+  if (!m) return +n > 0 ? +n : 0;   // '523': Hz written as text (notes() takes a line of them)
   const semi = NOTE[m[1].toUpperCase()] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (+m[3] + 1) * 12;
   return 440 * 2 ** ((semi - 69) / 12);
 }
 
 /* ---------- one tone, with an envelope (softer than sfx) ---------- */
 /**
- * tone(freq, { len, wave, vol, slide, attack, at }): one note. freq is Hz or a note name.
+ * tone(freq, { len, wave, vol, slide, attack, hold, wobble, at }): one note. freq is Hz or a note name.
  * wave: 'square' | 'triangle' | 'sine' | 'sawtooth'. slide: Hz to bend by over the note.
+ * hold: seconds it stays at full volume before fading (0: it fades from the start, like a pluck).
+ * wobble: [times a second, Hz either way] wavers the pitch (sirens, whistles, springs).
  * at: seconds from now to start it (for scheduling). bus: the mixer channel it plays into (default 'sfx').
+ * (when: a time on the sound clock itself, instead of at. music() writes its notes this way: "from now"
+ * is read a moment later for each note, and those moments differ by up to a hundredth of a second.)
  */
-export function tone(f, { len = .1, wave = 'square', vol = .05, slide = 0, attack = .005, at = 0, out = null, bus = null } = {}) {
+export function tone(f, { len = .1, wave = 'square', vol = .05, slide = 0, attack = .005, hold = 0, wobble = null, at = 0, when = null, out = null, bus = null } = {}) {
   if (sound.muted || !sound.volume) return;
   const a = audio(); if (!a) return;
-  const hz = freq(f); if (!hz) return;
+  const hz = freq(f) * tune; if (!hz) return;
   try {
-    const { ctx } = a, t = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain();
+    const { ctx } = a, t = when == null ? ctx.currentTime + at : Math.max(when, ctx.currentTime), o = ctx.createOscillator(), g = ctx.createGain(), v = Math.max(.0002, vol * level);
     o.type = wave; o.frequency.setValueAtTime(hz, t);
-    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, hz + slide), t + len);
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, hz + slide * tune), t + len);
+    if (wobble) { const l = ctx.createOscillator(), lg = ctx.createGain(); l.frequency.value = wobble[0]; lg.gain.value = wobble[1] * tune; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + len + .02); }
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + attack);
+    if (hold > 0) g.gain.setValueAtTime(v, t + Math.min(len - .005, Math.max(attack, hold)));
     g.gain.exponentialRampToValueAtTime(0.0001, t + len);
     o.connect(g); g.connect(out || route || busIn(bus || playBus)); o.start(t); o.stop(t + len + .02);
   } catch { /* audio unavailable */ }
 }
+// While a ready-made sound plays with a little variation (see vary below), its notes are tuned and
+// levelled by these.
+let tune = 1, level = 1;
 
 /* ---------- noise: explosions, hits, snares, wind ---------- */
 let noiseBuf = null;
@@ -60,16 +70,17 @@ function noiseBuffer(ctx) {
  * `from` Hz to `to` Hz. High to low = explosion; short and high = hit or snare; long and low = rumble.
  * filter: 'lowpass' (default) | 'highpass' | 'bandpass'.
  */
-export function noise(len = .25, { vol = .08, from = 3000, to = 300, filter = 'lowpass', q = 1, at = 0, attack = 0, out = null, bus = null } = {}) {
+export function noise(len = .25, { vol = .08, from = 3000, to = 300, filter = 'lowpass', q = 1, at = 0, when = null, attack = 0, hold = 0, out = null, bus = null } = {}) {
   if (sound.muted || !sound.volume) return;
   const a = audio(); if (!a) return;
   try {
-    const { ctx } = a, t = ctx.currentTime + at, src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    const { ctx } = a, t = when == null ? ctx.currentTime + at : Math.max(when, ctx.currentTime), src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(), v = Math.max(.0002, vol * level);
     src.buffer = noiseBuffer(ctx); src.loop = true;
-    f.type = filter; f.Q.value = q; f.frequency.setValueAtTime(from, t); f.frequency.exponentialRampToValueAtTime(Math.max(40, to), t + len);
-    if (attack > 0) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack); } else g.gain.setValueAtTime(vol, t);
+    f.type = filter; f.Q.value = q; f.frequency.setValueAtTime(Math.max(40, from * tune), t); f.frequency.exponentialRampToValueAtTime(Math.max(40, to * tune), t + len);
+    if (attack > 0) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + attack); } else g.gain.setValueAtTime(v, t);
+    if (hold > 0) g.gain.setValueAtTime(v, t + Math.min(len - .005, Math.max(attack, hold)));
     g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(len, attack + .01));
-    src.connect(f); f.connect(g); g.connect(out || route || busIn(bus || playBus)); src.start(t); src.stop(t + len + .02);
+    src.connect(f); f.connect(g); g.connect(out || route || busIn(bus || playBus)); src.start(t, Math.random() * .9); src.stop(t + len + .02);
   } catch { /* audio unavailable */ }
 }
 
@@ -143,37 +154,142 @@ register('beds', { stop: () => { for (const b of [...beds]) b.stop(); }, pause: 
  * A note can have its own length in steps after a colon: 'C5:2' lasts two steps. Returns the
  * jingle's length in seconds.
  */
-export function notes(seq, { len = .09, gap = 0, wave = 'square', vol = .05 } = {}) {
-  let at = 0;
+export function notes(seq, { len = .09, gap = 0, wave = 'square', vol = .05, at: from = 0 } = {}) {
+  let at = from;
   for (const tok of String(seq).trim().split(/\s+/)) {
     const [n, k] = tok.split(':'), steps = +k || 1, d = len * steps;
     if (n !== '.' && n !== '-') tone(n, { len: d * .95, wave, vol, at });
     at += d + gap;
   }
-  return at;
+  return at - from;
 }
 
 /* ---------- ready-made sounds ---------- */
 // Short, punchy, and pitched to sit together. Each takes an optional pitch multiplier (1 = normal),
-// handy for rising combos: sounds.coin(1 + combo * .1).
+// handy for rising combos: sounds.coin(1 + combo * .1). Sounds that repeat a lot (steps, hits, shots)
+// come out a touch different each time; tuned ones (coins, jingles) play exact, so they stay in key.
+const vary = (fn, by = .04) => (p = 1, ...more) => {
+  tune = 1 + (Math.random() * 2 - 1) * by; level = 1 + (Math.random() * 2 - 1) * by * 2;
+  try { return fn(p, ...more); } finally { tune = 1; level = 1; }
+};
+const rand = (a, b) => a + Math.random() * (b - a);
+const chime = (hz, list) => { for (const [m, v, len] of list) tone(hz * m, { len, wave: 'sine', vol: v }); };   // a struck thing: [times the pitch, volume, seconds]
 export const sounds = {
+  /* --- the first seventeen --- */
   coin: (p = 1) => { tone(988 * p, { len: .06, vol: .05 }); tone(1319 * p, { len: .14, vol: .05, at: .06 }); },
-  jump: (p = 1) => tone(300 * p, { len: .16, wave: 'square', vol: .045, slide: 500 * p }),
-  hurt: (p = 1) => { tone(220 * p, { len: .22, wave: 'sawtooth', vol: .05, slide: -150 * p }); noise(.12, { vol: .05, from: 1500, to: 400 }); },
-  hit: (p = 1) => { noise(.07, { vol: .09, from: 4000 * p, to: 800, filter: 'bandpass', q: .8 }); tone(140 * p, { len: .06, wave: 'triangle', vol: .08, slide: -60 }); },
-  boom: (p = 1) => { noise(.6, { vol: .14, from: 1800 * p, to: 60 }); tone(90 * p, { len: .4, wave: 'sine', vol: .12, slide: -60 }); },
+  jump: vary((p = 1) => tone(300 * p, { len: .16, wave: 'square', vol: .045, slide: 500 * p }), .02),
+  hurt: vary((p = 1) => { tone(220 * p, { len: .22, wave: 'sawtooth', vol: .05, slide: -150 * p }); noise(.12, { vol: .05, from: 1500, to: 400 }); }, .03),
+  hit: vary((p = 1) => { noise(.07, { vol: .09, from: 4000 * p, to: 800, filter: 'bandpass', q: .8 }); tone(140 * p, { len: .06, wave: 'triangle', vol: .08, slide: -60 }); }),
+  boom: vary((p = 1) => { noise(.6, { vol: .14, from: 1800 * p, to: 60 }); tone(90 * p, { len: .4, wave: 'sine', vol: .12, slide: -60 }); }),
   laser: (p = 1) => tone(1400 * p, { len: .12, wave: 'sawtooth', vol: .035, slide: -1100 * p }),
-  shoot: (p = 1) => { noise(.05, { vol: .06, from: 6000, to: 2000, filter: 'highpass' }); tone(600 * p, { len: .06, wave: 'square', vol: .03, slide: -300 }); },
+  shoot: vary((p = 1) => { noise(.05, { vol: .06, from: 6000, to: 2000, filter: 'highpass' }); tone(600 * p, { len: .06, wave: 'square', vol: .03, slide: -300 }); }),
   powerup: (p = 1) => notes([523, 659, 784, 1047, 1319].map(f => Math.round(f * p)).join(' '), { len: .05, wave: 'square', vol: .04 }),
   select: (p = 1) => tone(880 * p, { len: .05, wave: 'square', vol: .035 }),
   blip: (p = 1) => tone(660 * p, { len: .03, wave: 'triangle', vol: .05 }),
   pop: (p = 1) => tone(500 * p, { len: .08, wave: 'sine', vol: .07, slide: 600 * p }),
-  splash: () => noise(.35, { vol: .08, from: 3500, to: 500, filter: 'bandpass', q: .5 }),
-  click: () => noise(.02, { vol: .06, from: 5000, to: 4000, filter: 'highpass' }),
+  splash: vary(() => noise(.35, { vol: .08, from: 3500, to: 500, filter: 'bandpass', q: .5 })),
+  click: vary(() => noise(.02, { vol: .06, from: 5000, to: 4000, filter: 'highpass' }), .03),
   win: () => notes('C5 E5 G5 C6:3', { len: .1, wave: 'square', vol: .05 }),
   lose: () => notes('G4 Eb4 C4:3', { len: .16, wave: 'triangle', vol: .07 }),
   levelup: () => notes('C5 G5 C6 E6 G6:3', { len: .07, wave: 'square', vol: .045 }),
   countdown: (last = false) => tone(last ? 1047 : 523, { len: last ? .3 : .12, wave: 'square', vol: .05 }),
+
+  /* --- menus and buttons --- */
+  tick: (p = 1) => tone(1800 * p, { len: .012, wave: 'square', vol: .03 }),
+  tock: (p = 1) => tone(900 * p, { len: .02, wave: 'triangle', vol: .05 }),
+  toggle: (p = 1) => { tone(700 * p, { len: .03, wave: 'triangle', vol: .05 }); tone(1050 * p, { len: .04, wave: 'triangle', vol: .05, at: .04 }); },
+  back: (p = 1) => { tone(660 * p, { len: .04, wave: 'triangle', vol: .045 }); tone(440 * p, { len: .06, wave: 'triangle', vol: .045, at: .045 }); },
+  confirm: (p = 1) => { tone(784 * p, { len: .06, vol: .04 }); tone(1175 * p, { len: .12, vol: .04, at: .06 }); },
+  deny: (p = 1) => { tone(196 * p, { len: .09, wave: 'sawtooth', vol: .045, hold: .07 }); tone(185 * p, { len: .14, wave: 'sawtooth', vol: .045, hold: .1, at: .1 }); },
+  open: (p = 1) => { noise(.12, { vol: .04, from: 600, to: 3000, filter: 'bandpass', q: 1.2 }); tone(520 * p, { len: .1, wave: 'sine', vol: .04, slide: 400 * p }); },
+  close: (p = 1) => { noise(.1, { vol: .04, from: 3000, to: 500, filter: 'bandpass', q: 1.2 }); tone(700 * p, { len: .09, wave: 'sine', vol: .04, slide: -350 * p }); },
+
+  /* --- moving about --- */
+  step: vary((p = 1) => { noise(.035, { vol: .045, from: 900 * p, to: 300 }); tone(110 * p, { len: .03, wave: 'sine', vol: .04, slide: -40 }); }, .08),
+  land: vary((p = 1) => { noise(.09, { vol: .07, from: 700 * p, to: 120 }); tone(95 * p, { len: .09, wave: 'sine', vol: .09, slide: -45 }); }),
+  dash: vary((p = 1) => noise(.16, { vol: .13, from: 500, to: 5000 * p, filter: 'bandpass', q: .9, attack: .02 })),
+  skid: vary((p = 1) => { noise(.28, { vol: .1, from: 2600 * p, to: 1700, filter: 'bandpass', q: 6, hold: .12 }); tone(1900 * p, { len: .26, wave: 'sawtooth', vol: .012, slide: -500, hold: .1 }); }),
+  flap: vary((p = 1) => noise(.07, { vol: .12, from: 500 * p, to: 1400, filter: 'bandpass', q: .8, attack: .015 }), .06),
+  bounce: vary((p = 1) => tone(260 * p, { len: .11, wave: 'sine', vol: .08, slide: 300 * p }), .02),
+  boing: (p = 1) => tone(180 * p, { len: .32, wave: 'triangle', vol: .07, slide: 260 * p, wobble: [22, 60 * p] }),
+  swoosh: vary((p = 1) => noise(.2, { vol: .12, from: 900 * p, to: 4000, filter: 'bandpass', q: 1.5, attack: .06 })),
+  whoosh: vary((p = 1) => noise(.38, { vol: .14, from: 300 * p, to: 1800, filter: 'bandpass', q: .8, attack: .14 })),
+  slip: (p = 1) => tone(700 * p, { len: .24, wave: 'sine', vol: .05, slide: 900 * p }),
+
+  /* --- fights and things breaking --- */
+  slash: vary((p = 1) => noise(.11, { vol: .11, from: 7000 * p, to: 1500, filter: 'bandpass', q: 1.4, attack: .01 })),
+  punch: vary((p = 1) => { noise(.05, { vol: .09, from: 1800 * p, to: 300 }); tone(120 * p, { len: .08, wave: 'sine', vol: .11, slide: -60 }); }),
+  block: vary((p = 1) => { tone(520 * p, { len: .05, wave: 'square', vol: .04 }); noise(.04, { vol: .06, from: 3000, to: 1500, filter: 'bandpass', q: 2 }); }),
+  clang: vary((p = 1) => { for (const [m, v, len] of [[1, .05, .35], [2.76, .03, .25], [5.4, .02, .15]]) tone(620 * p * m, { len, wave: 'triangle', vol: v }); noise(.03, { vol: .06, from: 8000, to: 5000, filter: 'highpass' }); }, .03),
+  bow: vary((p = 1) => { tone(240 * p, { len: .07, wave: 'triangle', vol: .06, slide: -120 }); noise(.14, { vol: .045, from: 2500 * p, to: 6000, filter: 'bandpass', q: 2, attack: .02 }); }),
+  reload: vary((p = 1) => { noise(.02, { vol: .06, from: 3500, to: 2500, filter: 'bandpass', q: 3 }); noise(.03, { vol: .07, from: 2200, to: 1200, filter: 'bandpass', q: 3, at: .09 }); tone(300 * p, { len: .03, wave: 'square', vol: .03, at: .09 }); }, .03),
+  zap: vary((p = 1) => { tone(1800 * p, { len: .14, wave: 'sawtooth', vol: .035, slide: -1500 * p, wobble: [55, 300] }); noise(.06, { vol: .035, from: 7000, to: 3000, filter: 'highpass' }); }),
+  charge: (p = 1) => { tone(160 * p, { len: .6, wave: 'sawtooth', vol: .045, slide: 900 * p, attack: .5 }); tone(320 * p, { len: .6, wave: 'square', vol: .018, slide: 1800 * p, attack: .5 }); },
+  shield: (p = 1) => { tone(440 * p, { len: .3, wave: 'sine', vol: .05, slide: 220 * p, wobble: [9, 25] }); tone(660 * p, { len: .3, wave: 'sine', vol: .03, slide: 330 * p }); },
+  thud: vary((p = 1) => { tone(70 * p, { len: .16, wave: 'sine', vol: .14, slide: -30 }); noise(.06, { vol: .06, from: 500, to: 100 }); }),
+  crack: vary((p = 1) => { noise(.03, { vol: .1, from: 5000 * p, to: 1500, filter: 'bandpass', q: 1 }); noise(.09, { vol: .06, from: 2500 * p, to: 600, filter: 'bandpass', q: .7, at: .025 }); }),
+  shatter: vary((p = 1) => { noise(.05, { vol: .08, from: 9000, to: 6000, filter: 'highpass' }); for (let i = 0; i < 5; i++) tone(rand(2200, 5400) * p, { len: rand(.05, .15), wave: 'triangle', vol: .022, at: .02 + i * .035 + rand(0, .02) }); noise(.3, { vol: .03, from: 8000, to: 5000, filter: 'highpass', at: .05 }); }),
+  crumble: vary((p = 1) => { for (let i = 0; i < 6; i++) noise(.06, { vol: .05, from: rand(900, 1800) * p, to: 200, at: i * .05 + rand(0, .03) }); tone(60 * p, { len: .35, wave: 'sine', vol: .07, slide: -20 }); }),
+  blast: vary((p = 1) => { noise(.9, { vol: .16, from: 2600 * p, to: 40 }); tone(60 * p, { len: .7, wave: 'sine', vol: .16, slide: -35 }); noise(.12, { vol: .1, from: 6000, to: 2000, filter: 'bandpass' }); }),
+
+  /* --- pick-ups and rewards --- */
+  gem: (p = 1) => { tone(1568 * p, { len: .05, wave: 'sine', vol: .05 }); tone(2093 * p, { len: .07, wave: 'sine', vol: .05, at: .045 }); tone(3136 * p, { len: .16, wave: 'sine', vol: .04, at: .09 }); },
+  key: (p = 1) => { tone(1245 * p, { len: .04, vol: .03 }); tone(1661 * p, { len: .04, vol: .03, at: .05 }); tone(2489 * p, { len: .1, vol: .025, at: .1 }); },
+  heal: (p = 1) => notes([523, 659, 784, 1047].map(f => Math.round(f * p)).join(' '), { len: .07, wave: 'sine', vol: .06 }),
+  star: (p = 1) => { tone(2637 * p, { len: .08, wave: 'sine', vol: .04 }); tone(3520 * p, { len: .22, wave: 'sine', vol: .035, at: .06, wobble: [14, 40] }); },
+  chest: () => { noise(.05, { vol: .05, from: 1200, to: 500 }); notes('G5 C6 E6 G6:3', { len: .06, wave: 'triangle', vol: .05, at: .06 }); },
+  combo: (p = 1) => { tone(880 * p, { len: .05, vol: .035 }); tone(1320 * p, { len: .08, vol: .035, at: .04 }); },
+  perfect: () => { notes('E6 G6 B6 E7:3', { len: .045, wave: 'triangle', vol: .05 }); noise(.2, { vol: .015, from: 9000, to: 7000, filter: 'highpass', at: .12 }); },
+  unlock: () => { noise(.025, { vol: .06, from: 3000, to: 1800, filter: 'bandpass', q: 3 }); notes('C5 G5 C6:2', { len: .07, wave: 'square', vol: .04, at: .06 }); },
+  cash: (p = 1) => { noise(.03, { vol: .05, from: 6000, to: 4000, filter: 'highpass' }); tone(2093 * p, { len: .05, vol: .03, at: .03 }); tone(2637 * p, { len: .18, vol: .03, at: .08 }); },
+
+  /* --- weather and animals --- */
+  drip: vary((p = 1) => { tone(1400 * p, { len: .05, wave: 'sine', vol: .06, slide: -700 * p }); tone(700 * p, { len: .07, wave: 'sine', vol: .05, slide: 500 * p, at: .05 }); }, .06),
+  bubble: vary((p = 1) => tone(300 * p, { len: .09, wave: 'sine', vol: .06, slide: 500 * p }), .1),
+  gust: vary((p = 1) => noise(.9, { vol: .11, from: 300 * p, to: 900, filter: 'bandpass', q: .6, attack: .4 })),
+  thunder: vary((p = 1) => { noise(.08, { vol: .12, from: 5000, to: 800 }); noise(1.6, { vol: .12, from: 400 * p, to: 50, at: .05 }); tone(48 * p, { len: 1.2, wave: 'sine', vol: .1, slide: -15, at: .05 }); }),
+  crackle: vary(() => { for (let i = 0; i < 7; i++) noise(rand(.015, .035), { vol: rand(.06, .12), from: rand(3000, 7000), to: 1500, filter: 'bandpass', q: 1.5, at: i * .045 + rand(0, .03) }); }),
+  chirp: vary((p = 1) => { tone(2800 * p, { len: .06, wave: 'sine', vol: .04, slide: 1200 * p }); tone(3400 * p, { len: .05, wave: 'sine', vol: .04, slide: -900 * p, at: .08 }); tone(2900 * p, { len: .07, wave: 'sine', vol: .035, slide: 1400 * p, at: .15 }); }, .06),
+  croak: vary((p = 1) => { tone(140 * p, { len: .16, wave: 'sawtooth', vol: .05, wobble: [38, 50 * p], hold: .1 }); tone(190 * p, { len: .14, wave: 'sawtooth', vol: .045, wobble: [42, 60 * p], hold: .08, at: .2 }); }, .06),
+  buzz: vary((p = 1) => tone(220 * p, { len: .3, wave: 'sawtooth', vol: .03, wobble: [28, 25 * p], hold: .2 })),
+  squeak: vary((p = 1) => { tone(1900 * p, { len: .09, wave: 'sine', vol: .05, slide: 900 * p }); tone(2500 * p, { len: .06, wave: 'sine', vol: .04, slide: -600 * p, at: .09 }); }, .06),
+  growl: vary((p = 1) => { tone(75 * p, { len: .5, wave: 'sawtooth', vol: .06, slide: -20, wobble: [24, 14], hold: .3 }); noise(.5, { vol: .03, from: 400, to: 200, hold: .3 }); }),
+
+  /* --- machines --- */
+  beep: (p = 1) => tone(1000 * p, { len: .1, wave: 'square', vol: .035, hold: .08 }),
+  alarm: (p = 1) => { for (let i = 0; i < 4; i++) tone((i % 2 ? 740 : 988) * p, { len: .14, wave: 'square', vol: .035, hold: .12, at: i * .15 }); },
+  siren: (p = 1) => tone(620 * p, { len: .9, wave: 'triangle', vol: .05, hold: .8, wobble: [2.2, 180 * p] }),
+  ring: (p = 1) => { for (let i = 0; i < 2; i++) tone(1400 * p, { len: .3, wave: 'sine', vol: .04, hold: .28, wobble: [22, 160], at: i * .38 }); },
+  door: vary(() => { noise(.25, { vol: .04, from: 300, to: 180, filter: 'bandpass', q: 4, attack: .05 }); tone(90, { len: .1, wave: 'sine', vol: .1, slide: -30, at: .26 }); noise(.05, { vol: .07, from: 900, to: 200, at: .26 }); }),
+  lever: vary((p = 1) => { noise(.02, { vol: .07, from: 2500, to: 1500, filter: 'bandpass', q: 2 }); tone(180 * p, { len: .05, wave: 'square', vol: .04, at: .02 }); noise(.03, { vol: .06, from: 1500, to: 500, at: .08 }); }, .03),
+  teleport: (p = 1) => { tone(300 * p, { len: .35, wave: 'sine', vol: .05, slide: 2400 * p, wobble: [30, 80] }); noise(.3, { vol: .03, from: 1000, to: 8000, filter: 'bandpass', q: 2, attack: .1 }); },
+  warp: (p = 1) => tone(1800 * p, { len: .5, wave: 'sawtooth', vol: .045, slide: -1700 * p, wobble: [18, 120] }),
+  robot: (p = 1) => { for (const [f, at] of [[440, 0], [660, .07], [330, .14], [550, .21]]) tone(f * p, { len: .06, wave: 'square', vol: .03, hold: .05, at }); },
+  rev: vary((p = 1) => tone(70 * p, { len: .6, wave: 'sawtooth', vol: .05, slide: 160 * p, hold: .3, wobble: [30, 8] })),
+
+  /* --- the round itself --- */
+  go: (p = 1) => tone(1047 * p, { len: .35, wave: 'square', vol: .038, hold: .2 }),
+  buzzer: (p = 1) => { tone(150 * p, { len: .45, wave: 'sawtooth', vol: .036, hold: .4 }); tone(155 * p, { len: .45, wave: 'square', vol: .018, hold: .4 }); },
+  fanfare: () => { notes('G4 C5 E5 G5:2 E5 G5:4', { len: .09, wave: 'square', vol: .045 }); notes('E4 G4 C5 E5:2 C5 E5:4', { len: .09, wave: 'triangle', vol: .05 }); },
+  tada: (p = 1) => { for (const f of [523, 659, 784]) tone(f * p, { len: .09, vol: .03 }); for (const f of [523, 659, 784, 1047]) tone(f * p, { len: .5, vol: .028, at: .12 }); },
+  whistle: (p = 1) => { tone(2300 * p, { len: .35, wave: 'sine', vol: .036, hold: .3, wobble: [32, 90] }); noise(.35, { vol: .012, from: 5000, to: 4000, filter: 'bandpass', q: 3, hold: .3 }); },
+  gong: (p = 1) => { chime(110 * p, [[1, .09, 1.8], [1.48, .05, 1.4], [2.37, .035, 1], [3.6, .02, .6]]); noise(.25, { vol: .04, from: 1200, to: 200 }); },
+  bell: (p = 1) => chime(880 * p, [[1, .06, .9], [2, .03, .7], [2.76, .025, .5], [5.4, .012, .3]]),
+  roll: () => { for (let i = 0; i < 14; i++) noise(.03, { vol: .03 + i * .004, from: 4000, to: 1500, filter: 'bandpass', q: .8, at: i * .045 }); noise(.2, { vol: .09, from: 5000, to: 1200, filter: 'bandpass', q: .7, at: .65 }); tone(150, { len: .2, wave: 'sine', vol: .1, slide: -90, at: .65 }); },
+  horn: (p = 1) => { tone(233 * p, { len: .4, wave: 'sawtooth', vol: .04, hold: .34 }); tone(294 * p, { len: .4, wave: 'sawtooth', vol: .035, hold: .34 }); },
+  sad: (p = 1) => { for (const [f, at] of [[311, 0], [294, .28], [277, .56]]) tone(f * p, { len: .26, wave: 'sawtooth', vol: .04, hold: .2, at }); tone(262 * p, { len: .7, wave: 'sawtooth', vol: .04, hold: .4, at: .84, wobble: [6, 10] }); },
+  heart: (p = 1) => { tone(60 * p, { len: .1, wave: 'sine', vol: .14, slide: -20 }); tone(55 * p, { len: .12, wave: 'sine', vol: .1, slide: -20, at: .16 }); },
+
+  /* --- cartoon --- */
+  wobble: (p = 1) => tone(300 * p, { len: .5, wave: 'sine', vol: .042, hold: .3, wobble: [7, 90 * p] }),
+  squish: vary((p = 1) => { noise(.12, { vol: .06, from: 1200 * p, to: 300, filter: 'bandpass', q: 2 }); tone(200 * p, { len: .1, wave: 'sine', vol: .05, slide: -120 }); }, .06),
+  plop: vary((p = 1) => { tone(400 * p, { len: .07, wave: 'sine', vol: .08, slide: -250 * p }); tone(180 * p, { len: .06, wave: 'sine', vol: .05, slide: 250 * p, at: .06 }); }, .06),
+  zip: (p = 1) => tone(400 * p, { len: .1, wave: 'square', vol: .03, slide: 2200 * p }),
+  honk: (p = 1) => { tone(330 * p, { len: .2, wave: 'square', vol: .028, hold: .17 }); tone(415 * p, { len: .2, wave: 'square', vol: .022, hold: .17 }); },
+  twinkle: (p = 1) => { [2093, 2637, 3136, 3951, 4186].forEach((f, i) => tone(f * p, { len: .09, wave: 'sine', vol: .03, at: i * .05 })); },
+  pluck: (p = 1) => tone(440 * p, { len: .25, wave: 'triangle', vol: .07 }),
+  munch: vary((p = 1) => { noise(.05, { vol: .12, from: 1500 * p, to: 500, filter: 'bandpass', q: 1.5 }); noise(.05, { vol: .12, from: 1300 * p, to: 400, filter: 'bandpass', q: 1.5, at: .1 }); }, .06),
+  gulp: vary((p = 1) => { tone(500 * p, { len: .06, wave: 'sine', vol: .06, slide: -250 }); tone(250 * p, { len: .09, wave: 'sine', vol: .07, slide: 350 * p, at: .07 }); }, .05),
 };
 export { sfx };   // the classic single beep, re-exported so one import covers everything
 
@@ -222,59 +338,102 @@ const toneLib = lazy('Tone.js', () => import('tone').then(T => {
 }));
 /** The Tone.js library (loads it the first time). */
 export function Tone() { return toneLib.get(); }
+/** Starts loading Tone.js without waiting for it (the app does this for a card whose soundtrack uses instruments). Kit use only. */
+export function warm() { if (!toneLib.ready) toneLib.load().catch(() => {}); }
 
 /* ---------- music ---------- */
 const playing = new Set(), held = new Set();   // tunes playing now, and tunes paused mid-way
 const DRUM = {
-  k: (at, v) => { tone(150, { len: .12, wave: 'sine', vol: .14 * v, slide: -110, at }); },          // kick
-  s: (at, v) => { noise(.12, { vol: .07 * v, from: 5000, to: 1500, filter: 'bandpass', q: .7, at }); },   // snare
-  h: (at, v) => { noise(.03, { vol: .03 * v, from: 9000, to: 7000, filter: 'highpass', at }); },     // hi-hat
-  c: (at, v) => { noise(.4, { vol: .03 * v, from: 9000, to: 4000, filter: 'highpass', at }); },      // crash
+  k: (when, v, out) => { tone(150, { len: .12, wave: 'sine', vol: .14 * v, slide: -110, when, out }); },          // kick
+  s: (when, v, out) => { noise(.12, { vol: .07 * v, from: 5000, to: 1500, filter: 'bandpass', q: .7, when, out }); },   // snare
+  h: (when, v, out) => { noise(.03, { vol: .03 * v, from: 9000, to: 7000, filter: 'highpass', when, out }); },     // hi-hat
+  c: (when, v, out) => { noise(.4, { vol: .03 * v, from: 9000, to: 4000, filter: 'highpass', when, out }); },      // crash
 };
 const VOICE = { lead: ['square', .028], bass: ['triangle', .07], pad: ['sine', .03], arp: ['square', .018] };
+// The tune's clock. Notes are written onto the sound card's own clock AHEAD seconds before they sound,
+// topped up every TICK ms, so the page can be busy for most of AHEAD (a level being built, a big frame)
+// without the music stumbling. If it's busy for longer the missed steps are skipped, not played late: the
+// tune stays on the beat, where a rhythm game's Beat expects it.
+const AHEAD = .45, TICK = 50, FIRST = .03;
+let toneRetry = 0;   // (a tune asks for Tone.js on its clock: after a failed load, not again for a few seconds)
 /**
- * music({ tempo, steps, lead, bass, pad, arp, drums, vol, swing }): a looping tune. Each part is a
+ * music({ tempo, lead, bass, pad, arp, drums, vol, swing, set, voices }): a looping tune. Each part is a
  * line of steps (eighth notes at the tempo): note names, '.' for a rest, '-' to hold the previous
  * note. drums use k (kick), s (snare), h (hi-hat), c (crash). Parts can be different lengths.
- * Returns { start(), stop(), pause(), resume(), speed(x), layer(name, level), intensity(x), playing }. Keep tunes short and quiet: it plays under the game.
+ * Returns { start(), stop(), pause(), resume(), speed(x), layer(name, level), intensity(x), playing, pos }. Keep tunes short and quiet: it plays under the game.
  * Layered music: give parts numbered names (lead2, drums2...) and layers: { drums: .3, lead2: .7 }
  * to bring them in with intensity(); parts not in layers always play.
+ * set: the instruments, 'chip' (square and triangle waves, the default), 'synth', 'band' or 'orchestra';
+ * voices: { lead: 'bell', drums: 'kit' } swaps single parts (the names are in gs.sound.VOICES and KITS).
  */
-export function music({ tempo = 120, vol = 1, swing = 0, layers = null, ...parts } = {}) {
+export function music({ tempo = 120, vol = 1, swing = 0, layers = null, set = 'chip', voices = null, ...parts } = {}) {
   const tracks = [];
   for (const [name, line] of Object.entries(parts)) {
     if (typeof line !== 'string') continue;
-    tracks.push({ name, voice: name.replace(/\d+$/, ''), steps: line.trim().split(/\s+/), level: layers && layers[name] != null ? 0 : 1, to: layers && layers[name] != null ? 0 : 1 });
+    tracks.push({ name, voice: name.replace(/\d+$/, ''), steps: line.trim().split(/\s+/), level: layers && layers[name] != null ? 0 : 1, to: layers && layers[name] != null ? 0 : 1, inst: voiceFor(set, name, voices) });
   }
+  const wantsTone = tracks.some(tr => tr.inst);
   let intensity = 0;
   let timer = 0, step = 0, next = 0, rate = 1;
+  let gate = null, band = null, log = [];   // this run's output, its Tone instruments, and [step, time] of what's written
   const stepLen = () => 60 / tempo / 2 / rate;
   function noteLen(tr, i) { let n = 1; while (tr.steps[(i + n) % tr.steps.length] === '-' && n < tr.steps.length) n++; return n; }
+  // Notes written ahead can't be taken back, so each run plays through its own gate: closing it is what stops them.
+  function open(a) { gate = a.ctx.createGain(); gate.connect(busIn('music')); }
+  function close() {
+    const g = gate, b = band; gate = null; band = null; log = [];
+    if (!g) return;
+    try { g.gain.setTargetAtTime(0, g.context.currentTime, .012); } catch { /* gone */ }
+    setTimeout(() => { try { g.disconnect(); } catch { /* gone */ } if (b) for (const i of b.values()) i.dispose(); }, 250);
+  }
+  // the set's instruments, once Tone.js is in (until then, and if one fails, the part plays in the chip sound)
+  function tuneUp() {
+    if (band || !wantsTone || !gate) return;
+    if (!toneLib.ready) { const at = Date.now(); if (at > toneRetry) { toneRetry = at + 8000; toneLib.load().then(() => { toneRetry = 0; }, () => {}); } return; }
+    const T = toneLib.get(); band = new Map();
+    for (const tr of tracks) if (tr.inst) try { const i = tr.voice === 'drums' ? makeKit(T, tr.inst, gate) : makeVoice(T, tr.inst, gate); if (i) band.set(tr, i); } catch (e) { console.warn('[music]', tr.inst, e); }
+  }
   function schedule() { const was = playBus; playBus = 'music'; try { scheduleNow(); } finally { playBus = was; } }
   function scheduleNow() {
     const a = audio(); if (!a) return;
     const now = a.ctx.currentTime;
-    if (next < now) next = now + .03;
-    while (next < now + .15) {          // look ahead a little so timing stays tight
+    if (!gate) open(a);
+    tuneUp();
+    if (!next) next = now + FIRST;
+    else if (next < now + .01) { const k = Math.ceil((now + FIRST - next) / stepLen()); step += k; next += k * stepLen(); }   // fell behind: skip, stay on the beat
+    while (next < now + AHEAD) {
       for (const tr of tracks) tr.level += (tr.to - tr.level) * Math.min(1, stepLen() / (tr.fade || .6));
+      const sw = step % 2 ? swing * stepLen() : 0;
       if (!sound.muted && sound.volume && sound.music) for (const tr of tracks) {
-        const tok = tr.steps[step % tr.steps.length], at = next - now + (step % 2 ? swing * stepLen() : 0);
+        const tok = tr.steps[step % tr.steps.length], when = next + sw;
         if (tok === '.' || tok === '-' || tr.level < .02) continue;
-        const lv = vol * tr.level;
-        if (tr.voice === 'drums') { for (const d of tok) DRUM[d]?.(at, lv); continue; }
+        const lv = vol * tr.level, inst = band && band.get(tr);
+        if (tr.voice === 'drums') {
+          for (const d of tok) { if (inst) try { inst.hit(d, when, lv); continue; } catch (e) { band.delete(tr); inst.dispose(); console.warn('[music]', tr.inst, e); } DRUM[d]?.(when, lv, gate); }
+          continue;
+        }
+        const len = stepLen() * noteLen(tr, step % tr.steps.length) * .9, hz = freq(tok);
+        if (!hz) continue;
+        if (inst) try { inst.play(hz, len, when, lv); continue; } catch (e) { band.delete(tr); inst.dispose(); console.warn('[music]', tr.inst, e); }
         const [wave, v] = VOICE[tr.voice] || VOICE.lead;
-        tone(tok, { len: stepLen() * noteLen(tr, step % tr.steps.length) * .9, wave, vol: v * lv, at, attack: tr.voice === 'pad' ? .05 : .005 });
+        tone(tok, { len, wave, vol: v * lv, when, attack: tr.voice === 'pad' ? .05 : .005, out: gate });
       }
+      log.push([step, next]); if (log.length > 64) log.shift();
       step++; next += stepLen();
     }
   }
   const m = {
     get playing() { return !!timer; },
-    start() { if (timer) return m; step = 0; next = 0; schedule(); timer = setInterval(schedule, 40); playing.add(m); held.delete(m); return m; },
-    stop() { clearInterval(timer); timer = 0; playing.delete(m); held.delete(m); return m; },
+    start() { if (timer) return m; close(); step = 0; next = 0; schedule(); timer = setInterval(schedule, TICK); playing.add(m); held.delete(m); return m; },
+    stop() { clearInterval(timer); timer = 0; close(); playing.delete(m); held.delete(m); return m; },
     /** Holds the tune where it is (resume() carries on from the same step). The app does this on pause. */
-    pause() { if (!timer) return m; clearInterval(timer); timer = 0; playing.delete(m); held.add(m); return m; },
-    resume() { if (timer || !held.has(m)) return m; held.delete(m); next = 0; schedule(); timer = setInterval(schedule, 40); playing.add(m); return m; },
+    pause() {
+      if (!timer) return m;
+      // carry on later from the first step that hasn't sounded yet (those after it were only written ahead)
+      const now = audio()?.ctx.currentTime ?? 0, e = log.find(x => x[1] > now); if (e) step = e[0];
+      clearInterval(timer); timer = 0; close(); playing.delete(m); held.add(m); return m;
+    },
+    resume() { if (timer || !held.has(m)) return m; held.delete(m); next = 0; schedule(); timer = setInterval(schedule, TICK); playing.add(m); return m; },
     /** Plays faster (x > 1) or slower, for rising tension. */
     speed(x) { rate = Math.max(.25, Math.min(4, x)); return m; },
     /** Fades one part in or out: m.layer('drums', 1) or m.layer('lead2', 0, 2) (fade seconds). */
@@ -285,9 +444,45 @@ export function music({ tempo = 120, vol = 1, swing = 0, layers = null, ...parts
      */
     intensity(x, fade = 1) { intensity = Math.max(0, Math.min(1, x)); if (layers) for (const [n, at] of Object.entries(layers)) m.layer(n, intensity >= at ? 1 : 0, fade); return m; },
     get level() { return intensity; },
+    /**
+     * Where the tune is as the player hears it, in steps (a fraction: 4.5 is half way through the fifth
+     * eighth note), or -1 while it isn't playing. For pulsing a picture on the beat: Math.floor(m.pos / 2)
+     * is the beat. It allows for the phone's sound delay (gs.sound.delay()).
+     */
+    get pos() {
+      const a = timer && log.length ? audio() : null; if (!a) return -1;
+      const t = a.ctx.currentTime - delay(); let e = null;
+      for (const x of log) { if (x[1] > t) break; e = x; }
+      return e ? e[0] + Math.min(1, (t - e[1]) / stepLen()) : -1;
+    },
+    /** True once the set's instruments are in (a tune started before then plays in the chip sound until they are). */
+    get tuned() { return !wantsTone || !!band; },
   };
   return m;
 }
+/**
+ * One instrument to play yourself (a piano toy, a tune the player taps out): instrument('epiano').
+ * Names: gs.sound.VOICES (saw, sub, warm, pulse, epiano, bassguitar, organ, pick, flute, cello, strings,
+ * harp, brass, bell, kalimba, marimba, steelpan). play(note, { len, vol, at }) plays one note (a name
+ * like 'C4' or Hz); it plays on the music channel. Uses Tone.js, which loads the first time: make it in
+ * make() or reset() (the app waits, as for physics).
+ */
+export function instrument(name, { vol = 1 } = {}) {
+  if (!VOICES[name]) throw new Error(`There's no instrument called "${name}" (there's ${Object.keys(VOICES).join(', ')})`);
+  const T = toneLib.get(), a = audio();
+  const dead = { name, play() { return dead; }, free() {} };
+  if (!a) return dead;
+  const g = a.ctx.createGain(); g.gain.value = Math.max(0, Math.min(2, vol)); g.connect(busIn('music'));
+  const v = makeVoice(T, name, g);
+  const h = {
+    name,
+    play(note, { len = .3, vol: lv = 1, at = 0 } = {}) { if (!sound.muted && sound.volume) try { v.play(freq(note) || note, len, a.ctx.currentTime + Math.max(.005, at), lv); } catch { /* audio unavailable */ } return h; },
+    free() { try { v.dispose(); g.disconnect(); } catch { /* gone */ } },
+  };
+  own(h);
+  return h;
+}
+export { SETS, VOICES, KITS };
 /**
  * Living music: makes a tune follow the play. Close calls push the tension up, it eases back when
  * things calm down, a loss brings it right down, and the tempo drifts a little towards the

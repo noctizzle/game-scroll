@@ -1,10 +1,12 @@
 // __TITLE__: a starter Classic · Console game made with `npm run new`. Change anything you like.
 // Real-time cel-shaded 3D (src/kit/toon3d.js, see docs/console-3d.md) with game logic in plain 2D
-// units. Shows the on-screen joystick, juice for the 2D effects on top, and sounds.
+// units. It starts the way a finished game does: a fixed tick (the same game on every phone), Ready
+// (nothing moves until the first touch), Feel (particles, shake, sound and a buzz in one call) for the
+// 2D effects on top, the on-screen joystick and a soundtrack in one line.
 import gs from '../gamescroll.js';
-const { sounds } = gs.sound;
-const { haptic } = gs.device;
-const { Juice } = gs.juice;
+const { Feel } = gs.effects;
+const { Ready } = gs.rounds;
+const { mix } = gs.tick;
 const { Stick, Keys } = gs.controls;
 const { View, G, part, grp, blob } = gs.toon;
 
@@ -24,45 +26,51 @@ function view3d() {
 }
 
 function make(api) {
-  const fx = new Juice();
+  const feel = new Feel();
+  const ready = new Ready({ eat: false });        // the first touch starts the round and already steers
   const stick = new Stick({ r: 26, floating: true, zone: [0, 0, 9999, 9999] });
   const keys = new Keys();
-  let p, gems, spikes, score, t, hurt;
+  let p, gems, spikes, score, t;
   const place = () => ({ x: 16 + Math.random() * (W - 32), y: 16 + Math.random() * (H - 32) });
 
   return {
-    reset() { p = { x: W / 2, y: H / 2 }; gems = [place(), place(), place()]; spikes = []; score = 0; t = 0; hurt = 0; fx.clear(); stick.release(); keys.clear(); },
+    reset() { p = { x: W / 2, y: H / 2, wx: W / 2, wy: H / 2 }; gems = [place(), place(), place()]; spikes = []; score = 0; t = 0; feel.clear(); ready.reset(); stick.release(); keys.clear(); },   // ALL round state here
     resize(w, h) { W = w; H = h; },
-    update(dt) {
-      fx.update(dt); t += dt; hurt = Math.max(0, hurt - dt);
+    update(dt) {                                  // tick: 60 below, so dt is exactly 1/60 on every phone
+      feel.update(dt);
+      if (feel.frozen) return;                    // hit-stop
+      if (!ready.update(dt)) return;              // nothing moves until the first touch
+      t += dt;
       const a = stick.active ? stick : keys.axis();
+      p.wx = p.x; p.wy = p.y;                     // keep where it was: draw() shows the moment between
       p.x = Math.max(8, Math.min(W - 8, p.x + a.x * 80 * dt)); p.y = Math.max(8, Math.min(H - 8, p.y + a.y * 80 * dt));
       for (const g of gems) if (Math.hypot(g.x - p.x, g.y - p.y) < 10) {
-        score++; api.score(score); sounds.coin(1 + score * .02); haptic('light');
-        fx.burst(g.x, g.y - 6, { n: 12, speed: 70, size: 3, color: ['#f8d838', '#fff'] }).pop(g.x, g.y - 14, '+1');
+        score++; api.score(score);
+        feel.coin(g.x, g.y - 6, { color: '#f8d838', pitch: 1 + score * .02 });
         Object.assign(g, place());
-        if (score % 3 === 0) spikes.push({ ...place(), vx: (Math.random() < .5 ? -1 : 1) * 30, vy: (Math.random() < .5 ? -1 : 1) * 24 });
+        if (score % 3 === 0) { const s = place(); spikes.push({ ...s, wx: s.x, wy: s.y, vx: (Math.random() < .5 ? -1 : 1) * 30, vy: (Math.random() < .5 ? -1 : 1) * 24 }); }
       }
       for (const s of spikes) {
-        s.x += s.vx * dt; s.y += s.vy * dt;
+        s.wx = s.x; s.wy = s.y; s.x += s.vx * dt; s.y += s.vy * dt;
         if (s.x < 8 || s.x > W - 8) s.vx *= -1; if (s.y < 8 || s.y > H - 8) s.vy *= -1;
-        if (!hurt && Math.hypot(s.x - p.x, s.y - p.y) < 11) { sounds.boom(); haptic('error'); fx.shake(6).flash('#ff4040', .4); api.over(); }
+        if (Math.hypot(s.x - p.x, s.y - p.y) < 11) { feel.boom(p.x, p.y - 6, { size: .7 }); feel.lose(); api.over(); }
       }
     },
     draw(c) {
       const v = view3d(); v.frame();
       for (let y = 0; y < H; y += 16) for (let x = 0; x < W; x += 16) if ((x + y) % 32 === 0) v.put('tile', v.at(x + 8, y + 8), { sx: 16, sy: 1, sz: 16 / v.sin });
       for (const g of gems) v.put('gem', v.at(g.x, g.y, Math.sin(t * 4 + g.x) * 2), { ry: t * 2 });
-      for (const s of spikes) v.put('spike', v.at(s.x, s.y), { ry: t * 3 });
-      v.put('hero', v.at(p.x, p.y), { ry: stick.active ? -stick.angle - Math.PI / 2 : 0 });
-      fx.begin(c); v.render(c, W, H); fx.end(c, W, H);   // 3D frame, then 2D effects and HUD on top
+      for (const s of spikes) v.put('spike', v.at(mix(s.wx, s.x), mix(s.wy, s.y)), { ry: t * 3 });   // smooth on 90 and 120 Hz screens
+      v.put('hero', v.at(mix(p.wx, p.x), mix(p.wy, p.y)), { ry: stick.active ? -stick.angle - Math.PI / 2 : 0 });
+      feel.begin(c); v.render(c, W, H); feel.end(c, W, H);   // 3D frame, then 2D effects and HUD on top
       stick.draw(c);
-      if (t < 3) { c.fillStyle = '#000a'; c.fillRect(0, H - 18, W, 16); c.fillStyle = '#fff'; c.font = '600 9px Rubik, sans-serif'; c.textAlign = 'center'; c.fillText('Drag anywhere to move', W / 2, H - 7); }
+      // The app draws the score top centre (api.scoreArea() says where): keep HUDs out of it.
+      ready.draw(c, W, H, { text: 'Drag anywhere to move', size: 11, y: H - 14 });
     },
-    down: (x, y, id) => stick.down(x, y, id),
+    down(x, y, id) { ready.go(); stick.down(x, y, id); },
     move: (x, y, pr, id) => stick.move(x, y, pr, id),
     up: (x, y, id) => stick.up(x, y, id),
-    key: (k, d) => keys.key(k, d),
+    key(k, d) { if (d) ready.go(); keys.key(k, d); },
     debug(c) { c.strokeStyle = '#0f8'; c.beginPath(); c.arc(p.x, p.y, 10, 0, 7); c.stroke(); for (const s of spikes) { c.beginPath(); c.arc(s.x, s.y, 11, 0, 7); c.stroke(); } },
   };
 }
@@ -74,6 +82,8 @@ export default {
   tag: 'Console · Arcade',
   retro: true, era: 'console', pal: 'grape',
   w: 192, h: 160, maxW: 300, maxH: 240,
+  tick: 60,                 // update(1/60) a whole number of times a frame: the same game at 30, 60 and 120 fps
+  music: 'happy',           // a soundtrack in one line: happy, calm, tense, spooky, heroic, sad, silly, chase, puzzle
   goal: 20,
   hint: 'Drag to run around and grab the gems. Every third gem adds a bouncing spike block, so do not touch one.',
   creator: '__CREATOR__',

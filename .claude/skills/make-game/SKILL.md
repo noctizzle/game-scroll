@@ -16,7 +16,8 @@ Follow AGENTS.md at the repo root. In short:
    for game feel, and the other `gs` parts (physics, ai, pixel, controls, moves, math) instead of
    hand-rolled versions. All round state in `reset()`. Touch must work on its own. Set a fair `goal`.
 4. **Check and fix until clean:**
-   - `node scripts/game-lint.mjs <id>`
+   - `node scripts/game-lint.mjs <id>` (fix what it flags; read its kit hints and take the ones that fit)
+   - `node scripts/game-types.mjs <id>`
    - `npm run games`
    - `npm run build:bundled && node scripts/smoke.cjs <id>`
    - `node scripts/fold.cjs <id>` (and `node scripts/sweep.cjs <id>` for console / nextgen)

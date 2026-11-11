@@ -17,13 +17,17 @@ How to check a change without waiting longer than you need to. Written for peopl
 
 | You changed | Run | Time |
 | --- | --- | --- |
-| One game file | `node scripts/game-lint.mjs <id>`, `npm run games`, then `node scripts/smoke.cjs <id>` and `node scripts/stream-smoke.mjs <id>` | under 20 s |
+| One game file | `node scripts/game-lint.mjs <id>` (it also gives kit hints: advice, never a failure), `node scripts/game-types.mjs <id>`, `npm run games`, then `node scripts/smoke.cjs <id>` and `node scripts/stream-smoke.mjs <id>` | under 20 s |
+| How games use `gs` (a kit, method, option or definition field that doesn't exist) | `npm run game-types` (every game against `src/gamescroll.d.ts`; `-- --self-test` checks the check, `-- --all` also lists what it leaves alone) | about a second |
 | A 3D game (Console, Next Gen, AR) | add `node scripts/sweep.cjs <id>` | 20 s to 2 min |
 | A game's speed | `node scripts/budget.cjs <id>` | about 25 s |
 | Can the goal be reached? | `node scripts/playtest.cjs <id> [--budget 20] [--strict]`: a bot plays faster than real time and tries to win (see below) | about 20 s a game |
 | Layout, cards, folding | `node scripts/fold.cjs [id ...]` | about 12 s |
 | Feed swiping | `node scripts/feed-jank.cjs [swipes] [--filter nextgen]` (compare before and after, not with a phone) | about a minute |
 | A kit in `src/kit/` | `npm run kit-test`, then smoke the games that use it (`node scripts/pick-games.mjs` names the best few per style) | 3 s + games |
+| What the app does around a game (screen kept on, finer touch, even pixels and the LCD look, the one-line soundtrack, the phone-only save) | `node scripts/app-test.cjs [awake\|touch\|pixels\|music\|saves]` after a build (`npm run app-test` does both) | about a minute |
+| Sound (`src/sfx.js`, `src/kit/sound.js`, `instruments.js`) | `npm run sound-test [sounds\|band\|clock]`: renders the sound off screen and measures it (every ready-made sound is heard and none is too loud, the limiter holds, instrument sets are as loud as each other, the music clock keeps the beat through a frozen frame) | about 90 s |
+| A starter template (`scripts/templates/`) | `npm run new zz-try --style <style>`, then lint, types and smoke it like any game, and delete it | under 30 s |
 | The 3D look (hd3d, toon3d, post effects, a three.js update) | `node scripts/look-compare.cjs save base` **before** the change, `check base` after; add `--webgpu` to check the WebGPU path | about 16 s each |
 | Next Gen / AR on WebGPU | `node scripts/gpu-games.cjs [id ...]` | about 25 s a game |
 | Shaders built mid-round (hd3d `holdNew`) | `node scripts/shader-hold.cjs [--webgpu]` | about a minute |
@@ -34,7 +38,8 @@ How to check a change without waiting longer than you need to. Written for peopl
 | Everything (before a big engine PR) | `node scripts/smoke.cjs` (all 162 games) | about 3.5 min |
 
 The PR check (`.github/workflows/game-pr-check.yml`) runs the node checks (`npm run games`,
-`licences`, `types-check`, `kit-test`, `brains`, `recommend`, `site`) and then smoke, streamed,
+`licences`, `types-check`, `game-types`, the starter templates, `kit-test`, `brains`, `recommend`, `site`), the app and
+sound checks when shared code changes, and then smoke, streamed,
 fold, sweep, Tiny Brains, the AI playtester and budget on the changed games, split over several machines. When frame
 generation's code changes it also runs `framegen-test.cjs --check`.
 

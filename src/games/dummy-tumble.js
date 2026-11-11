@@ -51,7 +51,7 @@ function make(api) {
       score += p; api.score(score); run.got += p;
       pops.push({ x, y, txt: `+${p}`, l: .7 });
       sfx(140 + speed * .1, .06, 'square', .04); haptic(speed > 500 ? 'medium' : 'light');
-      if (speed > 500) feel.hit(x, y, { size: .4 });
+      if (speed > 500) feel.hit(x, y, { power: .4 });
     }
   }
 

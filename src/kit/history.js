@@ -70,7 +70,7 @@ export class History {
   restart() { this.push(this.steps[0].state, 'restart'); return copy(this.steps[0].state); }
   /** Forgets every step; state is the new start. */
   clear(state) { this.steps = [{ state: copy(state), label: 'start' }]; this.at = 0; this.undos = this.redos = 0; this.lastMerge = null; this.emit('change', this); return this; }
-  /** Plain data for api.save (the last `keep` steps, to stay inside the save's 2 KB), and back. */
+  /** Plain data for api.save (the last `keep` steps, to stay well inside the save's 8 KB), and back. */
   pack(keep = 10) { const from = Math.max(0, this.at - keep + 1); return { s: this.steps.slice(from, this.at + 1).map(s => [s.label, s.state]), u: this.undos }; }
   unpack(d) {
     if (!d?.s?.length) return this;

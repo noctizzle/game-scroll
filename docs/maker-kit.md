@@ -89,6 +89,10 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Lines that change every time (a shopkeeper, a riddle) | `gs.phoneai` (the phone's built-in AI) | [Hearing, doodles and the phone's AI](#hearing-doodles-and-the-phones-ai) |
 | The same jumps and timings at 30, 60 and 120 fps; exact replays | `tick: 60`, `gs.tick` | [Fixed game tick](#fixed-game-tick) |
 | An original tune for your game without writing notes | `gs.sound.compose({ mood, seed })` | [Music composer](#music-composer) |
+| Music under every round in one line; a band, synths or an orchestra instead of beeps | `music: 'chase'` in the definition, `music({ set: 'band' })`, `gs.sound.instrument()` | [Sound](#sound) |
+| Smooth lines in a drawing game; ink that stays under the fingertip | `touch: 'fine'`, `api.ahead()` | [Finer touch](#finer-touch) |
+| Save something big (a built world, drawings, recorded runs) | `api.saveLocal()` / `loadLocal()` | [Save slots](#a-bigger-save-that-stays-on-the-phone) |
+| The look of an old handheld's screen | `lcd: true` in the definition | [Pixel text and sprites](#even-pixels-and-the-lcd-look) |
 | Puzzles with exactly one answer, graded, with fair hints; computer opponents for board games | `gs.solve` | [Puzzles and opponents](#puzzles-and-opponents) |
 | Play with your whole body; put the player inside the game; thumbs up and other hand signs | `gs.vision.Body`, `CutOut`, `Signs` | [Body, cut-outs and hand signs](#body-cut-outs-and-hand-signs) |
 | Walk to play, lift the phone, a dark room, a hand over the phone | `gs.device.steps()`, `pressure()`, `light()`, `near()` | [Steps, air pressure, light, proximity](#steps-air-pressure-light-proximity) |
@@ -141,12 +145,19 @@ test. Then `npm run dev` and `__gs.only('my-game')` in the browser console. Chan
 look, the title, tag and hint: the template is only a starting point, and a game that is still
 recognisably the template won't be merged.
 
-| Style | What the template shows |
+Every template starts the way a finished game does, so a new game has these from its first line:
+a **fixed tick** (`tick: 60`: the same game on every phone, drawn between ticks with `gs.tick.mix`),
+**Ready** (`gs.rounds.Ready`: nothing moves or scores until the first tap), **Feel**
+(`gs.effects.Feel`: particles, shake, sound and a buzz in one call, following the player's settings),
+a **soundtrack in one line** (`music: 'happy'` in the definition) and a HUD that keeps out of the
+app's score badge.
+
+| Style | What the template also shows |
 | --- | --- |
-| `phone` | Tap targets; juice (particles, shake, pop-ups, hit-stop, tweens), sounds, a save slot |
-| `pocket` | Catch game in four shades; slider stick, pixel juice, looping music |
-| `color` | Runner; tap to jump and hold for a big jump (gestures) |
-| `advance` | Tower of crates that tumble; real 2D physics (Rapier), pixel text, a save slot for the best tower |
+| `phone` | Tap targets; tweens, hit-stop, a save slot |
+| `pocket` | Catch game in four shades; slider stick, pixel text, a chip tune |
+| `color` | Runner; tap to jump and hold for a big jump (gestures), pixel text |
+| `advance` | Tower of crates that tumble; real 2D physics (Rapier) drawn between ticks, pixel text, a save slot for the best tower |
 | `console` | Cel-shaded 3D gem hunt; floating thumbstick |
 | `nextgen` | HD 3D rolling ball; two-thumb layout (stick + boost button), GPU sparks, shadows |
 | `ar` | Balloons in your room; tap to pop, drag to look when there's no gyro |
@@ -166,7 +177,7 @@ function make(api) {
 ```
 
 - `api.save(data)` replaces the save. `data` must be JSON (numbers, strings, booleans, arrays,
-  plain objects) and at most 2 KB as JSON text. It returns `false`, and saves nothing, if not.
+  plain objects) and at most 8 KB as JSON text. It returns `false`, and saves nothing, if not.
 - `api.load(fallback)` returns a fresh copy of the save, or `fallback` when there is none.
 - `api.clearSave()` deletes it.
 - A game can only see its own save. Saves ride along in the player's Game Center / Play Games cloud
@@ -195,6 +206,30 @@ export default {
 - If it throws or returns `undefined`, `load()` gives your fallback and the old save stays as it is.
 - A save written by a newer version of your game (the player's other phone already has the update)
   is left alone: `load()` gives the fallback and `save()` returns `false` until this phone updates.
+
+### A bigger save that stays on the phone
+
+For things too big for the cloud save that wouldn't be missed on a new phone (a world the player
+built, drawings, recorded runs to race against) there is a second slot, up to 512 KB of JSON:
+
+```js
+function make(api) {
+  let world = api.loadLocal(null) || newWorld();    // in make() or reset(): see below
+  return {
+    // ...
+    built() { api.saveLocal(world); },               // false if it isn't JSON or is over 512 KB
+  };
+}
+```
+
+- `api.saveLocal(data)`, `api.loadLocal(fallback)`, `api.clearLocal()` work like the three above, but
+  the data stays on this phone (in its database, packed) and is not part of the cloud save.
+- Reading it the first time takes a moment, so call `loadLocal()` in `make()` or `reset()`: the card
+  shows "Loading…" and the game is made again once the save is in, the same way it waits for the
+  physics engine. After that it answers at once, anywhere.
+- Keep what matters (progress, unlocks) in `api.save()`, which follows the player. A new phone, or a
+  player who clears the app's data, starts the phone-only slot empty: always have a fallback.
+- Save versions cover it too: `save: { version: 2, migrateLocal(data, from) { ... } }`.
 
 ## Location
 
@@ -290,8 +325,21 @@ const tune = music({ tempo: 128, lead: 'E5 . G5 . A5 - G5 .', bass: 'C3 . . . G2
 tune.start(); tune.speed(1.2); tune.stop();
 ```
 
-- **Ready-made**: `coin`, `jump`, `hurt`, `hit`, `boom`, `laser`, `shoot`, `powerup`, `select`,
-  `blip`, `pop`, `splash`, `click`, `win`, `lose`, `levelup`, `countdown(last)`.
+- **Ready-made** (98): each takes an optional pitch (`sounds.step(1.2)`). Ones that repeat a lot (steps,
+  hits, shots, whooshes) come out a touch different each time, so ten in a row don't sound like a
+  machine; tuned ones (coins, jingles) play exact.
+  - Menus: `tick` `tock` `toggle` `back` `confirm` `deny` `open` `close` `select` `blip` `click`
+  - Moving: `jump` `step` `land` `dash` `skid` `flap` `bounce` `boing` `swoosh` `whoosh` `slip`
+  - Fights and breaking: `hit` `hurt` `shoot` `laser` `boom` `blast` `slash` `punch` `block` `clang`
+    `bow` `reload` `zap` `charge` `shield` `thud` `crack` `shatter` `crumble`
+  - Rewards: `coin` `gem` `key` `heal` `star` `chest` `combo` `perfect` `unlock` `cash` `powerup`
+    `levelup` `pop`
+  - Weather and animals: `splash` `drip` `bubble` `gust` `thunder` `crackle` `chirp` `croak` `buzz`
+    `squeak` `growl`
+  - Machines: `beep` `alarm` `siren` `ring` `door` `lever` `teleport` `warp` `robot` `rev`
+  - The round: `countdown(last)` `go` `win` `lose` `buzzer` `fanfare` `tada` `whistle` `gong` `bell`
+    `roll` `horn` `sad` `heart`
+  - Cartoon: `wobble` `squish` `plop` `zip` `honk` `twinkle` `pluck` `munch` `gulp`
 - **`noise(len, { vol, from, to, filter, q, attack })`**: filtered noise sweeping from `from` Hz to `to` Hz.
   High to low is an explosion, short and high is a hit, long and low is a rumble. `attack` fades it in (a whoosh).
 - **`space({ seconds, decay, wet, bright, pre })`**: the sound of a place, a reverb made in code (a
@@ -301,13 +349,37 @@ tune.start(); tune.speed(1.2); tune.stop();
 - **`bed({ vol, from, filter, q, gusts })`**: a steady background made from noise: wind (`gusts` for
   slow swells), rain, a river. `b.set({ vol, from }, seconds)` glides as a storm rises. Beds fade in,
   go quiet while paused and stop with the round.
-- **`tone(note, { len, wave, vol, slide })`**: one note with a soft envelope. Notes are names
-  (`'A4'`, `'C#5'`, `'Eb3'`) or Hz.
+- **`tone(note, { len, wave, vol, slide, attack, hold, wobble })`**: one note with a soft envelope.
+  Notes are names (`'A4'`, `'C#5'`, `'Eb3'`) or Hz. `hold` keeps it at full for that long before it
+  fades (an alarm, a horn); `wobble: [times a second, cents]` is vibrato.
 - **`music({ tempo, lead, bass, pad, arp, drums, vol, swing })`**: a looping tune. Each part is a
   line of eighth-note steps: a note, `.` for a rest, `-` to hold the note before. Drums: `k` kick,
   `s` snare, `h` hi-hat, `c` crash (several at once: `kh`). Parts can be different lengths.
-- Start music in `update()`, not in `reset()` (reset also runs while the game waits in the feed).
-  The app stops all music when a round ends or the player moves to another game.
+- **Instruments**: `music({ set: 'band', ... })` plays the same tune on real-sounding instruments
+  made in code (Tone.js; no sound files). Sets: `'chip'` (square and triangle waves, the default),
+  `'synth'` (saw lead, sub bass, warm pad, 808 drums), `'band'` (electric piano, bass guitar, organ, a
+  drum kit) and `'orchestra'` (flute, cello, strings, harp, timpani). Swap single parts with
+  `voices: { lead: 'bell', drums: 'kit' }`: `saw` `sub` `warm` `pulse` `epiano` `bassguitar` `organ`
+  `pick` `flute` `cello` `strings` `harp` `brass` `bell` `kalimba` `marimba` `steelpan`, drum kits
+  `kit` `808` `concert`. The instruments load the first time a tune asks for them; it plays in the
+  chip sound until they're in (`song.tuned` says when). Every set comes out about as loud as the others.
+- **`instrument('kalimba')`**: one of those voices to play yourself, for a piano, a xylophone or a
+  rhythm game: `const k = instrument('kalimba'); k.play('C5', { len: .4, vol: .8 });`. Make it in
+  `make()` or `reset()` (it loads first).
+- **A soundtrack in one line**: `music: 'chase'` in the definition and the app plays an original tune
+  under each round, written from that mood and the game's id (so every game gets its own). It builds
+  as the score nears the goal, lifts when the player scores, leans its tempo to how fast they tap,
+  holds on the pause screen and stops when the round ends. Moods: `happy` `calm` `tense` `spooky`
+  `heroic` `sad` `silly` `chase` `puzzle`. Pixel styles get the chip sound and the others a set to
+  suit the mood, or say more: `music: { mood: 'heroic', set: 'orchestra', vol: .8, tempo: 120, key: 'D', bars: 8 }`.
+  A game with its own `music()` calls leaves the field out.
+- Start your own music in `update()`, not in `reset()` (reset also runs while the game waits in the
+  feed). The app stops all music when a round ends or the player moves to another game.
+- **Loudness looks after itself**: everything a game plays goes through a limiter, so twenty sounds at
+  once (a big combo, an explosion over music) get quieter together instead of crackling.
+- **`delay()`**: seconds between asking for a sound and the player hearing it (the phone's output
+  delay, more on Bluetooth). Rhythm games don't need it: `gs.rhythm.Beat` already follows the sound
+  as heard.
 - Everything respects the player's Sound & haptics settings (sound, volume, music). `sfx()` still works as before.
 - **Your own sound effects with ZzFX**: design one on the [ZzFX page](https://killedbyapixel.github.io/ZzFX/)
   (move the sliders, press play), copy the list of numbers and play it: `zzfx(...[,,925,.04,.3,.6,1,.3,,6.27,-184,.09,.17])`.
@@ -349,6 +421,23 @@ update() { g.update(); }   // needed for hold
   arrows / WASD, `keys.held(' ')`.
 - Call `release()` on controls in `reset()`, so a finger held at game over doesn't stick.
 - Draw sticks and buttons faintly, and keep them off the important part of the screen.
+
+## Finer touch
+
+A phone reads a finger more often than it draws (120 to 240 times a second), and by default a game
+gets one `move()` per frame: the newest point. A drawing or tracing game wants them all:
+
+```js
+export default { /* ... */ touch: 'fine', make };
+move(x, y, pressed, id) { if (pressed) line.push([x, y]); }   // every reading, oldest first, several a frame
+```
+
+Curves come out round instead of a chain of straight bits. Leave it out if your game reads one
+move's distance as a speed (it would get several short moves instead of one long one).
+
+`api.ahead(id)` is where the finger is heading by the next frame, `[x, y]` in game units, or `null`
+when the phone doesn't guess or the finger has stopped. Draw the last bit of a line to it and the ink
+stays under the fingertip instead of trailing behind; never use it for hits or scoring (it's a guess).
 
 ## Physics
 
@@ -586,6 +675,18 @@ const walk = anim([frameA, frameB], palette, 8);  walk.draw(c, x, y, time, { sca
 
 Sprites and text are drawn once and cached. `sprite.solid(px, py)` is for pixel-perfect hits;
 `tiles(art, palette, 8, 8)` cuts a tile sheet.
+
+### Even pixels and the LCD look
+
+Pocket, Color and Advance games are drawn at exactly `w` × `h` and scaled up by the app with every
+game pixel the same size on any screen (no fat and thin columns, no shimmer when things scroll).
+Nothing to do in the game: draw at whole-pixel positions as before.
+
+`lcd: true` in the definition adds the look of an old handheld's screen: fine lines between the
+pixels and a little ghosting (fast things leave a short trail). `lcd: { grid: .3, ghost: .45 }` sets
+how strong each is (grid 0 to .6, ghost 0 to .85; `false` turns one off). It's a look, so it's the
+game's choice: left out, the picture is clean. Ghosting can hide a blinking sprite's off frames, so
+check anything that flickers on purpose.
 
 ## Game controllers
 
@@ -863,6 +964,10 @@ The app pauses a game when the player opens How to play, switches apps, or press
 controller's Start, and shows a "Carry on" button. `update()` simply stops being called, and
 music is held. If your game has its own timers or sounds outside `update()`, add `pause()` and
 `resume()` to your game object. Use `gs.math.Timers` rather than `setTimeout` and you won't need to.
+
+The app keeps the screen on while a round is in play, so games played by tilting, talking, blowing
+or just watching don't dim and lock. It lets the phone sleep again when the round ends or pauses, and
+after five minutes with no touch at all. Nothing to do in the game.
 
 ## Debug overlay
 
@@ -1735,6 +1840,9 @@ that answers the first) are optional.
 const tune = music(compose({ mood: 'chase', seed: 'my-game' }));
 update(dt) { if (!tune.playing) tune.start(); tune.intensity(danger); }   // arpeggio, busier drums, harmony
 ```
+
+For a tune that simply plays under the rounds and follows the action, put `music: 'chase'` in the
+definition instead (see [Sound](#sound)): the app does all of this for you.
 
 It returns music()'s parts with `layers: { arp, drums2, lead2 }`, so `intensity()` and `follow()` build
 it up. `info` has the key, mode and chords, plus `win` and `lose` jingles for `notes()` in the same key.

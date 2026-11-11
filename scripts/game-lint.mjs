@@ -8,6 +8,11 @@
 //
 //   node scripts/game-lint.mjs                 checks every game in src/games/
 //   node scripts/game-lint.mjs <id or file>... checks just those
+//
+// It also gives kit hints: places where a game does by hand what a kit already does (particles, screen
+// shake, a thumbstick, waiting for the first tap, a fixed step, timers on the wall clock...). A hint is
+// advice, never a failure: how a game looks and plays is the game's choice. Hints show for the games
+// you name; a run over every game only counts them (--hints lists them all, --no-hints hides them).
 import { readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -65,6 +70,48 @@ const CODE_RULES = [
   [/\b(Object|Array|Math|JSON|Date|Promise|Number|String|console|performance)\s*\.\s*(\w+)\s*=(?!=)/, 'replaces a built-in ($1.$2), which every game and the app share'],
 ];
 
+// Kit hints. at: the line the hint points to (the first match). unless: the game already uses the kit.
+// only: styles it applies to. file: true says it's about the whole game (it points at the definition).
+const pixelStyle = src => /\bretro\s*:\s*true\b/.test(src) && !/\bera\s*:\s*['"`](console|nextgen|ar)['"`]/.test(src);
+const HINTS = [
+  { at: /\b\w*(parts|particles|sparks|puffs|debris|confetti|dust|bits|chips|shards)\w*\s*\.push\s*\(\s*\{[^}]*\b(vx|vy|life)\b/i, unless: /\b(Feel|Juice)\b/,
+    why: 'particles by hand. gs.effects.Feel does particles, shake, sound and a buzz in one call (feel.coin(x, y), feel.hit, feel.boom), and gs.juice.Juice is the particles alone; both follow the player\'s Reduce motion setting' },
+  { at: /translate\s*\([^)]*\bshake/i, unless: /\b(Feel|Juice)\b/,
+    why: 'screen shake by hand ignores the player\'s Reduce motion setting. feel.begin(c) ... feel.end(c, W, H) (gs.effects.Feel) or gs.juice.Juice shake for you and follow it' },
+  { at: /\b(stick|joystick|joy)\s*=\s*\{/i, unless: /\b(Stick|twoThumb)\b/,
+    why: 'a thumbstick by hand. gs.controls.Stick (floating, dead zone, one axis) and twoThumb(W, H) are ready, and arrow keys and controllers come with gs.controls.Keys' },
+  { at: /\b(setTimeout|setInterval)\s*\(/,
+    why: '$1 keeps running while the game is paused and behind the game-over screen. Count dt in update(), or use gs.math.Timers (they pause with the game)' },
+  { at: /\bDate\s*\.\s*now\s*\(/,
+    why: 'Date.now() keeps counting while the game is paused. Count dt in update() for game time (gs.math.daily() for a puzzle of the day)' },
+  { at: /\bperformance\s*\.\s*now\s*\(/, unless: /\bflickTracker\b/,
+    why: 'performance.now() keeps counting while the game is paused. Count dt in update() for game time; for how fast a finger flicked, gs.util.flickTracker measures it' },
+  { at: /\b(started|begun)\s*=\s*false\b/, unless: /\bReady\b/,
+    why: 'waiting for the first tap by hand. gs.rounds.Ready does it: if (!ready.update(dt)) return; in update(), if (ready.go()) return; in down(), and ready.draw(c, W, H) for the prompt' },
+  { at: /\bwhile\s*\(\s*acc\w*\s*>=?/, unless: /\btick\s*:/,
+    why: 'a fixed step by hand. tick: 60 in the definition calls update(1/60) a whole number of times a frame on every phone, and gs.tick.mix(before, now) draws between ticks' },
+  { at: /\.\s*fillText\s*\(/, only: pixelStyle,
+    why: 'fillText in a pixel style comes out smoothed (soft edges and in-between shades). gs.pixel.text(c, str, x, y, { color, align }) draws crisp pixel letters' },
+  { file: true, unless: /\b(haptic|hapticPattern|buzz|rumble|Feel)\b/,
+    why: 'no haptics. A light buzz on a score and a stronger one on a hit make a phone game feel better: gs.device.haptic(\'light\'), or feel.coin / feel.hit (gs.effects.Feel), which buzz for you' },
+  { file: true, unless: /\bmusic\b|\bstartMic\b|\bgs\s*\.\s*(hear|rhythm)\b/,
+    why: 'no music. music: \'chase\' in the definition (or happy, calm, tense, spooky, heroic, sad, silly, puzzle) gives the rounds an original tune that follows the action, in one line' },
+];
+/** Kit hints for one game: [{ line, why, code }]. Advice only. */
+export function hints(file) {
+  const src = stripComments(readFileSync(file, 'utf8')), code = stripStrings(src), lines = code.split('\n'), real = src.split('\n'), out = [];
+  const defLine = Math.max(0, real.findIndex(l => /^\s*export\s+default\b/.test(l)));
+  for (const h of HINTS) {
+    if (h.only && !h.only(src)) continue;
+    if (h.unless && h.unless.test(code)) continue;
+    if (h.file) { out.push({ line: defLine + 1, why: h.why, code: real[defLine].trim().slice(0, 120) }); continue; }
+    const i = lines.findIndex(l => h.at.test(l)); if (i < 0) continue;
+    const m = lines[i].match(h.at);
+    out.push({ line: i + 1, why: h.why.replace('$1', m[1] || m[0]), code: real[i].trim().slice(0, 120) });
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
+
 // Blank out comments but keep line numbers, so a comment like "// no fetch here" isn't flagged.
 const stripComments = s => s
   .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
@@ -102,14 +149,20 @@ export function lint(file) {
   return out;
 }
 
-const args = process.argv.slice(2);
+const flags = process.argv.slice(2).filter(a => a.startsWith('--')), args = process.argv.slice(2).filter(a => !a.startsWith('--'));
 const files = args.length
   ? args.map(a => a.endsWith('.js') ? resolve(a) : join(GAMES, a + '.js'))
   : readdirSync(GAMES).filter(f => f.endsWith('.js')).sort().map(f => join(GAMES, f));
+const showHints = !flags.includes('--no-hints') && (args.length > 0 || flags.includes('--hints'));
 
-let flagged = 0, warned = 0;
+let flagged = 0, warned = 0, hinted = 0;
 for (const f of files) {
   const hits = lint(f), rel = 'src/games/' + basename(f);
+  if (!flags.includes('--no-hints')) for (const h of hints(f)) {
+    hinted++; if (!showHints) continue;
+    console.log(`${rel}:${h.line}  hint: ${h.why}\n    ${h.code}`);
+    if (process.env.GITHUB_ACTIONS) console.log(`::notice file=${rel},line=${h.line},title=Kit hint::${h.why}`);
+  }
   for (const h of hits) {
     if (h.warn) { warned++; console.log(`${rel}:${h.line}  warning: ${h.why}\n    ${h.code}`); if (process.env.GITHUB_ACTIONS) console.log(`::warning file=${rel},line=${h.line}::${h.why}`); continue; }
     flagged++;
@@ -118,5 +171,5 @@ for (const f of files) {
     if (process.env.GITHUB_ACTIONS) console.log(`::error file=${rel},line=${h.line}::${h.why}. Games must not touch the network, storage or native features directly; a maintainer has to review this line.`);
   }
 }
-console.log(`${files.length} game file(s) checked, ${flagged} line(s) flagged${warned ? `, ${warned} warning(s)` : ''}`);
+console.log(`${files.length} game file(s) checked, ${flagged} line(s) flagged${warned ? `, ${warned} warning(s)` : ''}${hinted ? `, ${hinted} kit hint(s)${showHints ? ' (advice: they never fail the check)' : ' (name a game or add --hints to see them)'}` : ''}`);
 process.exit(flagged ? 1 : 0);

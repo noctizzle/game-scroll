@@ -1,6 +1,7 @@
-// Rhythm timing: a beat clock that keeps in step with gs.sound.music, note charts written as text,
-// Perfect / Good / Miss judging with fair windows, and a tap-lag calibration (screens and Bluetooth
-// headphones add delay; the kit remembers the player's lag on this phone and allows for it).
+// Rhythm timing: a beat clock that keeps in step with gs.sound.music as the player hears it (the phone's
+// sound delay, Bluetooth headphones included, is allowed for by itself), note charts written as text,
+// Perfect / Good / Miss judging with fair windows, and a tap-lag calibration for what's left (the
+// screen's lag and the player's own; the kit remembers it on this phone).
 //
 //   const { Beat, Chart, Calibrate } = gs.rhythm;
 //   reset() {
@@ -22,18 +23,25 @@
 // In a chart each line is a lane; 'x' is a note, '=' holds the note before it, '.' is a rest; spaces
 // and '|' are just for reading. A note: { time, lane, beat, hold (seconds), hit, result }.
 
-import { audio } from '../sfx.js';
+import { audio, delay, sfx } from '../sfx.js';
 import { store } from '../util.js';
-import { sfx } from '../sfx.js';
 
 const LAG_KEY = 'gs_rhythm_lag';
 /** The player's tap lag on this phone, in seconds (from Calibrate). */
 export const lag = () => { const v = +store.get(LAG_KEY, 0); return isFinite(v) ? Math.max(-.3, Math.min(.3, v)) : 0; };
 
+// The beat follows the music as the player HEARS it: sound leaves the phone a little after it's played
+// (a few hundredths of a second on the speaker, a tenth or two on Bluetooth headphones), and the phone
+// says how long (gs.sound.delay()). So notes cross the line, pulses flash and taps are judged against
+// what's in the player's ears, with no setting to find. Calibrate (below) is still there for the rest:
+// the screen's own lag and the player's habit of tapping early or late.
 export class Beat {
-  constructor({ bpm = 120, offset = 0, steps = 2 } = {}) { this.bpm = bpm; this.offset = offset; this.steps = steps; this.time = -offset; this.running = false; this.onBeat = false; this.onStep = false; this.last = -1; this.lastStep = -1; }
+  /** heard: false counts from when sounds are played instead (no allowance for the phone's sound delay). */
+  constructor({ bpm = 120, offset = 0, steps = 2, heard = true } = {}) { this.bpm = bpm; this.offset = offset; this.steps = steps; this.heard = heard; this.time = -offset; this.running = false; this.onBeat = false; this.onStep = false; this.last = -1; this.lastStep = -1; }
+  /** The sound delay being allowed for now, in seconds. */
+  get delay() { return this.heard ? delay() : 0; }
   /** Starts counting now (call it the same frame you start the music). */
-  start() { const a = audio(); this.t0 = a ? a.ctx.currentTime + .03 : null; this.time = -this.offset - .03; this.running = true; this.last = -1; this.lastStep = -1; return this; }
+  start() { const a = audio(); this.t0 = a ? a.ctx.currentTime + .03 : null; this.time = -this.offset - .03 - this.delay; this.running = true; this.last = -1; this.lastStep = -1; return this; }
   stop() { this.running = false; return this; }
   get spb() { return 60 / this.bpm; }
   /** Beats so far (a float). */
@@ -46,8 +54,8 @@ export class Beat {
     // stay in step with the sound card's clock (the music is scheduled on it), gently
     const a = audio();
     if (a && this.t0 != null && a.ctx.state === 'running') {
-      const real = a.ctx.currentTime - this.t0 - this.offset, d = real - this.time;
-      if (Math.abs(d) < .25) this.time += d * .1; else this.t0 = a.ctx.currentTime - this.time - this.offset;   // a pause or a hiccup: re-anchor
+      const lag = this.delay, real = a.ctx.currentTime - this.t0 - this.offset - lag, d = real - this.time;
+      if (Math.abs(d) < .25) this.time += d * .1; else this.t0 = a.ctx.currentTime - this.time - this.offset - lag;   // a pause or a hiccup: re-anchor
     }
     const b = Math.floor(this.beat), s = Math.floor(this.beat * this.steps);
     this.onBeat = b !== this.last && b >= 0; this.last = b;

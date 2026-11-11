@@ -1,0 +1,163 @@
+<!doctype html><meta charset="utf-8"><title>sound test</title>
+<script type="module">
+// Measures the sound kit in a browser. ?part=sounds (every ready-made sound and the limiter, rendered
+// faster than real time), ?part=band (the instrument sets, same way), ?part=clock (the music clock on
+// the real sound clock, with the page made busy on purpose). scripts/sound-test.cjs runs all three.
+const part = new URLSearchParams(location.search).get('part') || 'sounds';
+const out = [], ok = (c, m) => out.push((c ? 'ok   ' : 'FAIL ') + m), note = m => out.push('     ' + m);
+const db = v => (v > 0 ? 20 * Math.log10(v) : -120).toFixed(1);
+const RATE = 48000;
+
+// An audio context that renders to memory. Channels 0 and 1 are what the player hears (after the limiter);
+// channel 2 is the mix before the limiter, to see what the limiter was given.
+function offline(seconds) {
+  const Real = window.OfflineAudioContext;
+  window.AudioContext = class extends Real {
+    constructor() { super(4, Math.ceil(seconds * RATE), RATE); }
+    // (the kit resumes a suspended context whenever a sound is played: here that would carry on rendering
+    // half way through a job, so only go() does)
+    resume() { return Promise.resolve(); }
+    go() { return super.resume(); }
+  };
+}
+async function render(a, jobs, slot) {
+  const { ctx } = a;
+  const tap = ctx.createChannelMerger(4); a.out.connect(tap, 0, 2); tap.connect(ctx.destination);
+  jobs.forEach((job, i) => { if (i === 0) job(); else ctx.suspend(i * slot).then(() => { try { job(); } catch (e) { out.push('FAIL threw: ' + e.message); } ctx.go(); }); });
+  const buf = await ctx.startRendering();
+  const heard = buf.getChannelData(0), raw = buf.getChannelData(2), n = Math.round(slot * RATE);
+  return jobs.map((_, i) => {
+    const s = i * n, e = Math.min(heard.length, s + n); let peak = 0, pre = 0, sum = 0, cnt = 0, last = s;
+    for (let k = s; k < e; k++) { const h = Math.abs(heard[k]), r = Math.abs(raw[k]); if (h > peak) peak = h; if (r > pre) pre = r; if (r > .002) { sum += raw[k] * raw[k]; cnt++; last = k; } }
+    return { peak, pre, rms: cnt ? Math.sqrt(sum / cnt) : 0, len: (last - s) / RATE };
+  });
+}
+
+try {
+  if (part === 'sounds') {
+    const SLOT = 2.6; offline(SLOT * 140);
+    const snd = await import('/src/kit/sound.js'), { audio, delay } = await import('/src/sfx.js');
+    const names = Object.keys(snd.sounds), a = audio();
+    ok(names.length >= 80, `${names.length} ready-made sounds`);
+    const jobs = names.map(n => () => snd.sounds[n]());
+    // the limiter: one quiet note, then forty loud ones at once (far past full volume), then a long pile
+    jobs.push(() => snd.tone(440, { len: .5, wave: 'sine', vol: .05, hold: .4 }));
+    jobs.push(() => { for (let i = 0; i < 40; i++) snd.tone(200 + i * 37, { len: .8, wave: 'square', vol: .12, hold: .7 }); });
+    jobs.push(() => { for (let i = 0; i < 12; i++) { snd.sounds.blast(); snd.sounds.boom(); } });
+    // the same sound twice: variation makes a repeating sound differ, a tuned one stays exact
+    for (const n of ['step', 'step', 'coin', 'coin']) jobs.push(() => snd.sounds[n]());
+    const r = await render(a, jobs, SLOT);
+    let quiet = [], hot = [], long = [];
+    names.forEach((n, i) => { const m = r[i]; note(`${n.padEnd(10)} peak ${db(m.pre)} dB  rms ${db(m.rms)} dB  ${m.len.toFixed(2)} s`); if (m.pre < .012 || m.rms < .0063) quiet.push(n); if (m.pre > .34 || m.rms > .045) hot.push(n); if (m.len > 2.2) long.push(n); });
+    ok(!quiet.length, 'every sound can be heard (none under -44 dB)' + (quiet.length ? ': too quiet ' + quiet.join(', ') : ''));
+    ok(!hot.length, 'none is far louder than the rest (none over -27 dB)' + (hot.length ? ': too loud ' + hot.join(', ') : ''));
+    ok(!long.length, 'none runs past two seconds' + (long.length ? ': ' + long.join(', ') : ''));
+    const rms = names.map((_, i) => r[i].rms).sort((x, y) => x - y);
+    note(`loudness (rms) from ${db(rms[0])} to ${db(rms[rms.length - 1])} dB, middle ${db(rms[rms.length >> 1])} dB`);
+    const [one, forty, pile] = r.slice(names.length);
+    note(`limiter: one quiet note in ${db(one.pre)} out ${db(one.peak)} dB; forty at once in ${db(forty.pre)} out ${db(forty.peak)} dB; pile of blasts in ${db(pile.pre)} out ${db(pile.peak)} dB`);
+    ok(one.peak > one.pre * 1.15 && one.peak < one.pre * 1.8, `a quiet sound comes up a little (${(20 * Math.log10(one.peak / one.pre)).toFixed(1)} dB)`);
+    ok(forty.pre > 2 && forty.peak < .98, `forty loud notes at once (${forty.pre.toFixed(1)} times full volume) stay under full volume (${forty.peak.toFixed(2)})`);
+    ok(pile.peak < .98, `a pile of explosions stays under full volume (${pile.peak.toFixed(2)})`);
+    const [s1, s2, c1, c2] = r.slice(names.length + 3);
+    ok(Math.abs(s1.rms - s2.rms) > 1e-5 || Math.abs(s1.pre - s2.pre) > 1e-5, 'a repeating sound (step) is a little different each time');
+    ok(Math.abs(c1.rms - c2.rms) < 1e-6 && Math.abs(c1.pre - c2.pre) < 1e-6, 'a tuned sound (coin) is the same each time');
+    ok(delay() > .004 && delay() < .02, `delay() counts the limiter where the phone reports nothing (${(delay() * 1000).toFixed(1)} ms)`);
+  }
+
+  if (part === 'band') {
+    const SLOT = 3; offline(SLOT * 60);
+    const snd = await import('/src/kit/sound.js'), { audio } = await import('/src/sfx.js'), I = await import('/src/kit/instruments.js');
+    const a = audio(), T = await import('tone');
+    T.setContext(a.ctx);
+    const bus = a.ctx.createGain(); bus.connect(a.out);
+    // the chip voices music() plays, for comparison: [wave, volume] and the note each part is tried at
+    const ROLE = { lead: ['square', .028, 'C5'], bass: ['triangle', .07, 'C2'], pad: ['sine', .03, 'E4'], arp: ['square', .018, 'G5'] };
+    const roleOf = {}; for (const set of Object.values(I.SETS)) if (set) for (const [role, v] of Object.entries(set)) if (role !== 'drums') roleOf[v] = role;
+    const voices = Object.keys(I.VOICES), jobs = [], labels = [];
+    for (const [role, [wave, vol, n]] of Object.entries(ROLE)) { labels.push('chip ' + role); jobs.push(() => snd.tone(n, { len: .45, wave, vol, out: bus, attack: role === 'pad' ? .05 : .005 })); }
+    for (const v of voices) { const role = roleOf[v] || 'lead'; labels.push(`${v} (${role})`); jobs.push(() => { const i = I.makeVoice(T, v, bus); i.play(snd.freq(ROLE[role][2]), .45, a.ctx.currentTime + .02, 1); }); }
+    const CHIP = { k: () => snd.tone(150, { len: .12, wave: 'sine', vol: .14, slide: -110, out: bus }), s: () => snd.noise(.12, { vol: .07, from: 5000, to: 1500, filter: 'bandpass', q: .7, out: bus }), h: () => snd.noise(.03, { vol: .03, from: 9000, to: 7000, filter: 'highpass', out: bus }), c: () => snd.noise(.4, { vol: .03, from: 9000, to: 4000, filter: 'highpass', out: bus }) };
+    for (const d of 'kshc') { labels.push('chip drum ' + d); jobs.push(CHIP[d]); }
+    for (const kit of Object.keys(I.KITS)) for (const d of 'kshc') { labels.push(`${kit} ${d}`); jobs.push(() => { const k = I.makeKit(T, kit, bus); k.hit(d, a.ctx.currentTime + .02, 1); }); }
+    const r = await render(a, jobs, SLOT);
+    const by = {}; labels.forEach((l, i) => { by[l] = r[i]; note(`${l.padEnd(22)} peak ${db(r[i].pre)} dB  rms ${db(r[i].rms)} dB  ${r[i].len.toFixed(2)} s`); });
+    const bad = [];
+    for (const v of voices) { const role = roleOf[v] || 'lead', m = by[`${v} (${role})`], ref = by['chip ' + role]; const k = m.rms / ref.rms; if (!(m.pre > .004 && m.pre < .3) || !(k > .3 && k < 2)) bad.push(`${v} ${k.toFixed(2)}x chip ${role}`); }
+    ok(!bad.length, 'every instrument sounds, at about the level of the chip voice for its part' + (bad.length ? ': ' + bad.join('; ') : ''));
+    const badd = [];
+    for (const kit of Object.keys(I.KITS)) for (const d of 'kshc') { const m = by[`${kit} ${d}`], ref = by['chip drum ' + d], k = m.pre / ref.pre; if (!(m.pre > .004 && m.pre < .3) || !(k > .3 && k < 2.2)) badd.push(`${kit} ${d} ${k.toFixed(2)}x`); }
+    ok(!badd.length, 'every drum sounds, at about the level of the chip drums' + (badd.length ? ': ' + badd.join('; ') : ''));
+    ok(Object.keys(I.SETS).join() === 'chip,synth,band,orchestra' && Object.values(I.SETS).every(s => !s || ['lead', 'bass', 'pad', 'arp'].every(p => I.VOICES[s[p]]) && I.KITS[s.drums]), 'each set names a real voice for every part');
+    ok(I.voiceFor('band', 'lead2') === 'epiano' && I.voiceFor('chip', 'lead') === null && I.voiceFor('band', 'drums2') === 'kit' && I.voiceFor('synth', 'lead', { lead: 'bell' }) === 'bell' && I.voiceFor('band', 'pad', { pad: 'chip' }) === null && I.voiceFor('band', 'lead', { lead: 'nope' }) === null, 'voiceFor: parts, numbered parts, swaps');
+  }
+
+  if (part === 'clock') {
+    // the real sound clock; every note's start time is noted as it's written
+    const starts = []; const os = OscillatorNode.prototype.start;
+    OscillatorNode.prototype.start = function (t) { starts.push({ t, now: this.context.currentTime, hz: this.frequency.value }); return os.call(this, t); };
+    const snd = await import('/src/kit/sound.js'), { audio } = await import('/src/sfx.js');
+    const a = audio(); await a.ctx.resume();
+    const wait = ms => new Promise(r => setTimeout(r, ms)), busy = ms => { const e = performance.now() + ms; while (performance.now() < e); };
+    const an = a.ctx.createAnalyser(); an.fftSize = 2048; a.end.connect(an); const td = new Float32Array(2048);
+    const loud = () => { an.getFloatTimeDomainData(td); let s = 0; for (const v of td) s += v * v; return Math.sqrt(s / td.length); };
+    const hear = async ms => { let m = 0; const e = performance.now() + ms; while (performance.now() < e) { m = Math.max(m, loud()); await wait(15); } return m; };   // the loudest moment in the next ms
+    const STEP = 60 / 150 / 2;   // 150 beats a minute: a step every fifth of a second
+    const m = snd.music({ tempo: 150, lead: 'A4 A4 A4 A4 A4 A4 A4 A4' });
+    const grid = (list, t0) => list.map(s => (s.t - t0) / STEP);
+    m.start(); await wait(1200);
+    ok(m.playing && starts.length >= 6, `the tune is playing (${starts.length} notes written in 1.2 s)`);
+    const lv = await hear(400); ok(lv > .002, `and can be heard (level ${lv.toFixed(4)})`);
+    const p1 = m.pos; await wait(400); const p2 = m.pos;
+    ok(p1 > 2 && Math.abs((p2 - p1) - .4 / STEP) < .5, `pos follows the tune (${p1.toFixed(2)} then ${p2.toFixed(2)} steps)`);
+    busy(330); await wait(700);            // the page freezes for a third of a second: nothing should be lost
+    let t0 = starts[0].t, g = grid(starts, t0);
+    ok(g.every(x => Math.abs(x - Math.round(x)) < .02), 'every note is on the beat' + (g.every(x => Math.abs(x - Math.round(x)) < .02) ? '' : ': ' + g.map(x => x.toFixed(3)).join(' ')));
+    ok(g.every((x, i) => i === 0 || Math.round(x) === Math.round(g[i - 1]) + 1), 'a third of a second with the page frozen loses no note');
+    ok(starts.every(s => s.t >= s.now), 'and none is written late');
+    const before = starts.length; busy(1100); await wait(900);   // frozen for over a second: more than was written ahead
+    g = grid(starts, t0); const after = g.slice(before);
+    const skipped = g.some((x, i) => i > 0 && Math.round(x) > Math.round(g[i - 1]) + 1);
+    ok(after.length > 2 && skipped && g.every(x => Math.abs(x - Math.round(x)) < .02) && starts.every(s => s.t >= s.now - .001), 'frozen for over a second: the missed steps are skipped and the tune is still on the beat');
+    // pause and resume: carries on from the step that hadn't sounded yet
+    const posP = m.pos; m.pause(); const nP = starts.length; await wait(130); const hush = await hear(400);
+    ok(!m.playing && hush < .0005 && m.pos === -1, `pause is silent within a tenth of a second, though notes were written ahead (level ${hush.toFixed(5)})`);
+    m.resume(); await wait(500);
+    ok(m.playing && starts.length > nP && Math.abs(m.pos - (posP + .5 / STEP)) < 1.6, `resume carries on where it was (step ${posP.toFixed(1)} then ${m.pos.toFixed(1)} half a second on)`);
+    m.stop(); await wait(130); const hush2 = await hear(400);
+    ok(!m.playing && hush2 < .0005, 'stop is silent within a tenth of a second');
+    // an instrument set: starts in the chip sound, swaps to the instruments when Tone.js is in
+    const o0 = starts.length; const b = snd.music({ tempo: 150, set: 'band', lead: 'A4 . C5 . E5 . C5 .', bass: 'A2 . . . E2 . . .', drums: 'k h s h k h s h' });
+    b.start(); const chipFirst = !b.tuned;
+    for (let i = 0; i < 100 && !b.tuned; i++) await wait(100);
+    await wait(900);
+    ok(b.tuned, 'the band set tunes up once Tone.js is in' + (chipFirst ? ' (it began in the chip sound)' : ''));
+    const lb = await hear(500); ok(lb > .002, `and plays (level ${lb.toFixed(4)})`);
+    b.stop(); await wait(300); const hb = await hear(400); ok(hb < .0005, 'and stops');
+    // a whole tune from the composer in each set, every layer in: about as loud as each other, none near full volume
+    const { compose } = await import('/src/kit/compose.js');
+    const peakNow = () => { an.getFloatTimeDomainData(td); let m = 0; for (const v of td) m = Math.max(m, Math.abs(v)); return m; };
+    const levels = {};
+    for (const set of ['chip', 'synth', 'band', 'orchestra']) {
+      const tune = snd.music({ ...compose({ mood: 'chase', seed: 'sound-test' }), set }); tune.start().intensity(1, .05);
+      for (let i = 0; i < 100 && !tune.tuned; i++) await wait(50);
+      await wait(700); let pk = 0, sum = 0, n = 0; const e = performance.now() + 2600;
+      while (performance.now() < e) { pk = Math.max(pk, peakNow()); const l = loud(); sum += l * l; n++; await wait(30); }
+      tune.stop(); await wait(350);
+      levels[set] = { peak: pk, rms: Math.sqrt(sum / n) }; note(`${set.padEnd(10)} whole tune: peak ${db(pk)} dB  rms ${db(levels[set].rms)} dB`);
+    }
+    const all = Object.values(levels), lo = Math.min(...all.map(x => x.rms)), hi = Math.max(...all.map(x => x.rms));
+    ok(all.every(x => x.peak < .6 && x.rms > .004) && hi / lo < 1.8, `a whole tune sits at a like level in every set (${Object.entries(levels).map(([k, v]) => k + ' ' + db(v.rms)).join(', ')} dB), well under full volume`);
+    // one instrument, played by hand
+    let piano; for (let i = 0; i < 3 && !piano; i++) try { piano = snd.instrument('epiano'); } catch (e) { if (e.kitLoading) await e.kitLoading; else throw e; }
+    piano.play('C4', { len: .3 }); const lp = await hear(300); ok(lp > .001, `instrument() plays a note (level ${lp.toFixed(4)})`); piano.free();
+    let none; try { snd.instrument('kazoo'); } catch (e) { none = e; } ok(none && /kazoo/.test(none.message), 'an unknown instrument says which there are');
+    // rhythm: the beat runs behind the sound clock by the output delay
+    const { Beat } = await import('/src/kit/rhythm.js'), { delay } = await import('/src/sfx.js');
+    const beat = new Beat({ bpm: 120 }), plain = new Beat({ bpm: 120, heard: false }); beat.start(); plain.start();
+    for (let i = 0; i < 30; i++) { await wait(16); beat.update(.016); plain.update(.016); }
+    ok(delay() >= .006 && Math.abs((plain.time - beat.time) - delay()) < .012, `Beat runs ${(1000 * (plain.time - beat.time)).toFixed(0)} ms behind the sound clock: the delay to the player's ears (${(delay() * 1000).toFixed(0)} ms here)`);
+  }
+} catch (e) { out.push('FAIL threw: ' + (e && e.stack || e)); }
+window.result = out;
+</script>
