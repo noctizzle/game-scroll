@@ -324,6 +324,33 @@ function leaves(m, { time = 0, wind = .6, sun = new Vector3(0, 1, 0), sway = .01
 
 
 /**
+ * looks.meadow(material, o): the blades of a gs.outdoors land.meadow(): each tuft shrinks into the ground
+ * towards the edge of the patch that travels with the camera (so none pops in or out), bends downwind in
+ * gusts that roll across the grass, and is lit alike on both sides. A blade's uv.y runs from its root (0)
+ * to its tip (1); the tufts' lkRoot attribute says where each one grows (world metres: the mesh sits at
+ * the origin). o: reach: [full size until, gone by] metres from the camera; time, bend (how far a tip
+ * leans, in blade heights) and dir (which way: a Vector2) are set each frame by land.update().
+ */
+function meadow(m, { reach = [12, 24], time = 0, bend = .2, dir = new Vector2(1, 0) } = {}) {
+  const U = { lkTime: uni(time), lkBend: uni(bend), lkBendDir: uni(dir), lkMeadow: uni(new Vector2(...reach)) };
+  lookPatch(m, 'meadow', spec('meadow', {
+    uniforms: U,
+    vertex: {
+      head: 'attribute vec4 lkRoot; uniform float lkTime, lkBend; uniform vec2 lkBendDir, lkMeadow;',
+      after: { project_vertex: `  { vec3 wp = transpose(mat3(viewMatrix)) * (mvPosition.xyz - viewMatrix[3].xyz), root = lkRoot.xyz;
+    float far = smoothstep(lkMeadow.x, lkMeadow.y, distance(root.xz, cameraPosition.xz));
+    vec3 q = root + (wp - root) * (1. - far); float hh = q.y - root.y, t = uv.y;
+    float ph = dot(root.xz, lkBendDir) * .35 - lkTime * 2.2, gust = .55 + .3 * sin(ph) + .15 * sin(ph * 2.7 + root.z * .9);
+    float b = lkBend * gust * t * hh, fl = hh * t * .05;
+    q += vec3(lkBendDir.x * b + sin(lkTime * 3.1 + wp.x * 9.) * fl, -b * .35, lkBendDir.y * b + cos(lkTime * 2.6 + wp.z * 9.) * fl);
+    mvPosition = viewMatrix * vec4(q, 1.); gl_Position = projectionMatrix * mvPosition; }` },
+    },
+    fragment: { replace: { normal_fragment_begin: ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', '') } },
+  }));
+  return { uniforms: U };
+}
+
+/**
  * looks.flow(material, o): moving water for a river or waterfall mesh made by gs.outdoors River (its
  * lkFlow attribute: metres across, metres along, speed, foam; lkDir: which way it runs). Ripples and
  * colour slide downstream at each point's own speed (two crossfaded layers, so faster middles never
@@ -395,7 +422,7 @@ vec4 lkLavaN(float sc) {
 }
 
 /** The outdoor looks: ground, hills, rock, leaves, flow, lava (each returns its uniforms). */
-export const looks = Object.freeze({ ground, hills, rock, leaves, flow, lava });
+export const looks = Object.freeze({ ground, hills, rock, leaves, meadow, flow, lava });
 
 /**
  * horizon(land, o): a ring of far hills and mountains round the land (they only need light and haze),

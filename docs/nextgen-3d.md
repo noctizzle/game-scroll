@@ -612,6 +612,30 @@ const leafLook = looks.leaves(leafMaterial, { wind: .6 });      // sway, sun glo
 - **`looks.rock(material, o)`** and **`looks.leaves(material, o)`**: `rock({ scale, moss, mossy })`;
   `leaves({ time, wind, sun, sway, above, glow, atlas })`. Pass numbers, or shared uniforms
   (`{ value }`) when several materials should move together.
+- **`land.meadow(o)`**: thick grass for a camera that is down in it. A square of tufts travels with the
+  camera: each tuft stays where it grows (a tuft is the same tuft whenever you come back to it), only
+  the strip coming into the square is planted as you move, and tufts shrink to nothing towards the
+  square's edge so none pops. Blades bend with `land.wind` in gusts that roll across them.
+  ```js
+  const grows = (x, z) => onRoad(x, z) || inYard(x, z) ? 0 : 1;      // 0..1: how thickly it grows there
+  land.meadow({ reach: 8, gap: .3, blades: 9, width: .024, stalks: 1, where: grows });   // fine tufts at your elbows
+  land.meadow({ reach: 24, gap: .8, blades: 7, bends: 2, width: .07, where: grows });    // coarse ones out to the distance
+  // each frame: land.update(dt, v.cam);
+  ```
+  `reach`: metres from the camera to the edge; `gap`: metres between tufts (reach 22 with gap .55 is
+  6,400 tufts of 40 triangles: count them against the tier's budget and use fewer rings on slower
+  phones); `height`, `width`: a tall blade; `blades` a tuft; `bends`: 1..3 pieces a blade; `stalks`:
+  seed stalks a tuft; `spread`; `colours: [green, another green, dried out]`; `where(x, z)` and
+  `tall(x, z)` (0..1: short where it is trodden); `steep`; `seed`. `land.meadow(false)` takes every ring
+  away (to build other rings when the tier changes). After a camera cut the square is planted over the
+  next few frames, the grass nearest the camera first, spending `budget` milliseconds a frame a ring
+  (.5), so a cut never costs a long frame. When you know where the camera will cut to, plant there
+  ahead of time by passing that place for a few frames (`land.update(dt, { position })`), or all at once
+  with `land.update(0, camera)` while loading. A camera flying past faster than 60 m/s (a bullet camera)
+  plants nothing until it slows. Keep `where` cheap, or remember its answers for each metre of ground:
+  it is asked for every tuft planted. The look is `looks.meadow`; leaves, grass and tree cards use a
+  physical material with hardly any shine (`specularIntensity` about .1), because a blade or leaf seen
+  edge-on against a low sun otherwise glints white.
 - **Rivers, waterfalls, lava and floods**: `new River(stream)` draws a `gs.flow` river or pool with
   `looks.flow` (ripples and colour sliding downstream at each point's own speed, deeper in the middle,
   foam at rocks, banks and falls) or, for `kind: 'lava'`, `looks.lava` (glowing cracks between drifting

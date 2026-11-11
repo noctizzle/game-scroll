@@ -1860,6 +1860,15 @@ export interface LandPart {
   height(x: number, z: number): number; normal(x: number, z: number): P3; slope(x: number, z: number): number; inside(x: number, z: number): boolean;
   flatten(x: number, z: number, r: number, h?: number, soft?: number): LandPart; paint(stops: [number, string][]): LandPart; masks(fn: (x: number, z: number, y: number, slope: number) => number[]): LandPart; solid(world: Loose, o?: Loose): Loose;
   grass(o?: { count?: number; colour?: string; /** [from, to]: tufts get a colour between the two. */ tint?: string[]; width?: number; height?: number; blades?: number; above?: number; below?: number; steep?: number; far?: number; seed?: number; wind?: number }): Loose;
+  /**
+   * Thick grass round the camera: a square of tufts that travels with it over the land (each tuft stays where it grows), bending with land.wind.
+   * reach: metres to the square's edge; gap: metres between tufts; bends: 1..3 pieces a blade; stalks: seed stalks a tuft; where(x, z) => 0..1 how
+   * thickly it grows; tall(x, z) => 0..1 how high. Call again for another ring (fine close by, coarse further out); false takes them all away.
+   * Needs update(dt, camera) each frame: after a camera cut the square fills in over a few frames, nearest first (budget: milliseconds a frame); update(0, camera) plants it all at once.
+   */
+  meadow(o?: false | { reach?: number; gap?: number; height?: number; width?: number; blades?: number; bends?: number; stalks?: number; spread?: number; colours?: string[]; where?: ((x: number, z: number) => number) | null; tall?: ((x: number, z: number) => number) | null; steep?: number; seed?: number; budget?: number }): Loose;
+  /** The meadow rings on this land (each an instanced mesh). */
+  meadows: Loose[];
   scatter(props: Loose, name: string, count: number, o?: { above?: number; below?: number; steep?: number; keepOut?: (x: number, z: number) => boolean; inset?: number; [k: string]: Loose }): number[];
   update(dt: number, camera?: Loose): LandPart; dispose(): void;
 }
@@ -1886,6 +1895,8 @@ export interface OutdoorsPart {
     hills(material: Loose, o?: { wood?: string | number[]; scale?: number; woods?: number }): { uniforms: Record<string, { value: Loose }> };
     rock(material: Loose, o?: { detail?: Loose; scale?: number; moss?: string | number[]; mossy?: number }): { uniforms: Record<string, { value: Loose }> };
     leaves(material: Loose, o?: { time?: number | { value: number }; wind?: number | { value: number } | WindPart; sun?: Loose; sway?: number; above?: number; glow?: number; atlas?: [number, number] }): { uniforms: Record<string, { value: Loose }> };
+    /** Grass blades for an instanced meadow (land.meadow() uses it): tufts shrink to their roots towards reach[1] metres from the camera and bend with the wind. The mesh needs an instanced vec4 'lkRoot' (each tuft's root) and uv.y from root to tip. */
+    meadow(material: Loose, o?: { reach?: [number, number]; time?: number; bend?: number; dir?: Loose }): { uniforms: Record<string, { value: Loose }> };
     /** Moving water for a River mesh (its lkFlow / lkDir attributes). */
     flow(material: Loose, o?: { deep?: string | number[]; shallow?: string | number[]; foam?: string | number[]; scale?: number; ripple?: number; froth?: number; time?: number | { value: number } }): { uniforms: Record<string, { value: Loose }> };
     /** Molten lava for a River mesh: glowing cracks, cooling crust. */

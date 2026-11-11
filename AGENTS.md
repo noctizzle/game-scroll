@@ -194,7 +194,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
 - Things made in code (Next Gen; no image or model files): `gs.models` (`material(name)` 17 recipes like wood, brick, rust, fabric;
   `wear(mesh)` worn edges, grime, moss, snow; `prop('crate'|'barrel'|...)` 18 props; `sculpt([{ ball }, { box, cut }...])`;
   `tree('oak'|'pine'|...)`; `building({ style, floors })`; `human(opts)` a sculpted close-up person: face, hands, clothes, hats, kit, three detail levels, `twin()`, `hold()`; several kinds: `human.all([...])` first thing in make()); guide in `docs/nextgen-3d.md`.
-- Worlds, craft, soft things, cards and menus: `gs.outdoors` (`Land` terrain + `grass`/`scatter`, `Water`, `River` (water/lava look for gs.flow), `FloodWater` (GPU on WebGPU), `tree`, `rock`, `Wind`, `impostor`),
+- Worlds, craft, soft things, cards and menus: `gs.outdoors` (`Land` terrain + `grass`/`scatter`/`meadow` (thick grass that keeps round the camera), `Water`, `River` (water/lava look for gs.flow), `FloodWater` (GPU on WebGPU), `tree`, `rock`, `Wind`, `impostor`),
   `gs.craft` (`Plane`, `Boat`, `Hover`, `Floater`), `gs.soft` (`Soft` cloth/rope/jelly with `grab`/`cut`, `Liquid`),
   `gs.cards` (`Deck`, `total`, `groups`, `poker`, `winners`, `stacks`), `gs.dice` (`roll('4d6kh3')`, `odds`, `Dice`, `Dice3D`),
   `gs.words` (lazy: `Words` dictionary, `compare`, `Bag`, `score`), `gs.ui` (lazy: `UI` flexbox layout and input with no look; you draw it).

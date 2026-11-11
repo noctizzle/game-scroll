@@ -2153,5 +2153,50 @@ console.log('physics ok');
   console.log('looks on WebGPU: a key for each material that holds its own numbers ok');
 }
 
+// gs.outdoors: the meadow (grass tufts that keep around the camera)
+{
+  globalThis.HTMLCanvasElement ??= class {}; globalThis.Image ??= class {};
+  const { Land, Wind } = await import('../src/kit/outdoors.js'), { Vector3 } = await import('three');
+  const land = new Land({ kind: (x, z) => 2 + Math.sin(x * .05) * 3, size: 200, segments: 64 });
+  // (budget: no limit on planting a frame here, so the counts below are exact)
+  const m = land.meadow({ reach: 22, gap: .55, where: (x, z) => x > 0 ? 1 : 0, tall: (x, z) => z > 20 ? .5 : 1, budget: 1e9 }), st = m.userData.meadow;
+  assert.ok(m.count === st.n * st.n && st.n === 80 && land.meadows.length === 1, 'a square of tufts, ' + m.count);
+  land.wind = new Wind({ x: 2.5, z: 0, grass: .25 });
+  const cam = { position: new Vector3(3, 4, 5) }, M = m.instanceMatrix.array, R = m.geometry.attributes.lkRoot.array;
+  land.update(.016, cam);
+  assert.equal(st.planted, m.count, 'the first look plants every tuft');
+  assert.ok(st.look.uniforms.lkBend.value > 0, 'the wind bends it');
+  let on = 0, west = 0, off = 0, low = 0, high = 0;
+  for (let i = 0; i < m.count; i++) {
+    const s = Math.hypot(M[i * 16], M[i * 16 + 2]), x = M[i * 16 + 12], y = M[i * 16 + 13], z = M[i * 16 + 14]; if (!(s > 0)) continue;
+    on++; if (x <= 0) west++; if (Math.abs(y + .015 - land.height(x, z)) > 1e-4 || R[i * 4] !== x) off++;
+    const up = M[i * 16 + 5] / s; if (z > 21) low = Math.max(low, up); else if (z < 19) high = Math.max(high, up);
+  }
+  assert.ok(on > 1000 && west === 0, 'grows only where it may: ' + on + ' tufts, ' + west + ' out of bounds');
+  assert.equal(off, 0, 'every tuft stands on the ground and knows its root');
+  assert.ok(low < high * .7, 'tall() keeps it short: ' + low.toFixed(2) + ' against ' + high.toFixed(2));
+  // one cell on: only the row that came into the square is planted; back again: the very same tufts
+  const snap = M.slice(); let p0 = st.planted;
+  cam.position.x += .6; land.update(.016, cam); assert.equal(st.planted - p0, st.n, 'one cell on plants one row');
+  cam.position.x -= .6; land.update(.016, cam); assert.ok(M.every((v, i) => v === snap[i]), 'the same tufts when the camera comes back');
+  p0 = st.planted; land.update(.016, cam); land.update(0, cam); assert.equal(st.planted, p0, 'a still camera plants nothing more');
+  // a fast fly-past (a bullet camera) plants nothing until it stops
+  cam.position.x += 500; land.update(.016, cam); assert.equal(st.planted, p0, 'nothing planted at speed');
+  land.update(.016, cam); assert.equal(st.planted - p0, m.count, 'all of it once the camera is still');
+  // after a camera cut the square fills over several frames, the grass nearest the camera first; update(0) plants it all at once
+  cam.position.set(3, 4, 5);
+  const slow = land.meadow({ reach: 8, gap: .5, stalks: 1, budget: -1 }), ss = slow.userData.meadow, RS = slow.geometry.attributes.lkRoot.array;   // (budget -1: one batch of 16 a frame)
+  assert.ok(land.meadows.length === 2 && slow.count === 1024);
+  land.update(.016, cam); assert.equal(ss.planted, 16, 'a frame plants one batch');
+  let far = 0; for (let i = 0; i < slow.count; i++) if (RS[i * 4] || RS[i * 4 + 2]) far = Math.max(far, Math.hypot(RS[i * 4] - 3, RS[i * 4 + 2] - 5));
+  assert.ok(far > 0 && far < 2.5, 'the nearest tufts first: the furthest planted is ' + far.toFixed(2) + ' m away');
+  let frames = 1; while (ss.planted < slow.count && frames < 200) { land.update(.016, cam); frames++; }
+  assert.equal(frames, 64, 'the square fills in over ' + frames + ' frames');
+  p0 = ss.planted; cam.position.x += 40; land.update(0, cam); assert.equal(ss.planted - p0, slow.count, 'update(0) plants the whole square at once');
+  // taking them away
+  assert.ok(land.meadow(false) === null && land.meadows.length === 0 && !m.parent && !slow.parent, 'meadow(false) takes them away');
+  console.log('gs.outdoors meadow ok');
+}
+
 // every check above has passed; something a kit started (a timer) would keep Node waiting a minute before it exits
 process.exit(0);
