@@ -230,7 +230,7 @@ export const sounds = {
   crack: vary((p = 1) => { noise(.03, { vol: .1, from: 5000 * p, to: 1500, filter: 'bandpass', q: 1 }); noise(.09, { vol: .06, from: 2500 * p, to: 600, filter: 'bandpass', q: .7, at: .025 }); }),
   shatter: vary((p = 1) => { noise(.05, { vol: .08, from: 9000, to: 6000, filter: 'highpass' }); for (let i = 0; i < 5; i++) tone(rand(2200, 5400) * p, { len: rand(.05, .15), wave: 'triangle', vol: .022, at: .02 + i * .035 + rand(0, .02) }); noise(.3, { vol: .03, from: 8000, to: 5000, filter: 'highpass', at: .05 }); }),
   crumble: vary((p = 1) => { for (let i = 0; i < 6; i++) noise(.06, { vol: .05, from: rand(900, 1800) * p, to: 200, at: i * .05 + rand(0, .03) }); tone(60 * p, { len: .35, wave: 'sine', vol: .07, slide: -20 }); }),
-  blast: vary((p = 1) => { noise(.9, { vol: .16, from: 2600 * p, to: 40 }); tone(60 * p, { len: .7, wave: 'sine', vol: .16, slide: -35 }); noise(.12, { vol: .1, from: 6000, to: 2000, filter: 'bandpass' }); }),
+  blast: vary((p = 1) => { noise(.9, { vol: .14, from: 2600 * p, to: 40 }); tone(60 * p, { len: .7, wave: 'sine', vol: .14, slide: -35 }); noise(.12, { vol: .09, from: 6000, to: 2000, filter: 'bandpass' }); }),
 
   /* --- pick-ups and rewards --- */
   gem: (p = 1) => { tone(1568 * p, { len: .05, wave: 'sine', vol: .05 }); tone(2093 * p, { len: .07, wave: 'sine', vol: .05, at: .045 }); tone(3136 * p, { len: .16, wave: 'sine', vol: .04, at: .09 }); },
