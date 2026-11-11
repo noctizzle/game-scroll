@@ -100,6 +100,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Puzzles with exactly one answer, graded, with fair hints; computer opponents for board games | `gs.solve` | [Puzzles and opponents](#puzzles-and-opponents) |
 | A board game on a table in 3D that also plays on your floor in AR: camera, picking, turns, real dice, pieces, chess | `gs.tabletop` | [board-games.md](board-games.md) |
 | Play with your whole body; put the player inside the game; thumbs up and other hand signs | `gs.vision.Body`, `CutOut`, `Signs` | [Body, cut-outs and hand signs](#body-cut-outs-and-hand-signs) |
+| A scavenger hunt for real things ("find a cup!"); scan a barcode or QR code to make a creature or a level | `gs.vision.Objects`, `Scanner` | [A camera that knows things](#a-camera-that-knows-things) |
 | Walk to play, lift the phone, a dark room, a hand over the phone | `gs.device.steps()`, `pressure()`, `light()`, `near()` | [Steps, air pressure, light, proximity](#steps-air-pressure-light-proximity) |
 | Block worlds to dig, build and craft in | `gs.voxels` | [Voxel worlds](#voxel-worlds) |
 | Liquid you can pour, splash and fill things with, in 3D | `gs.fluid` | [Real 3D liquids](#real-3d-liquids) |
@@ -2175,6 +2176,74 @@ More of `gs.vision`, used like `Face` and `Hands` (make in `make()` or `reset()`
   first hand's), `showing(name)`, and `made` (the sign that just started, for one-shot actions).
 
 Like every camera game, keep a touch way to play.
+
+## A camera that knows things
+
+Two more of `gs.vision`, and these look out of the **back** of the phone at the room: `Objects` knows
+80 everyday things by name, and `Scanner` reads barcodes and QR codes. Make them in `make()` or
+`reset()`, `start()` them from a tap, call `update()` every frame.
+
+```js
+const { Objects, Scanner } = gs.vision;
+
+// a scavenger hunt
+reset() { eyes = new Objects({ want: ['cup', 'banana', 'book', 'spoon'], shape: W / H }); }
+down()  { eyes.start(); }                               // from a tap: asks for the camera
+update(dt) {
+  eyes.update();
+  if (eyes.seen(target)) { score++; api.score(score); feel.coin(W / 2, H / 2); target = nextThing(); }
+}
+draw(c) {
+  if (eyes.picture) c.drawImage(eyes.picture, 0, 0, W, H);          // the camera, already W x H shaped
+  for (const o of eyes.list) c.strokeRect(o.left * W, o.top * H, o.w * W, o.h * H);
+}
+```
+
+- **`Objects({ want, sure, max, every, shape, camera })`**: `want` is the names to look for (leave it
+  out for all 80: `Objects.names` lists them, from `'cup'`, `'fork'`, `'banana'`, `'book'`, `'clock'`
+  and `'scissors'` to `'dog'`, `'chair'`, `'bicycle'` and `'teddy bear'`; a few other words work too,
+  such as `'phone'`, `'sofa'`, `'fridge'` and `'mug'`). A name it doesn't know throws when the game
+  is made, so a typo shows up straight away. `sure` is how sure it must be (0..1, `.5`), `max` how many
+  things at once (5), `every` the seconds between looks (`.25`).
+  - `seen(name)`: true **once** each time one comes into view (it has to be there two looks running,
+    so one blurry frame doesn't count). `seen()` with no name gives the name of whatever just arrived.
+  - `seeing(name)`: how sure it is that one is in view now (0 when not). `count(name)`: how many.
+  - `list`: what this look found, surest first: `{ name, sure, x, y, w, h, left, top }` (`x`, `y` is
+    the middle). `top` is the surest, `found` whether there is anything.
+- **`Scanner({ kinds, every, shape, camera })`**: reads QR codes and the striped codes on anything from
+  a cereal box to a library book (`Scanner.kinds`: `'qr'`, `'ean-13'`, `'ean-8'`, `'upc-a'`, `'upc-e'`,
+  `'code-128'`, `'code-39'`, `'code-93'`, `'codabar'`, `'itf'`, `'data-matrix'`, `'aztec'`, `'pdf417'`).
+  - `scan()`: the code that has just been read, **once** each time one comes into view (else null):
+    `{ text, kind, seed, x, y, w, h, left, top, corners }`.
+  - `seed` is a whole number made from the text, the same for the same code on every phone and far
+    apart for codes one digit apart: hand it to `gs.art.creature(seed)`, `gs.gen.dungeon(40, 30, { seed })`,
+    `gs.math.rng(seed)`. A whole kitchen becomes a deck of monsters.
+  - `code` is the code in view now (or null), `list` all of them, `backend` which reader is at work.
+  - `Scanner.seed('any text')` gives the seed for a typed word.
+
+```js
+reset() { scanner = new Scanner({ shape: 1 }); monster = null; }
+down(x, y) { if (shuffle.hit(x, y)) monster = gs.art.creature(Math.random() * 1e9 | 0); else scanner.start(); }   // "Surprise me"
+update(dt) { scanner.update(); const code = scanner.scan(); if (code) { monster = gs.art.creature(code.seed); feel.powerup(W / 2, H / 2); } }
+draw(c) { if (scanner.picture) c.drawImage(scanner.picture, 30, 60, 300, 300); /* a square window onto the camera */ }
+```
+
+**The picture and positions.** `picture` is a canvas of what the camera sees, already cut to the
+`shape` you asked for (width / height: `W / H` for the whole card, `1` for a square window), so draw
+it as it is and nothing is stretched. Every position is 0..1 of that picture: multiply by the size you
+drew it at. `{ camera: 'front' }` uses the selfie camera, mirrored. `ready` turns true once the camera
+is running; `failed` says why if the player said no or the phone has no camera.
+
+**How they work.** Everything happens on the phone and no picture leaves it. `Objects` is Google's
+EfficientDet-Lite0 through MediaPipe (a 7 MB model, downloaded the first time such a game is played).
+It takes a few hundredths of a second a look, which is why it looks four times a second and not every
+frame. `Scanner` uses the phone's own barcode reader where the web view has one (Android) and ZXing
+elsewhere (iPhone), reading in the background so the game never waits for it.
+
+**Always give another way in.** Not everyone has a banana or a barcode to hand, and some players say
+no to the camera: a "Skip" for a thing nobody can find, a "Surprise me" button beside "Scan". The
+model knows what a cup looks like in most kitchens, not in all of them, so score finding things, never
+failing to.
 
 ## Steps, air pressure, light, proximity
 

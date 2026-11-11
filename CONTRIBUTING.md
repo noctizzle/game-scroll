@@ -387,7 +387,7 @@ any other app code. The full guide is [docs/maker-kit.md](docs/maker-kit.md). Th
 - `gs.anim`, `gs.story`, `gs.replay`: sprite animation states, ink dialogue with typewriter text, ghosts and replays.
 - `gs.look2d`: 2D lights with shadows, screen effects (CRT, bloom, glitch; pixi-filters), fast WebGL sprites (PixiJS).
 - `gs.camera`, `gs.nav3d`, `gs.characters`: 3D camera rigs, 3D path finding, look-at, IK, stepping feet (ragdolls in `gs.physics3d`).
-- `gs.vision`: face and hand tracking (MediaPipe). `gs.fx3d`: 3D text, 3D particles, outlines and glitches.
+- `gs.vision`: face and hand tracking, spotting everyday objects (MediaPipe), reading barcodes and QR codes. `gs.fx3d`: 3D text, 3D particles, outlines and glitches.
 - `gs.device`: `haptic('light' | 'tick' | 'success' | 'warning' ...)`, `buzz()` patterns,
   `tilt()`, `onShake(cb)`, `heading()` (compass), `faceDown()`, `startMic()`,
   `startCamera()`, `orientation()` (raw gyro, used by the AR kit).

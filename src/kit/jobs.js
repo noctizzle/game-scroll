@@ -1,7 +1,7 @@
 // Work off the main thread: the kit's heavy number work (a texture's normal map and roughness
 // copies, a recipe material's pixels, a sculpted mesh) done in background workers while a card says
 // "Loading…", so the feed and the game being played keep moving. Plain data in, plain arrays out
-// (job-worker.js; path maps in nav-worker.js). Up to three workers, started when there is work and
+// (job-worker.js; path maps in nav-worker.js, barcodes in code-worker.js). Up to three workers, started when there is work and
 // let go a few seconds after.
 // A phone with no workers, or a worker that won't start, just means the work is done on the main
 // thread as before: every caller keeps its own way of doing the job there.
@@ -48,6 +48,8 @@ function pool(start, most) {
 const work = pool(() => new Worker(new URL('./job-worker.js', import.meta.url), { type: 'module' }), MOST);
 // path maps have a worker of their own: it carries the path-finding engine, which the others don't need
 const maps = pool(() => new Worker(new URL('./nav-worker.js', import.meta.url), { type: 'module' }), () => 1);
+// and so does the barcode reader (gs.vision's Scanner): it carries ZXing
+const codes = pool(() => new Worker(new URL('./code-worker.js', import.meta.url), { type: 'module' }), () => 1);
 
 // tests and the loading measurements read this (nothing else does)
 export const stats = work.stats, navStats = maps.stats;
@@ -62,3 +64,5 @@ export const canRun = work.canRun, canRunNav = maps.canRun;
 export const run = work.run;
 /** The same for a path map (nav-worker.js): data { pos, idx, cfg }, the answer the map's bytes. */
 export const runNav = (data, transfer) => maps.run('nav', data, transfer);
+/** The same for a look for barcodes (code-worker.js): data { pixels, w, h, opts }, the answer what it found. canRunCode(): is there a worker for it? */
+export const runCode = (data, transfer) => codes.run('code', data, transfer), canRunCode = codes.canRun;

@@ -226,6 +226,7 @@ Pixel styles (Pocket, Color, Advance): use `new Feel({ pixel: true })`, whole-pi
   `outline`, `glitch`, `trails`, `focus`, `pixelate`.
 - `gs.vision` (lazy): `Face` (`x`, `y`, `yaw`, `mouth`, `smile`, `blink`...), `Hands` (`pinch`, `open`, `point`...),
   `Body` (joints, `armsUp`, `lean`, `squat`, `jump`, `clap`), `CutOut` (the player cut out of the camera), `Signs` (thumbs up, victory...); runs on the phone's AI chip in the apps, so pass `{ preview: true }` if you draw `picture`.
+  Back camera: `Objects({ want: ['cup', 'banana'], shape: W / H })` spots 80 everyday things (`seen(name)` once each time one comes into view, `seeing`, `count`, `list` of boxes, `Objects.names`); `Scanner({ shape })` reads barcodes and QR codes (`scan()` gives `{ text, kind, seed }` once per code: the same code makes the same seed on every phone; `Scanner.seed(word)` for a typed word instead). Both: `start()` from a tap, `update()` each frame, draw `picture` (a canvas already cut to `shape`), positions 0..1 of it.
 - `gs.hear` (lazy): `Sounds({ want: ['Dog', 'Whistling'] })` (`start()` from a tap, `update(dt)`, `heard`, `hearing`, `top`),
   `Voice({ words, also })` (`start()`, `said(word)`, `available`). `gs.doodle` (lazy): `Doodle` (`guess(strokes, { among })` of 200 things: pass `among`, the few your game cares about).
   `gs.phoneai`: `PhoneAI({ persona, words })` `ask(prompt, { fallback })` for flavour lines only; play must never depend on it.

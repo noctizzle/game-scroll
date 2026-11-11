@@ -28,7 +28,7 @@
 //   gs.ai        steering, flocking, path finding, state machines (Yuka)
 //   gs.toon      Classic Console 3D (cel-shaded)       gs.hd   Next Gen 3D (PBR, bloom, shadows; upscaling and frame generation built in)
 //   gs.ar        AR 3D (camera + gyro)                 gs.fx3d 3D text, 3D particles, outline/glitch/trails
-//   gs.vision    face and hand tracking (on the phone's AI chip in the apps, else MediaPipe)   gs.geo  distances and bearings for location games
+//   gs.vision    face and hand tracking (on the phone's AI chip in the apps, else MediaPipe), object spotting, barcodes   gs.geo  distances and bearings for location games
 //   gs.things    game objects: tags, "what did this hit", nearest, reuse; Node: parent and child places
 //   gs.rounds    scenes (intro, play, clear...) with timed changes, and level lists
 //   gs.pacing    spawners, waves with breathers, a difficulty director

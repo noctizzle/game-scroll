@@ -84,6 +84,47 @@ try {
   // vision library loads (no camera here)
   try { new gs.vision.Face(); } catch (x) { e = x; } ok(e?.kitLoading, 'vision StillLoading'); await e.kitLoading; const f = new gs.vision.Face(); const task = await f.makeTask(); ok(!!task, 'face model loads');
   const hands = new gs.vision.Hands(); ok(!!(await hands.makeTask()), 'hand model loads');
+  {
+    // a camera that knows things: a made-up camera (a canvas) shows codes to the Scanner and a plain wall to Objects
+    const { Scanner, Objects } = gs.vision, frame = () => new Promise(r => requestAnimationFrame(r));
+    const QR = '111111101100101111111 100000101001001000001 101110101001101011101 101110101100001011101 101110101011001011101 100000100110101000001 111111101010101111111 000000001010100000000 011010110011001011111 100110001111011010011 110001101011100111000 000100011010111000100 101100110110100101110 000000001001010101111 111111101000100111101 100000100010101101101 101110101011111101111 101110100011011010110 101110101011001000101 100000101001110001011 111111100001001011101'.split(' ');   // 'GAME SCROLL 42'
+    const EAN = ['10100011010110011001101101111010100011011100101010101000010001001001000111010011100101110010101'];   // 5012345678900
+    const cam = document.createElement('canvas'); cam.width = 640; cam.height = 480; const cc = cam.getContext('2d');
+    let show = null;   // { rows, x, y, cell, tall, quiet }: a code's dots at x, y, each `cell` wide, with `quiet` cells of white at its sides
+    const paint = setInterval(() => {
+      cc.fillStyle = '#9ab'; cc.fillRect(0, 0, 640, 480);
+      if (show) { const { rows, x, y, cell, tall = cell, quiet = 4 } = show; cc.fillStyle = '#fff'; cc.fillRect(x - cell * quiet, y - cell * 4, rows[0].length * cell + cell * quiet * 2, rows.length * tall + cell * 8); cc.fillStyle = '#000'; rows.forEach((l, j) => [...l].forEach((ch, i) => { if (ch === '1') cc.fillRect(x + i * cell, y + j * tall, cell, tall); })); }
+      cc.fillStyle = `rgb(${(performance.now() / 4) % 255 | 0},0,0)`; cc.fillRect(0, 0, 4, 4);   // (so every frame is a new one)
+    }, 33);
+    const real = navigator.mediaDevices.getUserMedia; navigator.mediaDevices.getUserMedia = async () => cam.captureStream(30);
+    const until = async (sc, n = 300) => { let got = null; for (let i = 0; i < n && !got; i++) { await frame(); sc.update(); got = sc.scan(); } return got; };
+    const sc = new Scanner({ shape: 1 }); ok(sc.picture === null && !sc.ready && Scanner.kinds.length === 13, 'vision: a Scanner is made straight away (nothing to load first), 13 kinds of code');
+    show = { rows: QR, x: 330, y: 160, cell: 8 }; await sc.start();
+    ok(sc.ready && !sc.failed && (sc.backend === 'zxing' || sc.backend === 'phone'), 'vision: the scanner starts on the ' + (sc.backend === 'phone' ? "phone's own reader" : 'ZXing reader' + (sc.worker ? ', in a background worker' : '')));
+    let got = await until(sc);
+    ok(got?.text === 'GAME SCROLL 42' && got.kind === 'qr' && got.seed === Scanner.seed('GAME SCROLL 42') && got.seed === 55429877, 'vision: a QR code read from the camera, and its seed (' + got?.text + ', ' + got?.seed + ')');
+    // (the 640 x 480 camera is cut to its middle 480 x 480: the code's middle at 414, 244 is at (414 - 80) / 480, 244 / 480)
+    ok(sc.picture?.width === 480 && sc.picture.height === 480 && got && Math.abs(got.x - 334 / 480) < .03 && Math.abs(got.y - 244 / 480) < .03 && Math.abs(got.w - 168 / 480) < .04 && got.corners.length === 4, 'vision: the picture is the shape asked for and the code is where it was shown');
+    ok(sc.scan() === null && sc.code?.text === 'GAME SCROLL 42' && sc.found, 'vision: scan() gives a code once; code stays while it is in view');
+    show = null; for (let i = 0; i < 90; i++) { await frame(); sc.update(); } ok(sc.code === null && !sc.found, 'vision: gone when it leaves the picture');
+    show = { rows: EAN, x: 130, y: 180, cell: 4, tall: 120, quiet: 12 }; got = await until(sc);   // (a shop code needs 11 cells of white before it)
+    ok(got?.text === '5012345678900' && got.kind === 'ean-13' && got.seed === Scanner.seed('5012345678900'), 'vision: a shop barcode read (' + got?.kind + ' ' + got?.text + ')');
+    sc.stop(); ok(!sc.running && sc.picture === null && sc.code === null, 'vision: stop()');
+    const sf = new Scanner({ camera: 'front', kinds: ['qr'] }); show = { rows: QR, x: 60, y: 100, cell: 7 }; await sf.start(); got = await until(sf);
+    ok(got?.text === 'GAME SCROLL 42' && Math.abs(got.x - (1 - 133.5 / 640)) < .03, 'vision: the front camera is mirrored, and the code still reads (x ' + got?.x.toFixed(2) + ')'); sf.stop();
+    let bad = null; try { new Scanner({ kinds: ['qrr'] }); } catch (x) { bad = x; } ok(/doesn't read "qrr"/.test(bad?.message), 'vision: a kind it does not read says so');
+    // Objects: the model loads and looks; a plain wall has nothing on it
+    show = null; ok(Objects.names.length === 80 && Object.isFrozen(Objects.names), 'vision: Objects knows 80 things');
+    bad = null; try { new Objects({ want: ['cupp'] }); } catch (x) { bad = x; } ok(/doesn't know "cupp"/.test(bad?.message), 'vision: a thing it does not know says so');
+    const eyes = new Objects({ want: ['cup', 'phone'], shape: 300 / 460 }); ok(eyes.want.join() === 'cup,cell phone', 'vision: other words for things (phone)');
+    await eyes.start(); ok(eyes.ready && !eyes.failed && !!eyes.task, 'vision: the object model loads');
+    let looked = false; for (let i = 0; i < 600 && !looked; i++) { await frame(); looked = eyes.update(); }
+    ok(looked && !eyes.error && eyes.list.length === 0 && !eyes.found && eyes.seen() === null && eyes.seeing('cup') === 0 && eyes.count('cup') === 0, 'vision: a look at a plain wall finds nothing' + (eyes.error ? ' (' + eyes.error + ')' : ''));
+    ok(eyes.picture && Math.abs(eyes.picture.width / eyes.picture.height - 300 / 460) < .01, 'vision: its picture is the card\'s shape (' + eyes.picture?.width + ' x ' + eyes.picture?.height + ')');
+    eyes.take([{ name: 'cup', sure: .8, x: .5, y: .5, w: .2, h: .2, left: .4, top: .4 }]); ok(!eyes.seen('cup'), 'vision: one look is not yet "seen"');
+    eyes.take([{ name: 'cup', sure: .7, x: .5, y: .5, w: .2, h: .2, left: .4, top: .4 }]); ok(eyes.seen('mug') && !eyes.seen('cup') && eyes.seeing('cup') === .7 && eyes.count('cup') === 1 && eyes.top.name === 'cup', 'vision: two looks running are: seen() once, seeing(), count(), top');
+    eyes.stop(); clearInterval(paint); navigator.mediaDevices.getUserMedia = real;
+  }
   // ai, math, moves, pad
   const crowd = new gs.ai.Crowd(); crowd.add(0, 0).chase({ x: 50, y: 50 }); crowd.update(.1); ok(true, 'ai');
   const m = new gs.moves.Moves(); m.update(); m.stop(); ok(true, 'moves'); ok(gs.pad.pad() === null, 'no pad');

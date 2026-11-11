@@ -585,7 +585,50 @@ export interface VisionPart {
   CutOut: new (o?: { soft?: number; size?: number }) => { start(): void; stop(): void; update(): boolean; ready: boolean; found: boolean; amount: number; soft: number; picture: HTMLCanvasElement | null };
   /** Hand signs: thumbs-up, thumbs-down, victory, open-palm, fist, point-up, love. */
   Signs: new (o?: { max?: number; sure?: number }) => { start(): void; stop(): void; update(): boolean; ready: boolean; found: boolean; list: { sign: string; score: number; side: 'left' | 'right'; x: number; y: number }[]; sign: string; made: string | null; showing(name: string): boolean };
+  /**
+   * Spots everyday things with the back camera, 80 of them (Objects.names: 'cup', 'banana', 'book', 'dog', 'chair'...), a few times a
+   * second: scavenger hunts and "show me a...". Positions are 0..1 of `picture`, the camera picture cut to `shape` (width / height).
+   */
+  Objects: {
+    new (o?: { /** Names to look for (default: all 80). */ want?: string[]; /** How sure before a thing counts, 0..1 (.5). */ sure?: number; /** How many things at once (5). */ max?: number;
+      /** Seconds between looks (.25). */ every?: number; /** Width / height the game draws the picture at (default: the camera's own). */ shape?: number; camera?: 'back' | 'front' }): VisionObjects;
+    /** The 80 things it knows. */ readonly names: readonly string[];
+  };
+  /**
+   * Reads barcodes and QR codes with the back camera: the same code gives the same `seed` on every phone, to make a creature, a level or
+   * loot from anything in the house. The phone's own reader where it has one, ZXing elsewhere. Not lazy: make it any time.
+   */
+  Scanner: {
+    new (o?: { /** Which kinds to read (default: all of Scanner.kinds). */ kinds?: VisionCodeKind[]; /** Seconds between looks (.15). */ every?: number;
+      /** Width / height the game draws the picture at (default: the camera's own). */ shape?: number; camera?: 'back' | 'front'; /** How many codes at once (1). */ max?: number }): VisionScanner;
+    readonly kinds: readonly VisionCodeKind[];
+    /** The seed a text gives (the one a code with that text gives), 0 to 4,294,967,295: for a typed word in place of a code. */
+    seed(text: string): number;
+  };
   loadVision(): Promise<Loose>;
+}
+export type VisionCodeKind = 'qr' | 'ean-13' | 'ean-8' | 'upc-a' | 'upc-e' | 'code-128' | 'code-39' | 'code-93' | 'codabar' | 'itf' | 'data-matrix' | 'aztec' | 'pdf417';
+/** Something Objects found: x, y is its middle, left, top its corner, all 0..1 of the picture. */
+export interface VisionThing { name: string; sure: number; x: number; y: number; w: number; h: number; left: number; top: number }
+/** A code Scanner read: its text, kind and seed; x, y is its middle, left, top its corner, corners its four corners, all 0..1 of the picture. */
+export interface VisionCode { text: string; kind: VisionCodeKind; seed: number; x: number; y: number; w: number; h: number; left: number; top: number; corners: XY[] }
+interface VisionLooker {
+  /** Asks for the camera (call it from a tap). `failed` says why if it couldn't. */ start(): Promise<unknown>; stop(): void;
+  /** Every update: true when a look has just come back. */ update(): boolean;
+  ready: boolean; running: boolean; failed: unknown; found: boolean;
+  /** The camera picture, already the shape asked for: c.drawImage(picture, 0, 0, W, H). null until the camera runs. */ readonly picture: HTMLCanvasElement | null;
+}
+export interface VisionObjects extends VisionLooker {
+  /** What this look found, surest first. */ list: VisionThing[]; /** The surest (or null). */ top: VisionThing | null;
+  /** True once for each time one comes into view. With no name: which thing just came into view (or null). */
+  seen(name: string): boolean; seen(): string | null;
+  /** How sure it is that one is in view now (0 when not). */ seeing(name: string): number;
+  /** How many of them are in the picture now. */ count(name: string): number;
+}
+export interface VisionScanner extends VisionLooker {
+  /** The code that has just been read, once for each time one comes into view (else null). */ scan(): VisionCode | null;
+  /** The code in view now (or null). */ code: VisionCode | null; list: VisionCode[];
+  /** 'phone' (the phone's own reader) or 'zxing'; null until started. */ backend: 'phone' | 'zxing' | null;
 }
 
 type LatLon = { lat: number; lon: number };

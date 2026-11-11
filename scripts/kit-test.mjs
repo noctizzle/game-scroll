@@ -2421,6 +2421,61 @@ console.log('physics ok');
   console.log('gs.fluid: pools, taps, drains, a dam break, cups, a ball, blasts, ground, an open box, sideways gravity, resizing, copies back, seeds ok');
 }
 
+// gs.vision: what the camera knows (vision-know.js): the 80 things, barcode kinds, seeds, the cut to a game's shape, what is in view
+{
+  const K = await import('../src/kit/vision-know.js'), { existsSync, readFileSync } = await import('node:fs');
+  assert.ok(K.NAMES.length === 80 && new Set(K.NAMES).size === 80 && Object.isFrozen(K.NAMES), 'the 80 things, each once');
+  assert.ok(K.nameOf('Cup ') === 'cup' && K.nameOf('phone') === 'cell phone' && K.nameOf('sofa') === 'couch' && K.nameOf('cupp') === null && K.nameOf() === null, 'names: as the model says them, a few other words, null for the rest');
+  // the model's own list of names (when npm run ml has fetched it): ours is the same, in the same order
+  const model = new URL('../ml-cache/mediapipe-1.2.2/efficientdet_lite0.tflite', import.meta.url);
+  if (existsSync(model)) { const buf = readFileSync(model), at = buf.indexOf('person\nbicycle\n'); assert.ok(at > 0, 'the model carries its names'); const theirs = buf.subarray(at, at + 700).toString().split('\n').slice(0, 90).filter(n => n !== '???'); assert.deepEqual(theirs, [...K.NAMES], 'the names are the model\'s own'); }
+  // kinds: both readers' names for a code come to ours
+  assert.ok(K.KINDS.length === 13 && K.kindOf('qr_code') === 'qr' && K.kindOf('QRCode') === 'qr' && K.kindOf('QRCodeModel2') === 'qr' && K.kindOf('ISBN') === 'ean-13' && K.kindOf('ITF14') === 'itf' && K.kindOf('MaxiCode') === null, 'kinds: the phone reader\'s names and ZXing\'s');
+  assert.deepEqual(K.phoneKinds(['qr', 'ean-13']), ['qr_code', 'ean_13']); assert.deepEqual(K.zxingKinds(['qr', 'ean-13']), ['QRCode', 'EAN13']);
+  assert.ok(K.phoneKinds(K.KINDS).length === 13 && K.zxingKinds(K.KINDS).length === 13, 'every kind has a name in both readers');
+  // seeds: whole numbers, the same every time, far apart for neighbours, one for a UPC-A and its EAN-13 form
+  const a = K.seedOf('5012345678900'), b = K.seedOf('5012345678901');
+  assert.ok(Number.isInteger(a) && a >= 0 && a <= 0xffffffff && a === K.seedOf(' 5012345678900 ') && a !== b, 'a seed is a whole number, the same for the same text');
+  let flips = 0; for (let i = 0; i < 32; i++) flips += ((a ^ b) >>> i) & 1; assert.ok(flips >= 8, 'codes one digit apart give seeds far apart (' + flips + ' of 32 bits differ)');
+  assert.equal(K.seedOf('012345678905'), K.seedOf('0012345678905'), 'a 12-digit code and the same code with a 0 in front are one seed');
+  const seeds = new Set(); for (let i = 0; i < 5000; i++) seeds.add(K.seedOf('50' + String(10000000000 + i * 7919))); assert.ok(seeds.size === 5000, '5,000 shop codes, 5,000 seeds');
+  // the cut: the middle of the camera picture, in the game's shape, no bigger than asked and never bigger than the camera gave
+  assert.deepEqual(K.cut(1280, 720, 1, 720), { sx: 280, sy: 0, sw: 720, sh: 720, w: 720, h: 720 }, 'a square out of a wide picture');
+  assert.deepEqual(K.cut(720, 1280, 300 / 460, 720), { sx: 0, sy: (1280 - 720 / (300 / 460)) / 2, sw: 720, sh: 720 / (300 / 460), w: Math.round(720 * 720 / (720 / (300 / 460))), h: 720 }, 'a card shape out of a tall one');
+  assert.deepEqual(K.cut(640, 480, 0, 720), { sx: 0, sy: 0, sw: 640, sh: 480, w: 640, h: 480 }, 'no shape: the camera\'s own, not scaled up');
+  assert.ok(K.cut(1920, 1080, 0, 720).w === 720 && K.cut(1920, 1080, 0, 720).h === 405, 'scaled down to the size asked');
+  // in view: there after two looks running, gone after three without, arrivals reported once
+  const v = new K.InView({ hold: 2, gone: 3 }), see = (...ks) => v.look(new Map(ks.map(k => [k, { k }])));
+  assert.deepEqual(see('cup'), []); assert.ok(!v.on('cup'), 'one look is not enough');
+  assert.deepEqual(see('cup', 'dog'), ['cup']); assert.ok(v.on('cup') && !v.on('dog') && v.it('cup').k === 'cup');
+  assert.deepEqual(see('cup'), [], 'no second arrival'); assert.ok(!v.on('dog'), 'a thing seen once and then not starts again');
+  see(); see(); assert.ok(v.on('cup'), 'two blurry looks do not lose it'); see(); assert.ok(!v.on('cup') && v.all().length === 0, 'three do');
+  see('cup'); assert.deepEqual(see('cup'), ['cup'], 'and it arrives again when it comes back');
+  const v1 = new K.InView({ hold: (k, it) => it.k === 'qr' ? 1 : 2 }); assert.deepEqual(v1.look(new Map([['a', { k: 'qr' }], ['b', { k: 'ean' }]])), ['a'], 'hold can depend on what was seen');
+  // one look's finds, tidied: names, boxes in 0..1, the wanted ones, surest first, mirrored for the front camera
+  const det = (name, score, x, y, w, h) => ({ categories: [{ categoryName: name, score }], boundingBox: { originX: x, originY: y, width: w, height: h } });
+  const res = { detections: [det('cup', .6, 64, 48, 128, 96), det('cell phone', .9, 320, 240, 400, 300), det('dog', .4, 0, 0, 10, 10), det('???', .9, 0, 0, 10, 10)] };
+  let f = K.finds(res, 640, 480, { sure: .5 });
+  assert.ok(f.length === 2 && f[0].name === 'cell phone' && f[1].name === 'cup', 'surest first, the unsure and the nameless left out');
+  assert.ok(Math.abs(f[1].left - .1) < 1e-9 && Math.abs(f[1].top - .1) < 1e-9 && Math.abs(f[1].w - .2) < 1e-9 && Math.abs(f[1].x - .2) < 1e-9 && Math.abs(f[1].y - .2) < 1e-9, 'a box in 0..1 with its middle');
+  assert.ok(Math.abs(f[0].w - .5) < 1e-9 && Math.abs(f[0].h - .5) < 1e-9, 'a box that runs off the picture is cut at its edge');
+  f = K.finds(res, 640, 480, { sure: .5, want: ['cup'], mirror: true }); assert.ok(f.length === 1 && Math.abs(f[0].left - .7) < 1e-9 && Math.abs(f[0].x - .8) < 1e-9, 'only what was wanted; mirrored for the front camera');
+  assert.equal(K.finds(res, 640, 480, { sure: .3, max: 2 }).length, 2, 'max'); assert.deepEqual(K.finds(null, 1, 1), []);
+  // one look's codes, tidied
+  const sq = (x, y, s) => [{ x, y }, { x: x + s, y }, { x: x + s, y: y + s }, { x, y: y + s }];
+  let r = K.reads([{ text: 'HELLO', format: 'qr_code', corners: sq(160, 120, 160) }, { text: '', format: 'QRCode', corners: sq(0, 0, 9) }, { text: 'X', format: 'MaxiCode', corners: [] }], 640, 480);
+  assert.ok(r.length === 1 && r[0].kind === 'qr' && r[0].seed === K.seedOf('HELLO') && Math.abs(r[0].x - .375) < 1e-9 && Math.abs(r[0].w - .25) < 1e-9 && r[0].corners.length === 4, 'a code: kind, seed, where it is');
+  r = K.reads([{ text: '0012345678905', format: 'EAN13', corners: sq(0, 0, 64) }], 640, 480, { kinds: ['ean-13'] });
+  assert.ok(r.length === 1 && r[0].kind === 'upc-a' && r[0].text === '012345678905' && r[0].seed === K.seedOf('012345678905'), 'an EAN-13 that starts with 0 is the 12-digit UPC-A on every phone');
+  assert.equal(K.reads([{ text: 'A', format: 'Code128', corners: [] }], 1, 1, { kinds: ['qr'] }).length, 0, 'kinds not asked for are left out');
+  assert.ok(Math.abs(K.reads([{ text: 'A', format: 'QRCode', corners: sq(0, 0, 64) }], 640, 480, { mirror: true })[0].x - .95) < 1e-9, 'mirrored for the front camera');
+  assert.ok(K.looksFor('qr') === 1 && K.looksFor('ean-13') === 2, 'square codes are believed at one look, stripes at two alike');
+  // the card says "camera" for games that use them
+  const { sensorsOf } = await import('../src/game-modules.js');
+  assert.deepEqual(sensorsOf(['vision.Objects']), ['camera']); assert.deepEqual(sensorsOf(['vision.Scanner']), ['camera']);
+  console.log('gs.vision: the 80 things, barcode kinds, seeds, the cut, in view, finds and reads ok');
+}
+
 // gs.outdoors: the meadow (grass tufts that keep around the camera)
 {
   globalThis.HTMLCanvasElement ??= class {}; globalThis.Image ??= class {};
