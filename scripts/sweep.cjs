@@ -27,7 +27,8 @@ const { jobs, pool } = require('./lib/pool.cjs');
     const { p } = w, pageErrs = w.errs;
     await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(150);
     // until its lazy parts are in (the app remakes the game then)
-    for (let i = 0; i < 80 && await p.evaluate(() => !__gs.active || __gs.active.loading); i++) await p.waitForTimeout(100);
+    // (up to a minute: a game that sculpts its people on first load takes far longer when browsers share a few cores)
+    for (let i = 0; i < 600 && await p.evaluate(() => !__gs.active || __gs.active.loading); i++) await p.waitForTimeout(100);
     const res = await p.evaluate(async full => {
       const s = __gs.active, g = s.game, c = s.ctx;
       const hd = !full && window.__hd && (s.def.era === 'nextgen' || s.def.era === 'ar');

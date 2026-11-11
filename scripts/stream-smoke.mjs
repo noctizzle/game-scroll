@@ -43,13 +43,16 @@ const open = async () => {
 let spare = await open();
 const ids = argv.length ? argv : await spare.p.evaluate(() => __gs.GAMES.map(g => g.id));
 let failed = 0;
+const LOAD_MS = 90000;
 await pool(ids, n, async () => { const w = spare || await open(); spare = null; return w; }, async (w, id) => {
   const { p } = w; w.errs = []; const errs = w.errs;
   try {
   const loaded = await p.evaluate(id => __gs.remote.load(id).then(d => !!d), id);
   if (!loaded) { failed++; console.log(`FAIL ${id.padEnd(14)} didn't load\n   ${errs.join('\n   ')}`); return; }
   await p.evaluate(id => __gs.only(id), id);
-  await p.waitForFunction(() => __gs.active && !__gs.active.loading, null, { timeout: 30000 }).catch(() => errs.push('still loading after 30 s'));
+  // (a game that builds a lot the first time it loads, such as sculpted people, takes a few seconds alone and
+  // far longer when several browsers share a test machine's few cores: it gets the time the other tests give)
+  await p.waitForFunction(() => __gs.active && !__gs.active.loading, null, { timeout: LOAD_MS }).catch(() => errs.push(`still loading after ${LOAD_MS / 1000} s`));
   const r = await p.evaluate(() => { const c = __gs.active.canvas.getBoundingClientRect(); return { x: c.x, y: c.y, w: c.width, h: c.height }; });
   const t0 = Date.now();
   while (Date.now() - t0 < 1500) {

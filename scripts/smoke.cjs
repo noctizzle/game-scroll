@@ -29,6 +29,8 @@ const { jobs, pool } = require('./lib/pool.cjs');
   await pool(ids, n, async () => { const w = spare || await open(); spare = null; return w; }, async (w, id) => {
     const { p } = w; w.errs = [];
     await p.evaluate(id => __gs.only(id), id); await p.waitForTimeout(150);
+    // until it has loaded (a game that builds a lot on first load would otherwise spend the whole test on "Loading…", played by nobody)
+    await p.waitForFunction(() => __gs.active && !__gs.active.loading, null, { timeout: 60000 }).catch(() => {});
     const r = await p.evaluate(() => { const c = __gs.active.canvas.getBoundingClientRect(); return { x: c.x, y: c.y, w: c.width, h: c.height }; });
     let rounds = 0, maxScore = 0;
     const t0 = Date.now();
