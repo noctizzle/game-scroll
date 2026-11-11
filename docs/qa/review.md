@@ -2,14 +2,16 @@
 
 ## 2026-11-11: whole-catalogue review (244 games)
 
-Every game file was checked again: the code or its design notes, a mid-play screenshot, the idle and random-tap bots (`npm run qa`), a 20-second no-touch run and the goal-reaching bot (`scripts/playtest.cjs`). These are Claude's judgement, not player data; Rob's in-app ratings (👎 Meh / ♥) overrule them. Nothing has been deleted: removal waits for Rob.
+Every game file was checked again: the code or its design notes, a mid-play screenshot, the idle and random-tap bots (`npm run qa`), a 20-second no-touch run and the goal-reaching bot (`scripts/playtest.cjs`). These are Claude's judgement, not player data; Rob's in-app ratings (👎 Meh / ♥) overrule them.
+
+**Rob's decision (2026-11-11): remove the nine, rework the thirteen.** Both are done in this pass, which leaves 235 games.
 
 - **Keep:** 221 games (121 of them changed in this pass, see below).
-- **Recommended for removal:** 9 (eight weak games and one duplicate).
-- **Too close to one existing game:** 13. Good games, but each follows one well-known game's rules and look closely enough to break the "original, not a recreation" rule. Drop or re-theme.
+- **Removed:** 9 (eight weak games and one duplicate).
+- **Reworked:** 13. Good games, but each followed one well-known game's rules and look closely enough to break the "original, not a recreation" rule. Each is now a new game with its own rules, look and name.
 - **Hidden already:** ar-lab (the AR test scene, on the BENCHED list).
 
-### Recommended for removal (9)
+### Removed (9)
 
 | Game | Why |
 |---|---|
@@ -25,34 +27,36 @@ Every game file was checked again: the code or its design notes, a mid-play scre
 
 On the 2026-11-06 shortlist but kept now: higher-lower, shout-rocket, safe-cracker, haptic-morse (Buzz Code) and penalty-keeper. Each was fixed or turned out to work without the sensor it leans on.
 
-### Too close to one existing game (13)
+### Reworked: too close to one existing game (13)
 
-The rule (AGENTS.md): genres and mechanics are fine; recreating a specific existing game (its characters, rules or look, even renamed) is not. Each of these has its own art and names, but the set of rules taken together points at one game. They were left unedited so the choice stays open, except blob-pairs and panel-rise, which got the same engine updates as everything else.
+The rule (AGENTS.md): genres and mechanics are fine; recreating a specific existing game (its characters, rules or look, even renamed) is not. Each of these had its own art and names, but the set of rules taken together pointed at one game. Each was redesigned from the rules up and renamed; the old files are gone. What carries over is the genre and, where it was our own work, the scene code.
 
-| Game | Too close to | What gives it away |
-|---|---|---|
-| Copy Puff (`copy-puff`) | the pink puff platformers | A round puff that floats by flapping, sucks in enemies and copies their power (spark, blade, rock). |
-| Garden Guard (`garden-guard`) | the lawn defence game with plants | Collect falling dew, pick seed cards, plant in lanes: a resource flower, a pea shooter, a wall and a bomb against a marching column, with the house on the left. |
-| Crate Dash (`crate-dash`) | the orange marsupial crate platformers | Run into the screen down a jungle path, spin through wooden crates, red explosive crates, bouncy crates, 100 gems for a life. |
-| Cube Tide (`cube-tide`) | the 1997 rolling-cube puzzle game | Cubes roll down a floating floor, you mark a tile and trigger it to sink them, green cubes leave a 3x3 trap, never sink a black one, lost cubes shorten the floor. |
-| Saber Knight (`saber-knight`) | the space-knight film series | A robed knight with a glowing blade knocking blaster bolts back and a "push" power. |
-| Grid Duel (`grid-duel`) | the net-battler handheld RPG series | A 6x3 grid split blue and red, a buster down your row, battle chips (sword, cannon, bomb, wide slash) loading into a tray. |
-| Timing Brawl (`timing-brawl`) | the paper plumber RPG battles | Turn-based fights with JUMP (tap on landing) and BASH/hammer (hold and release), spiky foes you cannot jump on, flying foes you cannot bash. |
-| Suit Ops (`suit-ops`) | the nanosuit shooter | A power suit with ARMOR, CLOAK, SPEED and POWER modes on one energy bar, on a jungle island. |
-| Egg Catcher (`egg-catcher`) | the 1981 LCD egg handheld | Four hens, four ramps, a catcher moved between four corners, three broken eggs. The file itself says it is "a classic LCD handheld idea". |
-| Germ Buster (`germ-buster`) | the capsule-and-virus puzzle game | Two-tone capsules dropped onto germs in a bottle, four in a line clears. |
-| Blob Pairs (`blob-pairs`) | the falling-blob-pairs puzzle series | Pairs of blobs, four touching pop, chains, grey junk blobs that clear when a pop touches them. |
-| Panel Rise (`panel-rise`) | the rising-panel swap puzzle series | A rising stack, swap two side by side, clears of three, chain bonuses. |
-| Mansion Night (`mansion-night`) | the mansion survival-horror series | A dark mansion, a six-shot pistol, green herbs to heal, a knife when out of ammo, head shots. Also the grimmest game in a family app. |
+| Was | Too close to | What gave it away | Now |
+|---|---|---|---|
+| Copy Puff (`copy-puff`) | the pink puff platformers | A round puff that floats by flapping, sucks in enemies and copies their power. | **Boomerang Fox** (`boomerang-fox`): a fox that jumps and throws a boomerang that has to come back before the next throw. Beetle charms change how it flies (wide, fire, twin). Points come from hits, stomps and acorns, not distance. |
+| Garden Guard (`garden-guard`) | the lawn defence game with plants | Falling dew to collect, seed cards, a resource flower, a shooter, a wall and a bomb, with the house on the left. | **Picnic Panic** (`picnic-panic`): no currency. Free pieces are dealt to a tray of three; two of the same kind and level merge; placed pieces can be picked up and moved. Lemon squirters, jam catapults, bread walls and fans against ants marching on the cake. |
+| Crate Dash (`crate-dash`) | the orange marsupial crate platformers | A jungle path into the screen, spin through wooden, explosive and bouncy crates, 100 gems for a life. | **Paint Run** (`paint-run`): a runner across a desk where you are one of three colours. Walls of your colour burst for points, other colours hurt, and paint showers change your colour. |
+| Cube Tide (`cube-tide`) | the 1997 rolling-cube puzzle game | Cubes roll down a floating floor, mark and trigger a tile to sink them, never sink a black one. | **Row Call** (`row-call`): four lanes of toy blocks on a table. Tap a lane to hop its front block to the back; when the timer runs out the front row marches off and scores if the blocks match. |
+| Saber Knight (`saber-knight`) | the space-knight film series | A robed knight with a glowing blade knocking blaster bolts back, and a "push" power. | **Snow Swat** (`snow-swat`): a snowball fight at dusk. Kids pop up and lob snowballs in arcs; a late swat sends one back at the thrower, giant rolling snowballs need a swat of their own, and a spin leaves you dizzy. |
+| Grid Duel (`grid-duel`) | the net-battler handheld RPG series | A 6x3 grid split blue and red, a buster down your row, battle chips loading into a tray. | **Broadside** (`broadside`): two ships seen from above. Hop between your planks, fire up your column, and read three kinds of enemy crew (gunners, mortars, boarders). Barrels arm one special shot. |
+| Timing Brawl (`timing-brawl`) | the paper plumber RPG battles | Turn-based fights with a timed JUMP and a hold-and-release hammer, spiky foes and flying foes. | **Riposte** (`riposte`): sword duels on a castle wall. A flurry of three timed taps or one pendulum lunge; the foe's cut comes high or low with a tell and you parry the right half. Shield guards, acrobats and a feinting captain. |
+| Suit Ops (`suit-ops`) | the nanosuit shooter | A power suit with ARMOR, CLOAK, SPEED and POWER modes on one energy bar, on a jungle island. | **Canopy Run** (`canopy-run`): a ranger and a helper drone against rogue logger bots. Four drone tricks, each on its own recharge (a shield dome that stays put, a decoy, a dash, a strike), caged parrots to free on the way, no suit, no energy bar, no cloak. |
+| Egg Catcher (`egg-catcher`) | the 1981 LCD egg handheld | Four hens, four ramps, a catcher moved between four corners, three broken eggs. | **Egg Box** (`egg-box`): slide a five-cup egg box under two hens. An egg only fits an empty cup, a full box ships for a bonus, and a crow drops pebbles you must not catch. |
+| Germ Buster (`germ-buster`) | the capsule-and-virus puzzle game | Two-tone capsules dropped onto germs in a bottle, four in a line clears. | **Key Drop** (`key-drop`): locked crates rise from the bottom of a well. Drop a shape key down a column: it opens every matching crate it meets in a chain, and a wrong key jams the column. |
+| Blob Pairs (`blob-pairs`) | the falling-blob-pairs puzzle series | Pairs of blobs, four touching pop, chains, grey junk blobs. | **Bookends** (`bookends`): falling pairs of books in a bookcase. Nothing clears by touching: a run of two or more of one colour clears only when books of one other colour stand at both ends of it. |
+| Panel Rise (`panel-rise`) | the rising-panel swap puzzle series | A rising stack, swap two side by side, clears of three, chain bonuses. | **Tide Turn** (`tide-turn`): a rock pool of creatures. Tap groups of three or more to clear them (a tap on a smaller group washes in a row); every few seconds the tide turns, gravity flips and a new row washes in from the other end. |
+| Mansion Night (`mansion-night`) | the mansion survival-horror series | A dark mansion, a six-shot pistol, green herbs, a knife, head shots. Also the grimmest game in a family app. | **Pantry Patrol** (`pantry-patrol`): raccoons raid a larder at night. They freeze in the torch beam; hold it on one until it stares, then let go to flash it away. Never flash a skunk. Nothing is shot. |
+
+All thirteen pass the game lint, the random-play, streamed-play, fold and speed checks, and none ends or scores without a touch.
 
 Genre-level only, fine to keep: shell-duel (turn-based artillery), sling-smash (slingshot physics), critter-quest (monster-collecting RPG), stud-smash, pile-builder and the other brick games (toy bricks), gap-drop (rotating floors), bricks (brick breaker), blob-ball, pocket-kart, bunker-breakout (corridor shooter), pin-pull. sword-rooms had a green cap and tunic on its hero; it is now blue.
 
-### Changes made in this pass (123 games)
+### Changes made in this pass (121 games, plus the 13 reworks)
 
 - **Shared effects (100 older games).** Games written before `gs.effects.Feel` each had their own particle list, or none. They now use Feel for bursts, pop-up numbers and shake (with the game's own sounds kept), so hits, clears and losses look and feel the same everywhere, follow the player's Reduce motion setting, and finish playing behind the game-over screen (`fx(dt)`).
 - **Wait for the first touch (60 games).** `gs.rounds.Ready`: nothing moves, scores or ends until the player touches the screen. Before this pass 17 games ended by themselves within six seconds of Play and 25 scored points with no touch. In a 20-second no-touch run of every game now, the only keepers that still end or score are ones where that is the design: races that start on a countdown (gravity-grip, neon-drift), bunker-breakout (auto-fire), freeze-rex (holding still is the game) and two puzzles whose timer is about 20 seconds (hand-sort, spinner-keep).
 - **Score badge.** fossil-dig, hop-quest, rex-rampage, star-bloom and hoop-drone size or place their HUD from `api.scoreArea()`; fast-maths and mole-mallet moved their lives out from under the badge.
-- **Game time, not the wall clock.** blitz-bits, blob-ball, blob-pairs, fossil-dig, deep-pressure and street-lamps used `performance.now()` or `setTimeout` for game timing, which keeps running while the game is paused. They use `dt` now. (Tap-versus-hold timing in the 3D games and the daily clock in treasure-drop are real time on purpose and were left.)
+- **Game time, not the wall clock.** blitz-bits, blob-ball, fossil-dig, deep-pressure and street-lamps used `performance.now()` or `setTimeout` for game timing, which keeps running while the game is paused. They use `dt` now. (Tap-versus-hold timing in the 3D games and the daily clock in treasure-drop are real time on purpose and were left.)
 - **Same speed on 60 and 120 Hz screens.** Per-frame damping (`v *= .98`) became `Math.pow(.98, dt * 60)` in blitz-sense, blow-sail, fly-swatter, gravity-grip, pet-pocket, shell-duel, stud-smash, stylus-rally and wrecking-ball; camera easing in canyon-ace, deep-pressure, frost-line and storm-hook.
 - **Goals the bot reached in seconds.** dart-wheel 25 to 60, merge-ten 150 to 500, mini-golf 12 to 25, moto-hills 120 to 350, rope-swing 200 to 1000, freeze-rex 500 to 1200 (plus a 1.5 s wind-on between photos).
 - **Bugs.** bricks: the ball could speed up without limit off the paddle. street-lamps: a failed location request could leave it waiting for ever. pocket-pinball: each finger now works its own flipper. fishing-line: a smooth gradient broke the four-shade Pocket rule. critter-quest: the battle strobe follows Reduce motion. spot-difference: the pictures stay covered until you start, so the clock is fair. Several games kept a little state from the last round (held keys, a drag in progress); all round state is set in `reset()` now.
@@ -108,7 +112,7 @@ Genre-level only, fine to keep: shell-duel (turn-based artillery), sling-smash (
 | Kite Flyer (`kite-flyer`) | Pocket · Skill | Keep, fixed | Fixed: waits for your first hold (it scored by itself in the wind band). |
 | Knight Path (`knight-path`) | Pocket · Logic | Keep | Knight's-move puzzle. |
 | Ladder Climber (`ladder-climber`) | Pocket · Reflex | Keep, fixed | Fixed: the flood waits for your first grab (an untouched round ended in 5 seconds). |
-| Lamp Flip (`lamp-flip`) | Pocket · Logic | ✂ Remove | Same lights-out puzzle as Street Lamps, which has the daily shared-with-your-neighbourhood twist. Keep one. |
+| Lamp Flip (`lamp-flip`) | Pocket · Logic | ✂ Removed | Same lights-out puzzle as Street Lamps, which has the daily shared-with-your-neighbourhood twist. Keep one. |
 | Lantern Maze (`lantern-maze`) | Pocket · Maze | Keep | Flare, remember, walk. |
 | Laser Dodge (`laser-dodge`) | Pocket · Dodge | Keep | Lasers warn before they fire. Fair. |
 | Laser Lock (`laser-lock`) | Advance · Puzzle | Keep | Geared rings puzzle. |
@@ -174,7 +178,7 @@ Every game scored 1-5 on five things, out of 25. Scored on 2026-11-06 from the c
 - **Length**: does a round last a good feed-sized time (about 20s to 2 min)?
 - **Uniqueness**: is it unlike the other games in the app?
 
-Sorted weakest first. Marks are as of 2026-11-11: ✂ = recommended for removal, ⚠ = too close to one existing game.
+Sorted weakest first. Marks are as of 2026-11-11: ✂ = removed, ⚠ = too close to one existing game, since reworked under a new name.
 
 | # | Game | Fun | Clarity | Controls | Length | Unique | Total | Notes |
 |---|---|---|---|---|---|---|---|---|
@@ -212,9 +216,9 @@ Sorted weakest first. Marks are as of 2026-11-11: ✂ = recommended for removal,
 | 32 | code-breaker | 3 | 4 | 4 | 4 | 3 | **18** | Good logic puzzle but slow for a scroll feed. |
 | 33 | colour-flood | 3 | 4 | 5 | 3 | 3 | **18** | Fine, quiet puzzle. |
 | 34 | colour-word | 3 | 4 | 5 | 2 | 4 | **18** | Sharp brain teaser, but one wrong tap ends it in seconds. |
-| 35 | ⚠ egg-catcher | 3 | 4 | 4 | 4 | 3 | **18** | Handheld classic, simple and fair. Too close to one existing game: see the 2026-11-11 list. |
+| 35 | ⚠ egg-catcher | 3 | 4 | 4 | 4 | 3 | **18** | Handheld classic, simple and fair. Too close to one existing game; reworked on 2026-11-11 as Egg Box (`egg-box`). |
 | 36 | fast-maths | 3 | 5 | 5 | 2 | 3 | **18** | Quick and clear. Fine as feed filler. |
-| 37 | ⚠ germ-buster | 4 | 4 | 3 | 4 | 3 | **18** | Falling-capsule puzzle; swipe controls take a minute. Too close to one existing game: see the 2026-11-11 list. |
+| 37 | ⚠ germ-buster | 4 | 4 | 3 | 4 | 3 | **18** | Falling-capsule puzzle; swipe controls take a minute. Too close to one existing game; reworked on 2026-11-11 as Key Drop (`key-drop`). |
 | 38 | lemonade-stand | 3 | 4 | 4 | 3 | 4 | **18** | Light strategy; good change of pace. |
 | 39 | mirror-beam | 3 | 4 | 5 | 3 | 3 | **18** | Fine; overlaps a little with Pipe Plumber. |
 | 40 | moto-hills | 4 | 3 | 3 | 4 | 4 | **18** | Good, but lean-in-air is hard to learn. |
@@ -288,42 +292,42 @@ Same scoring. Most of these are deeper "handheld era" games (RPGs, tactics, farm
 |---|---|---|---|---|---|---|---|---|
 | 1 | blitz-sense | 3 | 3 | 2 | 4 | 4 | **16** | Fun idea, but half the micro games need the mic, tilt or shake, which a lot of players can't use on a bus. |
 | 2 | fossil-dig | 3 | 3 | 3 | 3 | 4 | **16** | Rub-to-brush is calm but slow; the brush/pick difference takes a try to learn. |
-| 3 | ⚠ cube-tide | 3 | 2 | 3 | 3 | 4 | **15** | Three trap rules (grey, green, black) at once is a lot to read from the hint. Too close to one existing game: see the 2026-11-11 list. |
+| 3 | ⚠ cube-tide | 3 | 2 | 3 | 3 | 4 | **15** | Three trap rules (grey, green, black) at once is a lot to read from the hint. Too close to one existing game; reworked on 2026-11-11 as Row Call (`row-call`). |
 | 4 | kit-hunt | 3 | 3 | 3 | 3 | 4 | **16** | Detector sweep is neat; swings run out fast. |
 | 5 | pocket-tactics | 3 | 3 | 4 | 2 | 4 | **16** | Proper tactics, but a battle is several minutes. Better as a "sit down" game. |
 | 6 | pocket-farm | 3 | 4 | 4 | 2 | 4 | **17** | Cosy; days take a while to pay off in a feed. |
 | 7 | critter-quest | 4 | 3 | 4 | 2 | 4 | **17** | Rob's monster-catching request. Lots of content; long for a scroll. |
-| 8 | ⚠ mansion-night | 3 | 4 | 3 | 3 | 4 | **17** | Atmospheric; reload swipe is easy to miss. Too close to one existing game: see the 2026-11-11 list. |
+| 8 | ⚠ mansion-night | 3 | 4 | 3 | 3 | 4 | **17** | Atmospheric; reload swipe is easy to miss. Too close to one existing game; reworked on 2026-11-11 as Pantry Patrol (`pantry-patrol`). |
 | 9 | shell-duel | 4 | 3 | 3 | 3 | 4 | **17** | Artillery turns are slow next to the rest of the feed. |
 | 10 | spell-school | 3 | 3 | 3 | 4 | 4 | **17** | Rune tracing is unique; the V and peak shapes get confused. |
 | 11 | blueprint-stack | 3 | 4 | 4 | 3 | 4 | **18** | Tidy drop puzzle. |
 | 12 | build-rush | 3 | 4 | 5 | 3 | 3 | **18** | Clear speed-match game. |
 | 13 | front-line | 3 | 4 | 4 | 3 | 4 | **18** | Timing the dash past the sweep reads well. |
-| 14 | ⚠ grid-duel | 4 | 3 | 4 | 3 | 4 | **18** | Grid battler with chips; dense first screen. Too close to one existing game: see the 2026-11-11 list. |
+| 14 | ⚠ grid-duel | 4 | 3 | 4 | 3 | 4 | **18** | Grid battler with chips; dense first screen. Too close to one existing game; reworked on 2026-11-11 as Broadside (`broadside`). |
 | 15 | kit-racer | 3 | 4 | 4 | 3 | 4 | **18** | Garage pick then race; fine. |
 | 16 | mind-gym | 3 | 5 | 5 | 3 | 2 | **18** | Overlaps Fast Maths, Path Memory and Odd One Out. |
 | 17 | pile-builder | 3 | 3 | 4 | 4 | 4 | **18** | Hold-to-build is a fresh idea. |
-| 18 | ⚠ timing-brawl | 4 | 3 | 4 | 3 | 4 | **18** | Timed-hit RPG fights; good feel once learned. Too close to one existing game: see the 2026-11-11 list. |
+| 18 | ⚠ timing-brawl | 4 | 3 | 4 | 3 | 4 | **18** | Timed-hit RPG fights; good feel once learned. Too close to one existing game; reworked on 2026-11-11 as Riposte (`riposte`). |
 | 19 | agent-zero | 4 | 4 | 4 | 3 | 4 | **19** | Cover shooter in one hold. Works well. |
-| 20 | ⚠ blob-pairs | 4 | 4 | 4 | 4 | 3 | **19** | Solid falling-pairs puzzle. Too close to one existing game: see the 2026-11-11 list. |
+| 20 | ⚠ blob-pairs | 4 | 4 | 4 | 4 | 3 | **19** | Solid falling-pairs puzzle. Too close to one existing game; reworked on 2026-11-11 as Bookends (`bookends`). |
 | 21 | boss-brickfall | 4 | 3 | 4 | 4 | 4 | **19** | Build launchers from the fallen bricks: clever. |
-| 22 | ⚠ garden-guard | 4 | 4 | 4 | 4 | 3 | **19** | Rob's lane-defence request; reads clearly. Too close to one existing game: see the 2026-11-11 list. |
+| 22 | ⚠ garden-guard | 4 | 4 | 4 | 4 | 3 | **19** | Rob's lane-defence request; reads clearly. Too close to one existing game; reworked on 2026-11-11 as Picnic Panic (`picnic-panic`). |
 | 23 | net-catch | 4 | 4 | 4 | 3 | 4 | **19** | Sneak-and-catch, nice and readable. |
-| 24 | ⚠ panel-rise | 4 | 4 | 4 | 4 | 3 | **19** | Swap-and-raise puzzle, solid. Too close to one existing game: see the 2026-11-11 list. |
+| 24 | ⚠ panel-rise | 4 | 4 | 4 | 4 | 3 | **19** | Swap-and-raise puzzle, solid. Too close to one existing game; reworked on 2026-11-11 as Tide Turn (`tide-turn`). |
 | 25 | pocket-kart | 4 | 4 | 4 | 3 | 4 | **19** | Mode-7 style racer looks great. |
 | 26 | rex-rampage | 4 | 5 | 5 | 3 | 3 | **20** | Simple, punchy. |
 | 27 | ramp-combo | 4 | 4 | 4 | 4 | 4 | **20** | Pump-and-trick loop is satisfying. |
-| 28 | ⚠ saber-knight | 4 | 4 | 5 | 3 | 4 | **20** | Deflect timing feels great. Too close to one existing game: see the 2026-11-11 list. |
+| 28 | ⚠ saber-knight | 4 | 4 | 5 | 3 | 4 | **20** | Deflect timing feels great. Too close to one existing game; reworked on 2026-11-11 as Snow Swat (`snow-swat`). |
 | 29 | shadow-ops | 4 | 4 | 4 | 4 | 4 | **20** | Best of the stealth games. |
 | 30 | sling-smash | 4 | 5 | 5 | 3 | 3 | **20** | Rob's slingshot-physics request; works. |
 | 31 | stud-smash | 4 | 4 | 4 | 4 | 4 | **20** | Smash-and-collect is very moreish. |
-| 32 | ⚠ suit-ops | 4 | 4 | 4 | 4 | 4 | **20** | Mode-switch shooter with real choices. Too close to one existing game: see the 2026-11-11 list. |
+| 32 | ⚠ suit-ops | 4 | 4 | 4 | 4 | 4 | **20** | Mode-switch shooter with real choices. Too close to one existing game; reworked on 2026-11-11 as Canopy Run (`canopy-run`). |
 | 33 | swipe-fighter | 4 | 3 | 4 | 4 | 5 | **20** | Swipe fighting with readable tells. |
 | 34 | sword-rooms | 4 | 5 | 4 | 4 | 3 | **20** | Classic top-down rooms, clear. |
 | 35 | blitz-bits | 4 | 4 | 4 | 5 | 4 | **21** | Micro-game rapid fire is perfect for a feed. |
 | 36 | blob-ball | 4 | 4 | 4 | 4 | 5 | **21** | Silly one-on-one football; very replayable. |
-| 37 | ⚠ copy-puff | 4 | 4 | 4 | 4 | 4 | **21** | Copy-ability platformer with real variety. Too close to one existing game: see the 2026-11-11 list. |
-| 38 | ⚠ crate-dash | 4 | 5 | 4 | 4 | 4 | **21** | Lane runner with spin; polished. Too close to one existing game: see the 2026-11-11 list. |
+| 37 | ⚠ copy-puff | 4 | 4 | 4 | 4 | 4 | **21** | Copy-ability platformer with real variety. Too close to one existing game; reworked on 2026-11-11 as Boomerang Fox (`boomerang-fox`). |
+| 38 | ⚠ crate-dash | 4 | 5 | 4 | 4 | 4 | **21** | Lane runner with spin; polished. Too close to one existing game; reworked on 2026-11-11 as Paint Run (`paint-run`). |
 | 39 | hop-quest | 4 | 5 | 4 | 4 | 3 | **20** | Classic platformer feel. |
 | 40 | star-bloom | 4 | 5 | 5 | 4 | 3 | **21** | Clean auto-fire shooter with power levels. |
 | 41 | tag-team | 4 | 4 | 4 | 4 | 5 | **21** | Hero-swap runner, the best of the brick games. |

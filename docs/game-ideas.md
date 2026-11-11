@@ -37,6 +37,14 @@ Built, then taken out in the whole-catalogue review (`docs/qa/review.md`). Don't
 - [ ] ~~Swipe the Arrow — swipe the way the arrow points (or the opposite when it's red)~~ Removed: a bare reflex test; random swipes ended a round in half a second.
 - [ ] ~~Lamp Flip — tap lamps that flip their neighbours until every lamp is lit~~ Removed: the same puzzle as Street Lamps, which has the daily neighbourhood twist.
 
+## Reworked after review (2026-11-11)
+
+These thirteen played well but each sat too close to one existing game, so each was redesigned with its own rules and look and given a new name (`docs/qa/review.md`). Don't rebuild the old versions.
+
+- Egg Catcher became **Egg Box**, Germ Buster became **Key Drop**, Cube Tide became **Row Call**, Panel Rise became **Tide Turn**
+- Saber Knight became **Snow Swat**, Blob Pairs became **Bookends**, Crate Dash became **Paint Run**, Timing Brawl became **Riposte**
+- Grid Duel became **Broadside**, Mansion Night became **Pantry Patrol**, Copy Puff became **Boomerang Fox**, Garden Guard became **Picnic Panic**, Suit Ops became **Canopy Run**
+
 ## Research notes (Nov 2026)
 
 What makes the best phone and handheld games fun, and how this list uses it:
@@ -54,7 +62,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 
 - [x] Merge Drop 📱 — drop fruit into a jar; two of the same touching merge into a bigger one, don't overflow
 - [x] Territory Claim 🕹 — draw lines to fence off 75% of the field while a bouncing spark hunts your line
-- [x] Germ Buster 🕹 — falling two-colour capsules; line up four of a colour to clear the germs
+- [x] Key Drop 🕹 — drop shape keys down a well of locked crates; a key opens every matching crate it lands on in a chain, a wrong one jams
 - [x] Moto Hills 🕹 — side-view dirt bike over hills; lean to land flat
 - [x] Bomb Maze 🕹 — drop timed bombs to blast blocks and trap wandering critters on one screen
 
@@ -69,7 +77,7 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [x] Ghost Lantern (built as Lantern Maze) — light a dark maze with a short-lived lantern pulse to find the exit
 - [x] Mine Cart — tap to switch the rail junction ahead of your cart
 - [x] Balloon Pop Archer (built as Balloon Archer) — aim and release an arrow at drifting balloons, limited arrows
-- [x] Egg Catcher — move a basket between four chutes to catch rolling eggs
+- [x] Egg Box — slide a five-cup egg box under two laying hens; fill every cup to ship the box, never drop an egg on a full cup
 - [x] Penguin Slide — hold to dive down slopes, release to fly over gaps
 - [x] Tank Duel — angle and power artillery shots against a CPU tank on hilly ground
 - [x] Fishing Line — drop a hook, reel up through layers, avoid snagging jellyfish
@@ -239,7 +247,7 @@ Full-colour pocket games in the spirit of the late-90s / early-2000s colour hand
 - [x] Sling Smash: slingshot stones at blobs hiding in wood, glass and stone forts
 - [x] Critter Quest: walk the grass, battle and catch original critters (three-type triangle)
 - [x] Pocket Kart: flat-plane scaling kart racer, 2-lap races on 4 themed tracks against 5 rival drivers, podium wins
-- [x] Panel Rise: rising-stack panel swap puzzle with chains
+- [x] Tide Turn: rock-pool creatures; tap groups of three or more (a wrong tap washes in a row), and every few seconds the tide flips which way they fall
 - [x] Sword Rooms: top-down dungeon rooms, sword swings, door opens when cleared
 - [x] Hop Quest: side-scrolling platformer with stomps, coins, one-way ledges and a flag
 - [x] Star Bloom: vertical shooter with power levels and flagship bosses
@@ -248,13 +256,13 @@ Full-colour pocket games in the spirit of the late-90s / early-2000s colour hand
 
 ### Batch 14: more Advance-era genres
 Picked from the genres that defined the big Advance hits: licensed space-knight action, wizard-school adventures, real-time grid battlers, farm life sims, timed-hit RPG battles, falling-pair puzzlers and copy-ability platformers. All mechanics are original and use no names, characters, spells or art from those games.
-- [x] Saber Knight: energy-sword duelist; tap a side to swing, perfect timing deflects bolts back, hold to Focus-push
+- [x] Snow Swat: snowball fight; tap a side to swat lobbed snowballs back at the kid who threw them, hold and let go to spin
 - [x] Spell School: trace runes (line, bar, V, peak, ring, zig) to cast lessons' spells at pests in the school halls
-- [x] Grid Duel: 3x3 real-time grid battle; dodge across your panels and fire chips (sword, wide, cannon, bomb, heal)
+- [x] Broadside: two pirate decks of planks; hop planks, fire up your column, dodge gunners, mortars and boarders, arm barrel shots
 - [x] Pocket Farm: till, plant, water and harvest through seasons; shoo crows and hit each season's cash target
-- [x] Timing Brawl: turn-based brawl where timed taps add bounces, perfect bashes and counter-dodges
-- [x] Blob Pairs: falling blob pairs, pop four of a colour, build chains, clear grey junk
-- [x] Copy Puff: auto-walking puff that flaps over gaps and swallows critters to copy SPARK, BLADE or ROCK
+- [x] Riposte: turn-based sword duels on a castle wall; timed flurries and lunges, parry high or low on the tell
+- [x] Bookends: falling pairs of books; a run of two or more of one colour clears when books of one other colour stand at both ends of it
+- [x] Boomerang Fox: auto-walking fox; jump, throw a boomerang that comes back, beetle charms change how it flies
 
 ## Dual-screen and stylus era ideas (for later batches) ✍
 Research notes on what made the dual-screen handheld era special, turned into original ideas. Foldables are a natural fit: on an unfolded Fold the two halves can act as the two screens, and on a phone the screen splits top and bottom.
@@ -277,11 +285,11 @@ Research notes on what made the dual-screen handheld era special, turned into or
 Picked from the most loved handheld and 32-bit console genres, choosing ones that map cleanly to taps, holds and swipes. All mechanics are original, with no names, characters or art from those games.
 - [x] Net Catch: hold to creep, tap to swing a net at escaped imps that see in cones and tire when they run
 - [x] Shadow Ops: top-down stealth with torch cones blocked by walls, pebble lures and a crate to hide under
-- [x] Crate Dash: into-the-screen jungle runner; swipe lanes, swipe up to jump, tap to spin crates and critters
-- [x] Cube Tide: rolling stone-cube waves on a floating floor; trap and sink grey cubes, let black ones go
+- [x] Paint Run: into-the-screen runner across a desk; burst walls of your own colour, dodge the others, paint showers recolour you
+- [x] Row Call: lanes of toy blocks on a table; hop a lane's front block to the back so the front row matches before it marches off
 - [x] Ramp Combo: halfpipe session; tap to pump in the green, swipe tricks in the air, land clean to bank
 - [x] Swipe Fighter: one-on-one fighter with jab, heavy, sweep, hop and guard, plus wind-up counters
-- [x] Mansion Night: torch-lit horror corridor; tap to shoot, head shots, six-shot clip, shells and herbs
+- [x] Pantry Patrol: dark larder corridor; hold the torch on raccoons until they stare, let go to flash them away, never flash a skunk
 - [x] Blitz Bits: four-second micro games back to back that speed up
 
 ## Brick-building adventure ideas (next batch) 🧱
@@ -299,12 +307,12 @@ Original takes on the toy-brick adventure games: smash scenery into studs, rebui
 - [x] Shell Duel: turn-based artillery squads on destructible terrain, three weapons, wind (Console)
 - [x] Rex Rampage: dinosaur runner, snap to eat and grow, leap the spikes
 - [x] Fossil Dig: brush dirt off a buried skeleton, haptic ticks over bone, the pick cracks it
-- [x] Garden Guard: lane defence with original defenders against bug waves (Console)
+- [x] Picnic Panic: lane defence on a picnic blanket; free pieces are dealt to a tray, same pieces merge, ants march on the cake (Console)
 - [x] Agent Zero: spy shootout from cover with a stun-pulse watch (Console)
 - [x] Mind Gym: four 15-second brain drills and a Mind Score
 - [x] Blitz Bits 2: sensor microgames (tilt, blow, shake, hush, pour) with touch fallbacks
 - [x] Blob Ball: one-on-one slime football against quicker and quicker rivals
-- [x] Suit Ops: jungle shooter with ARMOR, CLOAK, SPEED and POWER suit modes (Console)
+- [x] Canopy Run: jungle walk to the rescue chopper with a helper drone (SHIELD, DECOY, DASH, STRIKE tricks), free caged parrots (Next Gen)
 - [x] Front Line: WW2 beach assault, dash between cover past the MG sweep, grenade the bunker (Console)
 
 ## AR · 3D (camera + gyro, 2026-11-07) 📷
@@ -330,7 +338,7 @@ Original takes on the toy-brick adventure games: smash scenery into studs, rebui
 Modern HD 3D on `src/kit/hd3d.js` (see [nextgen-3d.md](nextgen-3d.md)).
 
 - [x] Bunker Breakout — corridor shooter against the cartoon Red Bear Guard
-- [x] Suit Ops — jungle shooter with four suit modes
+- [x] Canopy Run — ranger and helper drone against rogue logger bots; free the caged parrots, reach the chopper
 - [x] Gravity Grip — anti-gravity tube racer that drives on the walls and ceiling
 - [x] Neon Drift — night street circuit; hold drifts for a multiplier, gates add time, walls kill the combo
 - [x] Storm Hook — grapple-swing across a stormy harbour city; hold to hook, let go to fly

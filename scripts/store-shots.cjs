@@ -24,17 +24,17 @@ const SHOTS = [
   { id: 'gravity-grip', title: 'Scroll games,', accent: 'not videos', play: { hold: true, sim: 5, wait: 1200 } },
   { id: 'pocket-kart', title: 'Swipe up for', accent: 'the next game', play: { hold: true, sim: 4, wait: 800 } },
   { menu: true, id: 'stack', title: 'Pick a style,', accent: 'or mix them all',
-    pad: { id: 'garden-guard', title: 'Every genre,', accent: 'one feed', play: { taps: 6, wait: 1000 } } },
+    pad: { id: 'picnic-panic', title: 'Every genre,', accent: 'one feed', play: { taps: 6, wait: 1000 } } },
   { id: 'fossil-dig', title: 'Pixel handheld', accent: 'classics', play: { taps: 10, wait: 600 } },
   { id: 'bunker-breakout', title: 'All the way', accent: 'to HD 3D', play: { taps: 6, wait: 1500 } },
   { id: 'tilt-maze', title: 'Tilt, shake', accent: 'and shout', play: { taps: 4, wait: 1500 } },
   { id: 'stack', start: true, title: 'Win credits,', accent: 'unlock boosts',
-    pad: { id: 'saber-knight', title: 'Quick to learn,', accent: 'hard to put down', play: { taps: 8, wait: 600 } } },
+    pad: { id: 'snow-swat', title: 'Quick to learn,', accent: 'hard to put down', play: { taps: 8, wait: 600 } } },
 ];
 // On iPad the menu and Stack Up look empty (the phone UI on a big screen), so `pad` swaps in another shot.
 const PAD_SHOTS = SHOTS.map(s => s.pad || s);
 // The style pictures on the landing page (AR games show their virtual room, since there's no camera here).
-const STYLES = { casual: 'bubble-pop', pocket: 'sheep-herder', color: 'fossil-dig', advance: 'pocket-kart', console: 'garden-guard', nextgen: 'bunker-breakout', ar: 'saucer-swarm' };
+const STYLES = { casual: 'bubble-pop', pocket: 'sheep-herder', color: 'fossil-dig', advance: 'pocket-kart', console: 'picnic-panic', nextgen: 'bunker-breakout', ar: 'saucer-swarm' };
 
 const want = k => !ONLY.length || ONLY.includes(k);
 const file = p => 'file://' + p;
