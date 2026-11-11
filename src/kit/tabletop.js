@@ -104,7 +104,17 @@ function flatUV(geo, size) {
   for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) / size + .5, p.getZ(i) / size + .5 + p.getY(i) / size);
   uv.needsUpdate = true; return geo;
 }
+// The room's walls, seen from inside: a box with no bottom (and no top unless lid). A bottom face would lie in the floor's own
+// plane, or a hair under it, and the two then take turns at the same pixels: stripes across the floor that flicker as the view moves.
+function roomBox(w, h, d, lid) {
+  const g = new BoxGeometry(w, h, d), ix = Array.from(g.index.array);   // faces in order: +x, -x, +y, -y, +z, -z, six indices each
+  g.setIndex([...ix.slice(0, lid ? 18 : 12), ...ix.slice(24)]); g.clearGroups();
+  return g;
+}
+// A turned shape from its outline, [radius, height] points. three.js turns an outline that runs from the bottom up with its faces
+// outward; one written from the top down came out inside out (you saw the far inside wall through the near one), so it is turned round here.
 function latheMesh(pts, mat, seg = 40) {
+  if (pts[0][1] > pts[pts.length - 1][1]) pts = pts.slice().reverse();
   const m = new Mesh(new LatheGeometry(pts.map(p => new Vector2(p[0], p[1])), seg), mat); m.castShadow = m.receiveShadow = true; return m;
 }
 
@@ -178,14 +188,14 @@ export class Table {
       leg.castShadow = false; g.add(leg);
     }
     const [recipe, look] = L.floor;
-    const fl = new Mesh(new PlaneGeometry(K * 9, K * 9).rotateX(-Math.PI / 2), material(recipe, { ...look, repeat: [9, 9] })); fl.position.y = floorY; fl.receiveShadow = true; g.add(fl);
+    const fl = new Mesh(new PlaneGeometry(K * 9, K * 9).rotateX(-Math.PI / 2), material(recipe, { ...look, repeat: recipe === 'planks' ? [9, 18] : [9, 9] })); fl.position.y = floorY; fl.receiveShadow = true; g.add(fl);
     if (L.rug) {
       const rug = new Mesh(new CircleGeometry(R * 1.9, 64).rotateX(-Math.PI / 2), material('fabric', { colour: L.rug, repeat: [30, 30], rough: 1 })); rug.position.y = floorY + S * .004; rug.receiveShadow = true; g.add(rug);
       const trim = new Mesh(new TorusGeometry(R * 1.82, S * .012, 6, 64).rotateX(Math.PI / 2), pbr(new Color(L.rug).multiplyScalar(1.7).getStyle(), { rough: 1 })); trim.position.y = floorY + S * .006; g.add(trim);
     }
     const wallTex = surface(128, ({ col, size: Z }) => { col.fillStyle = '#fff'; col.fillRect(0, 0, Z, Z); speckle(col, Z, 500, '#000', 1.4, .08); });
-    const walls = new Mesh(new BoxGeometry(K * 6.5, K * 3.2, K * 6.5), pbr(L.wall, { tex: wallTex.repeat(5, 3), rough: .95, side: BackSide, glow: .22, glowCol: L.wall })); walls.position.y = floorY + K * 1.595; walls.receiveShadow = true; g.add(walls);   // (a little of the lamp's light off the walls, so the room isn't a void)
-    const skirt = new Mesh(new BoxGeometry(K * 6.46, K * .12, K * 6.46), pbr(new Color(L.wall).multiplyScalar(.45).getStyle(), { rough: .7, side: BackSide })); skirt.position.y = floorY + K * .06; g.add(skirt);
+    const walls = new Mesh(roomBox(K * 6.5, K * 3.2, K * 6.5, true), pbr(L.wall, { tex: wallTex.repeat(5, 3), rough: .95, side: BackSide, glow: .22, glowCol: L.wall })); walls.position.y = floorY + K * 1.595; walls.receiveShadow = true; g.add(walls);   // (a little of the lamp's light off the walls, so the room isn't a void)
+    const skirt = new Mesh(roomBox(K * 6.46, K * .12, K * 6.46), pbr(new Color(L.wall).multiplyScalar(.45).getStyle(), { rough: .7, side: BackSide })); skirt.position.y = floorY + K * .06; g.add(skirt);
     return g;
   }
 
