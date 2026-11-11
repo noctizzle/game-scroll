@@ -6,9 +6,9 @@
 # Console games and changed Next Gen games), plus the speed budget
 # and Tiny Brains check for changed games. "code-flags" flags game code that touches the network,
 # storage or native features (scripts/game-lint.mjs), and lists changed files outside src/games/ that
-# need a careful read, and gives kit hints (advice) on changed games. Four more jobs: a mutation check of
+# need a careful read, and gives kit hints (advice) on changed games. Five more jobs: a mutation check of
 # the server and licence guards, a maths probe across JavaScript engines, a frame generation quality
-# check, and the app and sound checks (each only when those parts change). Runs with read-only
+# check, the app and sound checks, and a shared game link check (each only when those parts change). Runs with read-only
 # permissions and no secrets, so it is safe for pull requests from forks. See CONTRIBUTING.md.
 name: Game PR check
 
@@ -431,3 +431,57 @@ jobs:
       - name: Same maths in every engine?
         if: steps.changed.outputs.run
         run: node scripts/math-probe.cjs
+
+  # Shared game links: opens the streamed web app from a link to one game (?g=<id>) on quick, slow and
+  # stale connections; that game must be the first card and the one Play starts, and a link to a game
+  # that has been taken down must still land in the feed. Runs when the feed, the link code, the
+  # game catalogue code or the check change.
+  share-link:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Did the feed or the link code change?
+        id: changed
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          if git diff --name-only "origin/$BASE...HEAD" | grep -qE '^(src/(main|share|remote)\.js|scripts/(share-link|build-games)\.mjs|index\.html|vite\.config\.js|package(-lock)?\.json|\.github/workflows/game-pr-check\.yml)'; then echo "run=1" >> "$GITHUB_OUTPUT"; else echo "No feed or link changes."; fi
+
+      - uses: actions/setup-node@v7
+        if: steps.changed.outputs.run
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        if: steps.changed.outputs.run
+        run: npm ci
+
+      - name: Which Playwright
+        if: steps.changed.outputs.run
+        id: pw
+        run: echo "version=$(npm view playwright version)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the browser
+        if: steps.changed.outputs.run
+        id: pwcache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright
+        if: steps.changed.outputs.run
+        env:
+          PW: ${{ steps.pw.outputs.version }}
+        run: |
+          npm i --no-save "playwright@$PW"
+          if [ "${{ steps.pwcache.outputs.cache-hit }}" = "true" ]; then npx playwright install-deps chromium; else npx playwright install --with-deps chromium; fi
+
+      - name: A shared link opens that game
+        if: steps.changed.outputs.run
+        run: node scripts/share-link.mjs

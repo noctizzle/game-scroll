@@ -5,6 +5,7 @@
 // 2. The Worker end to end (wrangler dev, local D1): hearts, limits, passes, ENFORCE, CORS.
 import assert from 'node:assert/strict';
 import { writeFileSync, rmSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { webcrypto as crypto } from 'node:crypto';
 import 'reflect-metadata';
 import * as x509 from '@peculiar/x509';
@@ -14,7 +15,7 @@ import { verifyIntegrity, _reset } from './src/playintegrity.js';
 import { newChallenge, checkChallenge, newSession, readSession } from './src/session.js';
 import { cbor, b64u, sha256, concat } from './src/util.js';
 import { cleanBatch } from './src/stats.js';
-import { sharePage, idFromPath } from './src/sharepage.js';
+import { sharePage, shareGame, idFromPath } from './src/sharepage.js';
 import { cleanPerf, perfPage } from './src/perf.js';
 import { plausible, cleanSecs } from './src/scores.js';
 
@@ -55,13 +56,26 @@ const rejects = async (p, re) => { await assert.rejects(p, e => re.test(e.messag
   ok('stats batches drop unknown games, cap numbers and size');
   assert.equal(idFromPath('/Mini-Golf/'), 'mini-golf');
   assert.equal(idFromPath('/../etc'), null);
-  const page = sharePage({ id: 'mini-golf', title: 'Mini <Golf>', hint: 'Putt "it"', tag: 'POCKET' }, { webUrl: 'https://x.test/' });
+  // a catalogue entry as scripts/build-games.mjs writes it: the title, hint and tag are under meta
+  const entry = { id: 'mini-golf', hash: 'abc123', file: 'games/mini-golf.abc123.js', meta: { id: 'mini-golf', title: 'Mini <Golf>', hint: 'Putt "it"', tag: 'POCKET' } };
+  const page = sharePage(shareGame(entry), { webUrl: 'https://x.test/' });
   assert.match(page, /gamescroll:\/\/game\/mini-golf/);
-  assert.match(page, /Mini &lt;Golf&gt;/);
-  assert.ok(!page.includes('<Golf>'));
+  assert.match(page, /<h1>Mini &lt;Golf&gt;<\/h1>/);
+  assert.match(page, /<title>Mini &lt;Golf&gt; · Game Scroll<\/title>/);
+  assert.match(page, /Putt &quot;it&quot;/);
+  assert.ok(!page.includes('<Golf>') && !page.includes('undefined'));
   assert.match(page, /https:\/\/x\.test\/\?g=mini-golf/);
   assert.match(sharePage(null), /didn’t work/);
-  ok('share pages escape game text and link to the app and the browser version');
+  ok('share pages name the game, escape its text and link to the app and the browser version');
+  // the catalogue couldn't be read: the game can't be named, but the links still open it
+  const blind = sharePage(null, { webUrl: 'https://x.test/', id: 'mini-golf' });
+  assert.match(blind, /gamescroll:\/\/game\/mini-golf/);
+  assert.match(blind, /https:\/\/x\.test\/\?g=mini-golf/);
+  assert.ok(!/didn’t work/.test(blind) && !blind.includes('undefined'));
+  assert.ok(!sharePage(null, { webUrl: 'https://x.test/', id: '"><script>' }).includes('<script>'));
+  assert.match(sharePage(shareGame({ id: 'mini-golf' }), { webUrl: 'https://x.test/' }), /\?g=mini-golf/);
+  assert.equal(shareGame(undefined), null);
+  ok('…and keep the game in their links when the catalogue can\'t be read');
 }
 
 /* ---------- performance and crash reports ---------- */
@@ -212,9 +226,10 @@ async function fakeAssertion(leafKeys, challenge, counter, app = appId) {
 /* ---------- the Worker end to end ---------- */
 const { unstable_startWorker } = await import('wrangler');
 const SECRET = 'local-test-secret-' + Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex');
-async function run(vars, fn) {
+// origin: the address the Worker sees itself at (api.game-scroll.com unless given)
+async function run(vars, fn, origin) {
   writeFileSync('.dev.vars', Object.entries({ SESSION_SECRET: SECRET, MANIFEST_URL: '', STATS_TTL: '0', ...vars }).map(([k, v]) => `${k}=${v}`).join('\n'));
-  const w = await unstable_startWorker({ config: 'wrangler.toml', dev: { remote: false, server: { port: 0 }, logLevel: 'error' } });
+  const w = await unstable_startWorker({ config: 'wrangler.toml', dev: { remote: false, server: { port: 0 }, logLevel: 'error', ...(origin ? { origin } : {}) } });
   try { await fn((await w.url).toString().replace(/\/$/, '')); } finally { await w.dispose(); rmSync('.dev.vars', { force: true }); }
 }
 // Fresh device ids per run too: local rate-limit counters outlive one run.
@@ -327,5 +342,34 @@ await run({ ENFORCE: 'on' }, async url => {
   r = await post(url, '/score', { device: A, game, score: 10, secs: 30 }, { Authorization: 'Bearer ' + wrong.token }); assert.equal(r.status, 401, '…for that device');
   ok('with ENFORCE on, hearts and scores need a pass for that device; counts stay public');
 });
+
+// play.game-scroll.com/<id>: the page a shared link opens, read from a live catalogue
+{
+  const catalogue = { v: 1, built: Date.now(), games: [
+    { id: 'mini-golf', hash: 'abc123abc123', file: 'games/mini-golf.abc123abc123.js', bytes: 10, needs: {}, meta: { id: 'mini-golf', title: 'Mini Golf', tag: 'Pocket · Sport', hint: 'Putt it in.', w: 160, h: 160, goal: 9 } }] };
+  let up = true;
+  const host = createServer((req, res) => { res.writeHead(up ? 200 : 503, { 'Content-Type': 'application/json' }); res.end(up ? JSON.stringify(catalogue) : ''); });
+  await new Promise(r => host.listen(0, '127.0.0.1', r));
+  const vars = { MANIFEST_URL: `http://127.0.0.1:${host.address().port}/manifest.json`, WEB_PLAY_URL: 'https://x.test/' };
+  await run(vars, async url => {
+    let r = await fetch(url + '/mini-golf'), t = await r.text();
+    assert.equal(r.status, 200); assert.match(r.headers.get('content-type'), /text\/html/);
+    assert.match(t, /<h1>Mini Golf<\/h1>/); assert.match(t, /<title>Mini Golf · Game Scroll<\/title>/); assert.match(t, /Putt it in\./);
+    assert.match(t, /href="gamescroll:\/\/game\/mini-golf"/); assert.match(t, /href="https:\/\/x\.test\/\?g=mini-golf"/);
+    r = await fetch(url + '/taken-down'); t = await r.text();
+    assert.equal(r.status, 404); assert.match(t, /didn’t work/); assert.match(t, /href="https:\/\/x\.test\/"/); assert.ok(!t.includes('taken-down'));
+    r = await fetch(url + '/'); assert.equal(r.status, 200); assert.match(await r.text(), /href="gamescroll:\/\/"/);
+    r = await fetch(url + '/mini-golf', { method: 'POST' }); assert.equal(r.status, 405);
+    ok('a shared link\'s page names the game and its buttons open that game; a game that has gone gets a page that leads to the feed');
+  }, { hostname: 'play.game-scroll.com' });
+  up = false;
+  await run(vars, async url => {
+    const r = await fetch(url + '/mini-golf'), t = await r.text();
+    assert.equal(r.status, 200); assert.match(t, /href="gamescroll:\/\/game\/mini-golf"/); assert.match(t, /href="https:\/\/x\.test\/\?g=mini-golf"/);
+    assert.ok(!/didn’t work/.test(t));
+    ok('…and when the catalogue can\'t be read the buttons still open the shared game');
+  }, { hostname: 'play.game-scroll.com' });
+  host.close();
+}
 
 console.log('hearts worker: all checks passed');

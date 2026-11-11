@@ -24,6 +24,7 @@ How to check a change without waiting longer than you need to. Written for peopl
 | Can the goal be reached? | `node scripts/playtest.cjs <id> [--budget 20] [--strict]`: a bot plays faster than real time and tries to win (see below) | about 20 s a game |
 | Layout, cards, folding | `node scripts/fold.cjs [id ...]` | about 12 s |
 | Feed swiping | `node scripts/feed-jank.cjs [swipes] [--filter nextgen]` (compare before and after, not with a phone) | about a minute |
+| Shared game links, or how the feed starts (`src/share.js`, `openShared` and `playNow` in `src/main.js`, the catalogue in `src/remote.js`) | `node scripts/share-link.mjs [id]`: opens the streamed web app from a shared link on quick, slow and stale connections (builds what it needs) | about 30 s |
 | A kit in `src/kit/` | `npm run kit-test`, then smoke the games that use it (`node scripts/pick-games.mjs` names the best few per style) | 3 s + games |
 | What the app does around a game (screen kept on, finer touch, even pixels and the LCD look, the one-line soundtrack, the phone-only save) | `node scripts/app-test.cjs [awake\|touch\|pixels\|music\|saves]` after a build (`npm run app-test` does both) | about a minute |
 | Sound (`src/sfx.js`, `src/kit/sound.js`, `instruments.js`) | `npm run sound-test [sounds\|band\|clock]`: renders the sound off screen and measures it (every ready-made sound is heard and none is too loud, the limiter holds, instrument sets are as loud as each other, the music clock keeps the beat through a frozen frame) | about 90 s |

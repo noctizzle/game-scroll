@@ -21,7 +21,7 @@ import { verifyAttestation, verifyAssertion } from './appattest.js';
 import { verifyIntegrity } from './playintegrity.js';
 import { unb64, b64u } from './util.js';
 import { cleanBatch, saveBatch, totals, prune } from './stats.js';
-import { sharePage, idFromPath } from './sharepage.js';
+import { sharePage, shareGame, idFromPath } from './sharepage.js';
 import { cleanPerf, savePerf, perfTotals, prunePerf, perfPage } from './perf.js';
 import { cleanScore, cleanSecs, checkScore, saveScore, board, pruneScores } from './scores.js';
 import { cleanBrain, saveBrain, sharedBrain, pruneBrains, NAME_RE, SHAPE_RE } from './brains.js';
@@ -208,8 +208,9 @@ async function share(env, req) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Method not allowed', { status: 405 });
   const id = idFromPath(url.pathname);
   const cat = id ? await gameIds(env) : null;
-  const game = id && cat ? cat.get(id) || null : null;
-  return new Response(sharePage(game, { webUrl: env.WEB_PLAY_URL || '' }), {
+  const game = shareGame(id && cat ? cat.get(id) : null);
+  // The catalogue couldn't be read just now: the links keep the game, and the app works out whether it exists.
+  return new Response(sharePage(game, { webUrl: env.WEB_PLAY_URL || '', id: id && !cat ? id : '' }), {
     status: id && !game && cat ? 404 : 200,
     headers: {
       'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff',
