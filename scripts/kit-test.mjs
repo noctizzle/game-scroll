@@ -1760,6 +1760,12 @@ console.log('physics ok');
     let steps = 0; while (!job.step(2) && steps < 2000) steps++;
     assert.ok(job.done && job.move === 5 && job.ranked.length === 5, mode + ' think() takes the win in steps');
   }
+  {   // a fast phone fills the playout tree (200,000 playouts) before the thinking time is spent: think() has its answer then.
+      // (It used to wait for the time to pass, which no longer did once the tree stopped growing, so the opponent never moved.)
+    let clock = 0; const job = S.think({ b: ['O', 'O', null, 'X', 'X', null, null, null, null], t: 'X' }, { mode: 'mcts', time: 80, rng: 1, now: () => clock += .0001 });
+    let steps = 0; while (!job.step(2) && steps < 2000) steps++;
+    assert.ok(job.done && job.move === 5 && job.ranked.length === 5, 'mcts think() has its move once the tree is full, before the time is up (' + steps + ' steps)');
+  }
   {   // a step stops wherever its milliseconds run out, even deep inside one move's subtree, and still gets rank()'s answer
     const from = { b: Array(9).fill(null), t: 'X' }, want = S.rank(from, { depth: 9, time: 1e9 });
     let clock = 0; const job = S.think(from, { depth: 9, time: 1e9, now: () => clock += .01 });

@@ -268,8 +268,8 @@ export class Search {
       const tree = this.tree(state, r);
       job.step = (ms = 6) => {
         if (job.done) return true;
-        const t0 = now(); tree.run(t0 + Math.min(ms, Math.max(1, time - job.spent)), now); job.spent += now() - t0;
-        if (job.spent >= time) finish(tree.ranked());
+        const t0 = now(), full = tree.run(t0 + Math.min(ms, Math.max(1, time - job.spent)), now); job.spent += now() - t0;
+        if (full || job.spent >= time) finish(tree.ranked());
         return job.done;
       };
       return job;
@@ -359,6 +359,7 @@ export class Search {
         while (!this.over(s) && steps++ < 400) { const ms = g.moves(s); if (!ms.length) break; s = g.play(s, ms[Math.floor(r() * ms.length)]); }
         for (const p of path) { p.n++; if (p.who != null) p.w += result(s, p.who); }
       }
+      return runs > 200000;   // true: the tree is as big as it gets
     };
     return { run, ranked: () => root.kids.map(k => ({ move: k.move, value: k.n ? k.w / k.n : 0, visits: k.n })).sort((a, b) => b.visits - a.visits || b.value - a.value) };
   }
