@@ -362,6 +362,20 @@ export const gpuLooks = {
     afterColor(m, o, c => c.mul(float(1).add(live(u.lkGlow).mul(pow(max(dot(normalize(positionWorld.sub(cameraPosition)), live(u.lkSun)), 0), 4)))));
     if (!m.normalMap) m.normalNode = normalViewGeometry;
   },
+  // looks.js meadow(): the blades of land.meadow(): each tuft shrinks into the ground towards the edge of the
+  // patch that travels with the camera, bends downwind in rolling gusts, and is lit alike on both sides
+  meadow(m, s) {
+    const u = s.uniforms, K = live(u.lkMeadow), root = attribute('lkRoot', 'vec4').xyz, t = uv().y;
+    const moved = (p, time, bend, dir) => {
+      const far = smoothstep(K.x, K.y, distance(root.xz, cameraPosition.xz)), q = root.add(p.sub(root).mul(far.oneMinus())), hh = q.y.sub(root.y);
+      const ph = dot(root.xz, dir).mul(.35).sub(time.mul(2.2)), gust = sin(ph).mul(.3).add(sin(ph.mul(2.7).add(root.z.mul(.9))).mul(.15)).add(.55);
+      const b = bend.mul(gust).mul(t).mul(hh), fl = hh.mul(t).mul(.05);
+      return q.add(vec3(dir.x.mul(b).add(sin(time.mul(3.1).add(p.x.mul(9))).mul(fl)), b.mul(-.35), dir.y.mul(b).add(cos(time.mul(2.6).add(p.z.mul(9))).mul(fl))));
+    };
+    // (where the blades were last frame as well, for the motion three works out: see leaves)
+    m.positionNode = Fn(builder => { if (builder.needsPreviousData()) positionPrevious.assign(moved(positionPrevious, lastFrame(u.lkTime), lastFrame(u.lkBend), lastFrame(u.lkBendDir))); return moved(positionLocal, live(u.lkTime), live(u.lkBend), live(u.lkBendDir)); })();
+    m.normalNode = normalViewGeometry;
+  },
 };
 // hd3d.js AIR_WET: wet, darker, shinier surfaces in the rain (lit standard materials with the air)
 export function gpuWet(m, o, AIR) {

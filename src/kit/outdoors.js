@@ -22,7 +22,7 @@
 //
 // Sizes are metres; y is up. Keep segments modest on phones (64-128 a side).
 
-import { BufferAttribute, BufferGeometry, Color, DataTexture, LinearFilter, RGBAFormat, ConeGeometry, CylinderGeometry, DodecahedronGeometry, DoubleSide, Float32BufferAttribute, IcosahedronGeometry, LinearMipmapLinearFilter, Mesh, MeshBasicMaterial, MeshStandardMaterial, OrthographicCamera, PlaneGeometry, SRGBColorSpace, Scene, SphereGeometry, Vector2, Vector3, Vector4, WebGLRenderTarget } from 'three';
+import { BufferAttribute, BufferGeometry, Color, DataTexture, InstancedBufferAttribute, InstancedMesh, LinearFilter, RGBAFormat, ConeGeometry, CylinderGeometry, DodecahedronGeometry, DoubleSide, Float32BufferAttribute, IcosahedronGeometry, LinearMipmapLinearFilter, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, OrthographicCamera, PlaneGeometry, SRGBColorSpace, Scene, SphereGeometry, Vector2, Vector3, Vector4, WebGLRenderTarget } from 'three';
 import { fbm } from './math.js';
 import { bakeRenderer as renderer } from './hd3d.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -61,7 +61,7 @@ export class Land {
     this.object.updateMatrixWorld(true);
     this.z = this.mesh.geometry.attributes.position.array;   // local z is world height
     if (colours) this.paint(colours);
-    this.grassScene = null; this.grassMesh = null; this.time = 0;
+    this.grassScene = null; this.grassMesh = null; this.time = 0; this.meadows = [];
   }
   /** The ground height at world x, z (between grid points it's blended). */
   height(x, z) {
@@ -134,6 +134,74 @@ export class Land {
     return this.grassScene;
   }
   /**
+   * Thick grass round the camera, for a camera down in it: a square of tufts that travels with the camera
+   * over the land. Each tuft stays where it grows (the far side of the square is planted afresh ahead as the
+   * camera moves), and tufts shrink to nothing towards the square's edge, so none pops. Blades bend with the
+   * wind (land.wind) in gusts that roll across them. reach: metres from the camera to the edge; gap: metres
+   * between tufts (reach 22 with gap .55 is 6,400 tufts: fewer on slower phones); height and width: a tall
+   * blade, metres; blades: a tuft; bends: 1..3 pieces a blade (fewer for a far ring); stalks: tall seed
+   * stalks a tuft; spread: how wide a tuft is; colours: [one green, another, dried out] the tufts range
+   * between; where(x, z) => 0..1: how thickly it grows there (0 on a road, rock, a floor); tall(x, z) =>
+   * 0..1: how high (short where it is trodden or cropped); steep: no grass on steeper ground; budget:
+   * milliseconds a frame it may spend planting after a camera cut (.5: the square fills from the camera
+   * outwards over a few frames). Call it again for another ring (fine tufts close by, coarse ones out to
+   * the distance). Call land.update(dt, camera) every frame; land.update(0, camera) plants the whole
+   * square at once (when loading, or just before a cut to a place you know). Returns the mesh (on the
+   * land already; it sits at the world's origin). land.meadow(false) takes them all away.
+   */
+  meadow(o = {}) {
+    if (o === false) { for (const m of this.meadows) { m.removeFromParent(); m.geometry.dispose(); m.material.dispose(); } this.meadows = []; return null; }
+    const { reach = 22, gap = .55, height = .45, width = .05, blades = 8, bends = 3, stalks = 0, spread = gap * .42, colours = ['#5a7a2e', '#8b9440', '#a89c5c'], where = null, tall = null, steep = .45, seed = 4, budget = .5 } = o;
+    const n = Math.max(8, Math.ceil(reach * 2 / gap)), N = n * n, half = n >> 1, geo = tuft({ blades, bends, stalks, height, width, spread, seed });
+    const root = new InstancedBufferAttribute(new Float32Array(N * 4), 4); geo.setAttribute('lkRoot', root);
+    // (hardly any shine: a blade edge-on to the eye would glint white against a low sun)
+    const mat = new MeshPhysicalMaterial({ color: '#ffffff', vertexColors: true, roughness: .78, side: DoubleSide, specularIntensity: .12 });
+    const look = LOOKS.meadow(mat, { reach: [reach * .55, reach * .97] });
+    const mesh = new InstancedMesh(geo, mat, N); mesh.name = 'meadow'; mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false;
+    mesh.rotation.x = Math.PI / 2;   // (the land's own object is turned to lie flat: this turns the meadow back, so it is in the world's own metres)
+    mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(N * 3), 3);
+    const M = mesh.instanceMatrix.array, C = mesh.instanceColor.array, R = root.array, cs = colours.map(c => new Color(c)), tint = new Color();
+    // a number 0..1 for a cell of the world (the same every time, so a tuft is the same tuft whenever its cell comes back)
+    const H = (i, j, k) => { let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263) ^ Math.imul(k + seed * 7, 2246822519); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+    const plant = (i, j) => {
+      const slot = (((j % n) + n) % n) * n + (((i % n) + n) % n), q = slot * 16;
+      const x = (i + .5 + (H(i, j, 1) - .5) * .9) * gap, z = (j + .5 + (H(i, j, 2) - .5) * .9) * gap, y = this.height(x, z) - .015;
+      let w = this.inside(x, z) && this.slope(x, z) < steep ? 1 : 0; if (w && where) w = where(x, z);
+      const on = w > 0 && H(i, j, 3) < w * 1.25, s = on ? (.6 + .75 * H(i, j, 4)) * (.55 + .45 * Math.min(1, w)) : 0, a = H(i, j, 5) * 6.2832, c = Math.cos(a) * s, sn = Math.sin(a) * s;
+      const up = on && tall ? Math.max(.05, tall(x, z)) : 1;
+      M[q] = c; M[q + 1] = 0; M[q + 2] = -sn; M[q + 3] = 0; M[q + 4] = 0; M[q + 5] = s * (.85 + .3 * H(i, j, 6)) * up; M[q + 6] = 0; M[q + 7] = 0;
+      M[q + 8] = sn; M[q + 9] = 0; M[q + 10] = c; M[q + 11] = 0; M[q + 12] = x; M[q + 13] = y; M[q + 14] = z; M[q + 15] = 1;
+      R[slot * 4] = x; R[slot * 4 + 1] = y; R[slot * 4 + 2] = z;
+      // one green or another, dried out in patches, each tuft a little lighter or darker
+      const dry = Math.max(0, Math.min(1, (fbm(x * .045 + 7.3, z * .045 - 2.1, 2) + .08) * 2.2)) * .85, v = .8 + .4 * H(i, j, 8);
+      tint.copy(cs[0]).lerp(cs[1], H(i, j, 7)); if (cs[2]) tint.lerp(cs[2], dry * (.4 + .6 * H(i, j, 9)));
+      C[slot * 3] = tint.r * v; C[slot * 3 + 1] = tint.g * v; C[slot * 3 + 2] = tint.b * v;
+    };
+    // the square's cells, nearest the middle first, and which cell of the world each slot holds now
+    const order = new Uint32Array(N), own = new Int32Array(N * 2).fill(0x7fffffff);
+    { const d = k => Math.hypot((k % n) - half + .5, ((k / n) | 0) - half + .5), list = Array.from({ length: N }, (_, k) => k).sort((a, b) => d(a) - d(b)); order.set(list); }
+    const st = { n, gap, reach, look, ci: null, cj: null, k: N, at: new Vector3(1e9, 0, 0), planted: 0 };
+    // Plants the cells that came into the square round p and are not planted yet, from the middle out. After
+    // a camera cut that is every cell: a few are planted each frame (`budget` milliseconds' worth), so a cut
+    // never costs a long frame and the grass at your feet is there first; all: plant the lot now.
+    st.follow = (p, all = false) => {
+      const ci = Math.floor(p.x / gap), cj = Math.floor(p.z / gap);
+      if (ci !== st.ci || cj !== st.cj) { st.ci = ci; st.cj = cj; st.k = 0; }
+      if (st.k >= N) return 0;
+      const i0 = ci - half, j0 = cj - half, t0 = all ? 0 : performance.now(); let done = 0;
+      while (st.k < N) {
+        const o = order[st.k++], i = i0 + o % n, j = j0 + ((o / n) | 0), q = ((((j % n) + n) % n) * n + (((i % n) + n) % n)) * 2;
+        if (own[q] === i && own[q + 1] === j) continue;
+        plant(i, j); own[q] = i; own[q + 1] = j;
+        if ((++done & 15) === 0 && !all && performance.now() - t0 > budget) break;
+      }
+      if (done) { st.planted += done; mesh.instanceMatrix.needsUpdate = mesh.instanceColor.needsUpdate = root.needsUpdate = true; }
+      return done;
+    };
+    mesh.userData.meadow = st; this.meadows.push(mesh); this.object.add(mesh);
+    return mesh;
+  }
+  /**
    * Scatters a gs.props kind over the land: above / below heights, steep: max slope, gap, seed,
    * scale: [min, max], keepOut(x, z). Returns the ids.
    */
@@ -150,9 +218,47 @@ export class Land {
       this.grassScene.traverse(o => { if (!o.isMesh) return; updateGrass(o, this.time); const u = (o.userData.grassMaterial || o.material)?.userData?.grassUniforms; if (w && u?.windStrength) u.windStrength.value = w.speed * k * w.grass; });
       if (camera) updateGrassLOD(this.grassScene, camera, this.grassFar);
     }
+    for (const mesh of this.meadows) {
+      const st = mesh.userData.meadow, u = st.look.uniforms, w = this.wind, p = camera?.position;
+      u.lkTime.value = this.time;
+      if (w) { u.lkBend.value = Math.min(.8, w.speed * (p ? w.at(p.x, p.z).gust : 1) * w.grass * .4); u.lkBendDir.value.copy(w.uniforms.lkWindDir.value); }
+      // the square follows the camera, unless it is flying past too fast to see grass (the tufts left behind are
+      // sunk by their own shader) or is far above it; after a jump the square is planted over a few frames once
+      // it is still (all at once with dt 0: call update(0, camera) before a cut you know is coming)
+      if (p) { const far = p.distanceTo(st.at), fast = st.ci !== null && dt > 0 && far / dt > 60; st.at.copy(p); if (!fast && p.y - this.height(p.x, p.z) < st.reach * 2.5) st.follow(p, dt === 0); }
+    }
     return this;
   }
   dispose() { this.object.traverse(o => { o.geometry?.dispose(); }); this.object.removeFromParent(); }
+}
+
+// A tuft of grass: narrow ribbons that taper to a point and curve outwards, leaning every way, and a few
+// tall stalks with a seed head if asked for. uv.y runs from the root (0) to the tip (1); the colours are
+// shades (darker down in the tuft, each blade its own, a touch yellower at the tip, the seed heads
+// straw) for the tuft's own colour to tint; the normals point mostly up, so a meadow is lit like the
+// ground it grows on.
+function tuft({ blades = 8, bends = 3, stalks = 0, height = .45, width = .05, spread = .2, seed = 4 } = {}) {
+  const R = createSeededRandom(seed + 11), P = [], Nn = [], U = [], C = [], I = [], L = Math.max(1, Math.min(3, bends | 0));
+  for (let b = 0; b < blades + stalks; b++) {
+    const stalk = b >= blades, a0 = R() * Math.PI * 2, r0 = Math.sqrt(R()) * spread * (stalk ? .6 : 1), bx = Math.cos(a0) * r0, bz = Math.sin(a0) * r0;
+    const out = Math.atan2(bz, bx) + (R() - .5) * 3.6, fx = Math.cos(out), fz = Math.sin(out);   // the way it leans (mostly outwards); its width lies across that
+    const h = stalk ? height * (1.25 + R() * .5) : height * (.45 + R() * .55), w = width * (.7 + R() * .6), lean = h * (stalk ? .05 + R() * .16 : .14 + R() * .55), shade = .8 + R() * .32, base = P.length / 3;
+    for (let l = 0; l <= L; l++) {
+      const t = l / L, k = t * t, cx = bx + fx * lean * k, cz = bz + fz * lean * k, y = h * t * (1 - .13 * k);
+      // a blade narrows to its tip; a stalk is a thin stem that widens into its seed head just under the tip
+      const hw = w * .5 * (stalk ? (l === L - 1 && L > 1 ? .95 : .3) : 1 - Math.pow(t, 1.6)), v = shade * (.3 + .7 * Math.pow(t, .8)), head = stalk && l >= L - 1 ? 1 : 0;
+      const nl = Math.hypot(fx * .5 * t, 1, fz * .5 * t);
+      for (const sd of l < L ? [-1, 1] : [0]) {
+        P.push(cx - fz * hw * sd, y, cz + fx * hw * sd); Nn.push(fx * .5 * t / nl, 1 / nl, fz * .5 * t / nl); U.push(sd * .5 + .5, t);
+        C.push(v * (1 + .5 * head), v * (1 + .3 * head), v * (1 - .14 * t) * (1 - .25 * head));
+      }
+    }
+    for (let l = 0; l < L - 1; l++) { const i = base + l * 2; I.push(i, i + 1, i + 3, i, i + 3, i + 2); }
+    I.push(base + (L - 1) * 2, base + (L - 1) * 2 + 1, base + L * 2);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(P, 3)); g.setAttribute('normal', new Float32BufferAttribute(Nn, 3)); g.setAttribute('uv', new Float32BufferAttribute(U, 2)); g.setAttribute('color', new Float32BufferAttribute(C, 3));
+  g.setIndex(I); return g;
 }
 
 /**
@@ -342,7 +448,7 @@ export class Wind {
  * rounded normals, so a crown lights like one shape), so they match the near trees in any light.
  * geometry + material: the near one (a map with alphaTest is cut out the same way). Options: cards
  * (2..4), size (texels per card picture), round (0 flat .. 1 round normals), material (options for
- * the cards' MeshStandardMaterial). Returns { geometry, material, texture, dispose() } (texture: a plain texture read back once, so it shows on WebGL and WebGPU), or null when
+ * the cards' material: a MeshStandardMaterial, or a MeshPhysicalMaterial with the same specularIntensity when the near one is). Returns { geometry, material, texture, dispose() } (texture: a plain texture read back once, so it shows on WebGL and WebGPU), or null when
  * there is no 3D (tests without WebGL). Use it as the last level: props.kind(..., { lod: [[90, mid],
  * [240, imp.geometry, imp.material]] }).
  */
@@ -384,7 +490,8 @@ export function impostor(geometry, material, { cards = 3, size = 256, round = .7
     I.push(b, b + 3, b + 1, b + 1, b + 3, b + 2);
   }
   const g = new BufferGeometry(); g.setAttribute('position', new Float32BufferAttribute(P, 3)); g.setAttribute('normal', new Float32BufferAttribute(N, 3)); g.setAttribute('uv', new Float32BufferAttribute(U, 2)); g.setIndex(I); g.computeBoundingSphere();
-  const m = new MeshStandardMaterial({ map: pic, alphaTest: .5, side: DoubleSide, roughness: .85, ...mo });
+  // (the cards take after a near material that turns its shine down, as leaves do: a card edge-on to the eye would glint white against a low sun)
+  const m = src?.isMeshPhysicalMaterial ? new MeshPhysicalMaterial({ map: pic, alphaTest: .5, side: DoubleSide, roughness: .85, specularIntensity: src.specularIntensity, ...mo }) : new MeshStandardMaterial({ map: pic, alphaTest: .5, side: DoubleSide, roughness: .85, ...mo });
   return { geometry: g, material: m, texture: pic, dispose() { g.dispose(); m.dispose(); pic.dispose(); } };
 }
 
