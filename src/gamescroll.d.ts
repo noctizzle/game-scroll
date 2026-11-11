@@ -406,9 +406,34 @@ export interface PadPart { pad(i?: number): PadState | null; pads(): PadState[];
 export type MoveType = 'swing' | 'punch' | 'throw' | 'flip' | 'twist' | 'knock' | 'shake' | 'any';
 export interface MovesPart { Moves: new (o?: { sensitivity?: number }) => { on(type: MoveType, fn: (m: { type: string; dir?: string; power?: number }) => void): Loose; update(): void; stop(): void } }
 
+/** The fonts gs.pixel.text draws. */
+export type PixelFontName = 'small' | 'big' | 'silkscreen' | 'silkscreen bold' | 'tiny' | 'jersey' | 'terminal';
+/** The fonts in the font library (names work in any case). */
+export type FontName = 'Rubik' | 'Bangers' | 'Fredoka' | 'Titan One' | 'Bungee' | 'Orbitron' | 'Creepster' | 'Pirata One' | 'Rye' | 'Monoton' | 'Black Ops One' | 'Cinzel' | 'Patrick Hand' | 'Courier Prime' | 'Press Start 2P' | 'Silkscreen' | 'Tiny5' | 'Jersey 10' | 'VT323';
+/** gs.fonts: open-licence fonts that ship inside the app; a font's file loads the first time a game names it. */
+export interface FontsPart {
+  /**
+   * The string for c.font: font('Bangers', 34) is '400 34px "Bangers", Rubik, sans-serif'. Starts the font loading on
+   * first use; the text draws in Rubik until it is in. weight: 400 by default; the nearest weight the font has is used.
+   */
+  font(name: FontName | (string & {}), size?: number, weight?: number): string;
+  /** In make() or reset(): have these fonts in before the first frame ("Loading…" the first time). A name, or [name, weight]. */
+  use(...names: (FontName | [FontName, number])[]): boolean;
+  /** Is this font in and ready to draw? */
+  ready(name: FontName | (string & {}), weight?: number): boolean;
+  /** Every font: its name, what it looks like, the weights that ship, and for pixel fonts the size in px its pixels are crisp at (else 0). */
+  readonly list: readonly { readonly name: FontName; readonly look: string; readonly weights: readonly number[]; readonly pixel: number }[];
+}
+
 export interface PixelPart {
-  text(c: Ctx, str: string, x: number, y: number, o?: { size?: number; font?: 'small' | 'big'; align?: 'left' | 'center' | 'right'; color?: string; outline?: string | null; shadow?: string | null }): void;
-  measure(str: string, font?: 'small' | 'big'): number;
+  /**
+   * Crisp pixel text with its top-left at x, y; returns the width drawn. font: 'small' (3×5 capitals), 'big' (8×8), or one
+   * from the font library: 'silkscreen', 'silkscreen bold' (capitals 5 high), 'tiny' (5 high, with small letters),
+   * 'jersey' (10 high), 'terminal' (14 high). A library font loads on first use; until then the text is in 'big'.
+   */
+  text(c: Ctx, str: string, x: number, y: number, o?: { size?: number; font?: PixelFontName; align?: 'left' | 'center' | 'right'; color?: string; outline?: string | null; shadow?: string | null }): number;
+  /** Width and height in pixels at size 1. */
+  measure(str: string, font?: PixelFontName): { w: number; h: number };
   sprite(art: string | string[], palette: Record<string, string> | string[]): Loose;
   anim(frames: (string | string[])[], palette: Record<string, string> | string[], fps?: number): Loose;
   tiles(art: Loose, palette: Loose, tw: number, th: number): Loose;
@@ -1813,7 +1838,7 @@ export interface PhoneaiPart {
 export interface GS {
   sound: SoundPart; device: DevicePart; util: UtilPart; math: MathPart; palettes: PalettesPart;
   juice: JuicePart; effects: { Feel: typeof Feel }; controls: ControlsPart; pad: PadPart; moves: MovesPart;
-  pixel: PixelPart; gfx: GfxPart; physics: PhysicsPart; vision: VisionPart; geo: GeoPart; real: RealPart;
+  pixel: PixelPart; gfx: GfxPart; physics: PhysicsPart; vision: VisionPart; geo: GeoPart; real: RealPart; fonts: FontsPart;
   things: ThingsPart; rounds: RoundsPart; pacing: PacingPart; aim: AimPart; senses: SensesPart; prefs: PrefsPart; tick: TickPart; solve: SolvePart;
   camera2d: Camera2dPart; tiles: TilesPart; movers: MoversPart; anim: AnimPart; story: StoryPart; replay: ReplayPart; look2d: Look2dPart;
   tweak: TweakFn; brains: BrainsPart;

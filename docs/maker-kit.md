@@ -26,6 +26,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 | Game controllers, analog sticks, rumble | `gs.pad` | [Game controllers](#game-controllers) |
 | Swing, punch, throw, flip, twist the phone | `gs.moves` | [Motion moves](#motion-moves) |
 | Crisp pixel text, sprites drawn from text | `gs.pixel` | [Pixel text and sprites](#pixel-text-and-sprites) |
+| A title in a comic, spooky, sci-fi, western or handwritten font | `gs.fonts` (13 display fonts, 4 more pixel fonts) | [Fonts](#fonts) |
 | Things that spin, tumble, hinge, swing on ropes | `gs.physics` (Rapier) | [Physics](#physics) |
 | 3D bodies, level collisions, a walking character | `gs.physics3d` (Rapier) | [3D physics](#3d-physics) |
 | Enemies that chase, flee, flock, find a path | `gs.ai` (Yuka) | [AI](#ai) |
@@ -108,7 +109,7 @@ const { sounds } = gs.sound, { haptic } = gs.device, { Feel } = gs.effects;
 `strokes`, `vehicles`, `paths`, `bones`, `level3d`, `sky`, `camera`, `nav3d`, `characters`, the action kits (`combat`,
 `tactics`, `climb`, `poses`, `missions`, `cutscene`, `prompts`, `destruction`, `stealth`, `gadgets`,
 `campaign`, `arena`, `props`), `outdoors`, `craft`, `soft`, `cards`, `dice`, `words`, `ui`, `solve`, `tick`, `voxels`, `toon` (Classic
-Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo` and `THREE`.
+Console 3D), `hd` (Next Gen 3D), `ar`, `fx3d`, `vision`, `geo`, `real`, `fonts` and `THREE`.
 It is the only thing a game may import (`src/game-modules.js`); `npm run games` refuses anything
 else and the PR check flags it.
 
@@ -665,6 +666,7 @@ draw(c) {
 ```js
 text(c, 'SCORE 120', 4, 4, { size: 2, color: '#fff' });                       // 3×5 font, always crisp
 text(c, 'GAME OVER', W / 2, 80, { font: 'big', align: 'center', outline: '#000' });   // 8×8 font
+text(c, 'Find the key', 4, 20, { font: 'tiny' });                             // four more pixel fonts, below
 const hero = sprite(`
   ..kk..
   .kyyk.
@@ -677,6 +679,24 @@ const walk = anim([frameA, frameB], palette, 8);  walk.draw(c, x, y, time, { sca
 Sprites and text are drawn once and cached. `sprite.solid(px, py)` is for pixel-perfect hits;
 `tiles(art, palette, 8, 8)` cuts a tile sheet.
 
+The pixel fonts for `text(c, str, x, y, { font })`. Each is drawn at the one size its pixels sit on
+the grid, so it is always crisp; `size: 2` doubles it. `text()` returns the width it drew and
+`measure(str, font)` gives `{ w, h }` at size 1 without drawing.
+
+| `font` | Capitals | Looks like | Small letters |
+| --- | --- | --- | --- |
+| `'small'` (the default) | 5 high, 3 wide | the tiniest: scores and labels | no (capitals only) |
+| `'tiny'` | 5 high | tiny and narrow, fits a sentence on a 160 wide screen | yes |
+| `'silkscreen'`, `'silkscreen bold'` | 5 high | wide, clean capitals | no (small capitals) |
+| `'big'` | 7 high | arcade letters | yes |
+| `'jersey'` | 10 high | tall scoreboard numbers and titles | yes |
+| `'terminal'` | 14 high | an old computer terminal | yes |
+
+`'small'` and `'big'` are always there. The other four are fetched the first time a game names them
+(a few kilobytes each) and the text draws in the 8×8 font for the moment before one arrives; call
+`gs.fonts.use('Tiny5')` in `make()` or `reset()` if the first frame must already have it (see
+[Fonts](#fonts) for the names).
+
 ### Even pixels and the LCD look
 
 Pocket, Color and Advance games are drawn at exactly `w` × `h` and scaled up by the app with every
@@ -688,6 +708,56 @@ pixels and a little ghosting (fast things leave a short trail). `lcd: { grid: .3
 how strong each is (grid 0 to .6, ghost 0 to .85; `false` turns one off). It's a look, so it's the
 game's choice: left out, the picture is clean. Ghosting can hide a blinking sprite's off frames, so
 check anything that flickers on purpose.
+
+## Fonts
+
+`const { font, use } = gs.fonts;`
+
+The app ships 13 display fonts next to Rubik (its own text), so a title can look like the game it
+belongs to and still look the same on every phone. All are open-licence (SIL OFL 1.1) and each one's
+file is fetched only the first time a game names it.
+
+```js
+reset() { use('Bangers', ['Fredoka', 700]); ... }      // optional: "Loading…" until they are in
+draw(c) {
+  c.font = font('Bangers', 34); c.fillText('KA-POW!', x, y);
+  c.font = font('Fredoka', 16, 700); c.fillText('Tap to bounce', x, y + 30);
+}
+```
+
+| Name | Looks like | Weights |
+| --- | --- | --- |
+| `Rubik` | the app's own text: plain and friendly | 400, 500, 700, 800 |
+| `Bangers` | comic book shout | 400 |
+| `Fredoka` | round and friendly | 400, 700 |
+| `Titan One` | chunky cartoon title | 400 |
+| `Bungee` | arcade sign, block capitals | 400 |
+| `Orbitron` | science fiction | 500, 800 |
+| `Creepster` | spooky | 400 |
+| `Pirata One` | pirates and castles | 400 |
+| `Rye` | wild west | 400 |
+| `Monoton` | neon tubes | 400 |
+| `Black Ops One` | army stencil | 400 |
+| `Cinzel` | epic fantasy capitals | 400, 700 |
+| `Patrick Hand` | handwritten note | 400 |
+| `Courier Prime` | typewriter | 400, 700 |
+
+- `font(name, size, weight)` gives the string for `c.font` (`'400 34px "Bangers", Rubik, sans-serif'`)
+  and starts the font loading if it isn't in yet. Until it is, the text draws in Rubik, so nothing
+  breaks; a card waiting in the feed is drawn again when the font arrives. The nearest weight the
+  font has is used, names can be in any case, and an unknown name gives Rubik.
+- `use(...names)` in `make()` or `reset()` waits for the fonts before the first frame, the way the
+  other lazy parts do (the app shows "Loading…" once). Use it when text is measured to lay things
+  out, or when a title in the wrong font for a moment would show. A misspelt name is an error that
+  lists the fonts.
+- `ready(name, weight)` says whether a font is in. `gs.fonts.list` is every font:
+  `{ name, look, weights, pixel }`.
+- The pixel fonts (`Press Start 2P`, `Silkscreen`, `Tiny5`, `Jersey 10`, `VT323`) are in the list too.
+  In the pixel styles draw them with `gs.pixel.text` ([above](#pixel-text-and-sprites)), which keeps
+  every pixel hard; `font('VT323', 25)` on a smooth Phone game is fine for a retro label.
+- Fonts that come with the phone (`Arial`, `Courier New`, `Impact`, `Georgia`...) look different on
+  every phone and some are missing on Android: name one of these instead. Plain `sans-serif` and
+  `monospace` are fine as they are. Emoji are the phone's own too, so they differ between phones.
 
 ## Game controllers
 

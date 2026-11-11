@@ -215,7 +215,8 @@ How each style looks in the app, start screen and in play:
 
 Modern phone games: one-thumb arcade, puzzles, physics toys. You draw at full resolution, so use
 smooth shapes, gradients and any colours. Fonts available: `Rubik` for text, `"Press Start 2P"` for
-pixel-style numbers. Start screen says "Tap to start" with a yellow Play button. These appear under the
+pixel-style numbers, and 13 display fonts with `gs.fonts` (`c.font = gs.fonts.font('Bangers', 34)`:
+comic, spooky, sci-fi, western, handwritten and more, the same on every phone). Start screen says "Tap to start" with a yellow Play button. These appear under the
 Casual tab.
 
 ### Dot matrix (Pocket)
@@ -363,7 +364,7 @@ any other app code. The full guide is [docs/maker-kit.md](docs/maker-kit.md). Th
 - `gs.controls`: thumbsticks, buttons, the two-thumb layout, tap / double-tap / hold / swipe. `gs.pad`: game controllers.
 - `gs.physics` / `gs.physics3d`: real physics (Rapier): spinning shapes, joints, ropes, 3D bodies, a character mover.
 - `gs.ai`: steering, flocking and path finding (Yuka). `gs.math`: seeded random, daily seed, noise, timers.
-- `gs.pixel`: pixel text and sprites from text. `gs.moves`: swing, punch, throw, flip, twist.
+- `gs.pixel`: pixel text (six pixel fonts) and sprites from text. `gs.fonts`: 13 display fonts for titles. `gs.moves`: swing, punch, throw, flip, twist.
 - `gs.things`, `gs.rounds`, `gs.pacing`: game objects and collisions, scenes and levels, spawners and waves.
 - `gs.aim`, `gs.senses`: touch aim assist; enemy sight, hearing and moods.
 - `gs.camera2d`, `gs.tiles`, `gs.movers`: 2D cameras with parallax, levels written as text, platformer and top-down movement.

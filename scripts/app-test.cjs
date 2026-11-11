@@ -1,7 +1,7 @@
 // Checks what the app itself does around a game (not what a game does): keeping the screen on during a
 // round, finer touch, even pixels and the LCD look for pocket games, the one-line soundtrack, the bigger
-// save that stays on the phone.
-// Usage: npm run build:bundled && node scripts/app-test.cjs [awake|touch|pixels|music|saves]
+// save that stays on the phone, the font library.
+// Usage: npm run build:bundled && node scripts/app-test.cjs [awake|touch|pixels|music|saves|fonts]   (SHOTS=<dir> saves a picture of every font)
 const { chromium } = require('playwright');
 
 let failed = 0;
@@ -265,10 +265,100 @@ async function saves(b) {
   q.errs = q.errs.filter(e => !/indexedDB|IDB/i.test(e)); await q.done();
 }
 
+/* ---------- the font library ---------- */
+async function fonts(b) {
+  console.log('\nFont library');
+  const p = await open(b);
+  const asked = []; p.on('request', r => { if (/\.woff2?(\?|$)/.test(r.url())) asked.push(r.url()); });
+  await p.game(CASUAL);
+  const list = await p.evaluate(() => __gs.kits.fonts.list.map(f => ({ ...f })));
+  check(list.length === 19 && list.filter(f => f.pixel).length === 5 && list.every(f => f.name && f.look && f.weights.length), '19 fonts are listed: Rubik, 13 display fonts and 5 pixel fonts', list.map(f => f.name).join(', '));
+  const library = () => asked.filter(u => !/rubik|press-start/.test(u));
+  check(library().length === 0, 'none of the library is fetched until a game names a font', library().join(' '));
+  // a font named in draw(): the string for c.font at once, the file on first use, the fallback until it is in
+  let s = await p.evaluate(() => {
+    const F = __gs.kits.fonts, g = document.createElement('canvas').getContext('2d'), css = F.font('Bangers', 30);
+    g.font = css; return { css, ready: F.ready('Bangers'), w: g.measureText('KA-POW! 123').width };
+  });
+  check(s.css === '400 30px "Bangers", Rubik, sans-serif' && !s.ready, 'font(name, size) gives the string for c.font before the font is in', JSON.stringify(s));
+  await p.waitForFunction(() => __gs.kits.fonts.ready('Bangers'), null, { timeout: 15000 });
+  let t = await p.evaluate(() => { const g = document.createElement('canvas').getContext('2d'); g.font = __gs.kits.fonts.font('Bangers', 30); return { w: g.measureText('KA-POW! 123').width, ok: document.fonts.check('30px "Bangers"') }; });
+  check(t.ok && Math.abs(t.w - s.w) > 4 && library().length === 1 && /bangers/.test(library()[0]), 'the font loads on first use (one file), and the text then draws in it', JSON.stringify({ before: s.w, after: t.w, files: library().length }));
+  // names: any case; the nearest weight the font has; an unknown name is Rubik
+  s = await p.evaluate(() => { const F = __gs.kits.fonts; let threw = ''; try { F.use('Nope'); } catch (e) { threw = e.message; } return { a: F.font('orbitron', 20, 900), b: F.font('Nope', 20), c: F.font('Courier Prime', 12, 700), d: F.font('silkscreen', 8), threw }; });
+  check(s.a === '800 20px "Orbitron", Rubik, sans-serif' && s.b === '400 20px "Rubik", sans-serif' && s.c === '700 12px "Courier Prime", monospace' && s.d === '400 8px "Silkscreen", monospace', 'names in any case, the nearest weight a font has, and Rubik for a name it does not know', JSON.stringify(s));
+  check(/no font called "Nope"/.test(s.threw) && /Bangers/.test(s.threw), 'use() with an unknown name says which fonts there are', s.threw);
+  // every file: each weight of each font loads and draws
+  const all = await p.evaluate(async () => {
+    const F = __gs.kits.fonts, bad = [];
+    for (const f of F.list) for (const w of f.weights) F.font(f.name, 20, w);
+    const end = performance.now() + 20000;
+    while (performance.now() < end && !F.list.every(f => f.weights.every(w => F.ready(f.name, w)))) await new Promise(r => setTimeout(r, 100));
+    for (const f of F.list) for (const w of f.weights) if (!F.ready(f.name, w) || !document.fonts.check(`${w} 20px "${f.name}"`)) bad.push(f.name + ' ' + w);
+    return bad;
+  });
+  check(!all.length && library().length === 22, 'every font and weight in the library loads (22 files)', JSON.stringify({ notLoaded: all, files: library().length }));
+  check(library().every(u => u.startsWith('http://localhost:4184/')), 'and they come from inside the app, not the network');
+  await p.done();
+
+  // use() in make(): "Loading…" first, then the game is made again with the font in
+  const q = await open(b);
+  await q.evaluate(id => { const d = __gs.GAMES.find(g => g.id === id), make = d.make; window.__f = { makes: 0, ready: [], draws: 0 }; d.make = api => { __f.makes++; __gs.kits.fonts.use('Orbitron', ['Fredoka', 700]); __f.ready.push(__gs.kits.fonts.ready('Orbitron') && __gs.kits.fonts.ready('Fredoka', 700)); const g = make(api), dr = g.draw; g.draw = (...a) => { __f.draws++; return dr.apply(g, a); }; return g; }; }, CASUAL);
+  await q.evaluate(id => __gs.only(id), CASUAL);
+  const first = await q.evaluate(() => ({ loading: !!__gs.active.loading, makes: __f.makes, ready: __f.ready.length }));
+  await q.waitForFunction(() => __gs.active && !__gs.active.loading && __f.ready.length, null, { timeout: 30000 });
+  s = await q.evaluate(() => ({ ...__f, loading: !!__gs.active.loading }));
+  check(first.loading && first.ready === 0 && s.ready.every(Boolean) && s.makes > s.ready.length, 'use() in make() shows "Loading…" until the fonts are in, then the game is made with them', JSON.stringify({ first, then: s }));
+  // a card waiting in the feed is drawn again when a font arrives later
+  await q.waitForTimeout(700); const idle = await q.evaluate(() => __f.draws); await q.waitForTimeout(500);
+  const still = await q.evaluate(() => { const n = __f.draws; __gs.kits.fonts.font('Rye', 20); return n; });
+  await q.waitForFunction(() => __gs.kits.fonts.ready('Rye'), null, { timeout: 15000 }); await q.waitForTimeout(400);
+  const after = await q.evaluate(() => __f.draws);
+  check(still === idle && after > still, 'a waiting card is not redrawn every frame, but is drawn again when a font arrives', JSON.stringify({ idle, still, after }));
+  await q.done();
+
+  // pixel text in the pixel fonts: crisp (every pixel fully on or off), at the size where the font's pixels are the game's
+  const r = await open(b);
+  await r.game(PIXEL);
+  const before = await r.evaluate(() => { const c = document.createElement('canvas'); c.width = 300; c.height = 40; return __gs.kits.pixel.text(c.getContext('2d'), 'Score 12', 0, 0, { font: 'tiny' }); });
+  await r.waitForFunction(() => __gs.kits.fonts.ready('Tiny5'), null, { timeout: 15000 });
+  const px = await r.evaluate(async () => {
+    const F = __gs.kits.fonts, P = __gs.kits.pixel, out = {};
+    for (const f of ['silkscreen', 'silkscreen bold', 'tiny', 'jersey', 'terminal']) P.text(document.createElement('canvas').getContext('2d'), 'x', 0, 0, { font: f });
+    const end = performance.now() + 15000;
+    while (performance.now() < end && !(F.ready('Silkscreen') && F.ready('Silkscreen', 700) && F.ready('Jersey 10') && F.ready('VT323'))) await new Promise(r => setTimeout(r, 100));
+    for (const f of ['silkscreen', 'silkscreen bold', 'tiny', 'jersey', 'terminal', 'big']) {
+      const c = document.createElement('canvas'); c.width = 400; c.height = 60; const g = c.getContext('2d', { willReadFrequently: true });
+      const w = P.text(g, 'HIGH Score 120', 0, 0, { font: f, color: '#ffffff' }), a = g.getImageData(0, 0, 400, 60).data;
+      let soft = 0, on = 0; for (let i = 3; i < a.length; i += 4) { if (a[i] > 0) on++; if (a[i] > 0 && a[i] < 255) soft++; }
+      const capH = (() => { const t = document.createElement('canvas'); t.width = 40; t.height = 40; const k = t.getContext('2d', { willReadFrequently: true }); P.text(k, 'H', 0, 0, { font: f }); const d = k.getImageData(0, 0, 40, 40).data; let rows = 0; for (let y = 0; y < 40; y++) { let any = false; for (let x = 0; x < 40; x++) if (d[(y * 40 + x) * 4 + 3]) any = true; if (any) rows++; } return rows; })();
+      out[f] = { w, soft, on, capH, m: P.measure('HIGH Score 120', f) };
+    }
+    return out;
+  });
+  check(before === 64, 'until a pixel font is in, its text draws in the 8 by 8 font', 'width ' + before);
+  check(Object.values(px).every(v => v.soft === 0 && v.on > 50), 'every pixel font draws hard pixels (each fully on or off)', JSON.stringify(px));
+  check(px.silkscreen.capH === 5 && px['silkscreen bold'].capH === 5 && px.tiny.capH === 5 && px.jersey.capH === 10 && px.terminal.capH === 14 && px.big.capH === 7, 'capitals are 5 (Silkscreen, Tiny5), 10 (Jersey 10), 14 (VT323) and 7 (the 8 by 8 font) pixels high', JSON.stringify(Object.fromEntries(Object.entries(px).map(([k, v]) => [k, v.capH]))));
+  check(px.tiny.w < px.silkscreen.w && px.silkscreen.w < px.big.w && Object.entries(px).every(([f, v]) => v.m.w === v.w), 'Tiny5 fits the most on a line, and measure() agrees with what is drawn', JSON.stringify(Object.fromEntries(Object.entries(px).map(([k, v]) => [k, [v.w, v.m.w]]))));
+  if (process.env.SHOTS) {
+    await r.evaluate(async () => {
+      const F = __gs.kits.fonts, P = __gs.kits.pixel; for (const f of F.list) for (const w of f.weights) F.font(f.name, 20, w);
+      const end = performance.now() + 20000; while (performance.now() < end && !F.list.every(f => f.weights.every(w => F.ready(f.name, w)))) await new Promise(r => setTimeout(r, 100));
+      document.body.innerHTML = '<canvas id="spec" width="390" height="844" style="position:fixed;inset:0;width:390px;height:844px;z-index:99999;image-rendering:pixelated"></canvas>';
+      const c = document.getElementById('spec').getContext('2d'); c.fillStyle = '#141a2b'; c.fillRect(0, 0, 390, 844); let y = 30;
+      for (const f of F.list.filter(f => !f.pixel)) { c.fillStyle = '#fff'; c.font = F.font(f.name, 24, f.weights.at(-1)); c.fillText('Level 7: ' + f.name, 12, y); c.fillStyle = '#8fa3c8'; c.font = F.font('Rubik', 10); c.fillText(f.look, 12, y + 13); y += 44; }
+      c.imageSmoothingEnabled = false;
+      for (const f of ['small', 'big', 'silkscreen', 'silkscreen bold', 'tiny', 'jersey', 'terminal']) { const h = P.measure('Ag', f).h * 2; P.text(c, f === 'small' ? 'SCORE 120 GAME OVER (SMALL)' : 'Score 120 Game Over (' + f + ')', 12, y, { font: f, size: 2, color: '#ffd23f' }); y += h + 8; }
+    });
+    await r.screenshot({ path: process.env.SHOTS + '/fonts.png' });
+  }
+  await r.done();
+}
+
 (async () => {
   const server = await (await import('vite')).preview({ preview: { port: 4184 } });
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] }), only = process.argv.slice(2);
-  const parts = { awake, touch, pixels, music, saves };
+  const parts = { awake, touch, pixels, music, saves, fonts };
   for (const [name, fn] of Object.entries(parts)) if (!only.length || only.includes(name)) await fn(b);
   await b.close(); server.httpServer.close();
   console.log(failed ? `\n${failed} check(s) failed` : '\nall app checks passed'); process.exit(failed ? 1 : 0);

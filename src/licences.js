@@ -59,6 +59,9 @@ export const OPEN_SOURCE = [
   { name: '@2toad/profanity', for: 'keeping rude words out of word games', licence: 'MIT', spdx: 'MIT', packages: ['@2toad/profanity'] },
   { name: 'Press Start 2P font', for: 'pixel text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/press-start-2p'] },
   { name: 'Rubik font', for: 'app text', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1', packages: ['@fontsource/rubik'] },
+  { name: 'Game fonts', for: 'the font library for games (gs.fonts): Bangers, Fredoka, Titan One, Bungee, Orbitron, Creepster, Pirata One, Rye, Monoton, Black Ops One, Cinzel, Patrick Hand, Courier Prime, Silkscreen, Tiny5, Jersey 10 and VT323, by their designers', licence: 'SIL OFL 1.1', spdx: 'OFL-1.1',
+    packages: ['@fontsource/bangers', '@fontsource/fredoka', '@fontsource/titan-one', '@fontsource/bungee', '@fontsource/orbitron', '@fontsource/creepster', '@fontsource/pirata-one', '@fontsource/rye', '@fontsource/monoton',
+      '@fontsource/black-ops-one', '@fontsource/cinzel', '@fontsource/patrick-hand', '@fontsource/courier-prime', '@fontsource/silkscreen', '@fontsource/tiny5', '@fontsource/jersey-10', '@fontsource/vt323'] },
 ];
 
 // Parts that ship inside the app but aren't open source, shown under the list above.

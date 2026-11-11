@@ -1892,6 +1892,36 @@ console.log('physics ok');
   console.log('gs.ar floor finder ok');
 }
 
+// gs.fonts: the font library's names and strings (the files themselves are checked in a browser by scripts/app-test.cjs)
+{
+  const { list, font, use, ready, pixelFont } = await import('../src/kit/fontlib.js');
+  const { readFileSync, existsSync } = await import('node:fs');
+  assert.equal(list.length, 19, 'gs.fonts lists ' + list.length + ' fonts'); assert.ok(Object.isFrozen(list) && Object.isFrozen(list[0]));
+  assert.equal(list.filter(f => f.pixel).length, 5, 'five pixel fonts');
+  assert.equal(font('Bangers', 34), '400 34px "Bangers", Rubik, sans-serif');
+  assert.equal(font('bangers'), '400 16px "Bangers", Rubik, sans-serif', 'any case, 16px by default');
+  assert.equal(font('Fredoka', 20, 600), '700 20px "Fredoka", Rubik, sans-serif', 'the nearest weight a font has');
+  assert.equal(font('Orbitron', 12), '500 12px "Orbitron", Rubik, sans-serif');
+  assert.equal(font('Rubik', 14, 800), '800 14px "Rubik", sans-serif');
+  assert.equal(font('Courier Prime', 14, 700), '700 14px "Courier Prime", monospace');
+  assert.equal(font('VT323', 25), '400 25px "VT323", monospace');
+  assert.equal(font('No Such Font', 18), '400 18px "Rubik", sans-serif', 'an unknown name is Rubik');
+  assert.equal(use('Bangers', ['Fredoka', 700]), true, 'no page here: use() does nothing'); assert.equal(ready('Bangers'), false);
+  assert.equal(pixelFont('tiny').font.name, 'Tiny5'); assert.equal(pixelFont('terminal').font.name, 'VT323'); assert.equal(pixelFont('jersey').font.pixel, 56 / 3);
+  assert.equal(pixelFont('silkscreen bold').weight, 700); assert.equal(pixelFont('Silkscreen').weight, 400);
+  assert.equal(pixelFont('big'), null); assert.equal(pixelFont('small'), null); assert.equal(pixelFont('Bangers'), null, 'a display font is not a pixel font');
+  // every font and weight in the list has its file, and no file is left over
+  const files = readFileSync(new URL('../src/kit/font-files.js', import.meta.url), 'utf8');
+  const keys = [...files.matchAll(/'([a-z0-9 ]+ \d{3})':/g)].map(m => m[1]).sort();
+  const want = list.filter(f => !['Rubik', 'Press Start 2P'].includes(f.name)).flatMap(f => f.weights.map(w => f.name.toLowerCase() + ' ' + w)).sort();
+  assert.deepEqual(keys, want, 'font-files.js has one file for every font and weight');
+  for (const m of files.matchAll(/from '(@fontsource\/[^'?]+)\?url'/g)) assert.ok(existsSync(new URL('../node_modules/' + m[1], import.meta.url)), m[1] + ' is installed');
+  // the licence list names every font package
+  const lic = readFileSync(new URL('../src/licences.js', import.meta.url), 'utf8');
+  for (const m of files.matchAll(/from '(@fontsource\/[a-z0-9-]+)\//g)) assert.ok(lic.includes(m[1]), m[1] + ' is in the licence list');
+  console.log(`gs.fonts: ${list.length} fonts, ${keys.length} files, names, weights and pixel font names ok`);
+}
+
 // gs.real: the sun and moon for the player, the battery, headphones
 {
   const { sun, moon, battery, headphones, guessPlace, readOutputs } = await import('../src/kit/real.js');

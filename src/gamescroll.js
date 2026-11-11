@@ -156,6 +156,7 @@ import * as composer from './kit/compose.js';
 import * as solve from './kit/solve.js';
 import * as phoneSensors from './kit/sensors.js';
 import * as real from './kit/real.js';
+import * as fontlib from './kit/fontlib.js';
 import { StillLoading } from './kit/lazy.js';
 
 // App-only exports games never get: raw storage, the player's settings, the unrounded location,
@@ -165,6 +166,7 @@ export const HIDDEN = {
   util: ['store', 'deviceId'],
   device: ['location', 'hapticSettings', 'setHaptics', 'stopSensors'],
   real: ['guessPlace', 'readOutputs'],
+  fonts: ['whenFontArrives', 'pixelFont', 'want'],
   moves: ['stopMoves'],
   pad: ['pollPads'],
   vision: ['stopVision'],
@@ -271,6 +273,7 @@ const core = {
   vision: pick('vision', vision),
   geo: pick('geo', geo),
   real: pick('real', real),
+  fonts: pick('fonts', fontlib),
   things: pick('things', things),
   rounds: pick('rounds', rounds),
   pacing: pick('pacing', pacing),

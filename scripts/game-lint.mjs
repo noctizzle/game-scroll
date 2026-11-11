@@ -72,6 +72,7 @@ const CODE_RULES = [
 
 // Kit hints. at: the line the hint points to (the first match). unless: the game already uses the kit.
 // only: styles it applies to. file: true says it's about the whole game (it points at the definition).
+// text: true reads inside strings too (a font name is in one).
 const pixelStyle = src => /\bretro\s*:\s*true\b/.test(src) && !/\bera\s*:\s*['"`](console|nextgen|ar)['"`]/.test(src);
 const HINTS = [
   { at: /\b\w*(parts|particles|sparks|puffs|debris|confetti|dust|bits|chips|shards)\w*\s*\.push\s*\(\s*\{[^}]*\b(vx|vy|life)\b/i, unless: /\b(Feel|Juice)\b/,
@@ -92,6 +93,8 @@ const HINTS = [
     why: 'a fixed step by hand. tick: 60 in the definition calls update(1/60) a whole number of times a frame on every phone, and gs.tick.mix(before, now) draws between ticks' },
   { at: /\.\s*fillText\s*\(/, only: pixelStyle,
     why: 'fillText in a pixel style comes out smoothed (soft edges and in-between shades). gs.pixel.text(c, str, x, y, { color, align }) draws crisp pixel letters' },
+  { text: true, at: /px\s+[^;]*?\b(Arial|Helvetica|Courier New|Courier|Impact|Georgia|Verdana|Tahoma|Trebuchet MS|Times New Roman|Times|Comic Sans MS|Lucida Console|Menlo|Monaco|Consolas|Segoe UI|Roboto|Futura|Palatino|Garamond|system-ui|ui-monospace|ui-rounded|ui-serif|cursive|fantasy)\b/,
+    why: '$1 is one of the phone\'s own fonts: it looks different on each phone and some phones don\'t have it. gs.fonts has 13 that look the same everywhere, loaded on first use: c.font = gs.fonts.font(\'Courier Prime\', 14) for a typewriter, \'Bangers\', \'Orbitron\', \'Creepster\', \'Rye\'... (docs/maker-kit.md, Fonts)' },
   { file: true, unless: /\b(haptic|hapticPattern|buzz|rumble|Feel)\b/,
     why: 'no haptics. A light buzz on a score and a stronger one on a hit make a phone game feel better: gs.device.haptic(\'light\'), or feel.coin / feel.hit (gs.effects.Feel), which buzz for you' },
   { file: true, unless: /\bmusic\b|\bstartMic\b|\bgs\s*\.\s*(hear|rhythm)\b/,
@@ -105,8 +108,8 @@ export function hints(file) {
     if (h.only && !h.only(src)) continue;
     if (h.unless && h.unless.test(code)) continue;
     if (h.file) { out.push({ line: defLine + 1, why: h.why, code: real[defLine].trim().slice(0, 120) }); continue; }
-    const i = lines.findIndex(l => h.at.test(l)); if (i < 0) continue;
-    const m = lines[i].match(h.at);
+    const from = h.text ? real : lines, i = from.findIndex(l => h.at.test(l)); if (i < 0) continue;
+    const m = from[i].match(h.at);
     out.push({ line: i + 1, why: h.why.replace('$1', m[1] || m[0]), code: real[i].trim().slice(0, 120) });
   }
   return out.sort((a, b) => a.line - b.line);
