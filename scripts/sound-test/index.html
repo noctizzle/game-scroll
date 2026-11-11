@@ -46,6 +46,9 @@ try {
     jobs.push(() => { for (let i = 0; i < 12; i++) { snd.sounds.blast(); snd.sounds.boom(); } });
     // the same sound twice: variation makes a repeating sound differ, a tuned one stays exact
     for (const n of ['step', 'step', 'coin', 'coin']) jobs.push(() => snd.sounds[n]());
+    // hi-hats written ahead on the beat, the way music() writes them: a burst timed ahead has to start at its
+    // own volume (some started one sample early at full volume: a click some twenty times too loud)
+    for (let i = 0; i < 10; i++) jobs.push(() => { for (let k = 0; k < 16; k++) snd.noise(.03, { vol: .03, from: 9000, to: 7000, filter: 'highpass', when: a.ctx.currentTime + .06 + k * .125 }); });
     const r = await render(a, jobs, SLOT);
     let quiet = [], hot = [], long = [];
     names.forEach((n, i) => { const m = r[i]; note(`${n.padEnd(10)} peak ${db(m.pre)} dB  rms ${db(m.rms)} dB  ${m.len.toFixed(2)} s`); if (m.pre < .012 || m.rms < .0063) quiet.push(n); if (m.pre > .34 || m.rms > .045) hot.push(n); if (m.len > 2.2) long.push(n); });
@@ -62,6 +65,8 @@ try {
     const [s1, s2, c1, c2] = r.slice(names.length + 3);
     ok(Math.abs(s1.rms - s2.rms) > 1e-5 || Math.abs(s1.pre - s2.pre) > 1e-5, 'a repeating sound (step) is a little different each time');
     ok(Math.abs(c1.rms - c2.rms) < 1e-6 && Math.abs(c1.pre - c2.pre) < 1e-6, 'a tuned sound (coin) is the same each time');
+    const hats = Math.max(...r.slice(names.length + 7).map(m => m.pre));
+    ok(hats > .01 && hats < .1, `a hiss timed ahead starts at its own volume, with no click (160 hi-hats on the beat, the loudest moment ${db(hats)} dB)`);
     ok(delay() > .004 && delay() < .02, `delay() counts the limiter where the phone reports nothing (${(delay() * 1000).toFixed(1)} ms)`);
   }
 
