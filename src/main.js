@@ -637,8 +637,22 @@ function rebuild(){
   built++;slides.forEach(dropSlide);feed.innerHTML='';slides=[];active=null;lastId=null;queue=[];feed.scrollTop=0;addBatch();if(slides[0])setActive(slides[0]);
 }
 
-let resizeAt=0;
-io=new IntersectionObserver(es=>{if(performance.now()-resizeAt<500)return;for(const e of es)if(e.isIntersecting&&e.intersectionRatio>=.6)setActive(e.target._s)},{root:feed,threshold:[.6]});
+let resizeAt=0,lookT=0;
+// For half a second after a resize (a fold, a rotation, the top bar moving as the fonts come in) cards
+// crossing into view are ignored, as the refit itself moves them. The observer reports a crossing only
+// once, so a swipe that landed in that half second was never seen and the card on screen stayed dead
+// until the next swipe. So look again once the half second is up and the feed is at rest: the card
+// filling the feed is the active one. (Not mid-round or in full screen: the feed can't be swiped then.)
+function lookAgain(){
+  clearTimeout(lookT);
+  lookT=setTimeout(()=>{
+    if(performance.now()-resizeAt<500||settling())return lookAgain();
+    if(feed.classList.contains('locked'))return;
+    const f=feed.getBoundingClientRect(),s=slides.find(s=>Math.abs(s.el.getBoundingClientRect().top-f.top)<f.height*.4);
+    if(s&&s!==active)setActive(s);
+  },520);
+}
+io=new IntersectionObserver(es=>{if(performance.now()-resizeAt<500)return lookAgain();for(const e of es)if(e.isIntersecting&&e.intersectionRatio>=.6)setActive(e.target._s)},{root:feed,threshold:[.6]});
 
 // Hot reload (npm run dev, vite.config.js hotGames): a saved game file arrives here and replaces the
 // game on its card. The feed, the debug overlay and gs.tweak values stay; a round in progress goes on
