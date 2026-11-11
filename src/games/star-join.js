@@ -84,7 +84,8 @@ function make(api) {
     },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      v.live(); fx.update(dt); sparks.update(dt); t += dt;
+      v.live(); if (v.calibrating) return;   // finding or lining up the floor: the round waits
+      fx.update(dt); sparks.update(dt); t += dt;
       if (!started || ended) return;
       time -= dt; nameT = Math.max(0, nameT - dt);
       const s = stars[next]; if (s) s.m.scale.setScalar(1.2 + Math.sin(t * 6) * .25);
@@ -121,9 +122,10 @@ function make(api) {
       if (!started) { c.fillStyle = '#fff'; c.font = '700 16px Rubik, sans-serif'; c.fillText('Tap the stars in number order', W / 2, H * .78); c.font = '500 12px Rubik, sans-serif'; c.fillStyle = '#cfe0ff'; c.fillText('Turn the phone (or drag) to find them. Tap to start', W / 2, H * .78 + 20); }
       arNote(c, v, W, H);
     },
-    down: (x, y, id) => g.down(x, y, id),
-    move: (x, y, p, id) => g.move(x, y, p, id),
-    up: (x, y, id) => g.up(x, y, id),
+    // the AR kit gets touches first: its floor panels (Skip, Done, the Floor chip) use them
+    down: (x, y, id) => { if (!v?.input?.('down', x, y, id)) g.down(x, y, id); },
+    move: (x, y, p, id) => { if (!v?.input?.('move', x, y, id, p)) g.move(x, y, p, id); },
+    up: (x, y, id) => { if (!v?.input?.('up', x, y, id)) g.up(x, y, id); },
   };
 }
 

@@ -79,7 +79,8 @@ function make(api) {
     },
     resize(w, h) { W = w; H = h; },
     update(dt) {
-      v.live(); fx.update(dt); sparks.update(dt); t += dt; if (ml > 0 && ml < 90) ml -= dt;
+      v.live(); if (v.calibrating) return;   // finding or lining up the floor: the round waits
+      fx.update(dt); sparks.update(dt); t += dt; if (ml > 0 && ml < 90) ml -= dt;
       if (!!v.sensor !== wide) layout();   // the gyro woke up: spread the drums all round
       for (const d of drums) { d.flash = Math.max(0, d.flash - dt); d.skinMat.emissiveIntensity = d.flash * 8; d.skin.scale.y = 1 - d.flash * 1.5; }
       if (!started || ended) return;
@@ -105,9 +106,10 @@ function make(api) {
       if (!started) { c.fillStyle = '#fff'; c.font = '700 16px Rubik, sans-serif'; c.fillText('Listen, then play it back', W / 2, H * .78); c.font = '500 12px Rubik, sans-serif'; c.fillStyle = '#e0e0ff'; c.fillText('Turn the phone (or drag) to find each drum. Tap to start', W / 2, H * .78 + 20); }
       arNote(c, v, W, H);
     },
-    down: (x, y, id) => g.down(x, y, id),
-    move: (x, y, p, id) => g.move(x, y, p, id),
-    up: (x, y, id) => g.up(x, y, id),
+    // the AR kit gets touches first: its floor panels (Skip, Done, the Floor chip) use them
+    down: (x, y, id) => { if (!v?.input?.('down', x, y, id)) g.down(x, y, id); },
+    move: (x, y, p, id) => { if (!v?.input?.('move', x, y, id, p)) g.move(x, y, p, id); },
+    up: (x, y, id) => { if (!v?.input?.('up', x, y, id)) g.up(x, y, id); },
     key(k, d) { if (!d) return; if (!started) { started = true; nextRound(); } },
   };
 }

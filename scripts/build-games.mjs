@@ -66,6 +66,10 @@ async function buildOne(file) {
   // Location must be declared (location: 'coarse' | 'precise'), so the feed can say so before Play.
   if (feats.some(f => /location/i.test(f)) && !new RegExp(`\\blocation\\s*:\\s*['"](${LOCATION_LEVELS.join('|')})['"]`).test(src))
     throw new Error(`src/games/${file} uses api.location but doesn't declare it: add location: 'coarse' (or 'precise') to the game definition`);
+  // An AR game must wait while the kit finds or lines up the floor (v.calibrating) and pass touches to
+  // the kit first (v.input): without that the floor panels can't be tapped and the round runs behind them.
+  if (/\bARView\b/.test(src) && !(/\.calibrating\b/.test(src) && /\.input\s*(\?\.)?\s*\(/.test(src)))
+    throw new Error(`src/games/${file} is an AR game that doesn't wait for the floor step: skip update() while v.calibrating, and send down/move/up through v.input(...) first (docs/ar-3d.md, "Writing an AR game")`);
   return { code: chunk.code, needs, uses: sensorsOf(used) };
 }
 

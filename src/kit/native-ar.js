@@ -1,6 +1,6 @@
 // Bridge to the NativeAR plugin (plugins/native-ar): ARKit on iPhone, ARCore on Android.
-// The native camera view sits behind a see-through page; this module passes its pose, planes and
-// light to whichever ARView is live. Used by ar3d.js, and by the feed to hide walk-around games.
+// The native camera view sits behind a see-through page; this module passes its pose, planes,
+// feature points and light to whichever ARView is live. Used by ar3d.js, and by the feed to hide walk-around games.
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
 const has = Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('NativeAR');
@@ -19,7 +19,7 @@ export const nativeARSupported = () => supported;
 function listen() {
   if (listening) return; listening = true;
   AR.addListener('frame', d => sink?.frame(d));
-  AR.addListener('planes', d => sink?.planes(d.planes || []));
+  AR.addListener('planes', d => sink?.planes(d.planes || [], d.points || null));
 }
 
 /** Start native AR for one view ({ frame(d), planes(list) }). Resolves { started, reason }. */
@@ -36,13 +36,18 @@ export async function nativeStart(view) {
   else document.documentElement.classList.add('ar-live');   // see-through page: the camera shows behind
   return r;
 }
-/** Stop native AR if this view (or any view, when none is given) owns it. */
+/** Stop native AR if this view (or any view, when none is given) owns it. Resolves when the phone has let go of the camera. */
 export function nativeStop(view) {
-  if (view && sink !== view) return;
+  if (view && sink !== view) return Promise.resolve();
   sink = null;
   document.documentElement.classList.remove('ar-live');
-  AR?.stop().catch(() => {});
+  return AR ? AR.stop().catch(() => {}) : Promise.resolve();
 }
+/**
+ * Ask for the feature points the phone is tracking (x, y, z in millimetres) with each "planes"
+ * event, or stop them. The floor search uses them; an older app without this just ignores it.
+ */
+export function nativePoints(on) { AR?.points({ on: !!on }).catch(() => {}); }
 /** Where a screen point (CSS px) meets a real surface: [{ pose: 16 floats, kind }]. */
 export async function nativeHit(x, y) {
   if (!AR) return [];

@@ -23,24 +23,53 @@ estimate. So the 3D camera moves when the player walks, and things stay put on t
 - `v.mode` is `'world'` with native AR, `'look'` otherwise. Games don't have to care: `FLOOR`,
   `look()`, `draw()`, `eyePos`, `forward()` and `recenter()` all work the same in both.
 - The floor is found, not calibrated. Each round opens with "Find your floor" (`v.calibrating` is
-  true, so games already pause): the kit hit-tests the middle of the screen a few times a second
-  (a mapped surface counts at once, rough points need three that agree) and watches mapped
-  surfaces. Only something 75 cm to 2.3 m below the phone counts, so a table top isn't taken for
-  the floor. The biggest such surface wins, and the floor only moves for a clearly bigger one, so
-  the room doesn't keep shifting. A Skip button appears after 6 s (then the calibrated phone height
-  is used). The Floor chip is hidden.
+  true, so games already pause) and the search (`src/kit/ar-floor.js`) listens to everything the
+  phone can tell it:
+  - **mapped surfaces** (the lowest one of real size wins, so a table or bed above the floor is
+    passed over; an iPhone that names a surface "floor" is believed at once, and one it names table
+    or seat is never the floor);
+  - **feature points** (the dots the phone tracks): where they lie in a flat layer, that is a
+    surface, long before the phone has mapped it. This is what finds a plain floor quickly;
+  - **hit tests** from three spots on the screen (a mapped surface counts at once, rough points
+    need three that agree).
+
+  Only something at least 75 cm below the phone counts (45 cm if it is floor-sized or reaches well
+  away, for a player sitting low), and nothing more than 2.3 m below.
+- **Nobody gets stuck.** If nothing sure turns up in 5 s of good tracking, the round starts on the
+  best estimate (last round's floor, a thin layer of points, or the usual phone height), and the
+  search carries on quietly: the real floor takes over when it is seen. Skip (shown after 2.5 s)
+  does the same at once. From the second round on, last round's floor is used after about a second.
+- **The grid tells the truth.** No grid shows while the kit is still looking. A teal grid and
+  "Floor found" mean the phone has seen the floor; an amber grid and "Floor estimated" mean a best
+  guess. The "⇕ Floor" chip (bottom left) opens "Line up your floor" in world mode too: drag the
+  grid onto the floor by hand (that then stands, whatever is mapped later), or "Scan again".
+- **Lost tracking.** If the phone loses the room for more than a second mid-round, `v.calibrating`
+  turns true (the game waits) and a panel says why and what to do (too dark, moving too fast, a
+  blank wall). After 5 s of that, in a round or in the search, "Play without room tracking" switches
+  to look-around mode for the rest of the session (`v.toLook()`).
 - `recenter()` (from a game's reset) puts the player at x = z = 0 straight away, so a game can
   place a new round's things from `eyePos` at once.
 - `recenter()` makes where the phone points and stands now "straight ahead" at x = z = 0.
-- `v.surfaces()` lists found surfaces `{ id, p, q, w, d, floor }` (empty in look mode);
-  `v.floorFound` says whether the floor is known.
+- `v.surfaces()` lists found surfaces `{ id, p, q, w, d, floor, kind }` (empty in look mode;
+  `kind` is `'floor'`, `'table'`, `'seat'` or `'other'` on phones that can tell, else undefined).
+- `v.floorFound` is true once the phone has really seen the floor (or the player set it by hand),
+  and false while play runs on an estimate. `v.floorSource` says where the height comes from:
+  `'plane'`, `'points'`, `'hits'`, `'hand'` (seen or set), `'kept'`, `'rough'`, `'guess'`
+  (estimates), or null. `FLOOR` is right to use either way; a game that needs the true floor (to
+  measure a jump, say) can wait for `floorFound`.
+- `v.status()` gives the whole picture for a debug readout: `{ mode, tracking, why, surfaces,
+  points, floor, sure, layer }`.
 - `await v.hit(x, y)` finds where a screen point meets a real surface: `{ p, kind }` with kind
   `'plane'` or `'point'`, or `'floor'` in look mode (the line of sight meets `FLOOR`), or null.
-  Feature-check new methods (`v.hit?.(...)`, `v.surfaces?.()`) so a game still runs on an older app.
+  Feature-check new methods (`v.hit?.(...)`, `v.surfaces?.()`, `v.status?.()`) so a game still runs
+  on an older app.
 - `ar: 'world'` on a game definition means it only makes sense walking around; the feed leaves it
   out on phones without native AR. Leave it off for games that play fine in look mode.
 - `AR Lab` (`src/games/ar-lab.js`, benched, opened from Settings > AR test) is the test scene: a
-  cube on the floor, found surfaces drawn as outlines, and a status panel.
+  cube on the floor, found surfaces drawn as outlines, and a status panel that says what the phone
+  is tracking, why not if it isn't, and what the floor height comes from.
+- The plugin sends feature points only while the kit asks for them (`points({ on })`): during the
+  search, and for up to 40 s after a round starts on an estimate.
 - ARCore is optional in the Android manifest, so the app still installs on phones without it; the
   first native AR game may ask to install Google Play Services for AR. The privacy page says so.
 
@@ -52,7 +81,9 @@ estimate. So the 3D camera moves when the player walks, and things stay put on t
   `FLOOR + v.eyeH`, so anything a game puts at `y = FLOOR` stands on the real floor. A small
   "⇕ Floor" chip (bottom left, while the camera is on) reopens it. While it's open
   `v.calibrating` is true: games must skip their update (that pauses timers and enemies) and send
-  their input through `v.input(...)` first.
+  their input through `v.input(...)` first. **The build checks this**: `npm run games` fails for a
+  game that makes an `ARView` but never reads `.calibrating` or calls `.input(`, because such a game
+  runs (and can be lost) behind the "Find your floor" panel, and its Skip and Done buttons don't work.
 - **Light estimation.** Twice a second the camera picture is shrunk to 8 x 6 pixels; its average
   brightness and colour drive the sky light, sun and reflections, so objects get darker in a dim
   room and pick up warm or cool light. (Reading pixels back stalls the graphics chip, so it isn't
@@ -132,6 +163,17 @@ To see the camera path in headless Chromium, launch it with
 grant the `camera` permission, make `DeviceMotionEvent.requestPermission` resolve `'granted'`, start
 the game with a real click (motion access is asked on the Play tap), and dispatch
 `Object.assign(new Event('deviceorientation'), { alpha, beta: 90, gamma: 0 })` to turn the phone.
+
+**Native AR without a phone.** `node scripts/ar-floor.cjs` (after `npm run build:bundled`) plays Bin
+Flick against a pretend `NativeAR` plugin (`scripts/lib/fake-native-ar.js`): a phone held at 1.3 m
+that sways as if in a hand, with whatever the scene sets up in `window.__ar` (mapped surfaces, feature
+points, rough hit points, tracking state and the reason it is poor, an older app that sends less). It
+checks that the floor is found from each kind of evidence, that a table is not taken for the floor,
+that a round never waits for ever, and that Skip, the Floor chip, lost tracking and "Play without room
+tracking" work. `--shots <dir>` saves screenshots; a word after the script name runs only the scenes
+whose name contains it. The floor search itself is plain JavaScript, and `npm run kit-test` plays
+about thirty rooms through it in Node. Neither replaces a real room: ARCore and ARKit decide what
+they map and when, so try AR Lab on a phone after changing the search.
 
 ## Contact shadows
 
