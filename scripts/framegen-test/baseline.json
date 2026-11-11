@@ -70,5 +70,10 @@
     "shadow": {"error":0.21,"broken":0.1},
     "scroll": {"error":4.1,"broken":3.05},
     "cut": {"error":0.8,"broken":0.65}
+  },
+  "handed": {
+    "strafe": {"error":0.4,"broken":0.12},
+    "pan": {"error":2.09,"broken":0.12},
+    "curve": {"error":0.37,"broken":0.1}
   }
 }
