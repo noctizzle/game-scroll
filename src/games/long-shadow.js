@@ -1204,6 +1204,7 @@ function make(api) {
     if (why === 'body') say('Man down! Sniper!', 'GREY ORDER', 1.6, true);
   };
   function knockOut(s, head, d, viaCam) {
+    if (warming) return;
     if (s.ko) return;
     s.ko = true; s.m.rig.play('downed', { fade: .25 }); s.m.rig.upper(null); dropRifle(s);
     // a long duel was a good fight; dropping in the open in his first seconds was a dull one
@@ -1251,6 +1252,7 @@ function make(api) {
 
   // ---- the player's shots
   function fire() {
+    if (warming) return;
     if (state !== 'play' || move || bulletCam) return;
     const eye = WD.v.cam.position, [sy, sp] = sway();
     const d = dirOf(look.yaw + sy, look.pitch + sp + BORE, tmpB).clone();
@@ -1321,6 +1323,7 @@ function make(api) {
     return [(Math.sin(t * 1.1) * .6 + Math.sin(t * 2.3 + 1) * .4) * amp, (Math.sin(t * 1.7 + 2) * .6 + Math.sin(t * .7) * .4) * amp * .8];
   }
   function predict(b0) {
+    if (warming) return;
     // the same small steps as a real bullet, checked for hits two at a time (half the work, same path)
     const b = { ...b0 }, dt = 1 / 120;
     for (let i = 0; i < 160; i += 2) {
@@ -1339,6 +1342,7 @@ function make(api) {
   }
   // what a bullet path from p0 to p1 hits first: { t, s?, head?, box?, ground?, d }
   function hitTest(x0, y0, z0, x1, y1, z1, ahead = 0) {
+    if (warming) return;
     const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0, L = Math.hypot(dx, dy, dz) || 1e-6, eye = WD.v.cam.position;
     let best = null; const take = (tt, o) => { if (tt >= 0 && tt <= 1 && (!best || tt < best.t)) best = { t: tt, ...o }; };
     for (const s of men) {
@@ -1369,6 +1373,7 @@ function make(api) {
     return best;
   }
   function updateShots(dt) {
+    if (warming) return;
     for (const b of shots) {
       const steps = Math.max(1, Math.ceil(dt * V0 / 4));
       for (let i = 0; i < steps && !b.dead; i++) {
@@ -1415,13 +1420,13 @@ function make(api) {
     }
     return { ...best, tx, ty, tz };
   }
-  // the meadow planted round a place the camera is about to cut to (so the grass is there in its first frame)
+  // a place the camera is about to cut to: the meadow is planted round it ahead of the cut (see update), so the grass is there in its first frame
   const grassEye = { position: new Vector3() };
-  function grassAt(x, y, z) { grassEye.position.set(x, y, z); WD.land.update(0, grassEye); }
   function impact(b, h, x, y, z) {
+    if (warming) return;
     const viaCam = bulletCam && bulletCam.b === b;
     impactSound(h, { x, y, z }, viaCam);
-    if (viaCam) { bulletCam.hold = HOLD; bulletCam.at = { x, y, z }; bulletCam.cam = holdCam(bulletCam, h.s); grassAt(bulletCam.cam.x, bulletCam.cam.y, bulletCam.cam.z); }
+    if (viaCam) { bulletCam.hold = HOLD; bulletCam.at = { x, y, z }; bulletCam.cam = holdCam(bulletCam, h.s); }   // (its grass was planted during the flight; whatever is left fills in from the camera outwards)
     if (h.s) {
       { const sc = (h.d || 0) * (h.head ? 1.3 : 1) * (b.masked ? 1.1 : 1);   // the round's best shot, for the replay at the end
         if (!bestShot || sc > bestShot.sc) { const rel = Math.atan2(wind.z, wind.x) + Math.atan2(-(x - b.x0), -(z - b.z0)); bestShot = { sc, s: h.s, head: h.head, d: Math.round(h.d || 0), from: { x: b.x0, y: b.y0, z: b.z0 }, to: { x, y, z }, wind: Math.cos(rel) * Math.hypot(wind.x, wind.z), covered: b.masked }; } }
@@ -1460,6 +1465,7 @@ function make(api) {
     if (k === 'stone') { c.strokeStyle = 'rgba(30,24,20,.6)'; c.lineWidth = s / 64; for (let i = 0; i < 5; i++) { const a = i * 1.3 + .4, r = m * (.35 + (i % 3) * .12); c.beginPath(); c.moveTo(m + Math.cos(a) * m * .14, m + Math.sin(a) * m * .14); c.lineTo(m + Math.cos(a + .2) * r, m + Math.sin(a + .2) * r); c.stroke(); } }
   };
   function holeAt(h, x, y, z, stone, wet) {
+    if (warming) return;
     if (!h.box && !h.ground) return;
     if (h.box) {   // the face of the box nearest the hit
       const b = h.box, f = [[x - b.x0, -1, 0, 0], [b.x1 - x, 1, 0, 0], [y - b.y0, 0, -1, 0], [b.y1 - y, 0, 1, 0], [z - b.z0, 0, 0, -1], [b.z1 - z, 0, 0, 1]].sort((a, c) => a[0] - c[0])[0];
@@ -1483,6 +1489,7 @@ function make(api) {
   };
   // a shot that misses you still lands close: dirt in front of you, or chips off the sill up a tower
   function nearMiss(from) {
+    if (warming) return;
     const e = WD.v.cam.position, dx = from.x - e.x, dz = from.z - e.z, l = Math.hypot(dx, dz) || 1, ux = dx / l, uz = dz / l, side = rnd(-1.6, 1.6);
     const gy = WD.land.height(e.x, e.z), high = e.y - gy > 4, k = high ? rnd(.7, 1.1) : rnd(1.8, 4.5);
     const x = e.x + ux * k - uz * side, z = e.z + uz * k + ux * side, y = high ? e.y - rnd(.5, .8) : WD.land.height(x, z);
@@ -1545,6 +1552,7 @@ function make(api) {
     m.visible = true; m.userData = { a, b, t: 0, life: Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) / 500 + .05 };
   }
   function updateTracers(dt) {
+    if (warming) return;
     for (const m of WD.tracers) {
       if (!m.visible) continue; const u = m.userData; u.t += dt; const k = u.t / u.life;
       if (k >= 1) { m.visible = false; continue; }
@@ -1579,6 +1587,7 @@ function make(api) {
     say('Mortars! Move, Wren!', OAKE, 2);
   }
   function updateMortar(dt) {
+    if (warming) return;
     mortarCool -= dt;
     if (!mortar) return;
     mortar.next -= dt;
@@ -2008,6 +2017,7 @@ function make(api) {
 
   // ---- moving soldiers
   function walk(s, tx, tz, speed, dt) {
+    if (warming) return;
     if ((s.pathTo?.x !== tx || s.pathTo?.z !== tz) && pathBudget > 0) {
       pathBudget--; s.pathTo = { x: tx, z: tz };
       const a = openNear(s.x, s.y), b = openNear(tx, tz), p = a && b ? WD.nav.path(a.x - GX0, a.z - GZ0, b.x - GX0, b.z - GZ0) : null;
@@ -2046,6 +2056,7 @@ function make(api) {
   }
   // a rifleman's mind picks what to do next; the moves themselves come from the squad kit (cover, flanks)
   function think(s, tgt) {
+    if (warming) return;
     const o = s.order || {}, d = Math.hypot(s.x - tgt.x, s.y - tgt.y), sp = o.spot, C = CELL;
     const inCover = sp && Math.hypot(s.x - sp.x, s.y - sp.y) < 1.5 ? 1 : -1;
     const see = [clamp(d / 300, 0, 2), clamp(heat, 0, 1.2), inCover, watched(s) ? 1 : 0, s.shaken || 0, squad.aggression, alive(men).length / Math.max(1, men.length), clamp(quietT / 15, 0, 1), s.nerve ?? (s.nerve = rnd(-1, 1))];
@@ -2085,6 +2096,7 @@ function make(api) {
     return s.hidT || 0;
   }
   function updateMen(dt) {
+    if (warming) return;
     const eye = WD.v.cam.position; pathBudget = 1; thinkBudget = 1; let plantN = 6;
     // what the camera can see: a cone round its view (a scope's is narrow), and anyone a few metres from it
     const cf = WD.v.cam.getWorldDirection(tmpV), cfx = cf.x, cfy = cf.y, cfz = cf.z, coneCos = Math.cos(Math.min(1.4, Math.atan(Math.tan(WD.v.cam.fov * Math.PI / 360) * Math.hypot(1, WD.v.cam.aspect)) + .14));
@@ -2217,6 +2229,7 @@ function make(api) {
   let frame = 0, spotting = false;
   function nearestAlly(s) { if (!allies) return null; let best = null, bd = 140; for (const a of allies) { if (a.ko || a.done) continue; const d = Math.hypot(a.x - s.x, a.y - s.y); if (d < bd) { bd = d; best = a; } } return best; }
   function updateAllies(dt) {
+    if (warming) return;
     if (!allies) return;
     const legs = [null, [[BRIDGE.x, 10], [BRIDGE.x - 1, -6]], [[BRIDGE.x - 3, -30], [28, -56]], [[10, -82]]];
     for (const [i, a] of allies.entries()) {
@@ -2276,6 +2289,7 @@ function make(api) {
   }
   function audioDown() { if (!aud) return; for (const b of ['wind', 'leaves', 'river', 'rain']) aud[b].stop(); aud = null; }
   function audioTick(dt) {
+    if (warming) return;
     audioUp(); const e = WD.v.cam.position;
     aud.ears.place(e, dirOf(look.yaw, look.pitch, earF));
     // beds follow the world every few frames: the gusts you read off the flags, the river under you, the rain
@@ -2297,6 +2311,7 @@ function make(api) {
   const metal = (at, f, v = .03) => { noise(.03, { vol: v, from: f * 2.2, to: f, filter: 'bandpass', q: 5, at }); tone(f * 1.7, { len: .025, wave: 'square', vol: v * .25, at }); };
   // your rifle: a sharp crack, the body of the blast, a thump you feel, the valley rolling it back, then the bolt
   function rifleReport() {
+    if (warming) return;
     const out = aud?.sp?.in, wet = rain.amount > .2 ? .6 : 1;
     noise(.05, { vol: .4, from: 7000, to: 2400, filter: 'bandpass', q: .7, out });
     noise(.45, { vol: .34, from: 2400, to: 110, out });
@@ -2306,7 +2321,8 @@ function make(api) {
     soon(.9, () => noise(1, { vol: .045 * wet, from: 700 * wet, to: 60, attack: .05, out }));
     soon(1.7, () => noise(1.4, { vol: .025 * wet, from: 420, to: 40, attack: .1 }));
     // the bolt: up and back (case out), forward and down (next round in)
-    if (gun.ammo > 0) { metal(.2, 1300, .04); metal(.29, 900, .035); noise(.03, { vol: .02, from: 5000, to: 3000, at: .36, filter: 'highpass' }); metal(.82, 1500, .04); metal(.9, 1050, .045); }
+    // (each click is made a moment before it sounds, not all of them in the frame of the shot)
+    if (gun.ammo > 0) { soon(.17, () => metal(.03, 1300, .04)); soon(.26, () => { metal(.03, 900, .035); noise(.03, { vol: .02, from: 5000, to: 3000, at: .1, filter: 'highpass' }); }); soon(.79, () => metal(.03, 1500, .04)); soon(.87, () => metal(.03, 1050, .045)); }
   }
   // a round passing close: a hard supersonic snap and a tearing hiss, before you hear the shot
   function snap() {
@@ -2319,6 +2335,7 @@ function make(api) {
   }
   // what the round hits: a ping off stone, a knock in timber, a thud in earth
   function impactSound(h, p, close) {
+    if (warming) return;
     if (h.s) return;
     const stone = h.box && h.box.kind !== 'house', wood = h.box && !stone, k = close ? 1 : .45;
     if (stone) { noise(.06, { vol: .12 * k, from: 4500, to: 1800, filter: 'bandpass', q: 2 }); if (Math.random() < .5) tone(rnd(2200, 3200), { len: .35, wave: 'sine', vol: .03 * k, slide: -rnd(900, 1600), at: .02 }); }
@@ -2385,6 +2402,7 @@ function make(api) {
   // ---- lost letters: hold the glasses (or the scope) on one to note where it is
   let letterT = [0, 0, 0], found = null;
   function spotLetters(dt) {
+    if (warming) return;
     const e = WD.v.cam.position, d = dirOf(look.yaw, look.pitch, tmpB), cone = Math.cos(fovNow() * Math.PI / 360 * .3);
     for (const [i, l] of WD.letters.entries()) {
       if (!l.visible) continue;
@@ -2412,6 +2430,7 @@ function make(api) {
   }
   const birdM = new THREE.Matrix4(), birdQ = new THREE.Quaternion(), birdE = new THREE.Euler(0, 0, 0, 'YXZ'), birdP = new Vector3(), birdS = new Vector3();
   function updateBirds(dt) {
+    if (warming) return;
     let n = 0; const B = WD.birds;
     for (const f of WD.flocks) {
       if (!f.up) { f.rest = Math.max(0, f.rest - dt); continue; }
@@ -2444,6 +2463,9 @@ function make(api) {
     clampLook();
   });
   let briefRows = [], briefGo = null, failMsg = '', pathBudget = 0, thinkBudget = 0;
+  // true only inside reset(), while the mission's big functions are called once so the browser compiles them
+  // during loading (each returns at once): otherwise that is paid in the first frame of the intro, the nest or a shot
+  let warming = false;
   let theme = null;
   let beatT = 0, beat = 0, tiltBtn = null, ptrZoom = false, envDirty = false, envBaked = null;
   const later = [];
@@ -2491,6 +2513,9 @@ function make(api) {
       begin(sel);
       state = 'brief';
       fx.clear();
+      // compiled now, not in play (see warming), and the two bullet hole pictures painted now, not at the first shot
+      warming = true; try { for (const f of [updateMen, updateAllies, audioTick, think, walk, fire, predict, hitTest, updateShots, impact, holeAt, impactSound, rifleReport, spotLetters, meetMarr, knockOut, nearMiss, updateBirds, updateMortar, updateTracers, trainUpdate]) f(); } finally { warming = false; }
+      for (const k of ['stone', 'dirt']) WD.v.decal(card, P_.set(0, 0, 0), N_.set(0, 0, 1), { size: .3, paint: (c, s) => paintHole(c, s, k), key: 'ls-hole-' + k })?.dispose();
     },
     resize(w, h) { W = w; H = h; layout(); },
     update(dtReal) {
@@ -2500,6 +2525,8 @@ function make(api) {
         briefT += dtReal; sky.update(dtReal); rain.update(dtReal);
         // the field file has its own quiet tune (written by gs.sound.compose from the game's name); play is silent but for the valley
         theme ||= music({ ...compose({ mood: 'sad', seed: 'long-shadow' }), vol: .32 }); if (!theme.playing && briefT > .4) theme.start();
+        // the grass at the mission's first nest is planted while the file is read (a few tufts a frame), not when the camera cuts to it
+        if (nest) { const e = nestEye(nest); grassEye.position.set(e.x, e.y, e.z); WD.land.update(dtReal, grassEye); }
         return;
       }
       theme?.stop();
@@ -2780,6 +2807,7 @@ function make(api) {
     w.rig.play('crouch', { fade: .2 }); w.rig.update(dt, { speed: 0 }); w.see(WD.v.cam, 1000);
   }
   function trainUpdate(dt) {
+    if (warming) return;
     if (!train.on) { train.next -= dt; if (train.next <= 0 && mid === 'm1') { train.on = true; train.x = -420; train.speed = 30; tone(520, { len: .9, wave: 'triangle', vol: .05 }); tone(620, { len: .9, wave: 'triangle', vol: .04, at: .1 }); } WD.train.visible = false; return; }
     WD.train.visible = true;
     if (train.final && qteKind !== 'train' && train.x > -150) train.speed = Math.max(4, train.speed - dt * 2);
@@ -2806,6 +2834,7 @@ function make(api) {
   }
   // the colonel on the radio as the mission starts (an intercept, red like the Grey Order's calls)
   function meetMarr() {
+    if (warming) return;
     if (metMarr) return; metMarr = true;
     const hello = marr.met(); guard = marr.counter(boss.skill);
     if (hello) soon(3.2, () => say(hello, MARR, 3.2, true));
