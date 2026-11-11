@@ -18,6 +18,7 @@ Follow AGENTS.md at the repo root. In short:
 4. **Check and fix until clean:**
    - `node scripts/game-lint.mjs <id>` (fix what it flags; read its kit hints and take the ones that fit)
    - `node scripts/game-types.mjs <id>`
+   - `node scripts/unique.mjs <id>` (its nearest games: if one is a near-twin, change the mechanic, not the names)
    - `npm run games`
    - `npm run build:bundled && node scripts/smoke.cjs <id>`
    - `node scripts/fold.cjs <id>` (and `node scripts/sweep.cjs <id>` for console / nextgen)

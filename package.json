@@ -41,6 +41,7 @@
     "qnn-pin": "node scripts/qnn-pin.mjs",
     "types-check": "node scripts/types-check.mjs",
     "game-types": "node scripts/game-types.mjs",
+    "unique": "node scripts/unique.mjs",
     "app-test": "vite build --mode bundled && node scripts/app-test.cjs",
     "sound-test": "node scripts/sound-test.cjs",
     "kit-browser": "node scripts/kit-browser.cjs",

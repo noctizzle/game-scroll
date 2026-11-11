@@ -17,6 +17,7 @@ The human-facing guide is [CONTRIBUTING.md](CONTRIBUTING.md); the kit reference 
    ```bash
    node scripts/game-lint.mjs <id>          # forbidden code (network, storage, eval...); also kit hints (advice, not failures)
    node scripts/game-types.mjs <id>         # gs used the way its types describe (no kit, method, option or field that doesn't exist)
+   node scripts/unique.mjs <id>             # the three nearest games and why; a near-copy fails, a near-twin is a warning to act on
    npm run games                             # builds streamed files; fails on bad imports or a missing gs part
    npm run build:bundled && node scripts/smoke.cjs <id>   # plays it with random input; fails on any error
    node scripts/stream-smoke.mjs <id>        # plays it streamed, the way the store apps run it

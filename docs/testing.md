@@ -19,6 +19,7 @@ How to check a change without waiting longer than you need to. Written for peopl
 | --- | --- | --- |
 | One game file | `node scripts/game-lint.mjs <id>` (it also gives kit hints: advice, never a failure), `node scripts/game-types.mjs <id>`, `npm run games`, then `node scripts/smoke.cjs <id>` and `node scripts/stream-smoke.mjs <id>` | under 20 s |
 | How games use `gs` (a kit, method, option or definition field that doesn't exist) | `npm run game-types` (every game against `src/gamescroll.d.ts`; `-- --self-test` checks the check, `-- --all` also lists what it leaves alone) | about a second |
+| Does a game play differently from the others? | `node scripts/unique.mjs <id>` (its three nearest games and what they share; no ids: the closest pairs of all; `--since origin/main...HEAD`: the games a branch adds or changes; `--self-test`). A near-copy (new names on the same code) fails; a near-twin (plays and reads like another) is a warning | 4 s |
 | A 3D game (Console, Next Gen, AR) | add `node scripts/sweep.cjs <id>` | 20 s to 2 min |
 | A game's speed | `node scripts/budget.cjs <id>` | about 25 s |
 | Can the goal be reached? | `node scripts/playtest.cjs <id> [--budget 20] [--strict]`: a bot plays faster than real time and tries to win (see below) | about 20 s a game |
@@ -42,7 +43,7 @@ How to check a change without waiting longer than you need to. Written for peopl
 
 The PR check (`.github/workflows/game-pr-check.yml`) runs the node checks (`npm run games`,
 `licences`, `types-check`, `game-types`, the starter templates, `kit-test`, `brains`, `recommend`, `site`), the app and
-sound checks when shared code changes, and then smoke, streamed,
+sound checks when shared code changes, the uniqueness check on the changed games (`unique.mjs --since`), and then smoke, streamed,
 fold, sweep, Tiny Brains, the AI playtester and budget on the changed games, split over several machines. When frame
 generation's code changes it also runs `framegen-test.cjs --check`, and when the AR kit changes, `ar-floor.cjs`.
 

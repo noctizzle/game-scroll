@@ -6,7 +6,8 @@
 # Console games and changed Next Gen games), plus the speed budget
 # and Tiny Brains check for changed games. "code-flags" flags game code that touches the network,
 # storage or native features (scripts/game-lint.mjs), and lists changed files outside src/games/ that
-# need a careful read, and gives kit hints (advice) on changed games. Five more jobs: a mutation check of
+# need a careful read, gives kit hints (advice) on changed games, and checks that changed games are not
+# near-copies of games already here (scripts/unique.mjs). Five more jobs: a mutation check of
 # the server and licence guards, a maths probe across JavaScript engines, a frame generation quality
 # check, the app and sound checks, and a shared game link check (each only when those parts change). Runs with read-only
 # permissions and no secrets, so it is safe for pull requests from forks. See CONTRIBUTING.md.
@@ -58,6 +59,12 @@ jobs:
           for s in phone pocket color advance console nextgen ar; do node scripts/new-game.mjs "zz-template-$s" --style "$s" --creator CI > /dev/null; ids="$ids zz-template-$s"; done
           node scripts/game-lint.mjs $ids && node scripts/game-types.mjs $ids
           for id in $ids; do rm "src/games/$id.js"; done
+
+      # Game Scroll wants 1,000 games that all play differently. The self-test makes a reskin of three games
+      # (every name, number and word changed) and checks it is still seen as a copy; "code-flags" below runs
+      # the check itself on the games a pull request adds or changes.
+      - name: The uniqueness check still tells a reskin from a new game
+        run: npm run unique -- --self-test
 
       - name: Kit tests (physics, AI, maths)
         run: npm run kit-test
@@ -225,6 +232,13 @@ jobs:
           files=$(git diff --name-only --diff-filter=AM "origin/$BASE...HEAD" -- 'src/games/*.js' | tr '\n' ' ')
           if [ -z "$files" ]; then echo "No game files changed."; exit 0; fi
           node scripts/game-lint.mjs $files
+
+      # Fails (red) when a changed game is a near-copy of another (new names on the same code); warns when it
+      # plays and reads like one already here, with the three nearest games in the log.
+      - name: Changed games play differently from the games already here
+        env:
+          BASE: ${{ github.base_ref }}
+        run: node scripts/unique.mjs --since "origin/$BASE...HEAD"
 
       - name: List changed files outside src/games/
         env:
