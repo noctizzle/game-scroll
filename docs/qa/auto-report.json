@@ -387,20 +387,6 @@
   ]
  },
  {
-  "id": "bubble-level",
-  "idleEndsMs": null,
-  "idleScore": 1,
-  "idleFrames": 24,
-  "tapRounds": 0,
-  "tapMedianRoundMs": null,
-  "tapBest": 2,
-  "tapFrames": 35,
-  "errors": [],
-  "flags": [
-   "scores-without-input"
-  ]
- },
- {
   "id": "bubble-pop",
   "idleEndsMs": null,
   "idleScore": 0,
@@ -592,18 +578,6 @@
   ]
  },
  {
-  "id": "color-hunt",
-  "idleEndsMs": null,
-  "idleScore": 0,
-  "idleFrames": 4,
-  "tapRounds": 0,
-  "tapMedianRoundMs": null,
-  "tapBest": 3,
-  "tapFrames": 35,
-  "errors": [],
-  "flags": []
- },
- {
   "id": "colour-flood",
   "idleEndsMs": null,
   "idleScore": 0,
@@ -627,20 +601,6 @@
   "errors": [],
   "flags": [
    "very-short-rounds"
-  ]
- },
- {
-  "id": "compass-hunt",
-  "idleEndsMs": null,
-  "idleScore": 0,
-  "idleFrames": 24,
-  "tapRounds": 0,
-  "tapMedianRoundMs": null,
-  "tapBest": 0,
-  "tapFrames": 36,
-  "errors": [],
-  "flags": [
-   "no-score-no-end"
   ]
  },
  {
@@ -1407,34 +1367,6 @@
   "tapFrames": 32,
   "errors": [],
   "flags": []
- },
- {
-  "id": "lamp-flip",
-  "idleEndsMs": null,
-  "idleScore": 0,
-  "idleFrames": 6,
-  "tapRounds": 0,
-  "tapMedianRoundMs": null,
-  "tapBest": 0,
-  "tapFrames": 34,
-  "errors": [],
-  "flags": [
-   "no-score-no-end"
-  ]
- },
- {
-  "id": "lane-racer",
-  "idleEndsMs": null,
-  "idleScore": 2,
-  "idleFrames": 21,
-  "tapRounds": 2,
-  "tapMedianRoundMs": 4696,
-  "tapBest": 0,
-  "tapFrames": 32,
-  "errors": [],
-  "flags": [
-   "scores-without-input"
-  ]
  },
  {
   "id": "lantern-maze",
@@ -2358,30 +2290,6 @@
   ]
  },
  {
-  "id": "shake-dice",
-  "idleEndsMs": null,
-  "idleScore": 0,
-  "idleFrames": 1,
-  "tapRounds": 0,
-  "tapMedianRoundMs": null,
-  "tapBest": 5,
-  "tapFrames": 12,
-  "errors": [],
-  "flags": []
- },
- {
-  "id": "shake-soda",
-  "idleEndsMs": 4570,
-  "idleScore": 0,
-  "idleFrames": 16,
-  "tapRounds": 1,
-  "tapMedianRoundMs": 4800,
-  "tapBest": 0,
-  "tapFrames": 30,
-  "errors": [],
-  "flags": []
- },
- {
   "id": "shake-tree",
   "idleEndsMs": null,
   "idleScore": 0,
@@ -2816,20 +2724,6 @@
   ]
  },
  {
-  "id": "swipe-arrow",
-  "idleEndsMs": 2043,
-  "idleScore": 0,
-  "idleFrames": 9,
-  "tapRounds": 5,
-  "tapMedianRoundMs": 1090,
-  "tapBest": 3,
-  "tapFrames": 18,
-  "errors": [],
-  "flags": [
-   "very-short-rounds"
-  ]
- },
- {
   "id": "swipe-fighter",
   "idleEndsMs": null,
   "idleScore": 0,
@@ -2904,20 +2798,6 @@
   "tapFrames": 23,
   "errors": [],
   "flags": []
- },
- {
-  "id": "tap-green",
-  "idleEndsMs": 2793,
-  "idleScore": 0,
-  "idleFrames": 3,
-  "tapRounds": 10,
-  "tapMedianRoundMs": 274,
-  "tapBest": 0,
-  "tapFrames": 2,
-  "errors": [],
-  "flags": [
-   "very-short-rounds"
-  ]
  },
  {
   "id": "territory-claim",

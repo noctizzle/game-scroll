@@ -34,7 +34,6 @@ These are signals for a human, not verdicts. A puzzle that "never ends" under ra
 | bowling-swipe | never | 0 | - | 23 |  |
 | bricks | never | 0 | - | 2 |  |
 | bubble-garden | never | 0 | - | 0 | no-score-no-end |
-| bubble-level | never | 0 | - | 2 | scores-without-input |
 | bubble-pop | never | 1 | 6614 | 0 |  |
 | build-rush | never | 0 | - | 0 | no-score-no-end |
 | bumper-bowl | never | 0 | - | 0 | no-score-no-end |
@@ -49,10 +48,8 @@ These are signals for a human, not verdicts. A puzzle that "never ends" under ra
 | clap-beat | never | 0 | - | 0 | no-score-no-end |
 | clock-set | never | 0 | - | 0 | no-score-no-end |
 | code-breaker | never | 0 | - | 0 | no-score-no-end, static-screen |
-| color-hunt | never | 0 | - | 3 |  |
 | colour-flood | never | 0 | - | 9 |  |
 | colour-word | never | 3 | 2105 | 1 | very-short-rounds |
-| compass-hunt | never | 0 | - | 0 | no-score-no-end |
 | copy-puff | never | 0 | - | 52 | scores-without-input |
 | crate-dash | never | 0 | - | 12 | scores-without-input |
 | crate-pusher | never | 0 | - | 0 | no-score-no-end |
@@ -111,8 +108,6 @@ These are signals for a human, not verdicts. A puzzle that "never ends" under ra
 | kite-flyer | never | 0 | - | 2 |  |
 | knight-path | never | 0 | - | 0 | no-score-no-end |
 | ladder-climber | never | 1 | 6678 | 5 |  |
-| lamp-flip | never | 0 | - | 0 | no-score-no-end |
-| lane-racer | never | 2 | 4696 | 0 | scores-without-input |
 | lantern-maze | never | 0 | - | 0 | no-score-no-end |
 | laser-dodge | never | 0 | - | 0 | no-score-no-end |
 | laser-lock | never | 0 | - | 5 |  |
@@ -184,8 +179,6 @@ These are signals for a human, not verdicts. A puzzle that "never ends" under ra
 | saucer-swarm | never | 0 | - | 0 | no-score-no-end |
 | sevens-cards | never | 0 | - | 0 | no-score-no-end |
 | shadow-ops | never | 0 | - | 0 | no-score-no-end |
-| shake-dice | never | 0 | - | 5 |  |
-| shake-soda | 4570 | 1 | 4800 | 0 |  |
 | shake-tree | never | 0 | - | 17 |  |
 | shape-fit | never | 0 | - | 0 | no-score-no-end |
 | shape-turn | never | 1 | 5083 | 1 |  |
@@ -220,14 +213,12 @@ These are signals for a human, not verdicts. A puzzle that "never ends" under ra
 | stylus-rally | never | 0 | - | 2 |  |
 | suit-ops | never | 0 | - | 0 | no-score-no-end |
 | swing-pump | never | 0 | - | 0 | no-score-no-end |
-| swipe-arrow | 2043 | 5 | 1090 | 3 | very-short-rounds |
 | swipe-fighter | never | 0 | - | 0 | no-score-no-end |
 | sword-rooms | never | 0 | - | 1 |  |
 | table-siege | never | 0 | - | 10 |  |
 | tag-team | never | 0 | - | 26 |  |
 | tally-count | never | 0 | - | 0 | no-score-no-end |
 | tank-duel | never | 1 | 1312 | 0 |  |
-| tap-green | 2793 | 10 | 274 | 0 | very-short-rounds |
 | territory-claim | never | 0 | - | 0 | no-score-no-end |
 | thumb-duel | never | 0 | - | 0 | no-score-no-end |
 | tile-tap | never | 10 | 313 | 1 | very-short-rounds |

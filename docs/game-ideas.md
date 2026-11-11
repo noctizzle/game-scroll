@@ -4,18 +4,15 @@ Master list toward the 1000-game launch. Every entry must be a **different mecha
 
 Tags: 🕹 pocket/retro · 📱 casual · 🎯 needs a phone feature (with a touch fallback)
 
-## Built (21)
+## Built (16)
 
 - [x] Cave Flyer 🕹 — hold to climb through a scrolling cave
 - [x] Pixel Worm 🕹 — grow a worm by eating seeds without biting yourself
 - [x] Brick Bounce 🕹 — paddle and ball breaking a brick wall
-- [x] Lane Racer 🕹 — four-lane top-down traffic dodging
 - [x] Rock Blaster 🕹 — fixed turret shooting rocks that split
 - [x] Road Hopper 🕹 — hop forward across endless roads before the screen catches you
 - [x] Sky Defense 🕹 — fixed shooter against a marching formation
-- [x] Compass Hunt 🕹🎯 — turn your body to face a radar blip (compass)
 - [x] Street Lamps 🕹🎯 — flip-the-neighbours puzzle seeded by your area and the date (GPS)
-- [x] Bubble Level 🕹🎯 — steer a spirit-level bubble into a wandering ring (tilt)
 - [x] Stack Up 📱 — drop sliding blocks, overhang gets trimmed
 - [x] Slice Rush 📱 — swipe fruit, avoid bombs
 - [x] Tile Tap 📱 — tap the lit tile in every row before it scrolls off
@@ -23,10 +20,22 @@ Tags: 🕹 pocket/retro · 📱 casual · 🎯 needs a phone feature (with a tou
 - [x] Orbit Jump 📱 — launch from planet orbit to planet orbit
 - [x] Rope Swing 📱 — grapple hooks and swing over lava
 - [x] Tilt Maze 📱🎯 — roll a marble to the hole (tilt)
-- [x] Shake Soda 📱🎯 — shake to build fizz, land the gauge in the green (shake)
 - [x] Shout Rocket 📱🎯 — voice volume is the throttle through rings (mic)
-- [x] Colour Hunt 📱🎯 — find real-world objects matching a colour card (camera)
 - [x] Safe Cracker 📱🎯 — feel the haptic thump on the right number (haptics)
+
+## Removed after review (2026-11-11)
+
+Built, then taken out in the whole-catalogue review (`docs/qa/review.md`). Don't rebuild these as they were; a new game needs a real mechanic on top.
+
+- [ ] ~~Lane Racer 🕹 — four-lane top-down traffic dodging~~ Removed: the most basic game in the app; Road Hopper, Ski Slalom, Kit Racer and Pocket Kart cover it.
+- [ ] ~~Compass Hunt 🕹🎯 — turn your body to face a radar blip (compass)~~ Removed: you had to turn your whole body, and without a compass it was dragging a dot to the middle.
+- [ ] ~~Bubble Level 🕹🎯 — steer a spirit-level bubble into a wandering ring (tilt)~~ Removed: the thinnest of the tilt games; Tilt Maze, Steady Hand and Marble Trio do more.
+- [ ] ~~Shake Soda 📱🎯 — shake to build fizz, land the gauge in the green (shake)~~ Removed: a four-second gag with nothing to learn on a second go.
+- [ ] ~~Colour Hunt 📱🎯 — find real-world objects matching a colour card (camera)~~ Removed: needed the camera and a walk round the room, and a match was easy to fake or impossible to find.
+- [ ] ~~Shake Dice 📳 — shake to roll dice, push your luck to a target~~ Removed: dice luck with one choice; Shake Tree does push-your-luck better.
+- [ ] ~~Tap on Green — tap the moment the light turns green (reaction time)~~ Removed: a reaction timer rather than a game; Thumb Duel covers it.
+- [ ] ~~Swipe the Arrow — swipe the way the arrow points (or the opposite when it's red)~~ Removed: a bare reflex test; random swipes ended a round in half a second.
+- [ ] ~~Lamp Flip — tap lamps that flip their neighbours until every lamp is lit~~ Removed: the same puzzle as Street Lamps, which has the daily neighbourhood twist.
 
 ## Research notes (Nov 2026)
 
@@ -162,7 +171,6 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 - [ ] Tilt Snake 📐 — steer a worm by tilting
 - [ ] Spin Around 🧭 — spin on the spot a set number of turns as fast as you can
 - [ ] Sun Seeker 🧭📍 — point your phone at today's real sun position
-- [x] Shake Dice 📳 — shake to roll dice, push your luck to a target
 - [x] Maraca Rhythm 📳 — shake in time with a beat
 - [x] Shake the Tree 📳 — shake to drop apples, stop before the bees come out
 - [x] Cookie Thief 📐✋ — grab cookies face up, lay the phone face down when the cook turns; haptic cues tell you when it is safe
@@ -181,11 +189,9 @@ We use genres and mechanics only: every game has its own name, art, rules and le
 
 ## Quick-reflex micro games 📱
 
-- [x] Tap on Green — tap the moment the light turns green (reaction time)
 - [x] Stop the Clock — stop a stopwatch at exactly 3.00 seconds
 - [ ] Bigger Number — two numbers flash, tap the bigger one, faster each round
 - [x] Colour Word Trap — tap the ink colour, not the word
-- [x] Swipe the Arrow — swipe the way the arrow points (or the opposite when it's red)
 - [ ] Catch the Coin — tap the coin before it falls off screen
 - [ ] Count Taps — tap exactly N times in two seconds
 - [ ] Sharp Eye — find the letter hiding in a grid of similar letters
@@ -346,7 +352,6 @@ Ten batches toward 1000, mostly from the open ideas above (ticked where they wer
 - [x] Yo-Yo Tricks — flick to throw, swipe the trick shown while it sleeps, tap to catch before it stops
 - [x] Skip Stone — swipe fast and flat to skim stones; lily pads kick, ducks stop it
 - [x] Word Ladder — change one letter at a time to turn a word into the target
-- [x] Lamp Flip — tap lamps that flip their neighbours until every lamp is lit
 - [x] Island Bridges — link numbered islands with single and double bridges that never cross
 - [x] Swing Pump 📳 — pump a playground swing higher by pushing the phone (or tapping) as it stops at each end
 - [x] Sevens — card game against three robots: build each suit out from its 7, knock when nothing fits
