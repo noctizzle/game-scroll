@@ -6,12 +6,21 @@ CC BY 4.0) and copy the list into `THINGS` in `src/kit/doodle.js`, then:
 
 ```bash
 pip install numpy torch
-python3 scripts/doodle-model/fetch.py qd-data      # 12,000 drawings of each thing (28 x 28 bitmaps)
-python3 scripts/doodle-model/train.py qd-data      # about 6 minutes on a laptop CPU; writes src/kit/doodle-model.js
+python3 scripts/doodle-model/fetch.py qd-data      # 7,000 drawings of each thing (28 x 28 bitmaps, 1.1 GB for 200 things)
+EPOCHS=8 python3 scripts/doodle-model/train.py qd-data   # about 55 minutes on 4 CPU threads; writes src/kit/doodle-model.js and qd-data/report.json
 npm run kit-test                                   # the doodle checks
 ```
 
-The network is three 3x3 convolutions (16, 32, 64 channels, each with ReLU and 2x2 max pooling)
-and two dense layers (128, then one per thing), stored as int8 with one scale per tensor (about
-100 KB). `src/kit/doodle.js` runs it in plain JavaScript and draws the player's strokes into the same
-kind of 28 x 28 picture the dataset uses. With 46 things: 90% right on held-out drawings.
+The network is three 3x3 convolutions (32, 64, 128 channels, each with ReLU and 2x2 max pooling)
+and two dense layers (256, then one per thing), stored as int8 with one scale per tensor (439 KB of
+weights; the file is 589 KB as text, 379 KB compressed). `src/kit/doodle.js` reads the layer sizes
+from the file, runs it in plain JavaScript and draws the player's strokes into the same kind of
+28 x 28 picture the dataset uses.
+
+With 200 things, on the 70,000 drawings held out of training (the int8 model, as shipped): 76.0%
+right among all 200, 89.1% in its first three guesses, 96.1% right when asked to choose among five
+(the thing and four others picked at random). Hardest among all 200: dog 31%, bear 33%, bird 33%,
+frog 38%, raccoon 39%, tiger 40%, lobster 42%, mouse 45%, dragon 49%. `train.py` writes these
+numbers to `qd-data/report.json`; update the ones in `docs/maker-kit.md` and `src/kit/doodle.js`
+when the model is trained again. (With the first 46 things alone a smaller network was 90% right
+among all 46.)

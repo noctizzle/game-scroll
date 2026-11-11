@@ -1927,12 +1927,32 @@ move(x, y, pressed) { if (pressed) strokes.at(-1).push({ x, y }); }
 up() { const best = doodle.guess(strokes, { among: ['sword', 'umbrella', 'bridge'] })[0]; if (best.sure > .5) use(best.name); }
 ```
 
-It knows 46 things (`Doodle.things`): sword, star, circle, triangle, square, house, tree, cat, fish,
-bird, sun, moon, cloud, lightning, umbrella, key, ladder, bridge, car, sailboat, airplane, flower,
-apple, snowman, mountain, hat, crown, envelope, eye, smiley face, fork, hammer, axe, door, candle,
-clock, cup, diamond, banana, bicycle, spider, snake, rainbow, octopus, light bulb, hot air balloon.
-About 9 in 10 drawings are named right among all of them, and nearly all when `among` lists a few,
-so ask for the few your game cares about. For plain shapes, `gs.strokes` `Shapes` needs no model.
+It knows 200 things (`Doodle.things`): sword, star, circle, triangle, square, house, tree, cat,
+fish, bird, sun, moon, cloud, lightning, umbrella, key, ladder, bridge, car, sailboat, airplane,
+flower, apple, snowman, mountain, hat, crown, envelope, eye, smiley face, fork, hammer, axe, door,
+candle, clock, cup, diamond, banana, bicycle, spider, snake, rainbow, octopus, light bulb, hot air
+balloon, ant, bat, bear, bee, butterfly, camel, cow, crab, crocodile, dog, dolphin, dragon, duck,
+elephant, flamingo, frog, giraffe, hedgehog, horse, kangaroo, lion, lobster, monkey, mosquito,
+mouse, owl, panda, parrot, penguin, pig, rabbit, raccoon, rhinoceros, scorpion, sea turtle, shark,
+sheep, snail, squirrel, swan, tiger, whale, zebra, bread, broccoli, cake, carrot, donut, grapes,
+hamburger, hot dog, ice cream, lollipop, mushroom, onion, pear, pineapple, pizza, popsicle,
+strawberry, watermelon, peanut, anvil, backpack, basket, book, boomerang, bucket, broom, camera,
+cannon, compass, drums, dumbbell, eyeglasses, feather, flashlight, guitar, headphones, helmet,
+hourglass, knife, lantern, leaf, map, microphone, necklace, paintbrush, parachute, pencil, piano,
+rake, saw, scissors, screwdriver, shovel, skull, snowflake, spoon, teapot, telephone, tent, tooth,
+trumpet, violin, wheel, wine glass, shoe, sock, t-shirt, pants, bowtie, mailbox, megaphone,
+suitcase, vase, barn, bus, canoe, castle, church, fence, flying saucer, helicopter, lighthouse,
+motorbike, palm tree, cactus, rain, skateboard, skyscraper, stairs, stop sign, submarine, tornado,
+tractor, traffic light, train, truck, windmill, campfire, bed, chair, table, bench, television,
+laptop, hand, moustache, mermaid, angel, soccer ball, tennis racquet, basketball.
+
+Measured on drawings it never saw: 76 in 100 are named right among all 200, 89 in 100 are in its
+first three guesses, and 96 in 100 are right when the game asks it to choose among five. So pass
+`among` with the few things your game cares about, and take the top guess only when its `sure` is
+high. Animals that look alike as doodles are the hard ones (dog, bear, bird, frog, raccoon and tiger
+are right a third to a half of the time among all 200): don't put two of those in one `among`. The
+model is about 440 KB and is only fetched by a game that uses it. For plain shapes, `gs.strokes`
+`Shapes` needs no model.
 
 **The phone's own AI** (`gs.phoneai.PhoneAI`): newer phones have a language model built in (Apple
 Intelligence on iPhone, Gemini Nano on Android, the browser's own on the web). Use it for flavour:

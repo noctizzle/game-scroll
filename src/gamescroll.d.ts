@@ -1925,7 +1925,7 @@ export interface HearPart {
   };
 }
 
-/** gs.doodle: what the player drew, from 46 things (a tiny model on the phone). */
+/** gs.doodle: what the player drew, from 200 things (a small model on the phone; most accurate when `among` lists the few a game cares about). */
 export interface DoodlePart {
   /** Make it in make() or reset() (the model loads first). */
   Doodle: {

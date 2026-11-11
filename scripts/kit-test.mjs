@@ -1315,18 +1315,22 @@ console.log('physics ok');
   assert.ok(threw?.kitLoading, 'Doodle before load throws StillLoading');
   await loadDoodle();
   const d = new Doodle();
-  assert.equal(Doodle.things.length, 46); assert.deepEqual(d.things, Doodle.things);
+  assert.equal(Doodle.things.length, 200); assert.deepEqual(d.things, Doodle.things); assert.equal(new Set(d.things).size, 200, 'no thing twice');
+  // the names in the kit, the list the model is trained from, and the model file itself all agree, in order
+  assert.deepEqual(d.things, JSON.parse((await import('node:fs')).readFileSync(new URL('./doodle-model/classes.json', import.meta.url), 'utf8')), 'THINGS in doodle.js is scripts/doodle-model/classes.json');
+  assert.deepEqual((await import('../src/kit/doodle-model.js')).MODEL.classes, d.things, 'the model was trained on the same things');
   assert.equal(picture([]).reduce((a, b) => a + b, 0), 0, 'nothing drawn, empty picture');
   const ring = [Array.from({ length: 33 }, (_, i) => ({ x: 100 + 80 * Math.cos(i / 32 * Math.PI * 2), y: 100 + 80 * Math.sin(i / 32 * Math.PI * 2) }))];
   const g = d.guess(ring);
-  assert.equal(g.length, 46); assert.ok(Math.abs(g.reduce((a, b) => a + b.sure, 0) - 1) < 1e-5, 'sures add up to 1');
-  assert.ok(['circle', 'clock', 'smiley face', 'sun', 'moon'].includes(g[0].name), 'a ring looks round: ' + g[0].name);
+  assert.equal(g.length, 200); assert.ok(Math.abs(g.reduce((a, b) => a + b.sure, 0) - 1) < 1e-5, 'sures add up to 1');
+  assert.ok(['circle', 'clock', 'smiley face', 'sun', 'moon', 'wheel', 'necklace'].includes(g[0].name), 'a ring looks round: ' + g[0].name);
+  assert.equal(d.guess(ring, { among: ['circle', 'square', 'triangle', 'star', 'lightning'] })[0].name, 'circle', 'a ring among five');
   const tri = [[{ x: 0, y: 100 }, { x: 50, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }]];
   assert.equal(d.guess(tri, { among: ['triangle', 'circle', 'square'] })[0].name, 'triangle', 'a triangle among three');
   const ladder = [[{ x: 0, y: 0 }, { x: 0, y: 200 }], [{ x: 60, y: 0 }, { x: 60, y: 200 }], ...[30, 80, 130, 180].map(y => [{ x: 0, y }, { x: 60, y }])];
   assert.equal(d.guess(ladder, { among: ['ladder', 'sword', 'door'] })[0].name, 'ladder', 'a ladder among three');
-  assert.deepEqual(d.guess(ring, { among: ['dragon'] }), [], 'unknown names are left out');
-  console.log('doodle: picture, guesses, among ok (top for a ring: ' + g[0].name + ')');
+  assert.deepEqual(d.guess(ring, { among: ['spaceship'] }), [], 'unknown names are left out');
+  console.log('doodle: 200 things, picture, guesses, among ok (top for a ring: ' + g[0].name + ')');
 
   const { Voice } = await import('../src/kit/hear.js');
   const v = new Voice({ words: ['jump', 'fire', 'turn left'], also: { fire: ['shoot'] } });
