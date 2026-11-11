@@ -1807,7 +1807,8 @@ console.log('physics ok');
   assert.equal(bestMove(new Rules('7k/8/5K2/8/8/8/8/6R1 b - - 0 1'), { level: 2 })?.to, 'h7', 'a side with one move finds it'); assert.equal(bestMove(new Rules('7k/5Q2/6K1/8/8/8/8/8 b - - 0 1'), { level: 2 }), null, 'no move in a stalemate');
   const play = new Chess(); let plies = 0;
   for (; plies < 24 && !play.over; plies++) { const r = await play.think({ level: 1 + plies % 2, time: 30 }); assert.ok(r && play.move(r), 'level ' + (1 + plies % 2) + ' plays a legal move at ply ' + plies); }
-  assert.ok(plies >= 20, 'two levels play each other'); assert.equal(Chess.LEVELS.length, 5); assert.equal(LEVELS[4].name, 'Master');
+  // the game is still going after 24 plies, or it ended by the rules: about one game in fifty a Novice walks into a mate before ply 20
+  assert.ok(plies === 24 || (plies >= 4 && (play.mate || play.draw)), 'two levels play each other (' + plies + ' plies)'); assert.equal(Chess.LEVELS.length, 5); assert.equal(LEVELS[4].name, 'Master');
   console.log('gs.tabletop.Chess ok');
 }
 
