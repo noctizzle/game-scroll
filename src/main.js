@@ -521,7 +521,10 @@ function whenCalm(fn){calmJobs.push(fn);if(!calmT)calmT=setTimeout(calmTick,QUIE
 function calmTick(){
   calmT=0;if(!calmJobs.length)return;
   if(!calm()){calmT=setTimeout(calmTick,100);return}
-  idleSlot(()=>{if(!calm()){calmT=setTimeout(calmTick,100);return}const f=calmJobs.shift();try{f()}catch(e){console.error(e)}if(calmJobs.length)calmT=setTimeout(calmTick,60)});
+  // calmT stays set (-1) while the idle slot is on its way and while its job runs, so a job added in
+  // that time joins this chain instead of starting a second one (two slots for one job: "f is not a function")
+  calmT=-1;
+  idleSlot(()=>{if(!calm()){calmT=setTimeout(calmTick,100);return}const f=calmJobs.shift();try{f()}catch(e){console.error(e)}calmT=calmJobs.length?setTimeout(calmTick,60):0});
 }
 speed.busy=()=>!calm();speed.playing=()=>!!active&&active.state==='playing';
 function topUpLater(wait=QUIET){
