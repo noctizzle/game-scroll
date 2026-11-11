@@ -374,3 +374,24 @@ Ten batches toward 1000, mostly from the open ideas above (ticked where they wer
 - [x] Star Join 📷 — find numbered stars in the sky around you and join them in order to draw constellations
 - [x] Bubble Garden 📷🎤 — blow bubbles (mic or button) onto flower buds on your floor to make them bloom
 - [x] Echo Drums 📷 — five drums stand round you: listen, then turn and play their rhythm back
+
+## Board (3D + AR, 2026-11-11) ♟
+Games you play on a board, on a table in a 3D room or on your own floor in AR (`era: 'board'`, `gs.tabletop`, [board-games.md](board-games.md)). They may run longer than three minutes and keep your game between visits.
+- [x] Living Chess — chess against five levels of opponent; the pieces have eyes and crumble when taken
+- [x] Snakes & Ladders — the race to the last square with real dice: throw two and pick which to use
+- [x] Mancala — sow glass stones round a carved board; go again in your store, capture opposite
+- [x] Tavern Dice — Ten Thousand with six real dice: keep scoring dice, bank or risk the lot
+- [x] King's Table — tafl on the small board: get the king to a corner before the raiders trap him
+- [x] Tower Four — four in a row on sixteen pegs, in three dimensions
+- [x] Carrom — flick the striker to sink your discs and the queen
+- [x] Tile Isles — lay six-sided tiles to grow an island; each land scores by its neighbours
+- [x] Liar's Lantern — one villager at the table always lies: hear a few out and name the Trickster
+- [x] Gloomwick Hall — turn over the rooms of an old house, find three relics and beat the ghost to the door
+- [ ] Draughts — jump to capture, crown at the far row
+- [ ] Nine Men's Morris — place, slide and fly to make mills of three
+- [ ] Backgammon Dash — bear off first with real dice, on a short board
+- [ ] Go Nine — surround territory on the 9 x 9 board
+- [ ] Ludo Garden — four colours race home, capture sends a piece back
+- [ ] Domino Chain — match ends to empty your hand first
+- [ ] Hex Bridge — join your two sides of a hex board before your rival joins theirs
+- [ ] Fox and Geese — one fox against a flock on a cross-shaped board

@@ -86,13 +86,13 @@ function broken(s,why){if(isFull(s))leaveFull();if(s.state==='playing')try{gameO
 // A new round: false (and the card shows the problem) if the game threw.
 function resetGame(s){resetTicks(s);try{ownedBy(s,()=>s.game.reset());return true}catch(e){gameFault(s,e);return false}}
 function makeSlide(def){
-  const el=document.createElement('section');el.className='slide '+(def.retro?'retro':'modern')+(def.era==='console'?' console':def.era==='nextgen'?' console nextgen':def.era==='ar'?' console nextgen ar':'');
+  const el=document.createElement('section');el.className='slide '+(def.retro?'retro':'modern')+(def.era==='console'?' console':def.era==='nextgen'?' console nextgen':def.era==='ar'?' console nextgen ar':def.era==='board'?' console nextgen board':'');
   if(def.retro){const p=PAL[def.pal||'moss'];p.forEach((c,i)=>el.style.setProperty('--lcd'+i,c));el.style.setProperty('--shell',SHELL[def.pal||'moss']);}el.setAttribute('aria-label',def.title);
   el.innerHTML=`
     <div class="stage"><div class="device">
-      ${def.retro?`<div class="bezel-top${def.era?' dark':''}"><span class="led"></span>${def.era==='console'?'<b class="era">CLASSIC</b> · CONSOLE':def.era==='nextgen'?'<b class="era">NEXT GEN</b> · CONSOLE<button class="fsbtn" aria-label="Full screen" title="Full screen"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4"/></svg></button>':def.era==='ar'?'<b class="era">AR</b> · 3D':def.era==='advance'?'<b class="era">ADVANCE</b> · POCKET':def.era==='color'?'<b class="era rainbow">COLOR</b> · POCKET':'DOT MATRIX · POCKET'}</div>`:''}
+      ${def.retro?`<div class="bezel-top${def.era?' dark':''}"><span class="led"></span>${def.era==='console'?'<b class="era">CLASSIC</b> · CONSOLE':def.era==='nextgen'?'<b class="era">NEXT GEN</b> · CONSOLE<button class="fsbtn" aria-label="Full screen" title="Full screen"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4"/></svg></button>':def.era==='ar'?'<b class="era">AR</b> · 3D':def.era==='board'?'<b class="era">BOARD</b> · GAME':def.era==='advance'?'<b class="era">ADVANCE</b> · POCKET':def.era==='color'?'<b class="era rainbow">COLOR</b> · POCKET':'DOT MATRIX · POCKET'}</div>`:''}
       <div class="screen"><canvas></canvas><div class="hud"><span class="score">0</span></div><div class="overlay"></div></div>
-      ${def.era==='console'||def.era==='nextgen'||def.era==='ar'?'<div class="bezel-bottom"><span class="slot"></span><span class="pads"><i></i><i></i><i></i></span></div>':def.retro?'<div class="bezel-bottom"><span class="dpad"></span><span class="ab"><i></i><i></i></span></div>':''}
+      ${def.era==='console'||def.era==='nextgen'||def.era==='ar'||def.era==='board'?'<div class="bezel-bottom"><span class="slot"></span><span class="pads"><i></i><i></i><i></i></span></div>':def.retro?'<div class="bezel-bottom"><span class="dpad"></span><span class="ab"><i></i><i></i></span></div>':''}
     </div></div>
     <div class="meta">
       <button class="caption" aria-label="How to play ${def.title}"><span class="tag">${def.tag}</span><h2>${def.title}</h2><p>${def.hint}</p><span class="more"><b>ⓘ How to play</b> · Best <span class="best">0</span></span></button>
@@ -179,7 +179,7 @@ function openInfo(s){
     infoDlg.addEventListener('click',e=>{if(e.target===infoDlg)infoDlg.close()});
     infoDlg.addEventListener('close',()=>{const t=infoDlg._s;if(t&&t.pauseWhy==='info')resumeGame(t)})}
   infoDlg._s=s;pauseGame(s,'info');
-  const kind=d.era==='console'?'Classic · Console game':d.era==='nextgen'?'Next Gen · Console game':d.era==='ar'?'AR 3D game: uses your camera and motion sensor':d.era==='advance'?'Advance-style pocket game':d.era==='color'?'Colour pocket game':d.retro?'Dot-matrix pocket game':'Phone game';
+  const kind=d.era==='console'?'Classic · Console game':d.era==='nextgen'?'Next Gen · Console game':d.era==='ar'?'AR 3D game: uses your camera and motion sensor':d.era==='board'?'Board game: on a table in 3D, or in your own room with AR':d.era==='advance'?'Advance-style pocket game':d.era==='color'?'Colour pocket game':d.retro?'Dot-matrix pocket game':'Phone game';
   infoDlg.innerHTML=`<div class="info-card"><button class="info-x" aria-label="Close">✕</button>
     <span class="tag">${d.tag}</span><h2>${d.title}</h2><div class="info-by">Created by <b>${creatorOf(d)}</b></div><div class="info-k">${kind}</div>
     <h3>How to play</h3><p>${d.hint}</p>${locNote(d)}${sensorNote(d)}
@@ -204,7 +204,7 @@ function updateBest(s){s.el.querySelector('.best').textContent=fmt(best(s.def.id
 // ...and so do games that use the camera, mic or motion sensor (worked out from their code), and
 // iPhones get asked for motion access on the Play tap instead of in the middle of a round.
 const SENSOR_WORDS={camera:'camera',mic:'microphone',steps:'step counter',pressure:'air pressure sensor',light:'light sensor',near:'proximity sensor',motion:'motion sensor'};
-const sensorNote=d=>{const u=(d.uses||[]).filter(k=>SENSOR_WORDS[k]);if(!u.length||d.era==='ar')return'';const w=u.map(k=>SENSOR_WORDS[k]);
+const sensorNote=d=>{if(d.era==='board'&&d.ar!==false)return'<div class="ov-loc">📷 Tap AR in the game to put the board in your own room. The camera is only used then, and nothing is recorded or leaves your phone.</div>';const u=(d.uses||[]).filter(k=>SENSOR_WORDS[k]);if(!u.length||d.era==='ar')return'';const w=u.map(k=>SENSOR_WORDS[k]);
   return`<div class="ov-loc">${u.includes('camera')?'📷':u.includes('mic')?'🎤':u.includes('steps')?'👟':'📱'} Uses your ${w.length>1?w.slice(0,-1).join(', ')+' and '+w[w.length-1]:w[0]}${u.includes('camera')||u.includes('mic')?'. Nothing is recorded or leaves your phone':''}.</div>`};
 const locNote=d=>d.location?`<div class="ov-loc">📍 Uses your ${d.location==='precise'?'location to walk around':'rough area (about 1 km)'}. It stays on your phone, and you can say no.</div>`:'';
 function renderOverlay(s){
@@ -212,7 +212,7 @@ function renderOverlay(s){
   if(s.failed){s.overlay.innerHTML=`<div class="ov-k">Oops</div><div class="ov-title">${d.title}</div><div class="ov-hint">${s.failed}</div><button class="play">Try again</button>${cue}`;s.overlay.hidden=false;return}
   if(s.state==='ready'){
     if(d.uses?.includes('motion'))want('motion');
-    s.overlay.innerHTML=`<div class="ov-k">${d.era==='nextgen'||d.era==='ar'?'Ready':d.retro?'Insert coin':'Tap to start'}</div><div class="ov-title">${d.title}</div><div class="ov-hint">${d.hint}</div>${goalHTML(d)}${locNote(d)}${sensorNote(d)}<button class="play">${d.retro?'PRESS START':'Play'}</button>${shopHTML(d)}${cue}`;
+    s.overlay.innerHTML=`<div class="ov-k">${d.era==='nextgen'||d.era==='ar'?'Ready':d.era==='board'?'Take a seat':d.retro?'Insert coin':'Tap to start'}</div><div class="ov-title">${d.title}</div><div class="ov-hint">${d.hint}</div>${goalHTML(d)}${locNote(d)}${sensorNote(d)}<button class="play">${d.retro?'PRESS START':'Play'}</button>${shopHTML(d)}${cue}`;
     bindShop(s.overlay,d,()=>renderOverlay(s));
   }else if(s.state==='over'){
     const b=best(d.id),isNew=s.score>0&&s.score>=b&&s.newBest;
@@ -399,7 +399,7 @@ function fit(s,again){
 // Shuffled queue over the whole catalogue; the feed pulls a few at a time so 1000 games never means 1000 slides in the DOM.
 let queue=[];
 // ar:'world' games need native AR (walking around), so the feed leaves them out on phones without it.
-function inPool(g){return (filter.startsWith('id:')||!isHidden(g.id)&&!(g.ar==='world'&&nativeARSupported()!==true))&&(filter==='all'||(filter.startsWith('id:')?g.id===filter.slice(3):filter==='pocket'?g.retro&&g.era!=='console'&&g.era!=='nextgen'&&g.era!=='ar':filter==='console'?g.era==='console':filter==='nextgen'?g.era==='nextgen':filter==='ar'?g.era==='ar':!g.retro))}
+function inPool(g){return (filter.startsWith('id:')||!isHidden(g.id)&&!(g.ar==='world'&&nativeARSupported()!==true))&&(filter==='all'||(filter.startsWith('id:')?g.id===filter.slice(3):filter==='pocket'?g.retro&&g.era!=='console'&&g.era!=='nextgen'&&g.era!=='ar'&&g.era!=='board':filter==='console'?g.era==='console':filter==='nextgen'?g.era==='nextgen':filter==='ar'?g.era==='ar':filter==='board'?g.era==='board':!g.retro))}
 function pickDefs(n=6){
   let pool=GAMES.filter(inPool);
   if(!pool.length)pool=GAMES;
@@ -423,7 +423,7 @@ let rerankDue=false;
 history.onChange((id,w)=>{if(w&&!rerankDue){rerankDue=true;whenCalm(()=>{rerankDue=false;rerank(3)})}});
 // speed.offscreen tells the 3D kits this card isn't the one being played: draw it without taking the shared
 // 3D canvas or the frame-rate tuning away from the card on screen (src/kit/hd3d.js).
-const usesHD=d=>d.era==='nextgen'||d.era==='ar';
+const usesHD=d=>d.era==='nextgen'||d.era==='ar'||d.era==='board';
 // The score badge's box in the game's own units, roomy enough for a 4-digit score, so a game can keep
 // its HUD out from under it: { x, y, w, h, bottom }. Measured from the page (it moves with the style,
 // the screen size and folding), kept for a quarter second, with a guess when the card isn't laid out.
@@ -448,7 +448,7 @@ function scoreArea(s){
 // Pocket styles (dot matrix, Color, Advance) are the pixel games. Their picture goes up to the card in present():
 // each game pixel becomes n x n canvas pixels, exactly. A game that asks for the LCD look (lcd in its definition)
 // also gets the slow screen's ghosting (a little of the last frame lingers) and the fine grid between pixels.
-const isPixel=d=>!!d.retro&&d.era!=='console'&&d.era!=='nextgen'&&d.era!=='ar';
+const isPixel=d=>!!d.retro&&d.era!=='console'&&d.era!=='nextgen'&&d.era!=='ar'&&d.era!=='board';
 function lcdOf(d){
   if(!d.lcd)return null;
   const o=d.lcd===true?{}:d.lcd,dm=!d.era,amt=(v,def,max)=>v===false?0:v===true||v==null?def:Math.max(0,Math.min(max,+v||0));

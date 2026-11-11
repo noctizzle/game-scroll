@@ -96,7 +96,7 @@ export interface GameDef {
   maxW?: number;
   maxH?: number;
   retro?: boolean;
-  era?: 'color' | 'advance' | 'console' | 'nextgen' | 'ar';
+  era?: 'color' | 'advance' | 'console' | 'nextgen' | 'ar' | 'board';
   pal?: string;
   creator?: string;
   location?: 'coarse' | 'precise';
@@ -138,8 +138,8 @@ export interface GameDef {
   step?: number;
   /** Extra words for the feed's "For you" ranking, like 'theme:space'. */
   traits?: string[];
-  /** 'world': needs native AR (walking around); the feed leaves it out on phones without it. */
-  ar?: 'world';
+  /** 'world': needs native AR (walking around); the feed leaves it out on phones without it. Board games: false when the game's Table has ar: false, so the start card leaves the camera note out. */
+  ar?: 'world' | false;
   make(api: GameApi): Game;
 }
 
@@ -531,8 +531,186 @@ export interface SolvePart {
   Search: new <S = Loose, M = Loose>(game: SearchGame<S, M>) => {
     best(s: S, o?: { time?: number; depth?: number; skill?: number; rng?: number | string | (() => number); mode?: 'minimax' | 'mcts' }): M | null;
     rank(s: S, o?: { time?: number; depth?: number; mode?: 'minimax' | 'mcts'; rng?: number }): { move: M; value: number; visits?: number }[];
+    /** best(), a few milliseconds at a time: call job.step(ms) each frame until it returns true, then play job.move. time is the total thinking time. */
+    think(s: S, o?: { time?: number; depth?: number; skill?: number; rng?: number | string | (() => number); mode?: 'minimax' | 'mcts' }): SearchJob<M>;
     readonly nodes: number;
   };
+}
+export interface SearchJob<M = Loose> { done: boolean; move: M | null; ranked: { move: M; value: number; visits?: number }[]; spent: number; step(ms?: number): boolean }
+
+// ---------- board games (gs.tabletop, docs/board-games.md) ----------
+/** A point on the board in board units: x to the player's right, z towards the player, y up from the board's top. */
+export interface BoardPoint { x?: number; y?: number; z?: number }
+export type TableEase = 'linear' | 'in' | 'out' | 'inOut' | 'back' | 'bounce' | ((k: number) => number);
+export type RoomName = 'study' | 'parlour' | 'tavern' | 'attic' | 'hall' | 'sunroom';
+/** The room round the table in 3D: a ROOMS name to start from (like) and any of its fields changed. */
+export interface RoomLook {
+  like?: RoomName; bg?: string; wall?: string; floor?: [string, Record<string, Loose>]; rug?: string | null; wood?: string; felt?: string | null;
+  lamp?: string; power?: number; sky?: string; ground?: string; amb?: number; env?: number;
+  grade?: { saturation?: number; contrast?: number; shadows?: string; highlights?: string } | null;
+}
+export interface TableOptions {
+  /** How wide the playing area is, in board units (10). */
+  span?: number;
+  /** Its real width in metres (.5): the room's proportions, and tabletop size in AR. */
+  real?: number;
+  /** How far the board's underside is below y = 0 (.3, a slab's thickness). */
+  base?: number;
+  room?: RoomName | RoomLook;
+  table?: 'round' | 'square' | false;
+  /** The camera's home, in degrees: pitch (56) down at the board, yaw round it, zoom (1; under 1 is closer). */
+  pitch?: number; yaw?: number; zoom?: number;
+  /** The board point the camera aims at: [x, y, z]. */
+  look?: [number, number, number];
+  minPitch?: number; maxPitch?: number;
+  /** false leaves the AR chip out. */
+  ar?: boolean;
+  /** Metres wide on the floor in AR (.9). */
+  arSize?: number;
+  /** The area the camera fits on screen, [w, d] in board units, when it isn't span x span. */
+  frame?: [number, number];
+  /** Depth of field (a miniature look; best phones only). */
+  blur?: boolean;
+}
+export interface TableChip { id: string; label: string; on?: boolean }
+/** A tap from Table.up(): where it was, and chip when it was on one of the game's own chips. */
+export interface TableTap { x: number; y: number; chip?: string }
+export interface TableParticles {
+  emit(e: { x?: number; y?: number; z?: number; vx?: number; vy?: number; vz?: number; life?: number; size?: number; grow?: number; col?: Loose; a?: number; drag?: number; grav?: number; floor?: number; [more: string]: Loose }): void;
+  update(dt: number): void; clear(): void;
+}
+/** Real dice thrown on the board (Table.dice). */
+export interface DiceSet {
+  /** The numbers showing now. */
+  readonly values: number[];
+  meshes: Loose[]; rolling: boolean;
+  show(on?: boolean): DiceSet;
+  /** Throws the dice (all but keep's indexes); resolves the numbers once they settle. */
+  roll(o?: { keep?: number[]; from?: BoardPoint | null; push?: BoardPoint | null }): Promise<number[]>;
+  /** Stands die i at a board point with its number kept. */
+  park(i: number, at: { x: number; z: number }): DiceSet;
+  rest(): void;
+}
+export interface TableT {
+  /** Add the board and pieces here, in board units: the board's top is y = 0, the player sits at +z. */
+  board: Loose;
+  anchor: Loose; room: Loose; lamp: Loose;
+  span: number; real: number; base: number;
+  /** Seconds of game time on the table's clock. */
+  t: number;
+  mode: '3d' | 'ar'; W: number; H: number;
+  /** The view on screen now: a gs.hd HDView (3D) or a gs.ar ARView (AR). */
+  readonly v: Loose;
+  /** The 3D room's view (always there) and AR's (null until AR is first tapped). */
+  v3: Loose; va: Loose | null;
+  /** True while AR's own screens are up: hide your HUD. */
+  readonly hidden: boolean;
+  /** True while a run() turn is still playing out. */
+  readonly busy: boolean;
+  /** True on a tall screen (a phone held upright), false on a wide one (an unfolded phone). */
+  readonly tall: boolean;
+  onTier(fn: (tier: Loose) => void): TableT;
+  /** From the game's reset(): drops moves still playing and puts the camera home. */
+  reset(): TableT;
+  /** Stops the camera (before api.over() in AR). */
+  stop(): TableT;
+  /** First in update(dt). False while the game should wait (AR is finding the floor). */
+  update(dt: number): boolean;
+  tween(dur: number, fn: ((k: number, raw: number) => void) | null, o?: { ease?: TableEase; delay?: number }): Promise<void>;
+  wait(s: number): Promise<void>;
+  /** A promise from elsewhere, dropped if the round is reset meanwhile. */
+  until<V>(p: Promise<V> | V): Promise<V>;
+  /** Plays a turn written as an async function; busy is true while it runs. */
+  run(fn: () => unknown): void;
+  /** A gs.solve.Search opponent's move, thought about a little each frame. wait: seconds it takes at least (.5); slice: milliseconds a frame (4). */
+  think<S = Loose, M = Loose>(search: Loose, state: S, o?: { time?: number; depth?: number; skill?: number; mode?: 'minimax' | 'mcts'; rng?: number | string | (() => number); wait?: number; slice?: number }): Promise<M | null>;
+  hop(obj: Loose, to: BoardPoint, o?: { h?: number; time?: number; sound?: boolean; spin?: number; ease?: TableEase }): Promise<void>;
+  slide(obj: Loose, to: BoardPoint, o?: { time?: number; ease?: TableEase; sound?: boolean }): Promise<void>;
+  drop(obj: Loose, o?: { from?: number; time?: number; sound?: boolean }): Promise<void>;
+  pop(obj: Loose, o?: { by?: number; time?: number }): Promise<void>;
+  shake(amount?: number): TableT;
+  /** Breaks a piece into rubble that tumbles and fades. */
+  crumble(mesh: Loose, o?: { pieces?: number; push?: number; from?: { x: number; z: number } | null; life?: number }): Promise<void>;
+  /** A burst of dust (or, with glow, sparks) at a board point. */
+  puff(p: BoardPoint, o?: { col?: string; n?: number; speed?: number; size?: number; life?: number; up?: number; grav?: number; glow?: boolean }): TableT;
+  lookAt(p: BoardPoint, o?: { zoom?: number | null; yaw?: number | null; pitch?: number | null }): TableT;
+  lookHome(h?: { yaw?: number; pitch?: number; zoom?: number; look?: [number, number, number] } | null): TableT;
+  /** The area the camera keeps on screen, in board units. */
+  frame(w: number, d: number): TableT;
+  setMode(mode: '3d' | 'ar'): TableT;
+  onMode(fn: (mode: '3d' | 'ar') => void): TableT;
+  draw(c: CanvasRenderingContext2D, W: number, H: number): void;
+  /** The kit's chips (AR / 3D, View, Move) and messages, last in draw(); extra: your own chips. */
+  hud(c: CanvasRenderingContext2D, W: number, H: number, extra?: TableChip[]): void;
+  say(text: string, secs?: number): TableT;
+  /** The players along the top; returns the y just below. */
+  strip(c: CanvasRenderingContext2D, W: number, list: { name: string; col?: string; score?: number | string | null; note?: string }[], turn?: number, o?: { y?: number | null }): number;
+  status(c: CanvasRenderingContext2D, W: number, y: number, text: string, col?: string): number;
+  /** Pass the game's touches through these. down: true when the kit used the touch. */
+  down(x: number, y: number, id?: number): boolean;
+  /** The game is dragging something itself with this touch: the kit won't turn the view with it. */
+  claim(id?: number): TableT;
+  move(x: number, y: number, pressed?: boolean, id?: number): boolean;
+  /** A tap ({ x, y }, with chip for one of your own chips), or null for a drag, a pinch or one of the kit's chips. */
+  up(x: number, y: number, id?: number): TableTap | null;
+  ray(x: number, y: number): Loose;
+  /** Where a screen point meets the board's plane (at height h), in board units. */
+  pick(x: number, y: number, h?: number): { x: number; y: number; z: number } | null;
+  /** The one of objects under a screen point, nearest first. */
+  over(x: number, y: number, objects: Loose[]): Loose | null;
+  /** Screen [x, y, z] of a board point (z under 1 is in front of the camera). */
+  toScreen(p: BoardPoint): [number, number, number];
+  /** Index of the board point nearest a screen point within maxPx (34), or -1. */
+  nearest(x: number, y: number, points: (BoardPoint | null)[], maxPx?: number): number;
+  particles(o?: Loose): TableParticles;
+  /** n real dice tumbling in gs.physics3d inside an unseen tray. Make them in setup. */
+  dice(n?: number, o?: { size?: number; body?: string; pips?: string; tray?: { x: number; z: number; w: number; d: number } | null; gravity?: number; bounce?: number }): DiceSet;
+}
+export interface ChessMove { from: string; to: string; piece: string; color: 'w' | 'b'; captured: string | null; promotion: string | null; castle: 'k' | 'q' | null; enPassant: boolean; san: string }
+export interface ChessT {
+  readonly turn: 'w' | 'b'; readonly fen: string; readonly check: boolean; readonly mate: boolean; readonly stalemate: boolean; readonly draw: boolean; readonly over: boolean;
+  readonly count: number;
+  /** How the position stands for white, in pawns. */
+  readonly balance: number;
+  at(square: string): { type: string; color: 'w' | 'b' } | null;
+  pieces(): { square: string; type: string; color: 'w' | 'b' }[];
+  moves(square?: string | null): ChessMove[];
+  move(m: { from: string; to: string; promotion?: string | null }): ChessMove | null;
+  undo(): ChessMove | null;
+  /** The computer's move for the side to move, thought about in a worker. level 1..5. */
+  think(o?: { level?: number; time?: number | null }): Promise<{ from: string; to: string; promotion?: string | null } | null>;
+}
+/** Colour or a three.js material, and the options gs.hd.pbr takes (rough, metal, clear, glow, transparent, opacity...). */
+export type PieceLook = string | Loose;
+export interface TabletopPart {
+  /** One board, played in a 3D room or in AR: the table, camera, picking, moves, dice. */
+  Table: new (api: GameApi, o?: TableOptions) => TableT;
+  ROOMS: Record<RoomName, RoomLook>;
+  /** Table sounds, each with a volume 0..1. */
+  sounds: Record<'clack' | 'tick' | 'clink' | 'rattle' | 'slide' | 'thud' | 'flip' | 'chime' | 'gong', (v?: number) => void>;
+  /** A board: a slab with a top painted in code and a wooden rim, its top at y = 0. */
+  slab(o?: { w?: number; d?: number; thick?: number; rim?: number; wood?: string; px?: number; paint?: ((g: Loose, size: number) => void) | null; rough?: number; strength?: number }): Loose;
+  /** A flat picture lying on the board; mesh.userData.redraw(fn) paints it again. */
+  decal(w: number, d: number, draw: (c: CanvasRenderingContext2D, w: number, h: number) => void, o?: { px?: number; lift?: number; rough?: number; glow?: number }): Loose;
+  /** Polished wood with a straight grain, made in code (a material). */
+  wood(colour?: string, o?: { repeat?: [number, number]; clear?: number }): Loose;
+  die(size?: number, o?: { body?: string; pips?: string; rough?: number }): Loose;
+  pawn(col?: PieceLook, o?: { r?: number; h?: number; [pbr: string]: Loose }): Loose;
+  disc(col?: PieceLook, o?: { r?: number; h?: number; [pbr: string]: Loose }): Loose;
+  stone(col?: PieceLook, o?: { r?: number; [pbr: string]: Loose }): Loose;
+  ring(col?: string, o?: { r?: number; w?: number; glow?: number }): Loose;
+  dot(col?: string, o?: { r?: number; glow?: number }): Loose;
+  /** A pair of glowing eyes to add to a piece. */
+  eyes(col?: PieceLook, o?: { y?: number; z?: number; gap?: number; r?: number; glow?: number }): Loose;
+  chessman(kind: 'p' | 'r' | 'n' | 'b' | 'q' | 'k', col?: PieceLook, o?: Record<string, Loose>): Loose;
+  /** Joins the meshes in a group that share a material into one mesh each. */
+  fuse(group: Loose): Loose;
+  COLOURS: { readonly players: readonly string[]; readonly light: string; readonly dark: string };
+  shade(col: string, k: number): string;
+  EASE: Record<'linear' | 'in' | 'out' | 'inOut' | 'back' | 'bounce', (k: number) => number>;
+  /** Chess rules (chess.js) and a computer opponent; make it in make() or reset(). */
+  Chess: (new (fen?: string | null) => ChessT) & { LEVELS: readonly { name: string; depth: number; time: number }[] };
+  loadChess(): Promise<Loose>;
 }
 export interface VoxelWorld {
   readonly w: number; readonly h: number; readonly d: number; readonly scale: number; group: Loose; readonly meshing: number;
@@ -1794,6 +1972,8 @@ export interface GS {
   outdoors: OutdoorsPart; city: CityPart; models: ModelsPart; voxels: VoxelsPart; craft: CraftPart; soft: SoftPart; cards: CardsPart; dice: DicePart; words: WordsPart; trivia: TriviaPart; ui: UIPart;
   hear: HearPart; doodle: DoodlePart; phoneai: PhoneaiPart;
   toon: ToonPart; hd: HdPart; ar: ArPart; bricks: BricksPart; physics3d: Physics3dPart; fx3d: Fx3dPart;
+  /** Board games: a table in a 3D room or in your real room (AR). */
+  tabletop: TabletopPart;
   camera: CameraPart; nav3d: Nav3dPart; characters: CharactersPart; ai: AiPart;
   /** three.js itself. */
   THREE: Loose;

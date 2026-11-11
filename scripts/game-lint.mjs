@@ -72,7 +72,7 @@ const CODE_RULES = [
 
 // Kit hints. at: the line the hint points to (the first match). unless: the game already uses the kit.
 // only: styles it applies to. file: true says it's about the whole game (it points at the definition).
-const pixelStyle = src => /\bretro\s*:\s*true\b/.test(src) && !/\bera\s*:\s*['"`](console|nextgen|ar)['"`]/.test(src);
+const pixelStyle = src => /\bretro\s*:\s*true\b/.test(src) && !/\bera\s*:\s*['"`](console|nextgen|ar|board)['"`]/.test(src);
 const HINTS = [
   { at: /\b\w*(parts|particles|sparks|puffs|debris|confetti|dust|bits|chips|shards)\w*\s*\.push\s*\(\s*\{[^}]*\b(vx|vy|life)\b/i, unless: /\b(Feel|Juice)\b/,
     why: 'particles by hand. gs.effects.Feel does particles, shake, sound and a buzz in one call (feel.coin(x, y), feel.hit, feel.boom), and gs.juice.Juice is the particles alone; both follow the player\'s Reduce motion setting' },

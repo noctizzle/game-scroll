@@ -1488,6 +1488,18 @@ export class HDView {
     });
   }
   showHidden() { const hid = this.occHid; if (!hid?.size) return; for (const [o, m] of hid) o.layers.mask = m; hid.clear(); }
+  /**
+   * Gives back everything this view keeps off the camera's layer: pieces merged by static batching, ones
+   * waiting for their shaders, and ones hidden behind occluders. For kit code that moves objects into
+   * another view's scene (a board game's table going from its 3D room into AR): this view stops
+   * drawing, so it would never put them back itself and they would stay unseen in the other view.
+   */
+  release() {
+    if (this.batches?.list.length) unbatchAll(this);
+    if (this.held?.size) { for (const o of this.held.keys()) o.layers.mask = (o.layers.mask | 1) & ~(1 << HOLD_LAYER); this.held.clear(); }
+    this.showHidden();
+    return this;
+  }
   // bounce light and room reflections, baked by the renderer drawing this frame (G: WebGPU) when they need it
   bakeExtras(G, r) {
     const k = G ? 'gpu' : 'gl', gi = this.gi;
